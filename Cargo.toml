@@ -50,6 +50,8 @@ base64 = "0.22"
 # WASAPI loopback capture (Windows only)
 rubato = "0.15"
 wasapi = "0.14"
+# Audio playback — TTS output via system default audio device (Windows only)
+rodio = "0.17"
 
 [dev-dependencies]
 # Snapshot testing for the TUI layouts
