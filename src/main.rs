@@ -32,7 +32,7 @@ mod providers;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
-use tui::AppState;
+use tui::{AppState, AUDIO_LEVEL_SCALE};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -60,7 +60,8 @@ fn main() -> Result<()> {
             rt.spawn(async move {
                 while let Some(chunk) = stream.receiver.recv().await {
                     // Encode RMS as integer to allow atomic storage.
-                    let encoded = (chunk.rms_energy().clamp(0.0, 1.0) * 1_000_000.0) as u32;
+                    let encoded =
+                        (chunk.rms_energy().clamp(0.0, 1.0) * AUDIO_LEVEL_SCALE as f32) as u32;
                     level_tx.store(encoded, Ordering::Relaxed);
                 }
             });

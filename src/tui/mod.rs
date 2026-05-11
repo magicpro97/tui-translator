@@ -15,6 +15,9 @@ use std::sync::{
 };
 use tracing::warn;
 
+/// Shared scale factor for encoding audio level into an atomic integer.
+pub const AUDIO_LEVEL_SCALE: u32 = 1_000_000;
+
 /// All keyboard shortcuts supported by the application.
 ///
 /// The TUI translates raw crossterm key events into these actions so the
@@ -43,9 +46,9 @@ pub enum UserAction {
 /// All fields are `Arc`-wrapped so the audio background task and the main
 /// thread can share them without a runtime borrow.
 pub struct AppState {
-    /// RMS energy encoded as `(rms * 1_000_000) as u32`, updated atomically.
+    /// RMS energy encoded as `(rms * AUDIO_LEVEL_SCALE as f32) as u32`, updated atomically.
     ///
-    /// Divide by `1_000_000.0` to recover a `f64` ratio in `[0.0, 1.0]`.
+    /// Divide by `AUDIO_LEVEL_SCALE as f64` to recover a `f64` ratio in `[0.0, 1.0]`.
     pub audio_level: Arc<AtomicU32>,
     /// Human-readable name of the active capture device.
     pub device_name: Arc<Mutex<String>>,
@@ -63,7 +66,7 @@ impl AppState {
     /// Current audio level as a ratio in `[0.0, 1.0]` suitable for
     /// `ratatui::widgets::Gauge::ratio`.
     pub fn level_ratio(&self) -> f64 {
-        self.audio_level.load(Ordering::Relaxed) as f64 / 1_000_000.0
+        self.audio_level.load(Ordering::Relaxed) as f64 / AUDIO_LEVEL_SCALE as f64
     }
 
     /// Current audio device name.
@@ -96,7 +99,9 @@ mod tests {
     #[test]
     fn level_ratio_decodes_atomic_storage_scale() {
         let state = AppState::new();
-        state.audio_level.store(375_000, Ordering::Relaxed);
+        state
+            .audio_level
+            .store(3 * AUDIO_LEVEL_SCALE / 8, Ordering::Relaxed);
 
         assert!((state.level_ratio() - 0.375).abs() < f64::EPSILON);
     }
