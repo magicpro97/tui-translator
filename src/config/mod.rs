@@ -9,10 +9,12 @@ use anyhow::{bail, Context, Result};
 use notify::{recommended_watcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use std::time::Duration;
 use tokio::sync::watch;
 
 /// Top-level application configuration, parsed from `config.json`.
@@ -55,7 +57,7 @@ pub struct AppConfig {
     /// user copies it directly to `config.json`.
     #[doc(hidden)]
     #[serde(rename = "_comment", default, skip_serializing_if = "Option::is_none")]
-    pub comment: Option<serde_json::Value>,
+    comment: Option<serde_json::Value>,
 }
 
 impl Default for AppConfig {
@@ -212,10 +214,17 @@ fn run_watcher_loop(
 
     tracing::info!(path = %config_path.display(), "config watcher started");
 
-    for event_result in &event_rx {
-        match event_result {
-            Ok(event) => handle_watch_event(event, &config_path, &restart_required, &tx),
-            Err(e) => tracing::warn!("config watcher: file-system event error: {e}"),
+    loop {
+        match event_rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(event_result) => match event_result {
+                Ok(event) => handle_watch_event(event, &config_path, &restart_required, &tx),
+                Err(e) => tracing::warn!("config watcher: file-system event error: {e}"),
+            },
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                tracing::info!("config watcher: event channel disconnected");
+                break;
+            }
         }
         if tx.is_closed() {
             tracing::info!("config watcher: all receivers dropped, exiting");

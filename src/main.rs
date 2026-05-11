@@ -49,16 +49,17 @@ fn main() -> Result<()> {
 
     // Load configuration, falling back to built-in defaults if config.json is absent.
     let cfg_path = config_json_path();
-    let cfg = config::load(&cfg_path).unwrap_or_else(|e| {
-        tracing::error!("config load error — using defaults: {e:#}");
-        config::AppConfig::default()
-    });
+    let cfg = config::load(&cfg_path)?;
     let restart_required = Arc::new(AtomicBool::new(false));
 
     // Start the hot-reload watcher; keep the receiver alive for the process lifetime.
-    let _config_rx = config::start_watcher(&cfg_path, cfg, restart_required.clone()).map_err(|e| {
-        tracing::warn!("config hot-reload unavailable: {e:#}");
-    });
+    let _config_rx = match config::start_watcher(&cfg_path, cfg, restart_required.clone()) {
+        Ok(rx) => Some(rx),
+        Err(err) => {
+            tracing::warn!("config hot-reload unavailable: {err:#}");
+            None
+        }
+    };
 
     let state = AppState::new();
 
