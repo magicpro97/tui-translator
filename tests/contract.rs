@@ -10,12 +10,16 @@
 //!
 //! # Submodules
 //! - [`google_stt`] — live-API contract tests for [`providers::google::stt::GoogleSttProvider`].
+//! - [`google_tts`] — live-API contract tests for [`providers::google::tts::GoogleTtsProvider`].
 
 #[path = "../src/providers/mod.rs"]
 mod providers;
 
 #[path = "contract/google_stt.rs"]
 mod google_stt;
+
+#[path = "contract/google_tts.rs"]
+mod google_tts;
 
 use providers::{
     MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,

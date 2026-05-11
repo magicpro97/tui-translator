@@ -45,6 +45,14 @@ pub struct AppConfig {
     #[serde(default)]
     pub tts_enabled: bool,
 
+    /// Name of the audio output device to use for TTS playback.
+    ///
+    /// `None` means "use the system default output device".  Set to a device
+    /// name string (as reported by the OS) to route TTS audio to a specific
+    /// device.  The application must be restarted when this value changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_output_device: Option<String>,
+
     /// Estimated cost threshold in USD.  A warning appears in the status
     /// bar when the rolling estimate exceeds this value.  `0.0` disables
     /// the warning.
@@ -67,6 +75,7 @@ impl Default for AppConfig {
             target_language: default_target_lang(),
             google_api_key: None,
             tts_enabled: false,
+            tts_output_device: None,
             cost_warning_usd: 0.0,
             comment: None,
         }
@@ -113,9 +122,11 @@ impl AppConfig {
 
     /// Returns `true` when changing from `self` to `next` requires restarting
     /// the application (e.g., `google_api_key` changed and the provider must
-    /// be re-initialised).
+    /// be re-initialised, or `tts_output_device` changed and the audio output
+    /// stream must be re-opened).
     pub fn requires_restart(&self, next: &AppConfig) -> bool {
         self.google_api_key != next.google_api_key
+            || self.tts_output_device != next.tts_output_device
     }
 }
 

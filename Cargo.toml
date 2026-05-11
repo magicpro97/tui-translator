@@ -46,6 +46,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Base64 encoding — audio payload for Google Speech REST API
 base64 = "0.22"
 
+# Audio playback — TTS output via system default audio device (MP3 decoding included)
+rodio = "0.17"
+
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)
 rubato = "0.15"
