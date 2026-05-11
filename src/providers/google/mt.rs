@@ -80,7 +80,6 @@ struct TranslationResult {
 /// println!("{}", result.translated_text);
 /// # });
 /// ```
-#[derive(Debug)]
 pub struct GoogleMtProvider {
     api_key: String,
     client: Client,
