@@ -82,6 +82,8 @@ pub enum UserAction {
     ScrollTop,
     /// End — jump to the newest subtitle and re-enable auto-follow.
     ScrollBottom,
+    /// Any other key that should wake generic "press any key" waits.
+    AnyKey,
 }
 
 // ── SubtitlePair ─────────────────────────────────────────────────────────────
@@ -654,8 +656,8 @@ impl Default for AppState {
 /// subtitle pane.
 ///
 /// In **compact** mode (the default) the strip is a single bordered line
-/// combining the key metrics with keyboard hints.  In **expanded** mode the
-/// block grows to show one metric per row, styled with colour cues.
+/// showing the key runtime metrics. In **expanded** mode the block grows to
+/// show one metric per row, styled with colour cues.
 pub struct StatusMetricsStrip<'a> {
     pub stt: &'a SttState,
     pub tts_on: bool,

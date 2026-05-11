@@ -171,12 +171,16 @@ fn main() -> Result<()> {
     // A `tokio::task::spawn_blocking` task blocks on crossterm key reads so the
     // event loop never needs to poll for keys directly.
     let (key_tx, key_rx) = mpsc::channel::<UserAction>();
+    let keyboard_shutdown = Arc::new(AtomicBool::new(false));
     {
         let lang_flag = Arc::clone(&state.lang_prompt_active);
+        let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
-            tokio::task::spawn_blocking(move || keyboard_task(key_tx, lang_flag))
-                .await
-                .ok();
+            tokio::task::spawn_blocking(move || {
+                keyboard_task(key_tx, lang_flag, keyboard_shutdown)
+            })
+            .await
+            .ok();
         });
     }
 
@@ -185,6 +189,7 @@ fn main() -> Result<()> {
         &restart_required,
         &cfg_path,
         &current_config,
+        &keyboard_shutdown,
         key_rx,
     );
 
@@ -293,17 +298,20 @@ fn run_tui(
     restart_required: &Arc<AtomicBool>,
     cfg_path: &Path,
     current_config: &Arc<Mutex<config::AppConfig>>,
+    keyboard_shutdown: &Arc<AtomicBool>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     let mut terminal_guard = TerminalGuard::enter()?;
-    event_loop(
+    let result = event_loop(
         terminal_guard.terminal_mut(),
         state,
         restart_required,
         cfg_path,
         current_config,
         key_rx,
-    )
+    );
+    keyboard_shutdown.store(true, Ordering::Relaxed);
+    result
 }
 
 /// Main event loop: draw the UI, then process key actions from the keyboard
@@ -345,6 +353,7 @@ fn event_loop(
                 Ok(UserAction::Quit) => {
                     should_quit = true;
                 }
+                Ok(UserAction::AnyKey) => {}
                 Ok(action) => {
                     handle_action(
                         &action,
@@ -399,7 +408,7 @@ fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::LangChar(c))
             }
-            _ => None,
+            _ => Some(UserAction::AnyKey),
         };
     }
     match key.code {
@@ -422,7 +431,7 @@ fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
         KeyCode::Down => Some(UserAction::ScrollDown),
         KeyCode::Home => Some(UserAction::ScrollTop),
         KeyCode::End => Some(UserAction::ScrollBottom),
-        _ => None,
+        _ => Some(UserAction::AnyKey),
     }
 }
 
@@ -430,9 +439,20 @@ fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
 ///
 /// Runs forever on a dedicated OS thread (via `tokio::task::spawn_blocking`).
 /// Converts every crossterm key event to a [`UserAction`] and sends it to the
-/// event loop via `key_tx`.  Exits when the receiver is dropped.
-fn keyboard_task(key_tx: mpsc::Sender<UserAction>, lang_prompt_active: Arc<AtomicBool>) {
-    loop {
+/// event loop via `key_tx`. Uses `event::poll()` so shutdown is observed even
+/// while no actionable key is pressed.
+fn keyboard_task(
+    key_tx: mpsc::Sender<UserAction>,
+    lang_prompt_active: Arc<AtomicBool>,
+    shutdown: Arc<AtomicBool>,
+) {
+    while !shutdown.load(Ordering::Relaxed) {
+        match event::poll(Duration::from_millis(100)) {
+            Ok(false) => continue,
+            Ok(true) => {}
+            Err(_) => break,
+        }
+
         match event::read() {
             Ok(Event::Key(key)) => {
                 let in_prompt = lang_prompt_active.load(Ordering::Relaxed);
@@ -510,7 +530,12 @@ fn handle_action(
 
         // ? — show / hide help (issue #66)
         UserAction::ToggleHelp => {
-            state.toggle_help();
+            let show_help = !state.show_help.load(Ordering::Relaxed);
+            state.show_help.store(show_help, Ordering::Relaxed);
+            if show_help {
+                state.lang_prompt_active.store(false, Ordering::Relaxed);
+                *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+            }
         }
 
         // Escape — dismiss open overlay (issue #64)
@@ -526,6 +551,7 @@ fn handle_action(
         // L — open language prompt (issue #64)
         UserAction::PromptLanguage => {
             if !state.lang_prompt_active.load(Ordering::Relaxed) {
+                state.show_help.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
                 state.lang_prompt_active.store(true, Ordering::Relaxed);
             }
@@ -568,6 +594,8 @@ fn handle_action(
             state.lang_prompt_active.store(false, Ordering::Relaxed);
             *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
         }
+
+        UserAction::AnyKey => {}
 
         // R — signal config reload (issue #64)
         UserAction::ReloadConfig => match config::load(cfg_path) {
@@ -674,6 +702,7 @@ impl Drop for TerminalGuard {
 mod tests {
     use super::*;
     use crate::audio::AudioChunk;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Rect;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -787,5 +816,54 @@ mod tests {
             &*stt_state.lock().unwrap_or_else(|p| p.into_inner()),
             metrics::SttState::Error(message) if message == "audio capture stopped"
         ));
+    }
+
+    #[test]
+    fn unmapped_key_wakes_any_key_waits() {
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+
+        assert_eq!(key_to_action(&key, false), Some(UserAction::AnyKey));
+    }
+
+    #[test]
+    fn prompt_language_hides_help_overlay() {
+        let state = AppState::new();
+        state.show_help.store(true, Ordering::Relaxed);
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+
+        handle_action(
+            &UserAction::PromptLanguage,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+        );
+
+        assert!(state.lang_prompt_active.load(Ordering::Relaxed));
+        assert!(!state.show_help.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn opening_help_closes_language_prompt() {
+        let state = AppState::new();
+        state.lang_prompt_active.store(true, Ordering::Relaxed);
+        *state.lang_input.lock().unwrap() = "vi".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+
+        handle_action(
+            &UserAction::ToggleHelp,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+        );
+
+        assert!(state.show_help.load(Ordering::Relaxed));
+        assert!(!state.lang_prompt_active.load(Ordering::Relaxed));
+        assert!(state.lang_input.lock().unwrap().is_empty());
     }
 }
