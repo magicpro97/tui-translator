@@ -4,6 +4,9 @@
 //! (issue #26), and exit cleanly when the user presses `q` or `Ctrl+C`.
 //! A live audio-level bar (issue #31) is fed by the audio capture foundation
 //! and grows/shrinks with captured audio energy in real time.
+//!
+//! The bilingual subtitle pane (issues #54–57) is wired in here: Up/Down
+//! arrows scroll the pane; End jumps back to the auto-follow bottom.
 
 use anyhow::Result;
 use crossterm::{
@@ -13,7 +16,7 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Gauge, Paragraph},
     Terminal,
@@ -35,7 +38,7 @@ mod providers;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
-use tui::{AppState, AUDIO_LEVEL_SCALE};
+use tui::{AppState, SubtitlePane, AUDIO_LEVEL_SCALE};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -127,7 +130,9 @@ fn run_tui(state: &AppState, restart_required: &Arc<AtomicBool>) -> Result<()> {
 /// Main event loop: draw the UI, then poll for keyboard input.
 ///
 /// Uses `event::poll` with a 50 ms timeout so the audio-level bar refreshes
-/// at ~20 fps regardless of user input.
+/// at ~20 fps regardless of user input.  Crossterm resize events are handled
+/// implicitly: the next `terminal.draw()` call picks up the new size
+/// automatically, so no explicit resize handler is needed.
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &AppState,
@@ -137,15 +142,36 @@ fn event_loop(
         let level = state.level_ratio();
         let dev_name = state.device_name_str();
         let show_restart_notice = restart_required.load(Ordering::Relaxed);
+        let pane_area = subtitle_inner_area(terminal.size()?);
 
-        terminal.draw(|frame| draw_ui(frame, level, &dev_name, show_restart_notice))?;
+        {
+            let mut pane = state
+                .subtitle_pane
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            pane.clamp_scroll(pane_area.width, pane_area.height);
+        }
+
+        terminal.draw(|frame| {
+            let pane = state
+                .subtitle_pane
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            draw_ui(frame, level, &dev_name, &pane, show_restart_notice);
+        })?;
 
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if is_quit_key(&key) {
-                    tracing::info!("user requested shutdown");
-                    break;
+            match event::read()? {
+                Event::Key(key) => {
+                    if is_quit_key(&key) {
+                        tracing::info!("user requested shutdown");
+                        break;
+                    }
+                    handle_scroll_key(&key, state, pane_area);
                 }
+                // Resize: ratatui auto-reflows on the next draw; no action needed.
+                Event::Resize(_, _) => {}
+                _ => {}
             }
         }
     }
@@ -155,6 +181,38 @@ fn event_loop(
 fn is_quit_key(key: &KeyEvent) -> bool {
     matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q'))
         || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
+}
+
+/// Translate scroll keys into pane scroll commands.
+fn handle_scroll_key(key: &KeyEvent, state: &AppState, pane_area: Rect) {
+    let mut pane = state
+        .subtitle_pane
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    match key.code {
+        KeyCode::Up => pane.scroll_up(pane_area.width, pane_area.height),
+        KeyCode::Down => pane.scroll_down(pane_area.width, pane_area.height),
+        KeyCode::Home => pane.scroll_to_top(pane_area.width, pane_area.height),
+        KeyCode::End => pane.scroll_to_bottom(),
+        _ => {}
+    }
+}
+
+fn subtitle_inner_area(area: Rect) -> Rect {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    Block::default()
+        .title(" Subtitles ")
+        .borders(Borders::ALL)
+        .inner(chunks[2])
 }
 
 struct TerminalGuard {
@@ -207,14 +265,16 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Draw the placeholder Phase 0 loading UI.
+/// Draw the Phase 0 loading UI.
 ///
 /// - `audio_level`: current RMS energy as a ratio in `[0.0, 1.0]`.
 /// - `device_name`: human-readable name of the active capture device.
+/// - `subtitle_pane`: the stateful bilingual subtitle widget.
 fn draw_ui(
     frame: &mut ratatui::Frame,
     audio_level: f64,
     device_name: &str,
+    subtitle_pane: &SubtitlePane,
     show_restart_notice: bool,
 ) {
     let area = frame.size();
@@ -224,13 +284,13 @@ fn draw_ui(
         .constraints([
             Constraint::Length(3), // title bar
             Constraint::Length(3), // audio level bar
-            Constraint::Min(1),    // content area
+            Constraint::Min(1),    // subtitle pane
             Constraint::Length(3), // status bar
         ])
         .split(area);
 
     // Title bar — placeholder title per issue #26: "TUI Translator — Loading…"
-    let title = Paragraph::new("TUI Translator — Loading\u{2026}")
+    let title = Paragraph::new("TUI Translator \u{2014} Loading\u{2026}")
         .style(
             Style::default()
                 .fg(Color::Cyan)
@@ -251,7 +311,7 @@ fn draw_ui(
     } else {
         Color::Red
     };
-    let bar_title = format!(" Audio — {device_name} ");
+    let bar_title = format!(" Audio \u{2014} {device_name} ");
     let gauge = Gauge::default()
         .block(
             Block::default()
@@ -262,27 +322,15 @@ fn draw_ui(
         .ratio(audio_level.clamp(0.0, 1.0));
     frame.render_widget(gauge, chunks[1]);
 
-    // Content placeholder
-    let content = Paragraph::new(
-        "Audio capture, speech-to-text, and translation are not yet implemented.\n\
-          This window proves Phase 0: the project builds and the TUI opens cleanly.\n\n\
-          Press  q  or  Ctrl+C  to quit.",
-    )
-    .alignment(Alignment::Center)
-    .block(
-        Block::default()
-            .title(" Subtitles ")
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::White)),
-    );
-    frame.render_widget(content, chunks[2]);
+    // Bilingual subtitle pane (issues #54–57).
+    frame.render_widget(subtitle_pane, chunks[2]);
 
     // Status bar
     let mut status_text = " Status: loading  |  Phase: 0 — skeleton ".to_string();
     if show_restart_notice {
         status_text.push_str(" |  ⚠ Restart required for some settings");
     }
-    status_text.push_str("  |  Press q or Ctrl+C to quit ");
+    status_text.push_str(" |  ↑↓ scroll  |  End: follow  |  q / Ctrl+C: quit ");
 
     let status = Paragraph::new(status_text)
         .style(Style::default().fg(Color::DarkGray))
