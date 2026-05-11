@@ -39,6 +39,12 @@ notify = "6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# HTTP client — REST calls to Google Cloud APIs (STT, MT, TTS)
+reqwest = { version = "0.12", features = ["json"] }
+
+# Base64 encoding — audio payload for Google Speech REST API
+base64 = "0.22"
+
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)
 rubato = "0.15"
