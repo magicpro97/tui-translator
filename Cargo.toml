@@ -32,6 +32,13 @@ thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Resampling: device-native rate → 16 kHz mono (cross-platform)
+rubato = "0.15"
+
+[target.'cfg(windows)'.dependencies]
+# WASAPI loopback capture (Windows only)
+wasapi = "0.14"
+
 [dev-dependencies]
 # Snapshot testing for the TUI layouts
 insta = "1"
