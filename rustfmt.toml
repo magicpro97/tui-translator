@@ -1,0 +1,16 @@
+# rustfmt configuration for tui-translator
+# Run: cargo fmt
+# Check (CI): cargo fmt --check
+# Note: only stable rustfmt options are used here (nightly-only options are omitted).
+
+edition = "2021"
+
+# Line width — keep lines readable in a side-by-side diff
+max_width = 100
+
+# Consistent blank lines between items (stable)
+# blank_lines_upper_bound requires nightly — left at default
+
+# String handling (stable)
+use_field_init_shorthand = true
+use_try_shorthand = true

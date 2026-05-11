@@ -1,0 +1,7 @@
+{
+  "source_language": "ja-JP",
+  "target_language": "vi",
+  "google_api_key": "YOUR_GOOGLE_API_KEY_HERE",
+  "tts_enabled": false,
+  "cost_warning_usd": 1.00
+}

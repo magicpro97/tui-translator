@@ -1,0 +1,55 @@
+{
+  "version": 1,
+
+  "_comment_purpose": "Project-level Copilot hooks for tui-translator. These hooks supplement (not replace) the global ~/.copilot/hooks/hooks.json. They run on every preToolUse event and gate bash commands, file edits, and task completion.",
+
+  "_comment_execution": "Both `bash` and `powershell` keys are provided so the hooks work on Linux/macOS (bash) and Windows (powershell). Python stdlib only — no third-party packages required.",
+
+  "_comment_maintenance": "To disable a hook temporarily, add `\"disabled\": true` to its entry. To understand what each hook does, read the docstring at the top of the corresponding .py file.",
+
+  "hooks": {
+    "preToolUse": [
+
+      {
+        "type": "command",
+        "bash": "python3 .github/hooks/dangerous-commands.py",
+        "powershell": "python .github/hooks/dangerous-commands.py",
+        "comment": "GUARD 1 — Dangerous shell commands: blocks sudo/runas, rm -rf on root, force-push (--force), download-pipe-execute, multi-commit hard reset, SQL DROP. Normal cargo/git operations are not affected. See dangerous-commands.py for full list.",
+        "timeoutSec": 5
+      },
+
+      {
+        "type": "command",
+        "bash": "python3 .github/hooks/secret-detector.py",
+        "powershell": "python .github/hooks/secret-detector.py",
+        "comment": "GUARD 2 — Hardcoded secrets: blocks any edit or create that contains a real Google API key, Google service-account private key, AWS key, GitHub token, PEM private key block, or JWT token. Placeholder values (YOUR_KEY_HERE, example, dummy) are allowed. Protects against accidental credential leakage — a leaked Google key causes unexpected API billing.",
+        "timeoutSec": 5
+      },
+
+      {
+        "type": "command",
+        "bash": "python3 .github/hooks/rust-coding-standards.py",
+        "powershell": "python .github/hooks/rust-coding-standards.py",
+        "comment": "GUARD 3 — Rust/Cargo/CI coding standards: (a) .rs files: unsafe{} must have // SAFETY: comment, dbg!() is banned, .unwrap() requires justification comment outside test code; (b) Cargo.toml: wildcard deps (\"*\") and deep path deps are banned; (c) .github/workflows/*.yml: continue-on-error: true needs a comment, echoing secrets to logs is banned.",
+        "timeoutSec": 5
+      },
+
+      {
+        "type": "command",
+        "bash": "python3 .github/hooks/commit-gate.py",
+        "powershell": "python .github/hooks/commit-gate.py",
+        "comment": "GUARD 4 — Commit safety gate: runs only on `git commit`. Blocks commits that include: (a) dbg!() macros in staged .rs files; (b) credential files (.env, google-credentials*.json, *.pem, *.key, *.p12); (c) binary files over 1 MB (use Git LFS instead); (d) todo!() macros with no GitHub issue reference. Normal commits are not affected.",
+        "timeoutSec": 10
+      },
+
+      {
+        "type": "command",
+        "bash": "python3 .github/hooks/verification-gate.py",
+        "powershell": "python .github/hooks/verification-gate.py",
+        "comment": "GUARD 5 — Verification evidence gate: runs only on task_complete. Requires a `.copilot-state/cargo-test-pass` evidence marker that is less than 2 hours old when Rust source files have been modified. This enforces the Layer-1 check from docs/04-verification-plan.md: build must succeed and all unit tests must pass before a task is declared done. Create the marker after `cargo test` passes: PowerShell: `[System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds() | Set-Content .copilot-state\\cargo-test-pass`",
+        "timeoutSec": 10
+      }
+
+    ]
+  }
+}

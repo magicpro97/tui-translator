@@ -1,0 +1,46 @@
+[package]
+name = "tui-translator"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Real-time bilingual subtitles for Zoom meetings — terminal-based, Windows-native"
+license = "MIT"
+repository = "https://github.com/magicpro97/tui-translator"
+readme = "README.md"
+
+[[bin]]
+name = "tui-translator"
+path = "src/main.rs"
+
+[dependencies]
+# Terminal user interface
+ratatui = "0.26"
+crossterm = "0.27"
+
+# Async runtime (all I/O runs on Tokio)
+tokio = { version = "1", features = ["full"] }
+
+# Configuration — config.json loading
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+# Snapshot testing for the TUI layouts
+insta = "1"
+# Temp files for config tests
+tempfile = "3"
+
+[profile.release]
+# Optimise for small binary size — users download a single .exe
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

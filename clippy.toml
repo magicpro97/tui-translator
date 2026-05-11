@@ -1,0 +1,12 @@
+# clippy configuration for tui-translator
+# Run: cargo clippy -- -D warnings
+# The CI pipeline treats all clippy warnings as errors.
+
+# Maximum complexity allowed in a single function before clippy complains
+cognitive-complexity-threshold = 15
+
+# Warn when a function has more than this many lines
+too-many-lines-threshold = 80
+
+# Warn when a type has more than this many arguments in a constructor
+too-many-arguments-threshold = 7
