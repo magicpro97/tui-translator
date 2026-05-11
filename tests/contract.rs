@@ -1,12 +1,12 @@
-//! Integration tests for provider contracts.
+//! Dedicated contract-test entry point for CI.
 //!
-//! These tests verify that:
-//! 1. The mock implementations satisfy the trait bounds at compile time.
-//! 2. Each mock returns its hard-coded values correctly at runtime.
-//! 3. `ProviderError` variants implement `std::error::Error` and can be
-//!    formatted as strings.
+//! Run with:
+//!   cargo test --test contract -- --skip real_api
 //!
-//! No network connections or API keys are required.
+//! All tests are mock-only. No network connections or API keys are required.
+//! Tests whose names contain `real_api` are skipped in CI via the filter above,
+//! leaving a clean path to add live-credential tests later without breaking the
+//! mock-only gate.
 
 #[path = "../src/providers/mod.rs"]
 mod providers;
