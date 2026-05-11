@@ -1,5 +1,7 @@
 # TUI Translator
 
+[![CI](https://github.com/magicpro97/tui-translator/actions/workflows/ci.yml/badge.svg)](https://github.com/magicpro97/tui-translator/actions/workflows/ci.yml)
+
 Real-time bilingual subtitles for terminal-based translation workflows.
 Version 1 focuses on Zoom meetings and is delivered as a single Windows
 executable — no Zoom account, no host cooperation required.
