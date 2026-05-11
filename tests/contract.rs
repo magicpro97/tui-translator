@@ -3,13 +3,19 @@
 //! Run with:
 //!   cargo test --test contract -- --skip real_api
 //!
-//! All tests are mock-only. No network connections or API keys are required.
+//! Mock-only tests have no network connections or API key requirements.
 //! Tests whose names contain `real_api` are skipped in CI via the filter above,
-//! leaving a clean path to add live-credential tests later without breaking the
-//! mock-only gate.
+//! leaving a clean path to run live-credential tests locally without breaking
+//! the mock-only gate.
+//!
+//! # Submodules
+//! - [`google_stt`] — live-API contract tests for [`providers::google::stt::GoogleSttProvider`].
 
 #[path = "../src/providers/mod.rs"]
 mod providers;
+
+#[path = "contract/google_stt.rs"]
+mod google_stt;
 
 use providers::{
     MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,

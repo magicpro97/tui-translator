@@ -1,47 +1,15 @@
-//! Google Cloud provider stubs.
+//! Google Cloud providers.
 //!
-//! Phase 2 implements `GoogleSttProvider`.
-//! Phase 3 implements `GoogleMtProvider`.
-//! Phase 4 implements `GoogleTtsProvider`.
-//!
-//! All three types are declared here so the compiler sees them and the
-//! trait bounds can be verified without any API calls being made.
+//! - [`stt`] — Phase 2: `GoogleSttProvider` (Speech-to-Text REST API).
+//! - `GoogleMtProvider` — Phase 3 stub (Translation REST API).
+//! - `GoogleTtsProvider` — Phase 4 stub (Text-to-Speech REST API).
 
-// Stub implementations — real code arrives in Phase 2–4.
+// Stub implementations — real code arrives in Phase 3–4.
 #![allow(dead_code)]
 #![allow(async_fn_in_trait)]
 
-use super::{
-    MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,
-};
-
-// ── Google STT ───────────────────────────────────────────────────────────────
-
-/// Sends short PCM audio chunks to the Google Speech-to-Text REST API and
-/// returns transcripts.  Implemented in Phase 2.
-pub struct GoogleSttProvider {
-    api_key: String,
-}
-
-impl GoogleSttProvider {
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-        }
-    }
-}
-
-impl SttProvider for GoogleSttProvider {
-    async fn transcribe(
-        &self,
-        _chunk: &PcmChunk,
-        _language_code: &str,
-    ) -> Result<SttResult, ProviderError> {
-        Err(ProviderError::Unimplemented(
-            "GoogleSttProvider is not yet implemented (Phase 2)".to_string(),
-        ))
-    }
-}
+pub mod stt;
+use super::{MtProvider, MtResult, ProviderError, TtsProvider, TtsResult};
 
 // ── Google MT ────────────────────────────────────────────────────────────────
 
