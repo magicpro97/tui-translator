@@ -32,6 +32,11 @@ thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+[target.'cfg(windows)'.dependencies]
+# WASAPI loopback capture (Windows only)
+rubato = "0.15"
+wasapi = "0.14"
+
 [dev-dependencies]
 # Snapshot testing for the TUI layouts
 insta = "1"
