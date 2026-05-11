@@ -104,6 +104,12 @@ pub struct SubtitlePane {
     unread: usize,
     /// Most recent inner pane width used for wrapping and scroll anchoring.
     last_inner_width: u16,
+    /// Most recent inner pane height used for scroll anchoring.
+    last_inner_height: u16,
+    /// Cached wrapped lines for the last rendered width.
+    cached_lines: Vec<Line<'static>>,
+    cached_width: u16,
+    cache_dirty: bool,
 }
 
 impl SubtitlePane {
@@ -114,6 +120,10 @@ impl SubtitlePane {
             scroll: 0,
             unread: 0,
             last_inner_width: 0,
+            last_inner_height: 0,
+            cached_lines: Vec::new(),
+            cached_width: 0,
+            cache_dirty: true,
         }
     }
 
@@ -127,7 +137,7 @@ impl SubtitlePane {
                     &pair,
                     self.last_inner_width as usize,
                     !self.pairs.is_empty(),
-                );
+                ) + usize::from(self.unread == 0 && self.last_inner_height > 0);
                 self.scroll = self
                     .scroll
                     .saturating_add(added_lines.min(u16::MAX as usize) as u16);
@@ -135,19 +145,25 @@ impl SubtitlePane {
             self.unread += 1;
         }
         self.pairs.push(pair);
+        self.cache_dirty = true;
     }
 
-    fn max_scroll(&self, width: u16, height: u16) -> u16 {
+    fn max_scroll(&mut self, width: u16, height: u16) -> u16 {
         if width == 0 || height == 0 {
             return 0;
         }
 
-        let total = self.build_all_lines(width as usize).len();
-        total.saturating_sub(height as usize).min(u16::MAX as usize) as u16
+        self.ensure_cached_lines(width);
+        let total = self.cached_lines.len();
+        total
+            .saturating_sub(self.visible_line_count(height))
+            .min(u16::MAX as usize) as u16
     }
 
     pub fn clamp_scroll(&mut self, width: u16, height: u16) {
         self.last_inner_width = width;
+        self.last_inner_height = height;
+        self.ensure_cached_lines(width);
         self.scroll = self.scroll.min(self.max_scroll(width, height));
         if self.scroll == 0 {
             self.unread = 0;
@@ -185,6 +201,25 @@ impl SubtitlePane {
     /// `true` when the pane is auto-following new pairs (pinned to bottom).
     pub fn is_pinned(&self) -> bool {
         self.scroll == 0
+    }
+
+    fn visible_line_count(&self, height: u16) -> usize {
+        height.saturating_sub(u16::from(self.unread > 0 && height > 0)) as usize
+    }
+
+    fn ensure_cached_lines(&mut self, width: u16) {
+        if width == 0 {
+            self.cached_width = 0;
+            self.cached_lines.clear();
+            self.cache_dirty = false;
+            return;
+        }
+
+        if self.cache_dirty || self.cached_width != width {
+            self.cached_lines = self.build_all_lines(width as usize);
+            self.cached_width = width;
+            self.cache_dirty = false;
+        }
     }
 
     /// Build the complete list of visual [`Line`]s for all pairs at `width`.
@@ -243,9 +278,14 @@ impl Widget for &SubtitlePane {
             return;
         }
 
-        let all_lines = self.build_all_lines(inner.width as usize);
-        let badge_row_reserved = self.unread > 0 && inner.height > 0;
-        let visible = inner.height.saturating_sub(u16::from(badge_row_reserved)) as usize;
+        let owned_lines;
+        let all_lines = if !self.cache_dirty && self.cached_width == inner.width {
+            &self.cached_lines
+        } else {
+            owned_lines = self.build_all_lines(inner.width as usize);
+            &owned_lines
+        };
+        let visible = self.visible_line_count(inner.height);
         let total = all_lines.len();
 
         // bottom_start: first line index when pinned to bottom
@@ -560,6 +600,24 @@ mod tests {
         pane.push(SubtitlePair::new("a", "b"));
         assert_eq!(pane.unread, 1);
         assert!(pane.scroll >= before_scroll);
+    }
+
+    #[test]
+    fn first_unread_push_keeps_viewport_anchored_when_badge_appears() {
+        let mut pane = overflowing_pane();
+        pane.clamp_scroll(30, 6);
+        pane.scroll_up(30, 6);
+        let before_scroll = pane.scroll;
+        let pair = SubtitlePair::new(
+            "New source line with enough words to wrap around once",
+            "New target line with enough translated words to wrap around once",
+        );
+        let expected_delta = pane.visual_lines_for_pair(&pair, 30, true) as u16 + 1;
+
+        pane.push(pair);
+
+        assert_eq!(pane.unread, 1);
+        assert_eq!(pane.scroll, before_scroll.saturating_add(expected_delta));
     }
 
     #[test]
