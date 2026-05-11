@@ -18,7 +18,11 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, Paragraph},
     Terminal,
 };
-use std::{io, sync::atomic::Ordering, time::Duration};
+use std::{
+    io,
+    sync::{atomic::Ordering, Arc, Mutex},
+    time::Duration,
+};
 
 mod audio;
 mod config;
@@ -48,28 +52,22 @@ fn main() -> Result<()> {
         .enable_all()
         .build()?;
 
-    // Spawn the audio capture task.  It updates `state.audio_level` and
-    // `state.device_name` continuously until the receiver is dropped.
-    {
-        let level_tx = state.audio_level.clone();
-        let name_tx = state.device_name.clone();
-        rt.spawn(async move {
-            match audio::start_capture(DEFAULT_SILENCE_THRESHOLD).await {
-                Ok(mut stream) => {
-                    if let Ok(mut guard) = name_tx.lock() {
-                        *guard = stream.info.device_name.clone();
-                    }
-                    while let Some(chunk) = stream.receiver.recv().await {
-                        // Encode RMS as integer to allow atomic storage.
-                        let encoded = (chunk.rms_energy().clamp(0.0, 1.0) * 1_000_000.0) as u32;
-                        level_tx.store(encoded, Ordering::Relaxed);
-                    }
+    match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
+        Ok(mut stream) => {
+            overwrite_device_name(&state.device_name, &stream.info.device_name);
+
+            let level_tx = state.audio_level.clone();
+            rt.spawn(async move {
+                while let Some(chunk) = stream.receiver.recv().await {
+                    // Encode RMS as integer to allow atomic storage.
+                    let encoded = (chunk.rms_energy().clamp(0.0, 1.0) * 1_000_000.0) as u32;
+                    level_tx.store(encoded, Ordering::Relaxed);
                 }
-                Err(err) => {
-                    tracing::error!("audio capture failed to start: {err}");
-                }
-            }
-        });
+            });
+        }
+        Err(err) => {
+            tracing::error!("audio capture failed to start: {err}");
+        }
     }
 
     let result = run_tui(&state);
@@ -78,6 +76,19 @@ fn main() -> Result<()> {
     rt.shutdown_background();
 
     result
+}
+
+fn overwrite_device_name(slot: &Arc<Mutex<String>>, next_name: &str) {
+    match slot.lock() {
+        Ok(mut guard) => {
+            *guard = next_name.to_string();
+        }
+        Err(poisoned) => {
+            tracing::warn!("device_name mutex was poisoned; recovering last known state");
+            let mut guard = poisoned.into_inner();
+            *guard = next_name.to_string();
+        }
+    }
 }
 
 /// Run the minimal terminal interface for Phase 0.

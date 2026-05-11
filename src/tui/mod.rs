@@ -13,6 +13,7 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc, Mutex,
 };
+use tracing::warn;
 
 /// All keyboard shortcuts supported by the application.
 ///
@@ -69,9 +70,51 @@ impl AppState {
     ///
     /// Clones the inner string; cheap enough for a 50 ms UI refresh cycle.
     pub fn device_name_str(&self) -> String {
-        self.device_name
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_else(|_| "unknown".to_string())
+        match self.device_name.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => {
+                warn!("device_name mutex was poisoned; recovering last known state");
+                poisoned.into_inner().clone()
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    #[test]
+    fn new_state_starts_with_zero_level_and_placeholder_name() {
+        let state = AppState::new();
+
+        assert_eq!(state.level_ratio(), 0.0);
+        assert_eq!(state.device_name_str(), "initializing…");
+    }
+
+    #[test]
+    fn level_ratio_decodes_atomic_storage_scale() {
+        let state = AppState::new();
+        state.audio_level.store(375_000, Ordering::Relaxed);
+
+        assert!((state.level_ratio() - 0.375).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn device_name_recovery_returns_poisoned_inner_value() {
+        let state = AppState {
+            audio_level: Arc::new(AtomicU32::new(0)),
+            device_name: Arc::new(Mutex::new("WASAPI Speakers".to_string())),
+        };
+        let poisoned_name = state.device_name.clone();
+
+        let _ = thread::spawn(move || {
+            let _guard = poisoned_name.lock().unwrap();
+            panic!("poison device name mutex for recovery test");
+        })
+        .join();
+
+        assert_eq!(state.device_name_str(), "WASAPI Speakers");
     }
 }
