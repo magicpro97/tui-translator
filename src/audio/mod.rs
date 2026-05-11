@@ -225,7 +225,7 @@ pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
     let info = wasapi_capture::spawn(tx, silence_threshold)?;
 
     #[cfg(not(windows))]
-    {
+    let info = {
         // Non-Windows stub: deliver silence at a realistic pace.
         tokio::spawn(async move {
             let _ = silence_threshold;
@@ -242,9 +242,8 @@ pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
             device_name: "silent (stub)".to_string(),
             native_sample_rate: 16_000,
         };
-
-        return Ok(CaptureStream { info, receiver: rx });
-    }
+        info
+    };
 
     Ok(CaptureStream { info, receiver: rx })
 }
