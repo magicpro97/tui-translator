@@ -38,7 +38,7 @@ mod providers;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
-use tui::{AppState, SubtitlePane, AUDIO_LEVEL_SCALE};
+use tui::{subtitle_inner_area, AppState, SubtitlePane, AUDIO_LEVEL_SCALE};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -196,23 +196,6 @@ fn handle_scroll_key(key: &KeyEvent, state: &AppState, pane_area: Rect) {
         KeyCode::End => pane.scroll_to_bottom(),
         _ => {}
     }
-}
-
-fn subtitle_inner_area(area: Rect) -> Rect {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
-        ])
-        .split(area);
-
-    Block::default()
-        .title(" Subtitles ")
-        .borders(Borders::ALL)
-        .inner(chunks[2])
 }
 
 struct TerminalGuard {

@@ -19,12 +19,13 @@ use std::{
 
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Widget},
 };
 use tracing::warn;
+use unicode_width::UnicodeWidthChar;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,8 @@ pub struct SubtitlePane {
     scroll: u16,
     /// Pairs added while the pane is not pinned to the bottom.
     unread: usize,
+    /// Most recent inner pane width used for wrapping and scroll anchoring.
+    last_inner_width: u16,
 }
 
 impl SubtitlePane {
@@ -110,6 +113,7 @@ impl SubtitlePane {
             pairs: Vec::new(),
             scroll: 0,
             unread: 0,
+            last_inner_width: 0,
         }
     }
 
@@ -118,6 +122,16 @@ impl SubtitlePane {
     /// Increments the unread counter when the pane is not pinned.
     pub fn push(&mut self, pair: SubtitlePair) {
         if self.scroll > 0 {
+            if self.last_inner_width > 0 {
+                let added_lines = self.visual_lines_for_pair(
+                    &pair,
+                    self.last_inner_width as usize,
+                    !self.pairs.is_empty(),
+                );
+                self.scroll = self
+                    .scroll
+                    .saturating_add(added_lines.min(u16::MAX as usize) as u16);
+            }
             self.unread += 1;
         }
         self.pairs.push(pair);
@@ -133,6 +147,7 @@ impl SubtitlePane {
     }
 
     pub fn clamp_scroll(&mut self, width: u16, height: u16) {
+        self.last_inner_width = width;
         self.scroll = self.scroll.min(self.max_scroll(width, height));
         if self.scroll == 0 {
             self.unread = 0;
@@ -190,6 +205,17 @@ impl SubtitlePane {
         }
         lines
     }
+
+    fn visual_lines_for_pair(
+        &self,
+        pair: &SubtitlePair,
+        width: usize,
+        include_separator: bool,
+    ) -> usize {
+        wrap_to_lines(SRC_PREFIX, &pair.source, width, SRC_COLOR).len()
+            + wrap_to_lines(TGT_PREFIX, &pair.target, width, TGT_COLOR).len()
+            + usize::from(include_separator)
+    }
 }
 
 impl Default for SubtitlePane {
@@ -204,10 +230,7 @@ impl Default for SubtitlePane {
 /// the state across the 50 ms redraw cycle.
 impl Widget for &SubtitlePane {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .title(" Subtitles ")
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::White));
+        let block = subtitle_block();
         let inner = block.inner(area);
         block.render(area, buf);
 
@@ -221,7 +244,8 @@ impl Widget for &SubtitlePane {
         }
 
         let all_lines = self.build_all_lines(inner.width as usize);
-        let visible = inner.height as usize;
+        let badge_row_reserved = self.unread > 0 && inner.height > 0;
+        let visible = inner.height.saturating_sub(u16::from(badge_row_reserved)) as usize;
         let total = all_lines.len();
 
         // bottom_start: first line index when pinned to bottom
@@ -239,33 +263,21 @@ impl Widget for &SubtitlePane {
         }
 
         if self.unread > 0 {
-            render_unread_badge(self.unread, inner, buf);
+            let badge_area = Rect {
+                x: inner.x,
+                y: inner.y + inner.height.saturating_sub(1),
+                width: inner.width,
+                height: 1,
+            };
+            render_unread_badge(self.unread, badge_area, buf);
         }
     }
 }
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-/// Terminal display width of a single Unicode scalar value.
-///
-/// CJK ideographs, Hiragana, Katakana, Hangul, and common fullwidth forms
-/// occupy two columns; everything else occupies one.
 fn char_width(c: char) -> usize {
-    match c as u32 {
-        0x1100..=0x115F  // Hangul Jamo
-        | 0x2329 | 0x232A
-        | 0x2E80..=0x303E  // CJK Radicals + Symbols
-        | 0x3040..=0xA4CF  // Hiragana/Katakana/CJK Unified
-        | 0xA960..=0xA97F  // Hangul Jamo Extended-A
-        | 0xAC00..=0xD7AF  // Hangul Syllables
-        | 0xF900..=0xFAFF  // CJK Compatibility Ideographs
-        | 0xFE10..=0xFE19  // Vertical Forms
-        | 0xFE30..=0xFE6F  // CJK Compat Forms / Small Forms
-        | 0xFF00..=0xFF60  // Fullwidth Latin / Katakana
-        | 0xFFE0..=0xFFE6  // Fullwidth Signs
-        | 0x1F300..=0x1F9FF => 2, // Emoji / Misc Symbols
-        _ => 1,
-    }
+    UnicodeWidthChar::width(c).unwrap_or(0)
 }
 
 /// Display width of a string in terminal columns.
@@ -378,10 +390,31 @@ fn render_unread_badge(unread: usize, area: Rect, buf: &mut Buffer) {
     let style = Style::default()
         .fg(UNREAD_COLOR)
         .add_modifier(Modifier::BOLD);
-    let text_cols = display_width(&text) as u16;
-    let x_start = area.x + area.width.saturating_sub(text_cols);
-    let y = area.y + area.height.saturating_sub(1);
-    buf.set_stringn(x_start, y, &text, text_cols as usize, style);
+    let text_cols = display_width(&text);
+    let clipped_cols = text_cols.min(area.width as usize);
+    let x_start = area.x + area.width.saturating_sub(clipped_cols as u16);
+    buf.set_stringn(x_start, area.y, &text, clipped_cols, style);
+}
+
+fn subtitle_block() -> Block<'static> {
+    Block::default()
+        .title(" Subtitles ")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::White))
+}
+
+pub fn subtitle_inner_area(area: Rect) -> Rect {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    subtitle_block().inner(chunks[2])
 }
 
 // ── AppState ─────────────────────────────────────────────────────────────────
@@ -398,8 +431,8 @@ pub struct AppState {
     pub audio_level: Arc<AtomicU32>,
     /// Human-readable name of the active capture device.
     pub device_name: Arc<Mutex<String>>,
-    /// Scrollable subtitle pane; guarded so a future pipeline thread can push
-    /// pairs while the render thread reads.
+    /// Scrollable subtitle pane; guarded so shared app state can mutate and read
+    /// it safely as more pipeline wiring is added.
     pub subtitle_pane: Mutex<SubtitlePane>,
 }
 
@@ -520,10 +553,13 @@ mod tests {
 
     #[test]
     fn push_while_scrolled_increments_unread() {
-        let mut pane = SubtitlePane::new();
-        pane.scroll = 3;
+        let mut pane = overflowing_pane();
+        pane.clamp_scroll(30, 6);
+        pane.scroll_up(30, 6);
+        let before_scroll = pane.scroll;
         pane.push(SubtitlePair::new("a", "b"));
         assert_eq!(pane.unread, 1);
+        assert!(pane.scroll >= before_scroll);
     }
 
     #[test]

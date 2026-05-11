@@ -38,6 +38,7 @@ notify = "6"
 # Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-width = "0.1"
 
 # HTTP client — REST calls to Google Cloud APIs (STT, MT, TTS)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
