@@ -1,0 +1,9 @@
+---
+source: tests/snapshot.rs
+expression: "render_strip(&strip, 80, 5)"
+---
+┌ Metrics ─────────────────────────────────────────────────────────────────────┐
+│● STT: listening   TTS: on                                                    │
+│Target: vi   Pairs: 12   Cost: $0.0720                                        │
+│Elapsed: 3:00                                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘

@@ -1,6 +1,9 @@
-//! Snapshot tests for the subtitle pane widget (issue #57).
+//! Snapshot tests for the subtitle pane widget (issue #57) and the new
+//! status/metrics widgets (issues #41, #51, #58-#66).
 //!
 //! Covers three representative terminal sizes: 80×24, 120×40, 200×50.
+//! Also covers: narrow (60 col) and wide (130 col) adaptive layouts (issue #60),
+//! new SttState variants (issue #41), and always-shown hints bar (issue #65).
 //!
 //! Run once to generate snapshots:
 //!   INSTA_UPDATE=new cargo test --test snapshot
@@ -8,11 +11,15 @@
 //! Subsequent runs will compare against the stored `.snap` files in
 //! `tests/snapshots/`.
 
+#[path = "../src/metrics/mod.rs"]
+mod metrics;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
+use metrics::SttState;
 use ratatui::{backend::TestBackend, Terminal};
-use tui::{SubtitlePair, SubtitlePane};
+use tui::{ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +32,30 @@ fn render_pane(pane: &SubtitlePane, width: u16, height: u16) -> String {
         .draw(|frame| {
             let area = frame.size();
             frame.render_widget(pane, area);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
+/// Render a `StatusMetricsStrip` at the given size.
+fn render_strip(strip: &StatusMetricsStrip<'_>, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(strip, frame.size());
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
+/// Render a `ControlHintsBar` at the given size.
+fn render_hints(bar: &ControlHintsBar, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(bar, frame.size());
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -47,7 +78,7 @@ fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
     rows.join("\n")
 }
 
-// ── 80×24 ────────────────────────────────────────────────────────────────────
+// ── SubtitlePane — 80×24 ─────────────────────────────────────────────────────
 
 #[test]
 fn snapshot_80x24_empty() {
@@ -79,7 +110,7 @@ fn snapshot_80x24_long_line_wraps() {
     insta::assert_snapshot!("80x24_long_line_wraps", render_pane(&pane, 80, 24));
 }
 
-// ── 120×40 ───────────────────────────────────────────────────────────────────
+// ── SubtitlePane — 120×40 ────────────────────────────────────────────────────
 
 #[test]
 fn snapshot_120x40_empty() {
@@ -105,7 +136,7 @@ fn snapshot_120x40_with_pairs() {
     insta::assert_snapshot!("120x40_with_pairs", render_pane(&pane, 120, 40));
 }
 
-// ── 200×50 ───────────────────────────────────────────────────────────────────
+// ── SubtitlePane — 200×50 ────────────────────────────────────────────────────
 
 #[test]
 fn snapshot_200x50_empty() {
@@ -129,4 +160,304 @@ fn snapshot_200x50_with_pairs() {
         "\u{65b0}\u{88fd}\u{54c1}\u{306e}\u{767a}\u{5c04}\u{306b}\u{3088}\u{308a}\u{3001}\u{4eca}\u{5f8c}\u{6570}\u{30f6}\u{6708}\u{3082}\u{7d99}\u{7d9a}\u{7684}\u{306a}\u{6210}\u{9577}\u{304c}\u{898b}\u{8fbc}\u{307e}\u{308c}\u{307e}\u{3059}\u{3002}",
     ));
     insta::assert_snapshot!("200x50_with_pairs", render_pane(&pane, 200, 50));
+}
+
+// ── StatusMetricsStrip — compact ─────────────────────────────────────────────
+
+#[test]
+fn snapshot_status_strip_compact_idle() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
+}
+
+#[test]
+fn snapshot_status_strip_compact_listening_tts_on() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: true,
+        target_language: "vi".to_string(),
+        pairs: 7,
+        audio_secs: 42.0,
+        cost_usd: 0.0168,
+        elapsed: "1:23".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!(
+        "status_strip_compact_listening_tts_on",
+        render_strip(&strip, 120, 3)
+    );
+}
+
+#[test]
+fn snapshot_status_strip_compact_restart_notice() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: true,
+        expanded: false,
+    };
+    insta::assert_snapshot!(
+        "status_strip_compact_restart_notice",
+        render_strip(&strip, 120, 3)
+    );
+}
+
+// ── StatusMetricsStrip — new STT states (issue #41) ──────────────────────────
+
+#[test]
+fn snapshot_status_strip_compact_sending() {
+    let stt = SttState::Sending;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 3,
+        audio_secs: 15.0,
+        cost_usd: 0.006,
+        elapsed: "0:30".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
+}
+
+#[test]
+fn snapshot_status_strip_compact_waiting() {
+    let stt = SttState::Waiting;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 5,
+        audio_secs: 25.0,
+        cost_usd: 0.01,
+        elapsed: "0:45".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
+}
+
+#[test]
+fn snapshot_status_strip_compact_error() {
+    let stt = SttState::Error("network timeout".to_string());
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:05".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
+}
+
+// ── StatusMetricsStrip — expanded ────────────────────────────────────────────
+
+#[test]
+fn snapshot_status_strip_expanded_idle() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: true,
+    };
+    insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 5));
+}
+
+#[test]
+fn snapshot_status_strip_expanded_listening() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: true,
+        target_language: "vi".to_string(),
+        pairs: 12,
+        audio_secs: 180.0,
+        cost_usd: 0.072,
+        elapsed: "3:00".to_string(),
+        show_restart: false,
+        expanded: true,
+    };
+    insta::assert_snapshot!(
+        "status_strip_expanded_listening",
+        render_strip(&strip, 80, 5)
+    );
+}
+
+// ── StatusMetricsStrip — adaptive layout (issue #60) ─────────────────────────
+
+/// Narrow terminal (< 80 cols): abbreviated labels.
+#[test]
+fn snapshot_status_strip_narrow_abbreviated() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: true,
+        target_language: "en".to_string(),
+        pairs: 4,
+        audio_secs: 20.0,
+        cost_usd: 0.008,
+        elapsed: "0:20".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!(
+        "status_strip_narrow_abbreviated",
+        render_strip(&strip, 60, 3)
+    );
+}
+
+/// Wide terminal (>= 120 cols): full labels with audio seconds.
+#[test]
+fn snapshot_status_strip_wide_full_labels() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "fr".to_string(),
+        pairs: 8,
+        audio_secs: 60.0,
+        cost_usd: 0.024,
+        elapsed: "1:00".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    insta::assert_snapshot!(
+        "status_strip_wide_full_labels",
+        render_strip(&strip, 130, 3)
+    );
+}
+
+// ── ControlHintsBar — always shown (issue #65) ───────────────────────────────
+
+#[test]
+fn snapshot_hints_bar_tts_off() {
+    let bar = ControlHintsBar { tts_on: false };
+    insta::assert_snapshot!("hints_bar_tts_off", render_hints(&bar, 80, 1));
+}
+
+#[test]
+fn snapshot_hints_bar_tts_on() {
+    let bar = ControlHintsBar { tts_on: true };
+    insta::assert_snapshot!("hints_bar_tts_on", render_hints(&bar, 80, 1));
+}
+
+/// Narrow terminal: abbreviated hints bar.
+#[test]
+fn snapshot_hints_bar_narrow() {
+    let bar = ControlHintsBar { tts_on: false };
+    insta::assert_snapshot!("hints_bar_narrow", render_hints(&bar, 60, 1));
+}
+
+// ── Behavioral assertions (non-snapshot) ─────────────────────────────────────
+
+/// The hints bar text always includes the required controls (issue #64/#65).
+#[test]
+fn hints_bar_contains_required_controls() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let backend = TestBackend::new(120, 1);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(&ControlHintsBar { tts_on: false }, frame.size());
+        })
+        .unwrap();
+    let rendered = buffer_to_string(terminal.backend().buffer());
+    assert!(rendered.contains("Space"), "hints bar must include Space");
+    assert!(
+        rendered.contains("lang") || rendered.contains('L'),
+        "hints bar must include L/lang"
+    );
+    assert!(
+        rendered.contains("reload") || rendered.contains('R'),
+        "hints bar must include R/reload"
+    );
+    assert!(
+        rendered.contains("help") || rendered.contains('?'),
+        "hints bar must include ?/help"
+    );
+    assert!(
+        rendered.contains("quit") || rendered.contains('q'),
+        "hints bar must include q/quit"
+    );
+}
+
+/// SttState::Error carries its message through to the label (issue #41).
+#[test]
+fn stt_error_state_label_contains_message() {
+    let stt = SttState::Error("auth failed".to_string());
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    let rendered = render_strip(&strip, 120, 3);
+    assert!(
+        rendered.contains("auth failed"),
+        "compact strip must show error message; got: {rendered:?}"
+    );
+}
+
+/// Narrow strip uses abbreviated labels (issue #60).
+#[test]
+fn narrow_strip_uses_abbreviated_labels() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: false,
+    };
+    let narrow = render_strip(&strip, 60, 3);
+    let wide = render_strip(&strip, 120, 3);
+    // Narrow version should not contain the full "listening" word.
+    assert!(
+        !narrow.contains("listening"),
+        "narrow strip must abbreviate; got: {narrow:?}"
+    );
+    // Wide version should contain the full label.
+    assert!(
+        wide.contains("listening"),
+        "wide strip must use full label; got: {wide:?}"
+    );
 }

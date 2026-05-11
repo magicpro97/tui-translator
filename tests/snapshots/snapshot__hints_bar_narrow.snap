@@ -1,0 +1,5 @@
+---
+source: tests/snapshot.rs
+expression: "render_hints(&bar, 60, 1)"
+---
+ ?  Spc  T  L  M  R  Q
