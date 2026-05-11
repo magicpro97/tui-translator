@@ -13,6 +13,8 @@
 // Stub types used in Phase 1–4.
 #![allow(dead_code)]
 
+pub mod playback;
+
 /// Runtime state of the pipeline.  Shown in the status bar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineState {
