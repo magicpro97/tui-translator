@@ -20,7 +20,10 @@ use ratatui::{
 };
 use std::{
     io,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -43,6 +46,20 @@ fn main() -> Result<()> {
         .init();
 
     tracing::info!("tui-translator starting (Phase 0)");
+
+    // Load configuration, falling back to built-in defaults if config.json is absent.
+    let cfg_path = config_json_path();
+    let cfg = config::load(&cfg_path)?;
+    let restart_required = Arc::new(AtomicBool::new(false));
+
+    // Start the hot-reload watcher; keep the receiver alive for the process lifetime.
+    let _config_rx = match config::start_watcher(&cfg_path, cfg, restart_required.clone()) {
+        Ok(rx) => Some(rx),
+        Err(err) => {
+            tracing::warn!("config hot-reload unavailable: {err:#}");
+            None
+        }
+    };
 
     let state = AppState::new();
 
@@ -71,12 +88,21 @@ fn main() -> Result<()> {
         }
     }
 
-    let result = run_tui(&state);
+    let result = run_tui(&state, &restart_required);
 
     // Cancel background tasks without waiting for them to finish.
     rt.shutdown_background();
 
     result
+}
+
+/// Returns the path to `config.json`, resolved relative to the running
+/// executable so the file stays portable regardless of the working directory.
+fn config_json_path() -> std::path::PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("config.json")))
+        .unwrap_or_else(|| std::path::PathBuf::from("config.json"))
 }
 
 fn overwrite_device_name(slot: &Arc<Mutex<String>>, next_name: &str) {
@@ -93,9 +119,9 @@ fn overwrite_device_name(slot: &Arc<Mutex<String>>, next_name: &str) {
 }
 
 /// Run the minimal terminal interface for Phase 0.
-fn run_tui(state: &AppState) -> Result<()> {
+fn run_tui(state: &AppState, restart_required: &Arc<AtomicBool>) -> Result<()> {
     let mut terminal_guard = TerminalGuard::enter()?;
-    event_loop(terminal_guard.terminal_mut(), state)
+    event_loop(terminal_guard.terminal_mut(), state, restart_required)
 }
 
 /// Main event loop: draw the UI, then poll for keyboard input.
@@ -105,12 +131,14 @@ fn run_tui(state: &AppState) -> Result<()> {
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &AppState,
+    restart_required: &Arc<AtomicBool>,
 ) -> Result<()> {
     loop {
         let level = state.level_ratio();
         let dev_name = state.device_name_str();
+        let show_restart_notice = restart_required.load(Ordering::Relaxed);
 
-        terminal.draw(|frame| draw_ui(frame, level, &dev_name))?;
+        terminal.draw(|frame| draw_ui(frame, level, &dev_name, show_restart_notice))?;
 
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
@@ -183,7 +211,12 @@ impl Drop for TerminalGuard {
 ///
 /// - `audio_level`: current RMS energy as a ratio in `[0.0, 1.0]`.
 /// - `device_name`: human-readable name of the active capture device.
-fn draw_ui(frame: &mut ratatui::Frame, audio_level: f64, device_name: &str) {
+fn draw_ui(
+    frame: &mut ratatui::Frame,
+    audio_level: f64,
+    device_name: &str,
+    show_restart_notice: bool,
+) {
     let area = frame.size();
 
     let chunks = Layout::default()
@@ -245,10 +278,15 @@ fn draw_ui(frame: &mut ratatui::Frame, audio_level: f64, device_name: &str) {
     frame.render_widget(content, chunks[2]);
 
     // Status bar
-    let status =
-        Paragraph::new(" Status: loading  |  Phase: 0 — skeleton  |  Press q or Ctrl+C to quit ")
-            .style(Style::default().fg(Color::DarkGray))
-            .alignment(Alignment::Left)
-            .block(Block::default().borders(Borders::ALL));
+    let mut status_text = " Status: loading  |  Phase: 0 — skeleton ".to_string();
+    if show_restart_notice {
+        status_text.push_str(" |  ⚠ Restart required for some settings");
+    }
+    status_text.push_str("  |  Press q or Ctrl+C to quit ");
+
+    let status = Paragraph::new(status_text)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Left)
+        .block(Block::default().borders(Borders::ALL));
     frame.render_widget(status, chunks[3]);
 }
