@@ -12,7 +12,7 @@
 #![allow(async_fn_in_trait)]
 
 use super::{
-    AudioChunk, MtProvider, MtResult, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,
+    MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,
 };
 
 // ── Google STT ───────────────────────────────────────────────────────────────
@@ -34,10 +34,10 @@ impl GoogleSttProvider {
 impl SttProvider for GoogleSttProvider {
     async fn transcribe(
         &self,
-        _chunk: &AudioChunk,
+        _chunk: &PcmChunk,
         _language_code: &str,
     ) -> Result<SttResult, ProviderError> {
-        Err(ProviderError::ServiceUnavailable(
+        Err(ProviderError::Unimplemented(
             "GoogleSttProvider is not yet implemented (Phase 2)".to_string(),
         ))
     }
@@ -66,7 +66,7 @@ impl MtProvider for GoogleMtProvider {
         _source_language: &str,
         _target_language: &str,
     ) -> Result<MtResult, ProviderError> {
-        Err(ProviderError::ServiceUnavailable(
+        Err(ProviderError::Unimplemented(
             "GoogleMtProvider is not yet implemented (Phase 3)".to_string(),
         ))
     }
@@ -94,7 +94,7 @@ impl TtsProvider for GoogleTtsProvider {
         _text: &str,
         _language_code: &str,
     ) -> Result<TtsResult, ProviderError> {
-        Err(ProviderError::ServiceUnavailable(
+        Err(ProviderError::Unimplemented(
             "GoogleTtsProvider is not yet implemented (Phase 4)".to_string(),
         ))
     }

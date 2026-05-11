@@ -12,7 +12,7 @@
 mod providers;
 
 use providers::{
-    AudioChunk, MtProvider, MtResult, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,
+    MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, SttResult, TtsProvider, TtsResult,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ struct MockSttProvider;
 impl SttProvider for MockSttProvider {
     async fn transcribe(
         &self,
-        _chunk: &AudioChunk,
+        _chunk: &PcmChunk,
         _language_code: &str,
     ) -> Result<SttResult, ProviderError> {
         Ok(SttResult {
@@ -66,8 +66,8 @@ impl TtsProvider for MockTtsProvider {
     }
 }
 
-fn empty_chunk() -> AudioChunk {
-    AudioChunk {
+fn empty_chunk() -> PcmChunk {
+    PcmChunk {
         samples: Vec::new(),
         sequence_number: 0,
     }
@@ -108,11 +108,11 @@ async fn mock_stt_ignores_language_code() {
 async fn mock_stt_ignores_chunk_contents() {
     let provider = MockSttProvider;
 
-    let small = AudioChunk {
+    let small = PcmChunk {
         samples: vec![0i16; 16],
         sequence_number: 1,
     };
-    let large = AudioChunk {
+    let large = PcmChunk {
         samples: vec![0i16; 2048],
         sequence_number: 2,
     };
@@ -194,6 +194,10 @@ fn provider_error_variants_display_correctly() {
         (
             ProviderError::InvalidInput("empty audio".to_string()),
             "invalid input: empty audio",
+        ),
+        (
+            ProviderError::Unimplemented("phase missing".to_string()),
+            "provider not implemented: phase missing",
         ),
         (
             ProviderError::ServiceUnavailable("503".to_string()),

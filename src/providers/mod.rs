@@ -53,6 +53,11 @@ pub enum ProviderError {
     #[error("invalid input: {0}")]
     InvalidInput(String),
 
+    /// The provider contract exists, but this concrete implementation has not
+    /// been built yet.
+    #[error("provider not implemented: {0}")]
+    Unimplemented(String),
+
     /// The remote service is down or returned an unexpected response.
     #[error("service unavailable: {0}")]
     ServiceUnavailable(String),
@@ -68,13 +73,14 @@ pub enum ProviderError {
 ///
 /// Audio is represented as signed 16-bit PCM samples so the compiler enforces
 /// the element width and alignment expected by STT providers.
-/// The sequence number is assigned by the audio capture layer and increases
-/// monotonically throughout a session.
+/// The sequence number is assigned by the pipeline when preparing provider
+/// requests and increases monotonically throughout a session.
 #[derive(Debug, Clone)]
-pub struct AudioChunk {
+pub struct PcmChunk {
     /// Raw PCM audio samples (16 kHz, mono, signed 16-bit).
     pub samples: Vec<i16>,
-    /// Monotonically increasing sequence number from the capture layer.
+    /// Monotonically increasing sequence number assigned by the pipeline when
+    /// preparing provider requests.
     pub sequence_number: u64,
 }
 
@@ -114,13 +120,13 @@ pub struct TtsResult {
 
 /// Speech-to-text provider.
 ///
-/// Accepts an [`AudioChunk`] and returns an [`SttResult`] containing the
+/// Accepts a [`PcmChunk`] and returns a [`SttResult`] containing the
 /// recognised text and a confidence score.
 pub trait SttProvider: Send + Sync {
     /// Transcribe `chunk` assuming speech in `language_code` (BCP-47).
     async fn transcribe(
         &self,
-        chunk: &AudioChunk,
+        chunk: &PcmChunk,
         language_code: &str,
     ) -> Result<SttResult, ProviderError>;
 }
