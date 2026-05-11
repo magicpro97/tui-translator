@@ -25,7 +25,7 @@
 //! - [`SilentSource`] — stub used in tests / non-Windows CI
 //! - [`SilenceDetector`] — energy-gate that suppresses silent chunks
 //! - [`start_capture`] — spawns WASAPI loopback (Windows) or streams silence
-//!   (non-Windows), returning an [`tokio::sync::mpsc::Receiver<AudioChunk>`]
+//!   (non-Windows), returning a [`CaptureStream`]
 //!
 //! Non-Windows builds compile cleanly via `#[cfg(windows)]` gates.
 
@@ -83,6 +83,23 @@ impl AudioChunk {
             .sum();
         (sum_sq / self.samples.len() as f64).sqrt() as f32
     }
+}
+
+/// Static metadata about the capture source for the current session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptureInfo {
+    /// Human-readable device name for status reporting.
+    pub device_name: String,
+    /// Native sample rate reported by the source device before resampling.
+    pub native_sample_rate: u32,
+}
+
+/// Capture session handle returned by [`start_capture`].
+pub struct CaptureStream {
+    /// Immutable metadata about the underlying capture source.
+    pub info: CaptureInfo,
+    /// Stream of resampled audio chunks ready for downstream processing.
+    pub receiver: mpsc::Receiver<AudioChunk>,
 }
 
 // ─── AudioSource trait ───────────────────────────────────────────────────────
@@ -190,22 +207,22 @@ impl SilenceDetector {
 /// Channel buffer capacity (number of [`AudioChunk`]s buffered).
 const CHANNEL_CAPACITY: usize = 64;
 
-/// Spawn the audio capture task and return the receiving end of the chunk
-/// channel.
+/// Spawn the audio capture task and return the audio stream together with
+/// source metadata for the TUI status bar.
 ///
 /// On **Windows** this opens the default audio render (speakers) endpoint in
 /// loopback mode using WASAPI, resamples the native PCM stream to 16 kHz
 /// mono via `rubato`, applies the silence gate, and forwards chunks over the
-/// returned channel.
+/// returned channel plus source metadata.
 ///
-/// On **non-Windows** the function returns a channel that delivers 500 ms
+/// On **non-Windows** the function returns a stream that delivers 500 ms
 /// silence chunks at real-time pace.  This is enough for integration-test
 /// smoke runs without audio hardware.
-pub async fn start_capture(silence_threshold: f32) -> Result<mpsc::Receiver<AudioChunk>> {
+pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
     let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
 
     #[cfg(windows)]
-    wasapi_capture::spawn(tx, silence_threshold)?;
+    let info = wasapi_capture::spawn(tx, silence_threshold)?;
 
     #[cfg(not(windows))]
     {
@@ -220,9 +237,16 @@ pub async fn start_capture(silence_threshold: f32) -> Result<mpsc::Receiver<Audi
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         });
+
+        let info = CaptureInfo {
+            device_name: "silent (stub)".to_string(),
+            native_sample_rate: 16_000,
+        };
+
+        return Ok(CaptureStream { info, receiver: rx });
     }
 
-    Ok(rx)
+    Ok(CaptureStream { info, receiver: rx })
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -351,16 +375,20 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn non_windows_capture_emits_multiple_chunks() {
-        let mut rx = start_capture(DEFAULT_SILENCE_THRESHOLD).await.unwrap();
+        let mut capture = start_capture(DEFAULT_SILENCE_THRESHOLD).await.unwrap();
+        assert_eq!(capture.info.device_name, "silent (stub)");
+        assert_eq!(capture.info.native_sample_rate, 16_000);
 
-        let first = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        let second = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let first =
+            tokio::time::timeout(std::time::Duration::from_secs(1), capture.receiver.recv())
+                .await
+                .unwrap()
+                .unwrap();
+        let second =
+            tokio::time::timeout(std::time::Duration::from_secs(1), capture.receiver.recv())
+                .await
+                .unwrap()
+                .unwrap();
 
         assert_eq!(first.samples.len(), 8_000);
         assert_eq!(second.samples.len(), 8_000);

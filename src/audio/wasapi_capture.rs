@@ -36,6 +36,8 @@
 //! ```
 
 use std::collections::VecDeque;
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use rubato::{
@@ -44,7 +46,7 @@ use rubato::{
 use tokio::sync::mpsc;
 use wasapi::{get_default_device, initialize_mta, Direction, ShareMode};
 
-use super::{AudioChunk, SilenceDetector};
+use super::{AudioChunk, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
 
 /// Target output sample rate (required by Google Speech-to-Text).
 const TARGET_RATE: u32 = 16_000;
@@ -58,21 +60,39 @@ const EVENT_TIMEOUT_MS: u32 = 1_000;
 /// Spawn the WASAPI loopback capture thread.
 ///
 /// Returns immediately; the thread runs until the channel receiver is dropped.
-pub(super) fn spawn(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Result<()> {
+pub(super) fn spawn(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Result<CaptureInfo> {
+    let (init_tx, init_rx) = sync_channel(1);
+    let error_tx = init_tx.clone();
+
     std::thread::Builder::new()
         .name("wasapi-loopback".into())
         .spawn(move || {
-            if let Err(e) = capture_loop(tx, silence_threshold) {
+            if let Err(e) = capture_loop(tx, silence_threshold, init_tx) {
+                let _ = error_tx.send(Err(format!("{e:#}")));
                 tracing::error!("WASAPI capture thread failed: {e:#}");
             }
         })
         .map_err(|e| anyhow!("spawn wasapi-loopback thread: {e}"))?;
-    Ok(())
+
+    match init_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(info)) => Ok(info),
+        Ok(Err(message)) => Err(anyhow!("WASAPI capture initialization failed: {message}")),
+        Err(RecvTimeoutError::Timeout) => Err(anyhow!(
+            "timed out waiting for WASAPI capture initialization"
+        )),
+        Err(RecvTimeoutError::Disconnected) => Err(anyhow!(
+            "WASAPI capture thread exited before reporting device information"
+        )),
+    }
 }
 
 /// The capture loop — runs for the lifetime of the application on its own
 /// OS thread.
-fn capture_loop(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Result<()> {
+fn capture_loop(
+    tx: mpsc::Sender<AudioChunk>,
+    silence_threshold: f32,
+    init_tx: SyncSender<std::result::Result<CaptureInfo, String>>,
+) -> Result<()> {
     // COM must be initialized on every thread that uses WASAPI.
     initialize_mta().map_err(|e| anyhow!("initialize COM MTA: {e}"))?;
 
@@ -151,7 +171,12 @@ fn capture_loop(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Result<
     )
     .map_err(|e| anyhow!("create rubato resampler: {e}"))?;
 
-    let mut silence_detector = SilenceDetector::new(silence_threshold, 500);
+    let _ = init_tx.send(Ok(CaptureInfo {
+        device_name: device_name.clone(),
+        native_sample_rate: native_rate,
+    }));
+
+    let mut silence_detector = SilenceDetector::new(silence_threshold, DEFAULT_SILENCE_GATE_MS);
 
     // Carry buffer: unprocessed mono-f32 samples that didn't fill a full chunk.
     let mut carry: Vec<f32> = Vec::with_capacity(FRAMES_PER_CHUNK * 2);
@@ -204,8 +229,8 @@ fn capture_loop(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Result<
 
 /// Convert a raw byte deque of interleaved PCM into a mono `Vec<f32>`.
 ///
-/// Mixes down all channels by averaging.  Supports 16-bit integer and
-/// 32-bit float sample formats; other bit depths are silently skipped.
+/// Mixes down all channels by averaging. Supports 16-bit integer and
+/// 32-bit float sample formats; other bit depths are zero-filled.
 fn raw_bytes_to_mono_f32(data: &VecDeque<u8>, channels: usize, bits: u16) -> Vec<f32> {
     if channels == 0 || data.is_empty() {
         return vec![];
@@ -228,13 +253,19 @@ fn raw_bytes_to_mono_f32(data: &VecDeque<u8>, channels: usize, bits: u16) -> Vec
         let mono: f32 = if bits == 32 {
             let sum: f32 = frame
                 .chunks_exact(4)
-                .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                .map(|b| match b {
+                    [a, b, c, d] => f32::from_le_bytes([*a, *b, *c, *d]),
+                    _ => 0.0,
+                })
                 .sum();
             sum / channels as f32
         } else {
             let sum: f32 = frame
                 .chunks_exact(2)
-                .map(|b| i16::from_le_bytes(b.try_into().unwrap()) as f32 / i16::MAX as f32)
+                .map(|b| match b {
+                    [a, b] => i16::from_le_bytes([*a, *b]) as f32 / i16::MAX as f32,
+                    _ => 0.0,
+                })
                 .sum();
             sum / channels as f32
         };
