@@ -88,7 +88,7 @@ struct SpeechRecognitionAlternative {
 /// use tui_translator::providers::{PcmChunk, SttProvider};
 ///
 /// # tokio_test::block_on(async {
-/// let provider = GoogleSttProvider::new(std::env::var("GOOGLE_API_KEY").unwrap());
+/// let provider = GoogleSttProvider::new(std::env::var("GOOGLE_API_KEY").unwrap()).unwrap();
 /// let chunk = PcmChunk { samples: vec![0i16; 16_000], sequence_number: 0 };
 /// let result = provider.transcribe(&chunk, "en-US").await.unwrap();
 /// println!("{}", result.text);
@@ -101,14 +101,24 @@ pub struct GoogleSttProvider {
 
 impl GoogleSttProvider {
     /// Create a new provider that authenticates with `api_key`.
-    pub fn new(api_key: impl Into<String>) -> Self {
-        Self {
-            api_key: api_key.into(),
-            client: Client::builder()
-                .timeout(Duration::from_secs(30))
-                .build()
-                .expect("GoogleSttProvider HTTP client should build"),
+    pub fn new(api_key: impl Into<String>) -> Result<Self, ProviderError> {
+        let api_key = api_key.into();
+        if api_key.trim().is_empty() {
+            return Err(ProviderError::InvalidInput(
+                "Google STT API key must not be empty".to_string(),
+            ));
         }
+
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|error| {
+                ProviderError::NetworkError(format!(
+                    "failed to build Google STT HTTP client: {error}"
+                ))
+            })?;
+
+        Ok(Self { api_key, client })
     }
 }
 
@@ -280,5 +290,15 @@ mod tests {
         let err = classify_http_error(StatusCode::SERVICE_UNAVAILABLE, "backend overload");
 
         assert!(matches!(err, ProviderError::ServiceUnavailable(_)));
+    }
+
+    #[test]
+    fn new_rejects_empty_api_key() {
+        let err = match GoogleSttProvider::new("   ") {
+            Ok(_) => panic!("expected empty Google API key to be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(matches!(err, ProviderError::InvalidInput(_)));
     }
 }

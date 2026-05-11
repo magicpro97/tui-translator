@@ -7,9 +7,9 @@
 // Stub implementations — real code arrives in Phase 3–4.
 #![allow(dead_code)]
 #![allow(async_fn_in_trait)]
-#![allow(unused_imports)]
 
 pub mod stt;
+#[allow(unused_imports)]
 pub use stt::GoogleSttProvider;
 
 use super::{MtProvider, MtResult, ProviderError, TtsProvider, TtsResult};

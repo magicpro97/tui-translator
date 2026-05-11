@@ -106,7 +106,7 @@ async fn real_api_google_stt_fixture_returns_http_200() {
         }
     };
 
-    let provider = GoogleSttProvider::new(key);
+    let provider = GoogleSttProvider::new(key).expect("valid Google API key should build provider");
     let chunk = make_fixture_chunk();
 
     let result = provider.transcribe(&chunk, "en-US").await;
@@ -149,7 +149,8 @@ async fn real_api_google_stt_bad_key_returns_auth_error() {
 
     use crate::providers::ProviderError;
 
-    let provider = GoogleSttProvider::new("INVALID_KEY_FOR_CONTRACT_TEST");
+    let provider = GoogleSttProvider::new("INVALID_KEY_FOR_CONTRACT_TEST")
+        .expect("static invalid key should still build provider");
     let chunk = make_fixture_chunk();
 
     let result = provider.transcribe(&chunk, "en-US").await;
@@ -166,7 +167,8 @@ async fn real_api_google_stt_bad_key_returns_auth_error() {
 #[tokio::test]
 async fn google_stt_empty_chunk_returns_invalid_input() {
     // This test does NOT require an API key because the error is local.
-    let provider = GoogleSttProvider::new("dummy_key_not_used");
+    let provider =
+        GoogleSttProvider::new("dummy_key_not_used").expect("dummy key should build provider");
     let empty = PcmChunk {
         samples: vec![],
         sequence_number: 0,
