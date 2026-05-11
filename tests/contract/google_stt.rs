@@ -17,7 +17,7 @@
 //! English speech. The live contract test therefore expects both HTTP 200 and a
 //! non-empty transcript.
 
-use crate::providers::google::GoogleSttProvider;
+use crate::providers::google::stt::GoogleSttProvider;
 use crate::providers::{PcmChunk, SttProvider};
 
 const FIXTURE_PATH: &str = concat!(

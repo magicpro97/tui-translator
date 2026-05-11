@@ -9,9 +9,6 @@
 #![allow(async_fn_in_trait)]
 
 pub mod stt;
-#[allow(unused_imports)]
-pub use stt::GoogleSttProvider;
-
 use super::{MtProvider, MtResult, ProviderError, TtsProvider, TtsResult};
 
 // ── Google MT ────────────────────────────────────────────────────────────────

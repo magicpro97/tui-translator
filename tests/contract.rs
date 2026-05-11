@@ -9,7 +9,7 @@
 //! the mock-only gate.
 //!
 //! # Submodules
-//! - [`google_stt`] — live-API contract tests for [`providers::google::GoogleSttProvider`].
+//! - [`google_stt`] — live-API contract tests for [`providers::google::stt::GoogleSttProvider`].
 
 #[path = "../src/providers/mod.rs"]
 mod providers;
