@@ -117,6 +117,12 @@ impl AppConfig {
                  supply a valid key or omit the field entirely"
             );
         }
+        if matches!(&self.tts_output_device, Some(device) if device.trim().is_empty()) {
+            bail!(
+                "`tts_output_device` must not be empty — \
+                 supply a device name or omit the field entirely"
+            );
+        }
         Ok(())
     }
 

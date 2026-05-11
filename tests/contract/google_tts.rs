@@ -48,6 +48,7 @@ async fn google_tts_whitespace_text_returns_invalid_input() {
 
     let result = provider.synthesise("   \t\n", "en-US").await;
 
+    assert!(result.is_err(), "expected Err for whitespace-only text");
     assert!(
         matches!(result.unwrap_err(), ProviderError::InvalidInput(_)),
         "expected InvalidInput for whitespace-only text"
