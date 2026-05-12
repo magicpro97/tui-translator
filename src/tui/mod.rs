@@ -522,6 +522,9 @@ pub struct AppState {
     pub lang_prompt_active: Arc<AtomicBool>,
     /// Text being typed in the language-change prompt.
     pub lang_input: Mutex<String>,
+    /// BCP-47 source language code forwarded to the STT provider.
+    /// Updated on hot-reload so the running orchestrator sees the new value.
+    pub source_language: Arc<Mutex<String>>,
     /// Currently selected translation target language code.
     pub target_language: Arc<Mutex<String>>,
     /// Current STT engine state; updated by the pipeline.
@@ -535,6 +538,25 @@ pub struct AppState {
     /// Watch channel receiver — the UI draw loop calls `metrics_snapshot()` to
     /// get the latest published value without blocking (issue #61).
     pub metrics_rx: tokio::sync::watch::Receiver<SessionMetrics>,
+
+    // ── Issue #85 — exhausted-retry error surface ─────────────────────────
+    /// Most recent MT or TTS error message (format: `⚠ Translation error: …`
+    /// or `⚠ TTS error: …`).  `None` when the last call at that stage
+    /// succeeded.  Shown in the status/metrics strip.
+    pub pipeline_error_msg: Arc<Mutex<Option<String>>>,
+
+    // ── Issue #86 — AuthError persistent banner ───────────────────────────
+    /// Non-`None` when any provider returned `AuthError`.  Holds the
+    /// human-readable message shown in the persistent banner.  Cleared only
+    /// on application restart; pressing R alone cannot recover a halted
+    /// auth-error state because in-process providers still carry the old
+    /// credential.
+    pub auth_error_banner: Arc<Mutex<Option<String>>>,
+
+    /// `true` while an `AuthError` is in effect and the pipeline is halted.
+    /// Cleared only on application restart; pressing R does not un-halt a
+    /// pipeline stopped by an auth error.
+    pub pipeline_halted: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -551,11 +573,15 @@ impl AppState {
             paused: Arc::new(AtomicBool::new(false)),
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
+            source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("vi".to_string())),
             stt_state: Arc::new(Mutex::new(SttState::default())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
             metrics_tx: Arc::new(metrics_tx),
             metrics_rx,
+            pipeline_error_msg: Arc::new(Mutex::new(None)),
+            auth_error_banner: Arc::new(Mutex::new(None)),
+            pipeline_halted: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -854,7 +880,7 @@ impl Widget for &ControlHintsBar {
 /// Builds the adaptive layout (compact vs. expanded metrics) and renders all
 /// widgets: title bar with STT indicator, audio gauge, subtitle pane,
 /// status/metrics strip, the always-visible control hints bar (issue #65),
-/// and any active overlays (help, language prompt, quit summary).
+/// and any active overlays (help, language prompt, auth-error banner, quit summary).
 pub fn draw_ui(
     frame: &mut ratatui::Frame,
     state: &AppState,
@@ -871,6 +897,16 @@ pub fn draw_ui(
     let target_language = state.target_language();
     let stt = state.stt_state_snapshot();
     let metrics = state.metrics_snapshot();
+    let pipeline_err = state
+        .pipeline_error_msg
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    let auth_banner = state
+        .auth_error_banner
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
 
     // Issue #65: the control hints bar is ALWAYS shown (1 row, no scroll).
     // Build layout — bottom section grows when the metrics panel is expanded.
@@ -906,6 +942,16 @@ pub fn draw_ui(
     if paused {
         title_spans.push(Span::styled(
             "   \u{23f8} PAUSED",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    // Issue #85: surface the latest MT/TTS exhausted-retry error in the title
+    // bar. STT errors still render through `SttState::Error`.
+    if let Some(ref msg) = pipeline_err {
+        title_spans.push(Span::styled(
+            format!("   {msg}"),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -966,6 +1012,12 @@ pub fn draw_ui(
 
     // ── Control hints bar — always rendered (issue #65) ──────────────────────
     frame.render_widget(&ControlHintsBar { tts_on }, chunks[4]);
+
+    // ── Auth-error persistent banner (#86) ───────────────────────────────────
+    // Rendered as a floating overlay so the layout does not shift.
+    if let Some(ref banner_msg) = auth_banner {
+        render_auth_error_banner(frame, area, banner_msg, show_restart_notice);
+    }
 
     // ── Language prompt overlay (issue #64) ──────────────────────────────────
     if lang_active {
@@ -1069,6 +1121,66 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
                 .title(" Change Language ")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::Cyan)),
+        ),
+        panel,
+    );
+}
+
+/// Render a persistent auth-error banner as a floating overlay (#86).
+///
+/// Appears near the top of the terminal, full-width, with a yellow border.
+/// The banner stays until the application is restarted.  When
+/// `restart_required` is true the user has already saved the new key;
+/// when it is false the user still needs to fix `config.json` first.
+/// Both paths require a restart — no in-process recovery is possible.
+pub fn render_auth_error_banner(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    message: &str,
+    restart_required: bool,
+) {
+    let panel_w = area.width;
+    let panel_h = 5u16.min(area.height);
+    let x = area.x;
+    // Anchor just below the title bar and audio gauge (6 rows combined),
+    // clamped so the panel never overflows the screen.
+    let y = area.y + 6u16.min(area.height.saturating_sub(panel_h));
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(Clear, panel);
+
+    let instruction = if restart_required {
+        " Config saved — restart the application to apply the new API key."
+    } else {
+        " Fix the key in config.json, then restart the application to recover."
+    };
+    let lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            " \u{26a0}  API Key Error",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(" {message}"),
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(Span::styled(
+            instruction,
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" \u{26a0} Authentication Error — API calls halted ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Red)),
         ),
         panel,
     );
