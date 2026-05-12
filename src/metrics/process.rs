@@ -54,13 +54,18 @@ pub struct ProcessSnapshot {
 /// The task runs on a dedicated blocking OS thread so that `sysinfo` calls
 /// — which block briefly on OS interfaces — do not stall Tokio workers.
 ///
+/// `handle` must be a handle to the Tokio runtime; this avoids the need for a
+/// current-thread runtime context at the call site, making it safe to call
+/// before the first `Runtime::block_on` invocation.
+///
 /// The returned `JoinHandle` can be stored and awaited during shutdown, but
 /// is typically left to be cancelled when the runtime shuts down.  The task
 /// exits automatically when all receivers of `tx` are dropped.
 pub fn spawn_process_metrics_task(
     tx: watch::Sender<ProcessSnapshot>,
+    handle: &tokio::runtime::Handle,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::task::spawn_blocking(move || {
+    handle.spawn_blocking(move || {
         let refresh_kind = ProcessRefreshKind::new().with_cpu().with_memory();
         let mut sys = System::new_with_specifics(RefreshKind::new().with_processes(refresh_kind));
         let pid = Pid::from_u32(std::process::id());
@@ -106,7 +111,8 @@ mod tests {
     #[tokio::test]
     async fn task_sends_at_least_one_snapshot() {
         let (tx, mut rx) = watch::channel(ProcessSnapshot::default());
-        let handle = spawn_process_metrics_task(tx);
+        let rt_handle = tokio::runtime::Handle::current();
+        let handle = spawn_process_metrics_task(tx, &rt_handle);
 
         // Wait up to 3 seconds for the first snapshot.
         let received = tokio::time::timeout(Duration::from_secs(3), async {

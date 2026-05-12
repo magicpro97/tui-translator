@@ -276,8 +276,11 @@ fn main() -> Result<()> {
     let loss_metrics = Arc::new(LossMetrics::new());
 
     // Issue #79: start the process-metrics polling task and get its receiver.
+    // Pass the runtime handle explicitly so spawn_blocking works before the
+    // first block_on call (tokio::task::spawn_blocking requires a current
+    // runtime context which is not yet established at this point).
     let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
-    spawn_process_metrics_task(process_tx);
+    spawn_process_metrics_task(process_tx, rt.handle());
 
     match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
         Ok(stream) => {

@@ -1,0 +1,165 @@
+//! PTY layout tests — issue #105.
+//!
+//! Tests spawn `tui-translator` in a ConPTY at three standard terminal sizes
+//! (80×24, 120×40, 200×50), wait for the first complete TUI frame to appear,
+//! and assert on the structural layout of that frame.
+//!
+//! ## Layout contract (compact-metrics mode, regardless of audio state)
+//!
+//! ```text
+//! Row  0–2          : title bar  — "TUI Translator" centered, STT state
+//! Row  3–5          : audio level gauge
+//! Row  6–(H-5)      : subtitle pane (bordered, shows "Subtitles" in title)
+//! Row  (H-4)–(H-2)  : metrics strip (compact, 3 rows)
+//! Row  (H-1)        : control hints bar — "Space pause … Q quit"
+//! ```
+//!
+//! All assertions target elements that are **always present** regardless of
+//! whether WASAPI audio capture succeeds or not, so the tests remain
+//! deterministic in CI environments without an audio render device.
+//!
+//! ## Two-keystroke quit
+//!
+//! After pressing `q`, the app draws a session-summary overlay and then waits
+//! for *any* second keystroke before exiting.  Tests therefore send `b"qq"`:
+//! the first `q` triggers the quit path, the second `q` dismisses the summary.
+
+use super::harness::{PtySession, EXIT_TIMEOUT, STARTUP_TIMEOUT};
+use std::time::Duration;
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/// Wait for the initial TUI frame to appear; panic if it does not arrive within
+/// `STARTUP_TIMEOUT`.
+///
+/// The presence of `"Q quit"` in the hints bar is the sentinel: it is always
+/// rendered at widths ≥ 80 columns regardless of audio or API state.
+fn assert_initial_frame(session: &PtySession, label: &str) {
+    assert!(
+        session.wait_for_text("Q quit", STARTUP_TIMEOUT),
+        "{label}: timed out waiting for initial TUI frame — \
+         hints bar text 'Q quit' never appeared in {} s",
+        STARTUP_TIMEOUT.as_secs(),
+    );
+}
+
+/// Assert the structural layout contract for a PTY session of `cols × rows`.
+///
+/// Checked invariants:
+/// 1. Control hints bar occupies the very last row and contains "Space" and "Q
+///    quit".
+/// 2. "TUI Translator" appears in the title-bar area (rows 0–2).
+/// 3. At least one row contains "Subtitles" (the subtitle-pane border title).
+/// 4. No `[SRC]` or `[TGT]` pairs are visible on an empty startup.
+fn check_layout(session: &PtySession, cols: u16, rows: u16) {
+    // ── Control hints bar — must be in the last row ───────────────────────────
+    let last_row = session.row_text(rows - 1);
+    assert!(
+        last_row.contains("Q quit"),
+        "control bar not in bottom row {} at {cols}×{rows}: {:?}",
+        rows - 1,
+        last_row,
+    );
+    assert!(
+        last_row.contains("Space"),
+        "hints bar missing 'Space' in bottom row at {cols}×{rows}: {:?}",
+        last_row,
+    );
+
+    // ── Title bar — must be within the first three rows ───────────────────────
+    let title_area: String = (0..3)
+        .map(|r| session.row_text(r))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        title_area.contains("TUI Translator"),
+        "title 'TUI Translator' not found in rows 0–2 at {cols}×{rows}: {:?}",
+        title_area,
+    );
+
+    // ── Subtitle pane — bordered widget with "Subtitles" title ────────────────
+    let all_rows = session.all_rows();
+    let has_subtitle_border = all_rows.iter().any(|r| r.contains("Subtitles"));
+    assert!(
+        has_subtitle_border,
+        "subtitle pane border ('Subtitles') not found in {cols}×{rows} layout",
+    );
+
+    // ── Empty startup — no subtitle pairs yet ─────────────────────────────────
+    let has_pair_text = all_rows
+        .iter()
+        .any(|r| r.contains("[SRC]") || r.contains("[TGT]"));
+    assert!(
+        !has_pair_text,
+        "unexpected subtitle pair content on empty startup at {cols}×{rows}",
+    );
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn layout_80x24() {
+    let mut session =
+        PtySession::spawn(80, 24, &[]).expect("failed to spawn tui-translator for layout_80x24");
+    assert_initial_frame(&session, "80×24");
+    check_layout(&session, 80, 24);
+    session.send(b"qq").expect("send quit");
+    session.wait_exit(EXIT_TIMEOUT);
+}
+
+#[test]
+fn layout_120x40() {
+    let mut session =
+        PtySession::spawn(120, 40, &[]).expect("failed to spawn tui-translator for layout_120x40");
+    assert_initial_frame(&session, "120×40");
+    check_layout(&session, 120, 40);
+    session.send(b"qq").expect("send quit");
+    session.wait_exit(EXIT_TIMEOUT);
+}
+
+#[test]
+fn layout_200x50() {
+    let mut session =
+        PtySession::spawn(200, 50, &[]).expect("failed to spawn tui-translator for layout_200x50");
+    assert_initial_frame(&session, "200×50");
+    check_layout(&session, 200, 50);
+    session.send(b"qq").expect("send quit");
+    session.wait_exit(EXIT_TIMEOUT);
+}
+
+#[test]
+fn layout_resize_no_crash() {
+    // Start at 120×40 then shrink to 80×24.
+    //
+    // The resize sends a Windows ConPTY resize event; ratatui receives a
+    // `crossterm::event::Event::Resize` and redraws the full layout at the new
+    // size.  The test asserts that the process is still alive (no crash /
+    // no panic) 500 ms after the resize and that it exits cleanly on 'q'.
+    let mut session = PtySession::spawn(120, 40, &[])
+        .expect("failed to spawn tui-translator for layout_resize_no_crash");
+    assert_initial_frame(&session, "120×40 (pre-resize)");
+
+    // Shrink the PTY window.
+    session
+        .resize(80, 24)
+        .expect("PTY resize 120×40 → 80×24 failed");
+
+    // Give the app one full draw cycle (50 ms) plus a margin to redraw.
+    std::thread::sleep(Duration::from_millis(500));
+
+    // The process must still be running — no crash on resize.
+    assert!(
+        session.is_running(),
+        "tui-translator crashed after PTY resize from 120×40 to 80×24",
+    );
+
+    // Trigger clean exit and confirm it succeeds.
+    session.quit_cleanly().expect("send quit after resize");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "expected exit code 0 after resize; got {:?}",
+        code
+    );
+}
