@@ -29,7 +29,7 @@ pub mod playback;
 use std::{
     future::Future,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -580,7 +580,7 @@ mod tests {
     // ── Context builder ───────────────────────────────────────────────────────
 
     fn make_context(shutdown: Arc<AtomicBool>) -> (OrchestratorContext, mpsc::Sender<AudioChunk>) {
-        let (tx, rx) = mpsc::channel::<AudioChunk>(16);
+        let (tx, _rx) = mpsc::channel::<AudioChunk>(16);
         let ctx = OrchestratorContext {
             audio_level: Arc::new(AtomicU32::new(0)),
             stt_state: Arc::new(Mutex::new(SttState::Idle)),

@@ -25,7 +25,7 @@
 //! Phase 2 additions (issues #84–#89):
 //! - Issue #84: `run_orchestrator` drives the STT → MT → TTS pipeline.
 //! - Issue #85: exhausted retries produce visible status messages.
-//! - Issue #86: `AuthError` halts the pipeline until config is reloaded.
+//! - Issue #86: `AuthError` halts the pipeline until the application restarts.
 //! - Issue #87: graceful shutdown — waits up to 2 s for in-progress calls.
 //! - Issue #88: Windows console control handler catches forced terminal close.
 
@@ -59,6 +59,16 @@ use tui::{
 };
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
+
+struct FinishMainArgs<'a> {
+    state: &'a AppState,
+    restart_required: &'a Arc<AtomicBool>,
+    cfg_path: &'a Path,
+    current_config: &'a Arc<Mutex<config::AppConfig>>,
+    playback_service: &'a SharedPlaybackService,
+    orchestrator_join: Option<tokio::task::JoinHandle<()>>,
+    orchestrator_shutdown: Arc<AtomicBool>,
+}
 
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
 //
@@ -259,13 +269,15 @@ fn main() -> Result<()> {
                         orchestrator_join = None;
                         return finish_main(
                             rt,
-                            &state,
-                            &restart_required,
-                            &cfg_path,
-                            &current_config,
-                            &playback_service,
-                            orchestrator_join,
-                            orchestrator_shutdown,
+                            FinishMainArgs {
+                                state: &state,
+                                restart_required: &restart_required,
+                                cfg_path: &cfg_path,
+                                current_config: &current_config,
+                                playback_service: &playback_service,
+                                orchestrator_join,
+                                orchestrator_shutdown,
+                            },
                         );
                     }
                 };
@@ -277,13 +289,15 @@ fn main() -> Result<()> {
                         orchestrator_join = None;
                         return finish_main(
                             rt,
-                            &state,
-                            &restart_required,
-                            &cfg_path,
-                            &current_config,
-                            &playback_service,
-                            orchestrator_join,
-                            orchestrator_shutdown,
+                            FinishMainArgs {
+                                state: &state,
+                                restart_required: &restart_required,
+                                cfg_path: &cfg_path,
+                                current_config: &current_config,
+                                playback_service: &playback_service,
+                                orchestrator_join,
+                                orchestrator_shutdown,
+                            },
                         );
                     }
                 };
@@ -295,13 +309,15 @@ fn main() -> Result<()> {
                         orchestrator_join = None;
                         return finish_main(
                             rt,
-                            &state,
-                            &restart_required,
-                            &cfg_path,
-                            &current_config,
-                            &playback_service,
-                            orchestrator_join,
-                            orchestrator_shutdown,
+                            FinishMainArgs {
+                                state: &state,
+                                restart_required: &restart_required,
+                                cfg_path: &cfg_path,
+                                current_config: &current_config,
+                                playback_service: &playback_service,
+                                orchestrator_join,
+                                orchestrator_shutdown,
+                            },
                         );
                     }
                 };
@@ -348,13 +364,15 @@ fn main() -> Result<()> {
 
     finish_main(
         rt,
-        &state,
-        &restart_required,
-        &cfg_path,
-        &current_config,
-        &playback_service,
-        orchestrator_join,
-        orchestrator_shutdown,
+        FinishMainArgs {
+            state: &state,
+            restart_required: &restart_required,
+            cfg_path: &cfg_path,
+            current_config: &current_config,
+            playback_service: &playback_service,
+            orchestrator_join,
+            orchestrator_shutdown,
+        },
     )
 }
 
@@ -384,16 +402,17 @@ fn spawn_metrics_only_audio_task(
 ///
 /// Extracted from `main` so both the happy path and provider-init error paths
 /// share identical shutdown logic.
-fn finish_main(
-    rt: tokio::runtime::Runtime,
-    state: &AppState,
-    restart_required: &Arc<AtomicBool>,
-    cfg_path: &Path,
-    current_config: &Arc<Mutex<config::AppConfig>>,
-    playback_service: &SharedPlaybackService,
-    orchestrator_join: Option<tokio::task::JoinHandle<()>>,
-    orchestrator_shutdown: Arc<AtomicBool>,
-) -> Result<()> {
+fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<()> {
+    let FinishMainArgs {
+        state,
+        restart_required,
+        cfg_path,
+        current_config,
+        playback_service,
+        orchestrator_join,
+        orchestrator_shutdown,
+    } = args;
+
     // ── Issue #61: metrics observability background task ─────────────────────
     // Publish a fresh `SessionMetrics` snapshot to the watch channel every second
     // so the UI can read it lock-free via `state.metrics_snapshot()`.
@@ -437,11 +456,11 @@ fn finish_main(
     }
 
     let result = run_tui(
-        &state,
-        &restart_required,
-        &cfg_path,
-        &current_config,
-        &playback_service,
+        state,
+        restart_required,
+        cfg_path,
+        current_config,
+        playback_service,
         &keyboard_shutdown,
         key_rx,
     );
@@ -463,7 +482,7 @@ fn finish_main(
     // The alternate screen was left when `run_tui` returned (TerminalGuard::drop).
     // Only print when the user quit intentionally (not on error paths).
     if result.is_ok() {
-        print_session_summary_to_stdout(&state);
+        print_session_summary_to_stdout(state);
     }
 
     result
