@@ -1,4 +1,4 @@
-//! Layer-3 terminal behaviour tests driven by a PTY harness (issues #104–#107).
+//! Layer-3 terminal behaviour tests driven by a PTY harness (issues #104–#108).
 //!
 //! Run with:
 //!   cargo test --test pty -- --nocapture
@@ -7,6 +7,11 @@
 //! ConPTY (via `portable-pty`), parse PTY output through a `vt100` terminal
 //! emulator, and assert on screen layout, clean exit, and graceful degradation
 //! in monochrome environments.
+//!
+//! **CI job (issue #108):** `.github/workflows/ci.yml` contains a dedicated
+//! `pty-test` job that runs this binary on a `windows-latest` GitHub-hosted
+//! runner on every push and pull request.  The job is separate from the
+//! general `test` job so PTY behaviour is always exercised explicitly in CI.
 //!
 //! **Environment notes:**
 //! - Each test starts a fresh process; WASAPI audio initialisation may take up
