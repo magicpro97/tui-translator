@@ -1,0 +1,137 @@
+# Weekly live-API contract test run (Issue #101 / WP-16.03).
+#
+# Runs every Sunday at 02:00 UTC and on manual dispatch.
+#
+# Behaviour when GOOGLE_API_KEY secret is absent:
+#   The `contract-live` job writes a "skipped" step summary and exits
+#   successfully (green).  No issue comment is posted.
+#
+# Behaviour when the secret is present and tests fail:
+#   The `contract-live` job exits with a non-zero status.  The dependent
+#   `notify-failure` job then posts a comment to Issue #101 with a link to
+#   the failed run.
+#
+# Design note — why two jobs instead of continue-on-error?
+#   Using a separate `notify-failure` job with `needs: contract-live` and
+#   `if: always() && needs.contract-live.result == 'failure'` is more
+#   reliable than `continue-on-error` within a single job.  The test step
+#   can fail naturally; GitHub Actions propagates the job result without any
+#   manual output manipulation.  There is no dependency on `job.status`
+#   evaluated mid-run (which is always "in_progress" and therefore wrong).
+
+name: Contract — weekly live-API
+
+on:
+  schedule:
+    - cron: "0 2 * * 0" # Every Sunday at 02:00 UTC
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Job 1: Run live contract tests ─────────────────────────────────────────
+  contract-live:
+    name: Live Google API contract tests
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1a. Graceful skip when the API key secret is absent ────────────────
+      - name: Check for GOOGLE_API_KEY secret
+        id: key_check
+        env:
+          SECRET_VALUE: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -z "${SECRET_VALUE}" ]; then
+            echo "GOOGLE_API_KEY secret is not configured — skipping live contract run."
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "## Contract tests skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "The \`GOOGLE_API_KEY\` repository secret is not set." \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "Add the secret to enable weekly live-API contract verification." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.key_check.outputs.has_key == 'true'
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        if: steps.key_check.outputs.has_key == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        if: steps.key_check.outputs.has_key == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-contract-${{ hashFiles('**/Cargo.lock') }}
+
+      # ── 1b. Run the live-API contract tests ────────────────────────────────
+      # Tests whose names contain `real_api` require the env var; all others
+      # run the local validation path.  If the step fails, the job exits with
+      # a non-zero status and `notify-failure` picks that up.
+      - name: Run live contract tests
+        if: steps.key_check.outputs.has_key == 'true'
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          cargo test --test contract real_api -- --nocapture 2>&1 \
+            | tee contract-test-output.txt
+
+      - name: Write step summary (pass)
+        if: steps.key_check.outputs.has_key == 'true'
+        run: |
+          echo "## Contract tests passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "All live Google API contract tests passed." >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Job 2: Post issue comment on failure ────────────────────────────────────
+  # Runs only when `contract-live` exits with a failure result.
+  # The `always()` guard is required so GitHub does not skip this job
+  # simply because the upstream job failed.
+  notify-failure:
+    name: Post failure comment to Issue #101
+    needs: contract-live
+    if: always() && needs.contract-live.result == 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Post failure comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = [
+              context.serverUrl,
+              context.repo.owner,
+              context.repo.repo,
+              'actions/runs',
+              context.runId,
+            ].join('/');
+            const date = new Date().toISOString().slice(0, 10);
+            const body = [
+              `## \u274c Weekly contract test failure (${date})`,
+              ``,
+              `The scheduled live Google API contract tests failed.`,
+              ``,
+              `**Workflow run:** ${runUrl}`,
+              ``,
+              `Please check the run logs for the failing test names and error`,
+              `messages, then investigate whether this is a provider-side`,
+              `regression or a change in the application\u2019s parsing code.`,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 101,
+              body,
+            });
