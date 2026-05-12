@@ -3,7 +3,9 @@
 //! Starts the `tui-translator` binary with a file-based audio config,
 //! samples process-level metrics every N minutes for the duration of the run,
 //! simulates a 30-second network disconnect at the 2-hour mark, and writes a
-//! structured JSON report to `verification-evidence/soak-report.json`.
+//! structured JSON report to a dated subdirectory under `verification-evidence/`
+//! (e.g. `verification-evidence/2025-07-15/soak-report.json`) so that repeated
+//! runs do not overwrite each other and evidence is organised by date.
 //!
 //! # Usage
 //!
@@ -14,7 +16,7 @@
 //!   --hours <N>          Total run duration in hours (default: 4)
 //!   --sample-mins <N>    Metric sample interval in minutes (default: 5)
 //!   --output <path>      Report output path
-//!                        (default: verification-evidence/soak-report.json)
+//!                        (default: verification-evidence/<YYYY-MM-DD>/soak-report.json)
 //!   --bin <path>         Path to the tui-translator binary
 //!                        (default: CARGO_BIN_EXE_tui-translator env var, then
 //!                         target/release/tui-translator.exe on Windows or
@@ -69,6 +71,25 @@ use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
+/// Usage text printed by `--help`.
+const USAGE: &str = "\
+cargo run --bin run_soak -- [OPTIONS]
+
+Options:
+  --hours <N>          Total run duration in hours (default: 4)
+                       Must be a finite positive number.
+  --sample-mins <N>    Metric sample interval in minutes (default: 5)
+                       Must be a finite positive number.
+  --output <path>      Report output path
+                       (default: verification-evidence/<YYYY-MM-DD>/soak-report.json)
+  --bin <path>         Path to the tui-translator binary
+                       (default: CARGO_BIN_EXE_tui-translator env var, then
+                        target/release/tui-translator[.exe])
+  --dry-run            Fast CI smoke mode: no subprocess spawned, 5 mock
+                       samples taken 1 second apart, report written
+  --help, -h           Print this message and exit
+";
+
 struct Args {
     hours: f64,
     sample_mins: f64,
@@ -82,13 +103,21 @@ impl Args {
         let raw: Vec<String> = std::env::args().skip(1).collect();
         let mut hours = 4.0f64;
         let mut sample_mins = 5.0f64;
-        let mut output = PathBuf::from("verification-evidence/soak-report.json");
+        // Default: dated subdirectory so repeated runs do not overwrite each other.
+        let mut output = PathBuf::from(format!(
+            "verification-evidence/{}/soak-report.json",
+            today_date_stamp()
+        ));
         let mut bin_path: Option<PathBuf> = None;
         let mut dry_run = false;
 
         let mut i = 0;
         while i < raw.len() {
             match raw[i].as_str() {
+                "--help" | "-h" => {
+                    print!("{USAGE}");
+                    std::process::exit(0);
+                }
                 "--hours" => {
                     i += 1;
                     hours = raw
@@ -129,6 +158,10 @@ impl Args {
             i += 1;
         }
 
+        // Validate numeric arguments: must be finite and positive.
+        validate_positive_finite(hours, "--hours")?;
+        validate_positive_finite(sample_mins, "--sample-mins")?;
+
         Ok(Args {
             hours,
             sample_mins,
@@ -137,6 +170,17 @@ impl Args {
             dry_run,
         })
     }
+}
+
+/// Reject `value` that is zero, negative, NaN, or infinite.
+fn validate_positive_finite(value: f64, name: &str) -> Result<()> {
+    if !value.is_finite() {
+        bail!("{name} must be a finite number, got {value}");
+    }
+    if value <= 0.0 {
+        bail!("{name} must be a positive number, got {value}");
+    }
+    Ok(())
 }
 
 // ── Report types ──────────────────────────────────────────────────────────────
@@ -279,6 +323,14 @@ fn unix_timestamp_secs() -> u64 {
         .as_secs()
 }
 
+/// Return today's UTC date as `"YYYY-MM-DD"` for use in output paths.
+fn today_date_stamp() -> String {
+    let secs = unix_timestamp_secs();
+    let days = secs / 86400;
+    let (y, m, d) = days_to_ymd(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 /// Return the current UTC time as a simple ISO-8601 string (no fractional
 /// seconds), e.g. `"2025-01-15T12:34:56Z"`.
 fn utc_now_iso8601() -> String {
@@ -338,20 +390,28 @@ fn poll_process(sys: &mut System, pid: u32) -> (Option<f32>, Option<f64>) {
 ///
 /// The config uses `"audio_source": "file"` to bypass WASAPI capture and
 /// replay the WAV fixture instead (issue #110).
+///
+/// Path characters (including Windows backslashes) are escaped correctly
+/// because the struct is serialised via `serde_json` rather than by hand.
 fn write_soak_config(dir: &Path, fixture_path: &str) -> Result<PathBuf> {
+    #[derive(Serialize)]
+    struct SoakConfig<'a> {
+        source_language: &'a str,
+        target_language: &'a str,
+        audio_source: &'a str,
+        audio_file_path: &'a str,
+        tts_enabled: bool,
+    }
+
     let cfg_path = dir.join("soak-config.json");
-    // Escape the path for JSON (backslashes on Windows).
-    let escaped = fixture_path.replace('\\', "\\\\");
-    let json = format!(
-        r#"{{
-  "source_language": "ja-JP",
-  "target_language": "vi",
-  "audio_source": "file",
-  "audio_file_path": "{escaped}",
-  "tts_enabled": false
-}}
-"#
-    );
+    let config = SoakConfig {
+        source_language: "ja-JP",
+        target_language: "vi",
+        audio_source: "file",
+        audio_file_path: fixture_path,
+        tts_enabled: false,
+    };
+    let json = serde_json::to_string_pretty(&config).context("failed to serialise soak config")?;
     std::fs::write(&cfg_path, json)
         .with_context(|| format!("cannot write soak config to {}", cfg_path.display()))?;
     Ok(cfg_path)
@@ -804,6 +864,59 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["audio_source"], "file");
         assert!(v["audio_file_path"].is_string());
+    }
+
+    /// Windows paths with backslashes must round-trip correctly through serde_json.
+    #[test]
+    fn soak_config_json_escapes_windows_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let windows_path = r"C:\Users\foo\soak_audio.wav";
+        let path = write_soak_config(dir.path(), windows_path).unwrap();
+        let json = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            v["audio_file_path"], windows_path,
+            "backslash path must round-trip correctly"
+        );
+    }
+
+    #[test]
+    fn validate_positive_finite_rejects_zero() {
+        assert!(validate_positive_finite(0.0, "--hours").is_err());
+    }
+
+    #[test]
+    fn validate_positive_finite_rejects_negative() {
+        assert!(validate_positive_finite(-1.0, "--hours").is_err());
+    }
+
+    #[test]
+    fn validate_positive_finite_rejects_nan() {
+        assert!(validate_positive_finite(f64::NAN, "--hours").is_err());
+    }
+
+    #[test]
+    fn validate_positive_finite_rejects_infinity() {
+        assert!(validate_positive_finite(f64::INFINITY, "--hours").is_err());
+        assert!(validate_positive_finite(f64::NEG_INFINITY, "--hours").is_err());
+    }
+
+    #[test]
+    fn validate_positive_finite_accepts_positive_finite() {
+        assert!(validate_positive_finite(4.0, "--hours").is_ok());
+        assert!(validate_positive_finite(0.5, "--sample-mins").is_ok());
+    }
+
+    #[test]
+    fn today_date_stamp_looks_like_iso_date() {
+        let stamp = today_date_stamp();
+        assert_eq!(
+            stamp.len(),
+            10,
+            "stamp must be YYYY-MM-DD (10 chars); got: {stamp}"
+        );
+        assert_eq!(&stamp[4..5], "-");
+        assert_eq!(&stamp[7..8], "-");
     }
 
     #[test]

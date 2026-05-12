@@ -274,14 +274,15 @@ pub async fn start_file_capture(wav_path: &str, silence_threshold: f32) -> Resul
     tokio::task::spawn_blocking(move || {
         let mut detector = SilenceDetector::new(silence_threshold, DEFAULT_SILENCE_GATE_MS);
         loop {
+            // Record the deadline *before* fetching the next chunk so that the
+            // full chunk duration is accounted for even when next_chunk() or the
+            // channel send takes non-trivial time.  This is a monotonic /
+            // deadline-based strategy: sleep = deadline − now, which is always
+            // ≥ 0 and never drifts early the way `duration − 1 ms` would.
+            let chunk_start = std::time::Instant::now();
             match source.next_chunk() {
                 Ok(chunk) => {
-                    // Capture the actual chunk duration *before* potentially
-                    // moving the chunk into the channel.  Tail chunks at the
-                    // end of a WAV loop are shorter than DEFAULT_CHUNK_SAMPLES,
-                    // so pacing from the real duration eliminates the drift that
-                    // would otherwise accumulate over a 4-hour soak run.
-                    let sleep_ms = chunk.duration_ms.saturating_sub(1) as u64;
+                    let chunk_duration = std::time::Duration::from_millis(chunk.duration_ms as u64);
                     // When the silence gate is open, forward the chunk and stop
                     // if the receiver has been dropped.  When the gate is
                     // suppressing, we still need to detect receiver drop so the
@@ -295,7 +296,14 @@ pub async fn start_file_capture(wav_path: &str, silence_threshold: f32) -> Resul
                     if should_stop {
                         break; // receiver dropped — pipeline shutting down
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+                    // Sleep until the deadline, accounting for time already
+                    // spent in next_chunk() and blocking_send().  If we are
+                    // already past the deadline (e.g. the send blocked for
+                    // longer than chunk_duration) we skip the sleep entirely.
+                    let elapsed = chunk_start.elapsed();
+                    if chunk_duration > elapsed {
+                        std::thread::sleep(chunk_duration - elapsed);
+                    }
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "file audio source error; stopping");

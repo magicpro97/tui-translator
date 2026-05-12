@@ -1214,6 +1214,10 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
+    /// Serialises any test that reads or writes `TUI_TRANSLATOR_CONFIG` so
+    /// parallel test threads cannot observe each other's mutations.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn lang_apply_updates_runtime_target_language() {
         let state = AppState::new();
@@ -1549,9 +1553,10 @@ mod tests {
     /// path verbatim so the soak runner's generated config is actually loaded.
     #[test]
     fn config_json_path_uses_env_override() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let var = "TUI_TRANSLATOR_CONFIG";
         let expected = r"C:\tmp\soak-config.json";
-        // SAFETY: single-threaded section; no other thread reads this var.
+        // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
         unsafe { std::env::set_var(var, expected) };
         let path = config_json_path();
         unsafe { std::env::remove_var(var) };
@@ -1566,7 +1571,8 @@ mod tests {
     /// executable-relative path, which must end with `config.json`.
     #[test]
     fn config_json_path_fallback_ends_with_config_json() {
-        // Ensure the var is absent for this test.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
         unsafe { std::env::remove_var("TUI_TRANSLATOR_CONFIG") };
         let path = config_json_path();
         assert_eq!(

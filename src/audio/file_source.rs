@@ -252,6 +252,13 @@ fn parse_wav_pcm(bytes: &[u8], path: &Path) -> Result<Vec<i16>> {
     }
 
     let bytes_per_sample = (WAV_BIT_DEPTH / 8) as usize;
+    if data_size as usize % bytes_per_sample != 0 {
+        bail!(
+            "WAV data chunk size {data_size} is not a multiple of bytes_per_sample \
+             {bytes_per_sample} (BitsPerSample = {WAV_BIT_DEPTH}): {}",
+            path.display()
+        );
+    }
     let n_samples = data_size as usize / bytes_per_sample;
 
     let samples: Vec<i16> = (0..n_samples)
@@ -411,6 +418,26 @@ mod tests {
         let bytes = make_wav(1, 1, 16_000, 16, &samples);
         let decoded = parse_wav_pcm(&bytes, Path::new("ok.wav")).unwrap();
         assert_eq!(decoded, samples);
+    }
+
+    /// A data chunk with an odd byte count (not a multiple of bytes_per_sample)
+    /// must be rejected with a clear error instead of silently truncating.
+    #[test]
+    fn parse_rejects_odd_data_size() {
+        // Build a valid WAV with 4 samples (8 bytes of data), then patch the
+        // data-chunk length to 7 (odd — not a multiple of 2 = bytes_per_sample).
+        let mut bytes = make_wav(1, 1, 16_000, 16, &[0i16; 4]);
+        // The data chunk length field starts at offset 40 (after RIFF header 12,
+        // fmt chunk 8+16, data header 4).  Patch it to 7.
+        bytes[40] = 7;
+        bytes[41] = 0;
+        bytes[42] = 0;
+        bytes[43] = 0;
+        let err = parse_wav_pcm(&bytes, Path::new("odd.wav")).unwrap_err();
+        assert!(
+            err.to_string().contains("not a multiple"),
+            "error should mention 'not a multiple'; got: {err}"
+        );
     }
 
     /// Construct an in-memory RIFF/WAVE file for testing.
