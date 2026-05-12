@@ -85,6 +85,59 @@ jobs:
       - name: Run contract tests (mock-only, no API keys)
         run: cargo test --test contract -- --skip real_api
 
+  # ── Packaging verification (Issue #90 / WP-14.01) ────────────────────────────
+  # Confirm that the release binary for x86_64-pc-windows-msvc has no external
+  # VC++ runtime DLL dependencies (vcruntime140.dll, msvcp140.dll).
+  # .cargo/config.toml sets "+crt-static" for this target, which links the
+  # MSVC CRT statically so no VC Redistributable is needed on end-user machines.
+  packaging:
+    name: Packaging verification (MSVC static exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-pkg-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build release exe (MSVC target)
+        run: cargo build --release --target x86_64-pc-windows-msvc --bins
+      - name: Confirm single exe artifact exists
+        run: |
+          $exe = "target\x86_64-pc-windows-msvc\release\tui-translator.exe"
+          if (-not (Test-Path $exe)) { throw "Release exe not found at $exe" }
+          $size = (Get-Item $exe).Length
+          Write-Host "artifact: $exe  ($([math]::Round($size/1MB,2)) MB)"
+      - name: Inspect DLL imports and assert no VC++ runtime DLLs
+        shell: pwsh
+        run: |
+          # Locate dumpbin via vswhere (always available on windows-latest)
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dumpbin = Join-Path $vsPath "VC\Tools\MSVC" |
+                     Get-ChildItem -Directory | Sort-Object Name -Descending | Select-Object -First 1 |
+                     ForEach-Object { Join-Path $_.FullName "bin\Hostx64\x64\dumpbin.exe" }
+          if (-not (Test-Path $dumpbin)) { throw "dumpbin.exe not found under $vsPath" }
+          Write-Host "Using dumpbin: $dumpbin"
+          $exe = "target\x86_64-pc-windows-msvc\release\tui-translator.exe"
+          $raw = & $dumpbin /DEPENDENTS $exe 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "dumpbin exited $LASTEXITCODE. Output: $($raw -join ' ')"
+          }
+          Write-Host ($raw -join "`n")
+          $banned = $raw | Select-String -Pattern "vcruntime140|msvcp140" -CaseSensitive:$false
+          if ($banned) {
+            Write-Error "FAIL: banned VC++ runtime DLLs found:`n$banned"
+            exit 1
+          }
+          Write-Host "PASS: no vcruntime140.dll or msvcp140.dll in dependency list."
+
   # ── Linux smoke ─────────────────────────────────────────────────────────────
   # We also build on Linux so that CI does not fail if a contributor uses
   # a non-Windows machine.  Audio capture tests are excluded; they need

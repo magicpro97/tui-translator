@@ -50,26 +50,85 @@ dynamic DLL dependencies beyond the Windows OS itself (`kernel32.dll`,
 - **Dependencies GUI** (free, <https://github.com/lucasg/Dependencies>):
   Open the `.exe` and confirm the dependency tree contains no VC++ runtime DLLs.
 
-### Local verification blocker (as of this worktree)
+### CI-enforced gate (primary evidence path)
 
-The local development host used for this lane has:
+A dedicated `packaging` job has been added to `.github/workflows/ci.yml`. On
+every push and pull-request the job:
 
-- Active toolchain: `stable-x86_64-pc-windows-gnu`
-- The `x86_64-pc-windows-msvc` toolchain is installed but `link.exe` (MSVC
-  linker, part of Visual Studio Build Tools) is **not present**.
-- Error observed: `error: linker 'link.exe' not found — the msvc targets depend
-  on the msvc linker but link.exe was not found`
+1. Checks out the repository on a GitHub `windows-latest` runner (which
+   provides `link.exe`, the Windows SDK, and Visual Studio Build Tools).
+2. Installs the `x86_64-pc-windows-msvc` standard library via
+   `dtolnay/rust-toolchain@stable` with `targets: x86_64-pc-windows-msvc`.
+3. Runs `cargo build --release --target x86_64-pc-windows-msvc --bins`,
+   picking up the `+crt-static` flag from `.cargo/config.toml`.
+4. Confirms the single `.exe` artifact exists and logs its size.
+5. Runs `dumpbin /DEPENDENTS` (located via `vswhere.exe`) and **fails the
+   build** if `vcruntime140.dll` or `msvcp140.dll` appears in the import list.
 
-**Consequence:** A full release build against the msvc target cannot be
-completed on this local host. The static-linking flag is in place; proof must
-be produced in a CI environment (for example GitHub Actions on
-`windows-latest`) that has the Windows SDK and Build Tools installed, or on a
-developer machine with Visual Studio 2019 / 2022 or the "Build Tools for Visual
-Studio" package.
+This gate is intended to become the canonical proof path once the branch is
+pushed and the job has completed successfully. Until that CI run exists, the
+job definition is only a verification mechanism, not proof by itself.
 
-The repository CI workflow already runs on `windows-latest`, which normally
-provides the MSVC toolchain and linker. The blocker described here is specific
-to the local workstation used during this implementation pass.
+### Local host blockers (recorded for transparency)
+
+Two independent blockers prevent building the MSVC target on this workstation:
+
+| # | Blocker | Evidence |
+|---|---------|---------|
+| 1 | `link.exe` (MSVC linker) not installed - Visual Studio Build Tools absent | `where.exe link.exe` -> `INFO: Could not find files for the given pattern(s).` |
+| 2 | Disk `C:` is 100 % full (0 bytes free) | `Get-PSDrive C` -> `FreeGB: 0, UsedGB: 238.4` |
+
+Because of blocker 2, even installing the MSVC toolchain sysroot with
+`rustup target add x86_64-pc-windows-msvc` fails:
+
+```
+error: failed to extract package: There is not enough space on the disk. (os error 112)
+```
+
+These are host-environment constraints, not code or configuration issues.
+
+### Historical local evidence - GNU release build
+
+A GNU-toolchain release binary (from worktree `tt-wt-p1-status-metrics`) was
+inspected with `objdump -p` to confirm the local portability baseline on this
+host:
+
+```
+objdump -p tt-wt-p1-status-metrics/target/release/tui-translator.exe | grep "DLL Name:"
+```
+
+**Result (all DLL imports, sorted and deduplicated):**
+
+```
+DLL Name: api-ms-win-core-synch-l1-2-0.dll   <- Windows UCRT forwarder (built-in Win 10+)
+DLL Name: api-ms-win-crt-environment-l1-1-0.dll
+DLL Name: api-ms-win-crt-heap-l1-1-0.dll
+DLL Name: api-ms-win-crt-locale-l1-1-0.dll
+DLL Name: api-ms-win-crt-math-l1-1-0.dll
+DLL Name: api-ms-win-crt-private-l1-1-0.dll
+DLL Name: api-ms-win-crt-runtime-l1-1-0.dll
+DLL Name: api-ms-win-crt-stdio-l1-1-0.dll
+DLL Name: api-ms-win-crt-string-l1-1-0.dll
+DLL Name: bcryptprimitives.dll                <- Windows system DLL
+DLL Name: kernel32.dll                        <- Windows system DLL
+DLL Name: ntdll.dll                           <- Windows system DLL
+DLL Name: ole32.dll                           <- Windows system DLL
+DLL Name: oleaut32.dll                        <- Windows system DLL
+DLL Name: propsys.dll                         <- Windows system DLL
+DLL Name: user32.dll                          <- Windows system DLL
+```
+
+**No `vcruntime140.dll` or `msvcp140.dll` present.**
+
+This does **not** prove the MSVC `+crt-static` requirement from issue #90. The
+GNU toolchain ignores the `[target.x86_64-pc-windows-msvc]` section in
+`.cargo/config.toml`, so this output is only a historical local observation,
+not closing evidence for the MSVC packaging requirement.
+
+The `api-ms-win-crt-*` entries are Windows UCRT API-set forwarders - they are
+present in every Windows 10 / 11 installation and do not require a separate
+Redistributable. The MSVC-specific requirement still must be proven by a
+successful CI `packaging` job on `x86_64-pc-windows-msvc`.
 
 ---
 
@@ -125,7 +184,10 @@ the end-user guide documents.
 | `.cargo/config.toml` sets `+crt-static` for msvc target | ✅ Done |
 | Build command documented | ✅ Done |
 | Dependency verification method documented | ✅ Done |
-| Local MSVC build blocker recorded with exact error | ✅ Recorded |
+| CI `packaging` job added - builds MSVC target, runs dumpbin, asserts no VC++ DLLs | ✅ Added |
+| CI `packaging` job completed successfully on this branch | ⏳ Pending |
+| Local MSVC build blockers recorded with exact errors | ✅ Recorded |
+| GNU release build inspected - portability baseline recorded as local history only | ✅ Recorded |
 | `config_json_path()` uses `current_exe().parent()` | ✅ Confirmed portable |
 | No absolute paths found in source | ✅ Audited clean |
 | USAGE.md documents run-from-any-folder behaviour | ✅ Done |
