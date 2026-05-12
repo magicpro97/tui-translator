@@ -52,7 +52,7 @@ dynamic DLL dependencies beyond the Windows OS itself (`kernel32.dll`,
 
 ### Local verification blocker (as of this worktree)
 
-The CI host at the time this lane was implemented has:
+The local development host used for this lane has:
 
 - Active toolchain: `stable-x86_64-pc-windows-gnu`
 - The `x86_64-pc-windows-msvc` toolchain is installed but `link.exe` (MSVC
@@ -61,13 +61,15 @@ The CI host at the time this lane was implemented has:
   on the msvc linker but link.exe was not found`
 
 **Consequence:** A full release build against the msvc target cannot be
-completed on this host. The static-linking flag is in place; proof must be
-produced in a CI environment (GitHub Actions) that has the Windows SDK and
-Build Tools installed, or on a developer machine with Visual Studio 2019 / 2022
-or the "Build Tools for Visual Studio" package.
+completed on this local host. The static-linking flag is in place; proof must
+be produced in a CI environment (for example GitHub Actions on
+`windows-latest`) that has the Windows SDK and Build Tools installed, or on a
+developer machine with Visual Studio 2019 / 2022 or the "Build Tools for Visual
+Studio" package.
 
-The GitHub Actions release workflow should use the `windows-latest` runner,
-which ships with the MSVC toolchain and linker pre-installed.
+The repository CI workflow already runs on `windows-latest`, which normally
+provides the MSVC toolchain and linker. The blocker described here is specific
+to the local workstation used during this implementation pass.
 
 ---
 

@@ -2,9 +2,9 @@
 # .cargo/config.toml — project-level Cargo configuration
 #
 # Issue #90 (WP-14.01): When building with the x86_64-pc-windows-msvc target,
-# link the Visual C++ Runtime statically so the resulting .exe has zero DLL
-# dependencies and can be copied to any Windows 10/11 machine and run without
-# a separate VC Redist installation.
+# link the Visual C++ Runtime statically so the resulting .exe does not depend
+# on the VC++ runtime DLLs and can be copied to any Windows 10/11 machine and
+# run without a separate VC Redist installation.
 #
 # How to build a self-contained release executable:
 #   cargo build --release --target x86_64-pc-windows-msvc
