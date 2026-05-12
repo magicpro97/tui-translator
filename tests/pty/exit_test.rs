@@ -6,25 +6,30 @@
 //!
 //! | Test | Input | Expected outcome |
 //! |------|-------|-----------------|
-//! | `exit_q_clean` | `b"qq"` | exit code 0; session summary visible before exit |
+//! | `exit_q_clean` | `b"qq"` | exit code 0 |
 //! | `exit_ctrl_c` | `b"\x03\x03"` | process exits; exit code 0 on Windows |
 //!
-//! ## Terminal cleanup assertion strategy
+//! ## What `exit_q_clean` proves on Windows ConPTY
 //!
-//! When `tui-translator` exits, its [`TerminalGuard`] drop implementation
-//! calls `crossterm::execute!(LeaveAlternateScreen)` and
-//! `crossterm::terminal::disable_raw_mode()`.  On a ConPTY slave these
-//! operations write the VT sequences `ESC[?1049l` (leave alternate screen) and
-//! reset the console mode.
+//! **Exit code 0 is the definitive proof of a clean exit.**
+//! `TerminalGuard::drop` is reached only when `main()` returns normally;
+//! a panic, an `abort`, or a forced kill all produce a non-zero exit code.
+//! Exit code 0 therefore confirms that:
+//!   a) the quit key path ran to completion, and
+//!   b) `TerminalGuard::drop` had the opportunity to execute its cleanup
+//!      (`LeaveAlternateScreen`, `show_cursor`, `disable_raw_mode`).
 //!
-//! Rather than inspecting raw bytes after exit (which requires re-reading a
-//! closed PTY and is inherently racy), we use the following proxy assertions:
+//! ## Why raw-byte cleanup assertions are not used
 //!
-//! - **Exit code 0** — `TerminalGuard::drop` runs only when `main()` returns
-//!   `Ok(())`.  A non-zero exit code would indicate a panic or early `abort`,
-//!   which skips the cleanup.
-//! - **Session summary visible** — confirms the quit path was taken (not a
-//!   crash), which in turn proves that `TerminalGuard::drop` was reached.
+//! Terminal cleanup sequences are not robustly assertable on Windows ConPTY:
+//!
+//! - `LeaveAlternateScreen` (`ESC[?1049l`) is absorbed internally by ConPTY
+//!   and never relayed to the master reader.
+//! - `show_cursor()` (`ESC[?25h`) *is* relayed, but ratatui also emits it at
+//!   the end of every frame render cycle.  Its presence anywhere in the byte
+//!   stream (including near the tail) cannot be attributed specifically to the
+//!   cleanup path vs. ordinary rendering, so a positional or presence check
+//!   would pass for the wrong reason and overclaim what is proven.
 //!
 //! ## Ctrl+C on Windows (platform note)
 //!
@@ -72,12 +77,8 @@ fn exit_q_clean() {
         code
     );
 
-    // Verify that the session summary was visible on screen before exit.
-    // The summary overlay always contains "Session Summary".
-    // We check the screen state captured just before/during the quit path;
-    // because the session sends 'qq' in one write, the summary may have been
-    // displayed and immediately dismissed, so we check either state.
-    // The exit code 0 is the primary assertion; the summary check is advisory.
+    // Exit code 0 is the complete assertion for this test.  See module-level
+    // doc for why raw-byte cleanup assertions are not used on Windows ConPTY.
 }
 
 #[test]

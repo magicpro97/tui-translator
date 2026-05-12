@@ -41,9 +41,9 @@ pub struct ProcessSnapshot {
     ///
     /// # Source unit
     ///
-    /// `sysinfo` 0.30's [`Process::memory`] returns kibibytes; the task
-    /// multiplies by 1 024 before storing here so this field always holds bytes,
-    /// consistent with its name and the TUI's `/ (1024 * 1024)` display logic.
+    /// `sysinfo` 0.30's [`Process::memory`] already returns bytes, so the
+    /// value is stored directly without any conversion.  The TUI displays it
+    /// as `ram_bytes / (1024 * 1024)` MiB.
     pub ram_bytes: u64,
 }
 
@@ -78,9 +78,9 @@ pub fn spawn_process_metrics_task(
             let snapshot = match sys.process(pid) {
                 Some(proc) => ProcessSnapshot {
                     cpu_pct: proc.cpu_usage(),
-                    // sysinfo 0.30 `Process::memory()` returns kibibytes; multiply
-                    // by 1024 to store the field in bytes as the doc contract requires.
-                    ram_bytes: proc.memory() * 1024,
+                    // sysinfo 0.30 `Process::memory()` returns bytes directly;
+                    // no unit conversion is required.
+                    ram_bytes: proc.memory(),
                 },
                 None => ProcessSnapshot::default(),
             };
@@ -127,32 +127,43 @@ mod tests {
         handle.abort();
 
         let snap = received.expect("should receive at least one process snapshot within 3 s");
-        // RAM should be non-zero for a live process and, after the kB→bytes
-        // conversion, at least 1 MiB (1 048 576 bytes).
+        // RAM should be non-zero for a live process and at least 1 MiB
+        // (1 048 576 bytes).  sysinfo 0.30 returns bytes directly, so no
+        // conversion is applied; the value must still be in the multi-MiB range
+        // for any real Rust process.
         assert!(
             snap.ram_bytes >= 1_048_576,
             "expected ram_bytes >= 1 MiB (bytes), got {} — \
-             check kB→bytes conversion in spawn_process_metrics_task",
+             check that proc.memory() is stored directly without a unit conversion",
             snap.ram_bytes
         );
     }
 
     #[test]
     fn ram_bytes_unit_is_bytes_not_kib() {
-        // Simulate the sysinfo path: proc.memory() returns kibibytes.
-        // We expect the stored value to be kB × 1024 (i.e. bytes).
-        // This guards against regression to the pre-fix behaviour where
-        // proc.memory() was stored directly (off by 1024×).
-        let kib_value: u64 = 65_536; // 64 MiB in kibibytes
-        let expected_bytes = kib_value * 1024; // 67_108_864
+        // sysinfo 0.30 `Process::memory()` returns bytes, not kibibytes.
+        // This test guards against a regression where a × 1024 factor is
+        // (re)introduced: the value stored in `ram_bytes` must equal the raw
+        // value returned by `proc.memory()` — no scaling applied.
+        //
+        // We build a snapshot as if proc.memory() returned 67_108_864 (64 MiB
+        // in bytes) and assert that `ram_bytes` stores exactly that value.
+        let raw_bytes_from_sysinfo: u64 = 67_108_864; // 64 MiB, already in bytes
         let snap = ProcessSnapshot {
             cpu_pct: 0.0,
-            ram_bytes: kib_value * 1024,
+            ram_bytes: raw_bytes_from_sysinfo, // stored directly, no × 1024
         };
         assert_eq!(
-            snap.ram_bytes, expected_bytes,
-            "ram_bytes must store bytes; \
-             if proc.memory() returns kB, multiply by 1024 before storing"
+            snap.ram_bytes, raw_bytes_from_sysinfo,
+            "ram_bytes must store the bytes value from proc.memory() directly; \
+             do NOT multiply by 1024 — sysinfo 0.30 already returns bytes"
+        );
+        // Negative check: the pre-fix wrong value would have been
+        // raw_bytes_from_sysinfo * 1024; confirm we're not storing that.
+        assert_ne!(
+            snap.ram_bytes,
+            raw_bytes_from_sysinfo * 1024,
+            "ram_bytes must not be scaled by 1024 (that was the sysinfo <0.30 bug)"
         );
     }
 

@@ -140,10 +140,7 @@ impl PtySession {
                             bytes_bg.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
                             {
                                 let mut cap = raw_bg.lock().unwrap();
-                                if cap.len() < 256 {
-                                    let take = n.min(256 - cap.len());
-                                    cap.extend_from_slice(&buf[..take]);
-                                }
+                                cap.extend_from_slice(&buf[..n]);
                             }
                             // Respond to ANSI DSR cursor-position queries.
                             // crossterm sends \x1b[6n ("Device Status Report") to
@@ -197,10 +194,10 @@ impl PtySession {
         let bytes = self.bytes_rx.load(std::sync::atomic::Ordering::Relaxed);
         let raw_preview = self.raw_capture.lock().unwrap().clone();
         eprintln!(
-            "[PTY timeout] waited {:.1}s for {:?}; bytes_rx={bytes}; raw[0..16]={:?}; screen ({} rows):",
+            "[PTY timeout] waited {:.1}s for {:?}; bytes_rx={bytes}; raw[0..32]={:?}; screen ({} rows):",
             timeout.as_secs_f32(),
             needle,
-            &raw_preview[..raw_preview.len().min(16)],
+            &raw_preview[..raw_preview.len().min(32)],
             self.rows,
         );
         for (i, row) in self.all_rows().iter().enumerate() {
@@ -234,6 +231,35 @@ impl PtySession {
     /// Total number of raw bytes received from the PTY master so far.
     pub fn bytes_received(&self) -> usize {
         self.bytes_rx.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Return a snapshot of all raw PTY bytes captured so far.
+    ///
+    /// Useful for asserting on terminal-cleanup escape sequences (e.g.
+    /// `\x1b[?1049l` for leave-alternate-screen, `\x1b[?25h` for cursor-show)
+    /// that are emitted by the app's [`TerminalGuard`] drop implementation.
+    pub fn raw_bytes_captured(&self) -> Vec<u8> {
+        self.raw_capture.lock().unwrap().clone()
+    }
+
+    /// Block until `sequence` appears anywhere in the accumulated raw PTY
+    /// bytes, or until `timeout` elapses.  Returns `true` when found.
+    ///
+    /// This is the right tool for asserting on terminal-cleanup sequences
+    /// emitted after process exit, since the background reader may still be
+    /// draining the PTY pipe when `wait_exit` returns.
+    pub fn wait_for_raw_sequence(&self, sequence: &[u8], timeout: Duration) -> bool {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            {
+                let cap = self.raw_capture.lock().unwrap();
+                if cap.windows(sequence.len()).any(|w| w == sequence) {
+                    return true;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        false
     }
 
     /// Collect all cell characters on `row` into a single `String`.
@@ -276,8 +302,14 @@ impl PtySession {
 
     // ── PTY control ───────────────────────────────────────────────────────────
 
-    /// Resize the PTY window and signal the child to redraw.
-    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
+    /// Resize the PTY window, update the internal dimension fields, and
+    /// resize the `vt100` parser to match.
+    ///
+    /// Updating the parser is essential so that post-resize screen inspection
+    /// uses the correct row/column counts, and so the virtual screen buffer
+    /// properly renders the new-size redraw that the child emits in response
+    /// to the resize event.
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), String> {
         self.master
             .resize(PtySize {
                 rows,
@@ -285,7 +317,11 @@ impl PtySession {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("PTY resize: {e}"))
+            .map_err(|e| format!("PTY resize: {e}"))?;
+        self.rows = rows;
+        self.cols = cols;
+        self.parser.lock().unwrap().set_size(rows, cols);
+        Ok(())
     }
 
     // ── Process lifecycle ─────────────────────────────────────────────────────

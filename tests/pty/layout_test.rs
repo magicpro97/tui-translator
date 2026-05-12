@@ -132,25 +132,58 @@ fn layout_resize_no_crash() {
     // Start at 120×40 then shrink to 80×24.
     //
     // The resize sends a Windows ConPTY resize event; ratatui receives a
-    // `crossterm::event::Event::Resize` and redraws the full layout at the new
-    // size.  The test asserts that the process is still alive (no crash /
-    // no panic) 500 ms after the resize and that it exits cleanly on 'q'.
+    // `crossterm::event::Event::Resize` and redraws the full layout at the
+    // new size.  This test verifies:
+    //   1. No crash (process still running after resize).
+    //   2. The resized frame satisfies the full layout contract at 80×24.
+    //   3. No obvious garbling: title-bar content and hints-bar content each
+    //      appear in their correct regions (no overlap).
     let mut session = PtySession::spawn(120, 40, &[])
         .expect("failed to spawn tui-translator for layout_resize_no_crash");
     assert_initial_frame(&session, "120×40 (pre-resize)");
 
-    // Shrink the PTY window.
+    // Shrink the PTY window.  resize() now also updates session.rows/cols
+    // and the vt100 parser dimensions so post-resize assertions are valid.
     session
         .resize(80, 24)
         .expect("PTY resize 120×40 → 80×24 failed");
 
-    // Give the app one full draw cycle (50 ms) plus a margin to redraw.
-    std::thread::sleep(Duration::from_millis(500));
+    // Wait for the app to redraw at the new size.  The app emits a full-screen
+    // redraw in response to the ConPTY resize event; waiting for the hints bar
+    // confirms the new frame is present and the parser has the correct size.
+    assert!(
+        session.wait_for_text("Q quit", Duration::from_secs(5)),
+        "tui-translator did not redraw after PTY resize from 120×40 to 80×24",
+    );
 
     // The process must still be running — no crash on resize.
     assert!(
         session.is_running(),
         "tui-translator crashed after PTY resize from 120×40 to 80×24",
+    );
+
+    // ── Layout contract at the new size ──────────────────────────────────────
+    // Delegates to the same `check_layout` used by the static-size tests,
+    // proving that the resized frame is not garbled or missing widgets.
+    check_layout(&session, 80, 24);
+
+    // ── No overlap / garbling check ──────────────────────────────────────────
+    // Title-bar content must NOT bleed into the bottom row, and hints-bar
+    // content must NOT bleed into the title-bar area.
+    let last_row = session.row_text(23);
+    assert!(
+        !last_row.contains("TUI Translator"),
+        "title-bar text leaked into the hints bar at 80×24 after resize: {:?}",
+        last_row,
+    );
+    let title_area: String = (0..3)
+        .map(|r| session.row_text(r))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        !title_area.contains("Q quit"),
+        "hints-bar text leaked into the title area at 80×24 after resize: {:?}",
+        title_area,
     );
 
     // Trigger clean exit and confirm it succeeds.
