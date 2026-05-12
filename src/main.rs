@@ -779,7 +779,15 @@ fn event_loop(
 
         let expanded = state.metrics_expanded.load(Ordering::Relaxed);
         let show_restart = restart_required.load(Ordering::Relaxed);
-        let pane_area = subtitle_inner_area(terminal.size()?, expanded);
+        let cost_warning_usd = current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .cost_warning_usd;
+        let metrics_snap = state.metrics_snapshot();
+        let over_threshold = expanded
+            && cost_warning_usd > 0.0
+            && metrics_snap.estimated_cost_usd > cost_warning_usd;
+        let pane_area = subtitle_inner_area(terminal.size()?, expanded, over_threshold);
 
         {
             let mut pane = state
@@ -791,10 +799,6 @@ fn event_loop(
 
         let level = state.level_ratio();
         let dev_name = state.device_name_str();
-        let cost_warning_usd = current_config
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .cost_warning_usd;
         terminal.draw(|frame| {
             draw_ui(
                 frame,

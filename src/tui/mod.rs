@@ -472,10 +472,28 @@ fn subtitle_block() -> Block<'static> {
         .style(Style::default().fg(Color::White))
 }
 
-pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool) -> Rect {
-    // Expanded mode: 2 border rows + 4 content rows (STT/TTS, metrics, elapsed,
-    // runtime CPU/RAM/Net/E2E/Loss) = 6 total.  Compact mode keeps 3 rows.
-    let metrics_h = if metrics_expanded { 6u16 } else { 3u16 };
+/// Returns the row count allocated to the metrics strip in the main layout.
+///
+/// In expanded mode the block is normally 6 rows (2 border + 4 content).
+/// When a cost warning is active an extra content row is needed, making it 7.
+/// In compact mode the strip is always 3 rows.
+pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
+    if metrics_expanded {
+        if over_threshold {
+            7u16
+        } else {
+            6u16
+        }
+    } else {
+        3u16
+    }
+}
+
+pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
+    // Expanded mode: 2 border rows + 4 standard content rows (STT/TTS, metrics,
+    // elapsed, runtime CPU/RAM/Net/E2E/Loss) + optional cost-warning row = 6 or 7
+    // total.  Compact mode keeps 3 rows.
+    let metrics_h = expanded_metrics_height(metrics_expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -734,6 +752,14 @@ impl Widget for &StatusMetricsStrip<'_> {
 }
 
 impl StatusMetricsStrip<'_> {
+    /// Row count needed for the expanded block, including the optional warning row.
+    ///
+    /// Call this to determine the layout constraint before rendering.
+    pub fn expanded_height(&self) -> u16 {
+        let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
+        expanded_metrics_height(true, over_threshold)
+    }
+
     /// Abbreviated STT label for narrow terminals (< 80 columns, issue #60).
     fn stt_abbrev(&self) -> String {
         match self.stt {
@@ -985,7 +1011,10 @@ pub fn draw_ui(
 
     // Issue #65: the control hints bar is ALWAYS shown (1 row, no scroll).
     // Build layout — bottom section grows when the metrics panel is expanded.
-    let metrics_h = if expanded { 6u16 } else { 3u16 };
+    // When expanded and the cost warning is active, an extra row is needed (#74).
+    let over_threshold =
+        expanded && cost_warning_usd > 0.0 && metrics.estimated_cost_usd > cost_warning_usd;
+    let metrics_h = expanded_metrics_height(expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
