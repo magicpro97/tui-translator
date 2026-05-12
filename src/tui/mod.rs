@@ -1162,9 +1162,7 @@ pub fn render_auth_error_banner(
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             " \u{26a0}  API Key Error",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(

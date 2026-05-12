@@ -90,10 +90,7 @@ mod windows_signal {
     /// Called by the OS on a dedicated thread; only touches an `AtomicBool`.
     unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> i32 {
         match ctrl_type {
-            CTRL_C_EVENT
-            | CTRL_BREAK_EVENT
-            | CTRL_CLOSE_EVENT
-            | CTRL_LOGOFF_EVENT
+            CTRL_C_EVENT | CTRL_BREAK_EVENT | CTRL_CLOSE_EVENT | CTRL_LOGOFF_EVENT
             | CTRL_SHUTDOWN_EVENT => {
                 FORCED_SHUTDOWN.store(true, Ordering::Relaxed);
                 1 // TRUE — we handled it; do not call the next handler
@@ -252,7 +249,8 @@ fn main() -> Result<()> {
                 // are visible to the running orchestrator.
                 let source_language = Arc::clone(&state.source_language);
 
-                let stt_provider = match providers::google::stt::GoogleSttProvider::new(key.clone()) {
+                let stt_provider = match providers::google::stt::GoogleSttProvider::new(key.clone())
+                {
                     Ok(p) => p,
                     Err(err) => {
                         tracing::error!("failed to create STT provider: {err}");

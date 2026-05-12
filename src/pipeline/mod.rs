@@ -257,13 +257,8 @@ pub async fn run_orchestrator<S, M, T>(
 // ── Per-chunk helpers ─────────────────────────────────────────────────────────
 
 /// Drive one [`PcmChunk`] through STT → MT → (optional) TTS.
-async fn process_chunk<S, M, T>(
-    pcm: PcmChunk,
-    stt: &S,
-    mt: &M,
-    tts: &T,
-    ctx: &OrchestratorContext,
-) where
+async fn process_chunk<S, M, T>(pcm: PcmChunk, stt: &S, mt: &M, tts: &T, ctx: &OrchestratorContext)
+where
     S: SttProvider,
     M: MtProvider,
     T: TtsProvider,
@@ -296,28 +291,27 @@ async fn process_chunk<S, M, T>(
 
     // ── MT ───────────────────────────────────────────────────────────────────
     let target_lang = lock_clone_str(&ctx.target_language);
-    let translation = match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang))
-        .await
-    {
-        Ok(r) => {
-            ctx.session_metrics
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .chars_translated += r.translated_text.len() as u64;
-            clear_pipeline_error(&ctx.pipeline_error_msg);
-            r.translated_text
-        }
-        Err(ProviderError::AuthError(msg)) => {
-            handle_auth_error(ctx, &format!("MT: {msg}"));
-            return;
-        }
-        Err(err) => {
-            let warn_msg = format!("⚠ Translation error: {err}");
-            tracing::warn!("{warn_msg}");
-            set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
-            return; // discard chunk, continue outer loop
-        }
-    };
+    let translation =
+        match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
+            Ok(r) => {
+                ctx.session_metrics
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .chars_translated += r.translated_text.len() as u64;
+                clear_pipeline_error(&ctx.pipeline_error_msg);
+                r.translated_text
+            }
+            Err(ProviderError::AuthError(msg)) => {
+                handle_auth_error(ctx, &format!("MT: {msg}"));
+                return;
+            }
+            Err(err) => {
+                let warn_msg = format!("⚠ Translation error: {err}");
+                tracing::warn!("{warn_msg}");
+                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                return; // discard chunk, continue outer loop
+            }
+        };
 
     // ── Push subtitle pair ────────────────────────────────────────────────────
     set_stt_state(&ctx.stt_state, SttState::Listening);
@@ -443,7 +437,11 @@ mod tests {
         })
         .await;
         assert!(matches!(result, Err(ProviderError::AuthError(_))));
-        assert_eq!(calls.load(Ordering::Relaxed), 1, "permanent error must not be retried");
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "permanent error must not be retried"
+        );
     }
 
     #[tokio::test]
@@ -581,9 +579,7 @@ mod tests {
 
     // ── Context builder ───────────────────────────────────────────────────────
 
-    fn make_context(
-        shutdown: Arc<AtomicBool>,
-    ) -> (OrchestratorContext, mpsc::Sender<AudioChunk>) {
+    fn make_context(shutdown: Arc<AtomicBool>) -> (OrchestratorContext, mpsc::Sender<AudioChunk>) {
         let (tx, rx) = mpsc::channel::<AudioChunk>(16);
         let ctx = OrchestratorContext {
             audio_level: Arc::new(AtomicU32::new(0)),
@@ -622,14 +618,7 @@ mod tests {
         tx2.send(speech_chunk()).await.unwrap();
         drop(tx2);
 
-        run_orchestrator(
-            rx2,
-            OkStt("hello world"),
-            OkMt,
-            OkTts,
-            ctx,
-        )
-        .await;
+        run_orchestrator(rx2, OkStt("hello world"), OkMt, OkTts, ctx).await;
 
         assert_eq!(
             pane.lock().unwrap().pair_count(),
@@ -669,7 +658,11 @@ mod tests {
             }
             other => panic!("expected SttState::Error, got {other:?}"),
         }
-        assert_eq!(pane.lock().unwrap().pair_count(), 0, "failed chunk must be discarded");
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            0,
+            "failed chunk must be discarded"
+        );
     }
 
     /// MT NetworkError exhausted → pipeline_error_msg set, pipeline continues.
@@ -700,7 +693,11 @@ mod tests {
                 .unwrap_or(false),
             "pipeline_error_msg should contain 'Translation error': {msg:?}"
         );
-        assert_eq!(pane.lock().unwrap().pair_count(), 0, "failed MT chunk must be discarded");
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            0,
+            "failed MT chunk must be discarded"
+        );
     }
 
     /// TTS NetworkError is non-fatal: subtitle is still shown.
@@ -732,7 +729,9 @@ mod tests {
         );
         let msg = err_msg.lock().unwrap().clone();
         assert!(
-            msg.as_deref().map(|m| m.contains("TTS error")).unwrap_or(false),
+            msg.as_deref()
+                .map(|m| m.contains("TTS error"))
+                .unwrap_or(false),
             "TTS error must surface in pipeline_error_msg: {msg:?}"
         );
     }
@@ -758,7 +757,10 @@ mod tests {
         )
         .await;
 
-        assert!(halted.load(Ordering::Relaxed), "pipeline must be halted after AuthError");
+        assert!(
+            halted.load(Ordering::Relaxed),
+            "pipeline must be halted after AuthError"
+        );
         assert!(
             banner.lock().unwrap().is_some(),
             "auth_error_banner must be set after AuthError"
@@ -785,7 +787,10 @@ mod tests {
         )
         .await;
 
-        assert!(halted.load(Ordering::Relaxed), "MT AuthError must halt pipeline");
+        assert!(
+            halted.load(Ordering::Relaxed),
+            "MT AuthError must halt pipeline"
+        );
     }
 
     /// TTS AuthError halts the pipeline (even though TTS is optional).
@@ -809,7 +814,10 @@ mod tests {
         )
         .await;
 
-        assert!(halted.load(Ordering::Relaxed), "TTS AuthError must halt pipeline");
+        assert!(
+            halted.load(Ordering::Relaxed),
+            "TTS AuthError must halt pipeline"
+        );
     }
 
     /// Halted pipeline skips API calls for subsequent chunks.
