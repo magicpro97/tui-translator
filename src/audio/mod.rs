@@ -36,6 +36,10 @@ use tokio::sync::mpsc;
 #[cfg(windows)]
 mod wasapi_capture;
 
+// File-based audio source for soak testing (issue #110)
+pub mod file_source;
+pub use file_source::WavFileSource;
+
 // ─── Core types ──────────────────────────────────────────────────────────────
 
 /// A single chunk of captured audio, ready to be sent to the STT pipeline.
@@ -245,6 +249,54 @@ pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
         info
     };
 
+    Ok(CaptureStream { info, receiver: rx })
+}
+
+/// Start a file-based capture stream from a WAV fixture (issue #110 / WP-18.02).
+///
+/// Opens `wav_path`, validates the format (16 kHz mono 16-bit PCM), and
+/// spawns a background Tokio task that loops the file indefinitely, pushing
+/// chunks into the returned [`CaptureStream`].
+///
+/// Unlike [`start_capture`] this function does not use WASAPI or require real
+/// audio hardware, making it suitable for soak tests and local reproducibility
+/// checks.
+///
+/// # Errors
+///
+/// Returns `Err` when `wav_path` cannot be read or does not conform to the
+/// required WAV format.  See [`WavFileSource`] for format requirements.
+pub async fn start_file_capture(wav_path: &str, silence_threshold: f32) -> Result<CaptureStream> {
+    let mut source = WavFileSource::open(wav_path)?;
+    let device_name = source.device_name().to_string();
+    let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
+
+    tokio::task::spawn_blocking(move || loop {
+        match source.next_chunk() {
+            Ok(chunk) => {
+                if tx.blocking_send(chunk).is_err() {
+                    break; // receiver dropped — pipeline shutting down
+                }
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "file audio source error; stopping");
+                break;
+            }
+        }
+        // Pace chunks to approximately real-time (256 ms per default chunk).
+        // This prevents the pipeline from being flooded with chunks faster
+        // than the STT API can process them during soak runs.
+        let chunk_ms = file_source::DEFAULT_CHUNK_SAMPLES as u64 / 16; // ÷ 16 kHz
+        std::thread::sleep(std::time::Duration::from_millis(
+            chunk_ms.saturating_sub(1), // slight underrun preferred over overrun
+        ));
+        let _ = silence_threshold; // passed through for API symmetry with start_capture
+    });
+
+    let info = CaptureInfo {
+        device_name,
+        native_sample_rate: 16_000,
+    };
     Ok(CaptureStream { info, receiver: rx })
 }
 

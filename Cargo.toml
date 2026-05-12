@@ -16,6 +16,10 @@ readme = "README.md"
 name = "tui-translator"
 path = "src/main.rs"
 
+[[bin]]
+name = "run_soak"
+path = "tests/soak/run_soak.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.26"

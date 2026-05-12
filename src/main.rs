@@ -282,7 +282,22 @@ fn main() -> Result<()> {
     let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
     spawn_process_metrics_task(process_tx, rt.handle());
 
-    match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
+    // ── Audio source selection (issue #110) ──────────────────────────────────
+    // Read the audio_source / audio_file_path from the loaded config and start
+    // the appropriate capture backend.  WASAPI is the production path;
+    // "file" is used exclusively for soak tests and local replay runs.
+    let (audio_source_kind, audio_file_path) = {
+        let cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        (cfg.audio_source.clone(), cfg.audio_file_path.clone())
+    };
+    let capture_result = if audio_source_kind == "file" {
+        let path = audio_file_path.as_deref().unwrap_or("");
+        rt.block_on(audio::start_file_capture(path, DEFAULT_SILENCE_THRESHOLD))
+    } else {
+        rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD))
+    };
+
+    match capture_result {
         Ok(stream) => {
             overwrite_device_name(&state.device_name, &stream.info.device_name);
             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
