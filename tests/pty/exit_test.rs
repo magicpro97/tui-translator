@@ -121,6 +121,11 @@ fn exit_ctrl_c() {
     // platform quirk.
     if let Some(c) = code {
         assert_eq!(c, 0, "expected exit code 0 for Ctrl+C quit; got {c}",);
+    } else {
+        eprintln!(
+            "[exit_ctrl_c] SKIP: ConPTY intercepted Ctrl+C; child did not exit within {:?}",
+            EXIT_TIMEOUT
+        );
     }
     // If code is None: PTY delivered Ctrl+C as a console-control event that
     // our Windows signal handler caught (FORCED_SHUTDOWN), which also exits
