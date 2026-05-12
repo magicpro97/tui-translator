@@ -69,6 +69,42 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
+// ── Pass/fail thresholds (issue #111 / WP-18.03) ─────────────────────────────
+//
+// These constants encode every threshold from docs/04-verification-plan.md §6
+// (blockers B-09 through B-14) as a single source of truth.  `evaluate_thresholds`
+// reads these constants when building the `ThresholdEvaluation` appended to each
+// soak report.
+pub mod thresholds {
+    /// B-09: memory growth must not exceed this many MiB over the full run.
+    pub const MEMORY_GROWTH_MAX_MB: f64 = 50.0;
+
+    /// B-10: CPU advisory ceiling — median of all samples must stay at or below this.
+    pub const CPU_TYPICAL_MAX_PCT: f32 = 40.0;
+
+    /// B-10: CPU hard ceiling — no single sample may reach or exceed this value.
+    pub const CPU_ANY_SAMPLE_MAX_PCT: f32 = 60.0;
+
+    /// B-11: maximum audio-chunk loss ratio over the whole run (fraction, 0.0–1.0).
+    pub const CHUNK_LOSS_OVERALL_MAX: f64 = 0.02;
+
+    /// B-11: maximum audio-chunk loss ratio in any 15-minute window (fraction).
+    pub const CHUNK_LOSS_WINDOW_MAX: f64 = 0.05;
+
+    /// B-12: maximum average subtitle end-to-end latency in milliseconds.
+    pub const SUBTITLE_LATENCY_AVG_MAX_MS: u64 = 3_000;
+
+    /// B-12: maximum subtitle latency in any 15-minute window, in milliseconds.
+    pub const SUBTITLE_LATENCY_WINDOW_MAX_MS: u64 = 5_000;
+
+    /// B-13: maximum acceptable discrepancy ratio vs actual Google bill (fraction).
+    pub const COST_DISCREPANCY_MAX: f64 = 0.10;
+
+    /// B-14: maximum seconds the application may take to resume transcription
+    /// after a transient network interruption is repaired.
+    pub const NETWORK_RECOVERY_MAX_SECS: u64 = 60;
+}
+
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
 /// Usage text printed by `--help`.
@@ -276,6 +312,11 @@ pub struct SoakReport {
     pub billing_actual_usd: Option<f64>,
     /// Human-readable descriptions of unimplemented capabilities.
     pub gaps: Vec<String>,
+    /// Pass/fail evaluation of every threshold from docs/04-verification-plan.md §6.
+    ///
+    /// Populated by [`evaluate_thresholds`] immediately before the report is written.
+    /// `None` only during construction; always `Some` in any report file on disk.
+    pub threshold_evaluation: Option<ThresholdEvaluation>,
 }
 
 impl SoakReport {
@@ -309,7 +350,398 @@ impl SoakReport {
                  The soak run continues even if the attempt fails."
                     .to_string(),
             ],
+            threshold_evaluation: None,
         }
+    }
+}
+
+// ── Threshold evaluation types (issue #111 / WP-18.03) ───────────────────────
+
+/// Verdict for a single threshold evaluation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ThresholdVerdict {
+    /// Threshold was evaluated and the measurement is within limits — not a blocker.
+    Pass,
+    /// Threshold was evaluated and the measurement exceeds its limit — release blocker.
+    Fail,
+    /// The required metric is not yet observable from an external process.
+    ///
+    /// See the `pending_reason` field for the specific gap that must be closed
+    /// before automatic evaluation is possible.  These thresholds must be
+    /// checked manually (or via a later implementation slice) before release.
+    UnevaluablePending,
+}
+
+/// Evaluation result for one threshold entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThresholdResult {
+    /// Blocker code from the verification plan (e.g. `"B-09"`).
+    pub blocker: String,
+    /// Human-readable description of the threshold.
+    pub description: String,
+    /// The limit encoded in the [`thresholds`] module (as a display string).
+    pub limit: String,
+    /// The value measured during this run (`null` when unevaluable).
+    pub measured: Option<String>,
+    /// Whether the threshold passed, failed, or could not be evaluated.
+    pub verdict: ThresholdVerdict,
+    /// Why this threshold could not be evaluated automatically (present only
+    /// when `verdict == UNEVALUABLE_PENDING`).
+    pub pending_reason: Option<String>,
+}
+
+/// Complete threshold evaluation appended to every soak report.
+///
+/// Each field maps to one release blocker from
+/// `docs/04-verification-plan.md` §6.1–6.3.  Thresholds whose underlying
+/// metrics are unavailable carry `verdict = UNEVALUABLE_PENDING` and a
+/// `pending_reason` that names the gap to close.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThresholdEvaluation {
+    /// B-09 — memory growth ≤ 50 MiB over the full run.
+    pub b09_memory_growth: ThresholdResult,
+    /// B-10 — CPU ≤ 40% typical (median of all samples).
+    pub b10_cpu_typical: ThresholdResult,
+    /// B-10 (hard limit) — no single sample reaches or exceeds 60% CPU.
+    pub b10_cpu_any_sample: ThresholdResult,
+    /// B-11 — chunk loss ≤ 2% overall.
+    pub b11_chunk_loss_overall: ThresholdResult,
+    /// B-11 (window) — chunk loss ≤ 5% in any 15-minute window.
+    pub b11_chunk_loss_window: ThresholdResult,
+    /// B-12 — subtitle latency ≤ 3 s average.
+    pub b12_subtitle_latency_avg: ThresholdResult,
+    /// B-12 (window) — subtitle latency ≤ 5 s in any 15-minute window.
+    pub b12_subtitle_latency_window: ThresholdResult,
+    /// B-13 — cost discrepancy ≤ 10% vs actual Google bill.
+    pub b13_cost_discrepancy: ThresholdResult,
+    /// B-14 — recovery from network interruption within 60 seconds.
+    pub b14_network_recovery: ThresholdResult,
+    /// `true` when every *evaluated* threshold passed (UNEVALUABLE_PENDING
+    /// thresholds are excluded from this flag).
+    pub all_evaluated_pass: bool,
+    /// `true` when at least one threshold has `verdict == FAIL` — a release blocker.
+    pub any_blocker_triggered: bool,
+}
+
+/// Evaluate all six threshold categories against a completed (or partial) soak report.
+///
+/// # Availability per blocker
+///
+/// | Blocker | Metric source | Available now? |
+/// |---------|--------------|----------------|
+/// | B-09 | `sysinfo` RSS | ✅ Yes |
+/// | B-10 | `sysinfo` CPU | ✅ Yes |
+/// | B-11 | metrics IPC   | ❌ Gap 1 |
+/// | B-12 | metrics IPC   | ❌ Gap 1 |
+/// | B-13 | Billing API   | ❌ Gap 2 |
+/// | B-14 | process alive (partial) + metrics IPC | ⚠ Partial |
+///
+/// Thresholds with unavailable metrics return `UNEVALUABLE_PENDING` with a
+/// machine-readable `pending_reason` string pointing at the gap to close.
+pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
+    use thresholds::*;
+
+    let samples = &report.samples;
+
+    // ── B-09: Memory growth ───────────────────────────────────────────────────
+    let b09_memory_growth = {
+        let mems: Vec<f64> = samples.iter().filter_map(|s| s.memory_mb).collect();
+        if mems.len() < 2 {
+            ThresholdResult {
+                blocker: "B-09".to_string(),
+                description: format!(
+                    "Memory growth ≤ {MEMORY_GROWTH_MAX_MB} MiB over the run duration"
+                ),
+                limit: format!("{MEMORY_GROWTH_MAX_MB} MiB"),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some(format!(
+                    "fewer than 2 memory samples available ({} collected); \
+                     need at least a start and an end sample to compute growth",
+                    mems.len()
+                )),
+            }
+        } else {
+            let growth = mems.last().copied().unwrap_or(0.0) - mems[0];
+            ThresholdResult {
+                blocker: "B-09".to_string(),
+                description: format!(
+                    "Memory growth ≤ {MEMORY_GROWTH_MAX_MB} MiB over the run duration"
+                ),
+                limit: format!("{MEMORY_GROWTH_MAX_MB} MiB"),
+                measured: Some(format!("{growth:.1} MiB")),
+                verdict: if growth <= MEMORY_GROWTH_MAX_MB {
+                    ThresholdVerdict::Pass
+                } else {
+                    ThresholdVerdict::Fail
+                },
+                pending_reason: None,
+            }
+        }
+    };
+
+    // ── B-10: CPU typical (median) ────────────────────────────────────────────
+    let b10_cpu_typical = {
+        let cpus: Vec<f32> = samples.iter().filter_map(|s| s.cpu_pct).collect();
+        if cpus.is_empty() {
+            ThresholdResult {
+                blocker: "B-10".to_string(),
+                description: format!(
+                    "CPU ≤ {CPU_TYPICAL_MAX_PCT}% typical \
+                     (median of all per-sample measurements)"
+                ),
+                limit: format!("{CPU_TYPICAL_MAX_PCT}%"),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some("no CPU samples collected".to_string()),
+            }
+        } else {
+            let mut sorted = cpus.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let median = sorted[sorted.len() / 2];
+            ThresholdResult {
+                blocker: "B-10".to_string(),
+                description: format!(
+                    "CPU ≤ {CPU_TYPICAL_MAX_PCT}% typical \
+                     (median of all per-sample measurements)"
+                ),
+                limit: format!("{CPU_TYPICAL_MAX_PCT}%"),
+                measured: Some(format!("{median:.1}%")),
+                verdict: if median <= CPU_TYPICAL_MAX_PCT {
+                    ThresholdVerdict::Pass
+                } else {
+                    ThresholdVerdict::Fail
+                },
+                pending_reason: None,
+            }
+        }
+    };
+
+    // ── B-10: CPU hard ceiling (any sample) ───────────────────────────────────
+    let b10_cpu_any_sample = {
+        let cpus: Vec<f32> = samples.iter().filter_map(|s| s.cpu_pct).collect();
+        if cpus.is_empty() {
+            ThresholdResult {
+                blocker: "B-10".to_string(),
+                description: format!(
+                    "CPU < {CPU_ANY_SAMPLE_MAX_PCT}% at every individual sample (hard ceiling)"
+                ),
+                limit: format!("{CPU_ANY_SAMPLE_MAX_PCT}%"),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some("no CPU samples collected".to_string()),
+            }
+        } else {
+            let peak = cpus.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            ThresholdResult {
+                blocker: "B-10".to_string(),
+                description: format!(
+                    "CPU < {CPU_ANY_SAMPLE_MAX_PCT}% at every individual sample (hard ceiling)"
+                ),
+                limit: format!("{CPU_ANY_SAMPLE_MAX_PCT}%"),
+                measured: Some(format!("{peak:.1}%")),
+                verdict: if peak < CPU_ANY_SAMPLE_MAX_PCT {
+                    ThresholdVerdict::Pass
+                } else {
+                    ThresholdVerdict::Fail
+                },
+                pending_reason: None,
+            }
+        }
+    };
+
+    // ── B-11 and B-12: IPC-backed metrics (unavailable) ───────────────────────
+    // chunk counts and subtitle latency live inside `tui-translator` and are
+    // not observable from an external process until Gap 1 is closed.
+    let ipc_gap_reason =
+        "metric requires metrics IPC (Gap 1): chunk counts and subtitle latency are \
+         not observable from an external process. The fields exist in \
+         src/metrics/snapshot.rs (MetricsSnapshot) but are not written to any shared \
+         file or named pipe. Close Gap 1 before this threshold can be evaluated \
+         automatically. Reference: docs/04-verification-plan.md §6.1."
+            .to_string();
+
+    let b11_chunk_loss_overall = ThresholdResult {
+        blocker: "B-11".to_string(),
+        description: format!(
+            "Chunk loss ≤ {:.0}% overall",
+            CHUNK_LOSS_OVERALL_MAX * 100.0
+        ),
+        limit: format!("{:.0}%", CHUNK_LOSS_OVERALL_MAX * 100.0),
+        measured: None,
+        verdict: ThresholdVerdict::UnevaluablePending,
+        pending_reason: Some(ipc_gap_reason.clone()),
+    };
+
+    let b11_chunk_loss_window = ThresholdResult {
+        blocker: "B-11".to_string(),
+        description: format!(
+            "Chunk loss ≤ {:.0}% in any 15-minute window",
+            CHUNK_LOSS_WINDOW_MAX * 100.0
+        ),
+        limit: format!("{:.0}%", CHUNK_LOSS_WINDOW_MAX * 100.0),
+        measured: None,
+        verdict: ThresholdVerdict::UnevaluablePending,
+        pending_reason: Some(ipc_gap_reason.clone()),
+    };
+
+    let b12_subtitle_latency_avg = ThresholdResult {
+        blocker: "B-12".to_string(),
+        description: format!(
+            "Subtitle latency ≤ {} ms average",
+            SUBTITLE_LATENCY_AVG_MAX_MS
+        ),
+        limit: format!("{} ms", SUBTITLE_LATENCY_AVG_MAX_MS),
+        measured: None,
+        verdict: ThresholdVerdict::UnevaluablePending,
+        pending_reason: Some(ipc_gap_reason.clone()),
+    };
+
+    let b12_subtitle_latency_window = ThresholdResult {
+        blocker: "B-12".to_string(),
+        description: format!(
+            "Subtitle latency ≤ {} ms in any 15-minute window",
+            SUBTITLE_LATENCY_WINDOW_MAX_MS
+        ),
+        limit: format!("{} ms", SUBTITLE_LATENCY_WINDOW_MAX_MS),
+        measured: None,
+        verdict: ThresholdVerdict::UnevaluablePending,
+        pending_reason: Some(ipc_gap_reason),
+    };
+
+    // ── B-13: Cost discrepancy (unavailable) ──────────────────────────────────
+    let b13_cost_discrepancy = ThresholdResult {
+        blocker: "B-13".to_string(),
+        description: format!(
+            "Cost discrepancy ≤ {:.0}% vs actual Google bill",
+            COST_DISCREPANCY_MAX * 100.0
+        ),
+        limit: format!("{:.0}%", COST_DISCREPANCY_MAX * 100.0),
+        measured: None,
+        verdict: ThresholdVerdict::UnevaluablePending,
+        pending_reason: Some(
+            "metric requires Google Cloud Billing API (Gap 2): billing_actual_usd \
+             is always null until an OAuth service-account key and billing export are \
+             configured in the GCP project. \
+             Reference: docs/04-verification-plan.md §6.2."
+                .to_string(),
+        ),
+    };
+
+    // ── B-14: Network recovery ────────────────────────────────────────────────
+    // Process liveness after reconnect is available; transcript-resumption
+    // timing is not (requires Gap 1 to be closed).
+    let b14_network_recovery = match &report.network_disconnect_test {
+        None => ThresholdResult {
+            blocker: "B-14".to_string(),
+            description: format!(
+                "Recovery from network interruption within {NETWORK_RECOVERY_MAX_SECS} seconds"
+            ),
+            limit: format!("{NETWORK_RECOVERY_MAX_SECS} s"),
+            measured: None,
+            verdict: ThresholdVerdict::UnevaluablePending,
+            pending_reason: Some(
+                "network disconnect test was not performed in this run \
+                 (dry-run mode or the run ended before the 2-hour mark). \
+                 Run the full 4-hour soak with administrator privileges to evaluate B-14."
+                    .to_string(),
+            ),
+        },
+        Some(test) if !test.succeeded => ThresholdResult {
+            blocker: "B-14".to_string(),
+            description: format!(
+                "Recovery from network interruption within {NETWORK_RECOVERY_MAX_SECS} seconds"
+            ),
+            limit: format!("{NETWORK_RECOVERY_MAX_SECS} s"),
+            measured: None,
+            verdict: ThresholdVerdict::UnevaluablePending,
+            pending_reason: Some(format!(
+                "network disconnect simulation failed (Gap 3 — requires administrator \
+                 privileges on Windows): {}. \
+                 Process liveness was not confirmed. \
+                 Transcript-resumption timing also requires closing Gap 1 (metrics IPC).",
+                test.note.as_deref().unwrap_or("no error detail available")
+            )),
+        },
+        Some(test) => {
+            // Disconnect ran; check whether the process stayed alive.
+            // Transcript-resumption timing cannot be measured without IPC.
+            match test.process_recovered {
+                Some(false) => ThresholdResult {
+                    blocker: "B-14".to_string(),
+                    description: format!(
+                        "Recovery from network interruption within \
+                         {NETWORK_RECOVERY_MAX_SECS} seconds"
+                    ),
+                    limit: format!("{NETWORK_RECOVERY_MAX_SECS} s"),
+                    measured: Some(
+                        "process exited after network disconnect — no restart should \
+                         be required"
+                            .to_string(),
+                    ),
+                    verdict: ThresholdVerdict::Fail,
+                    pending_reason: None,
+                },
+                _ => ThresholdResult {
+                    // process_recovered == Some(true) or None (could not determine)
+                    blocker: "B-14".to_string(),
+                    description: format!(
+                        "Recovery from network interruption within \
+                         {NETWORK_RECOVERY_MAX_SECS} seconds"
+                    ),
+                    limit: format!("{NETWORK_RECOVERY_MAX_SECS} s"),
+                    measured: Some(
+                        "process remained alive after reconnect (liveness only; \
+                         transcript resumption unconfirmed)"
+                            .to_string(),
+                    ),
+                    verdict: ThresholdVerdict::UnevaluablePending,
+                    pending_reason: Some(
+                        "process liveness confirmed, but transcript-resumption timing \
+                         within 60 s cannot be verified without metrics IPC (Gap 1). \
+                         Close Gap 1 for a full B-14 verdict."
+                            .to_string(),
+                    ),
+                },
+            }
+        }
+    };
+
+    // ── Summary flags ─────────────────────────────────────────────────────────
+    let all_results = [
+        &b09_memory_growth,
+        &b10_cpu_typical,
+        &b10_cpu_any_sample,
+        &b11_chunk_loss_overall,
+        &b11_chunk_loss_window,
+        &b12_subtitle_latency_avg,
+        &b12_subtitle_latency_window,
+        &b13_cost_discrepancy,
+        &b14_network_recovery,
+    ];
+
+    let any_blocker_triggered = all_results
+        .iter()
+        .any(|r| r.verdict == ThresholdVerdict::Fail);
+
+    let all_evaluated_pass = all_results
+        .iter()
+        .filter(|r| r.verdict != ThresholdVerdict::UnevaluablePending)
+        .all(|r| r.verdict == ThresholdVerdict::Pass);
+
+    ThresholdEvaluation {
+        b09_memory_growth,
+        b10_cpu_typical,
+        b10_cpu_any_sample,
+        b11_chunk_loss_overall,
+        b11_chunk_loss_window,
+        b12_subtitle_latency_avg,
+        b12_subtitle_latency_window,
+        b13_cost_discrepancy,
+        b14_network_recovery,
+        all_evaluated_pass,
+        any_blocker_triggered,
     }
 }
 
@@ -599,6 +1031,7 @@ fn run_dry_run(args: Args) -> Result<()> {
     report.finished_at_utc = Some(utc_now_iso8601());
     report.duration_secs = Some(total_secs);
 
+    report.threshold_evaluation = Some(evaluate_thresholds(&report));
     write_json(&args.output, &report)?;
     println!(
         "[run_soak] dry-run complete in {}s — report written to {}",
@@ -744,6 +1177,7 @@ fn run_full_soak(args: Args) -> Result<()> {
     // Gap 2: billing API is not implemented.
     report.billing_actual_usd = None;
 
+    report.threshold_evaluation = Some(evaluate_thresholds(&report));
     write_json(&args.output, &report)?;
     println!(
         "[run_soak] soak run finished in {}s — report: {}",
@@ -842,7 +1276,269 @@ mod tests {
         assert!(r.samples.is_empty());
         assert!(r.network_disconnect_test.is_none());
         assert!(r.billing_actual_usd.is_none());
+        assert!(
+            r.threshold_evaluation.is_none(),
+            "threshold_evaluation starts None; populated by evaluate_thresholds"
+        );
         assert_eq!(r.gaps.len(), 3, "report must document exactly 3 gaps");
+    }
+
+    // ── Threshold evaluation tests ────────────────────────────────────────────
+
+    /// A fresh report with no samples produces UNEVALUABLE_PENDING for B-09/B-10
+    /// (not enough data) and for all IPC-backed metrics (B-11/B-12/B-13/B-14).
+    #[test]
+    fn evaluate_thresholds_no_samples_all_pending() {
+        let r = SoakReport::new(true, "tests/soak/soak_audio.wav", None);
+        let ev = evaluate_thresholds(&r);
+
+        assert_eq!(
+            ev.b09_memory_growth.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-09 needs ≥2 samples"
+        );
+        assert_eq!(
+            ev.b10_cpu_typical.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-10 typical needs CPU samples"
+        );
+        assert_eq!(
+            ev.b10_cpu_any_sample.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-10 hard ceiling needs CPU samples"
+        );
+        assert_eq!(
+            ev.b11_chunk_loss_overall.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-11 always pending (Gap 1)"
+        );
+        assert_eq!(
+            ev.b11_chunk_loss_window.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-11 window always pending (Gap 1)"
+        );
+        assert_eq!(
+            ev.b12_subtitle_latency_avg.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-12 always pending (Gap 1)"
+        );
+        assert_eq!(
+            ev.b12_subtitle_latency_window.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-12 window always pending (Gap 1)"
+        );
+        assert_eq!(
+            ev.b13_cost_discrepancy.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-13 always pending (Gap 2)"
+        );
+        assert_eq!(
+            ev.b14_network_recovery.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "B-14 pending when no disconnect test ran"
+        );
+
+        assert!(!ev.any_blocker_triggered);
+        // No threshold was evaluated, so all_evaluated_pass is vacuously true.
+        assert!(ev.all_evaluated_pass);
+    }
+
+    /// Two memory samples below the 50 MiB growth limit → B-09 PASS.
+    #[test]
+    fn evaluate_thresholds_memory_growth_pass() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.samples.push(MetricSample {
+            elapsed_secs: 0,
+            timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+            memory_mb: Some(100.0),
+            cpu_pct: Some(10.0),
+            total_chunks_sent: None,
+            total_chunks_dropped: None,
+            api_failures: None,
+            latest_subtitle_latency_ms: None,
+            estimated_cost_usd: None,
+        });
+        r.samples.push(MetricSample {
+            elapsed_secs: 14400,
+            timestamp_utc: "2025-01-01T04:00:00Z".to_string(),
+            memory_mb: Some(130.0), // +30 MiB — within limit
+            cpu_pct: Some(15.0),
+            total_chunks_sent: None,
+            total_chunks_dropped: None,
+            api_failures: None,
+            latest_subtitle_latency_ms: None,
+            estimated_cost_usd: None,
+        });
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(ev.b09_memory_growth.verdict, ThresholdVerdict::Pass);
+        assert_eq!(
+            ev.b09_memory_growth.measured.as_deref(),
+            Some("30.0 MiB"),
+            "measured growth must be reported"
+        );
+        assert!(!ev.any_blocker_triggered);
+    }
+
+    /// Memory growth exceeding 50 MiB → B-09 FAIL (release blocker).
+    #[test]
+    fn evaluate_thresholds_memory_growth_fail() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.samples.push(MetricSample {
+            elapsed_secs: 0,
+            timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+            memory_mb: Some(100.0),
+            cpu_pct: Some(10.0),
+            total_chunks_sent: None,
+            total_chunks_dropped: None,
+            api_failures: None,
+            latest_subtitle_latency_ms: None,
+            estimated_cost_usd: None,
+        });
+        r.samples.push(MetricSample {
+            elapsed_secs: 14400,
+            timestamp_utc: "2025-01-01T04:00:00Z".to_string(),
+            memory_mb: Some(160.0), // +60 MiB — exceeds 50 MiB limit
+            cpu_pct: Some(15.0),
+            total_chunks_sent: None,
+            total_chunks_dropped: None,
+            api_failures: None,
+            latest_subtitle_latency_ms: None,
+            estimated_cost_usd: None,
+        });
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(ev.b09_memory_growth.verdict, ThresholdVerdict::Fail);
+        assert!(ev.any_blocker_triggered);
+    }
+
+    /// CPU median below 40% and peak below 60% → both B-10 checks PASS.
+    #[test]
+    fn evaluate_thresholds_cpu_pass() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        for (secs, cpu) in [(0, 20.0f32), (300, 30.0), (600, 25.0)] {
+            r.samples.push(MetricSample {
+                elapsed_secs: secs,
+                timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+                memory_mb: Some(100.0),
+                cpu_pct: Some(cpu),
+                total_chunks_sent: None,
+                total_chunks_dropped: None,
+                api_failures: None,
+                latest_subtitle_latency_ms: None,
+                estimated_cost_usd: None,
+            });
+        }
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(ev.b10_cpu_typical.verdict, ThresholdVerdict::Pass);
+        assert_eq!(ev.b10_cpu_any_sample.verdict, ThresholdVerdict::Pass);
+        assert!(!ev.any_blocker_triggered);
+    }
+
+    /// CPU peak at or above 60% → B-10 hard ceiling FAIL.
+    #[test]
+    fn evaluate_thresholds_cpu_peak_fail() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        for (secs, cpu) in [(0, 20.0f32), (300, 65.0), (600, 25.0)] {
+            r.samples.push(MetricSample {
+                elapsed_secs: secs,
+                timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+                memory_mb: Some(100.0),
+                cpu_pct: Some(cpu),
+                total_chunks_sent: None,
+                total_chunks_dropped: None,
+                api_failures: None,
+                latest_subtitle_latency_ms: None,
+                estimated_cost_usd: None,
+            });
+        }
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(ev.b10_cpu_any_sample.verdict, ThresholdVerdict::Fail);
+        assert!(ev.any_blocker_triggered);
+    }
+
+    /// Network disconnect test ran and process stayed alive → B-14 UNEVALUABLE_PENDING
+    /// (liveness confirmed, transcript resumption unconfirmed without IPC).
+    #[test]
+    fn evaluate_thresholds_b14_process_alive_still_pending() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.network_disconnect_test = Some(NetworkDisconnectTest {
+            triggered_at_elapsed_secs: 7200,
+            method: "netsh_advfirewall_windows".to_string(),
+            succeeded: true,
+            reconnected_at_elapsed_secs: Some(7230),
+            process_recovered: Some(true),
+            note: None,
+        });
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(
+            ev.b14_network_recovery.verdict,
+            ThresholdVerdict::UnevaluablePending,
+            "liveness alone does not satisfy B-14; transcript resumption needs IPC"
+        );
+        assert!(!ev.any_blocker_triggered);
+    }
+
+    /// Network disconnect test ran but process exited → B-14 FAIL.
+    #[test]
+    fn evaluate_thresholds_b14_process_died_fail() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.network_disconnect_test = Some(NetworkDisconnectTest {
+            triggered_at_elapsed_secs: 7200,
+            method: "netsh_advfirewall_windows".to_string(),
+            succeeded: true,
+            reconnected_at_elapsed_secs: Some(7230),
+            process_recovered: Some(false),
+            note: None,
+        });
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(ev.b14_network_recovery.verdict, ThresholdVerdict::Fail);
+        assert!(ev.any_blocker_triggered);
+    }
+
+    /// IPC-backed threshold reasons must reference the correct gap tag.
+    #[test]
+    fn evaluate_thresholds_ipc_reasons_reference_gap1() {
+        let r = SoakReport::new(true, "tests/soak/soak_audio.wav", None);
+        let ev = evaluate_thresholds(&r);
+        for result in [
+            &ev.b11_chunk_loss_overall,
+            &ev.b11_chunk_loss_window,
+            &ev.b12_subtitle_latency_avg,
+            &ev.b12_subtitle_latency_window,
+        ] {
+            let reason = result
+                .pending_reason
+                .as_deref()
+                .expect("IPC-backed metrics must have a pending_reason");
+            assert!(
+                reason.contains("Gap 1"),
+                "pending_reason must cite Gap 1; got: {reason}"
+            );
+        }
+    }
+
+    /// The threshold constants must match the specification values exactly.
+    #[test]
+    fn threshold_constants_match_spec() {
+        assert_eq!(thresholds::MEMORY_GROWTH_MAX_MB, 50.0);
+        assert_eq!(thresholds::CPU_TYPICAL_MAX_PCT, 40.0);
+        assert_eq!(thresholds::CPU_ANY_SAMPLE_MAX_PCT, 60.0);
+        assert_eq!(thresholds::CHUNK_LOSS_OVERALL_MAX, 0.02);
+        assert_eq!(thresholds::CHUNK_LOSS_WINDOW_MAX, 0.05);
+        assert_eq!(thresholds::SUBTITLE_LATENCY_AVG_MAX_MS, 3_000);
+        assert_eq!(thresholds::SUBTITLE_LATENCY_WINDOW_MAX_MS, 5_000);
+        assert_eq!(thresholds::COST_DISCREPANCY_MAX, 0.10);
+        assert_eq!(thresholds::NETWORK_RECOVERY_MAX_SECS, 60);
+    }
+
+    /// evaluate_thresholds round-trips through serde_json without data loss.
+    #[test]
+    fn threshold_evaluation_serialises_to_valid_json() {
+        let r = SoakReport::new(true, "tests/soak/soak_audio.wav", None);
+        let ev = evaluate_thresholds(&r);
+        let json = serde_json::to_string_pretty(&ev).unwrap();
+        let ev2: ThresholdEvaluation = serde_json::from_str(&json).unwrap();
+        assert_eq!(ev2.b09_memory_growth.blocker, ev.b09_memory_growth.blocker);
+        assert_eq!(ev2.any_blocker_triggered, ev.any_blocker_triggered);
     }
 
     #[test]

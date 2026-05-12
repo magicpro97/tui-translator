@@ -102,6 +102,72 @@ fn dry_run_produces_valid_report() {
         "report must document at least one known gap"
     );
 
+    // threshold_evaluation must be present and contain all nine blocker entries.
+    let te = &report["threshold_evaluation"];
+    assert!(te.is_object(), "threshold_evaluation must be a JSON object");
+    // All nine blocker keys must be present with a valid verdict string.
+    for key in [
+        "b09_memory_growth",
+        "b10_cpu_typical",
+        "b10_cpu_any_sample",
+        "b11_chunk_loss_overall",
+        "b11_chunk_loss_window",
+        "b12_subtitle_latency_avg",
+        "b12_subtitle_latency_window",
+        "b13_cost_discrepancy",
+        "b14_network_recovery",
+    ] {
+        assert!(
+            te[key].is_object(),
+            "threshold_evaluation.{key} must be a JSON object"
+        );
+        let verdict = te[key]["verdict"].as_str().unwrap_or("");
+        assert!(
+            matches!(verdict, "PASS" | "FAIL" | "UNEVALUABLE_PENDING"),
+            "threshold_evaluation.{key}.verdict must be PASS, FAIL, or \
+             UNEVALUABLE_PENDING; got: {verdict}"
+        );
+    }
+    // IPC-backed metrics and the billing/network metrics are always
+    // UNEVALUABLE_PENDING regardless of run mode — these gaps are documented.
+    for key in [
+        "b11_chunk_loss_overall",
+        "b11_chunk_loss_window",
+        "b12_subtitle_latency_avg",
+        "b12_subtitle_latency_window",
+        "b13_cost_discrepancy",
+        "b14_network_recovery",
+    ] {
+        assert_eq!(
+            te[key]["verdict"], "UNEVALUABLE_PENDING",
+            "threshold_evaluation.{key} must be UNEVALUABLE_PENDING (Gap 1/2/3 \
+             not yet implemented); got: {}",
+            te[key]["verdict"]
+        );
+        assert!(
+            te[key]["pending_reason"].is_string(),
+            "threshold_evaluation.{key}.pending_reason must be a string"
+        );
+    }
+    // Dry-run samples use the runner's own process.  Its memory growth and CPU
+    // are expected to be well within limits, so these should not be FAIL.
+    assert_ne!(
+        te["b09_memory_growth"]["verdict"], "FAIL",
+        "runner process must not exceed 50 MiB growth in a dry-run"
+    );
+    assert_ne!(
+        te["b10_cpu_typical"]["verdict"], "FAIL",
+        "runner process must not exceed 40% median CPU in a dry-run"
+    );
+    assert_ne!(
+        te["b10_cpu_any_sample"]["verdict"], "FAIL",
+        "runner process must not exceed 60% peak CPU in a dry-run"
+    );
+    assert_eq!(
+        te["any_blocker_triggered"], false,
+        "dry-run must not trigger any blocker"
+    );
+
     println!(
         "soak_runner: dry-run report OK — {} samples, {} gaps",
         samples.len(),
