@@ -27,7 +27,6 @@
 pub mod playback;
 
 use std::{
-    future::Future,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
@@ -45,6 +44,11 @@ use crate::{
     providers::{MtProvider, PcmChunk, ProviderError, SttProvider, TtsProvider},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
+
+// Re-export the retry utilities so that other modules and the integration-test
+// binary (which path-imports this module) continue to find them here.
+#[allow(unused_imports)]
+pub use crate::providers::{is_transient, with_retry, MAX_RETRY_ATTEMPTS};
 
 // ── Pipeline state ────────────────────────────────────────────────────────────
 
@@ -72,70 +76,6 @@ impl std::fmt::Display for PipelineState {
             Self::Retrying { attempt } => write!(f, "retrying ({attempt}/5)"),
             Self::Error(msg) => write!(f, "error: {msg}"),
         }
-    }
-}
-
-// ── Retry policy ──────────────────────────────────────────────────────────────
-
-/// Maximum number of attempts (including the first) for transient errors.
-pub const MAX_RETRY_ATTEMPTS: u8 = 5;
-
-const INITIAL_RETRY_DELAY_MS: u64 = 100;
-const MAX_RETRY_DELAY_MS: u64 = 5_000;
-
-/// Returns `true` when `err` is transient and the call should be retried.
-///
-/// Transient: [`ProviderError::NetworkError`], [`ProviderError::RateLimitError`],
-/// [`ProviderError::ServiceUnavailable`].
-///
-/// Permanent (no retry): `AuthError`, `InvalidInput`, `Unimplemented`, `Unknown`.
-pub fn is_transient(err: &ProviderError) -> bool {
-    matches!(
-        err,
-        ProviderError::NetworkError(_)
-            | ProviderError::RateLimitError(_)
-            | ProviderError::ServiceUnavailable(_)
-    )
-}
-
-/// Call `op` up to [`MAX_RETRY_ATTEMPTS`] times with exponential back-off.
-///
-/// Permanent errors are returned immediately without retry.
-/// Returns `Ok(T)` on the first success or the final `Err` once all attempts
-/// are exhausted.
-pub async fn with_retry<F, Fut, T>(op: F) -> Result<T, ProviderError>
-where
-    F: Fn() -> Fut,
-    Fut: Future<Output = Result<T, ProviderError>>,
-{
-    let mut delay_ms = INITIAL_RETRY_DELAY_MS;
-    let mut last_err: Option<ProviderError> = None;
-
-    for attempt in 0..MAX_RETRY_ATTEMPTS {
-        match op().await {
-            Ok(value) => return Ok(value),
-            Err(err) if !is_transient(&err) => return Err(err),
-            Err(err) => {
-                tracing::warn!(
-                    attempt = attempt + 1,
-                    max = MAX_RETRY_ATTEMPTS,
-                    error = %err,
-                    "transient provider error; will retry"
-                );
-                last_err = Some(err);
-                if attempt + 1 < MAX_RETRY_ATTEMPTS {
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    delay_ms = (delay_ms * 2).min(MAX_RETRY_DELAY_MS);
-                }
-            }
-        }
-    }
-
-    match last_err {
-        Some(err) => Err(err),
-        None => Err(ProviderError::Unknown(
-            "retry loop exhausted without a provider error".to_string(),
-        )),
     }
 }
 
@@ -502,7 +442,10 @@ mod tests {
     use super::*;
     use crate::{
         metrics::{SessionMetrics, SttState},
-        providers::{MtResult, PcmChunk, ProviderError, SttResult, TtsResult},
+        providers::{
+            is_transient, MtResult, PcmChunk, ProviderError, SttResult, TtsResult,
+            MAX_RETRY_ATTEMPTS,
+        },
     };
     use std::sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
