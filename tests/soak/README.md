@@ -12,8 +12,8 @@ The full soak run takes **four hours** and requires a live `tui-translator`
 binary talking to the real Google Speech-to-Text and Translation APIs.  Running
 it in CI on every push would:
 
-1. **Cost money** — each 4-hour run sends roughly 14 400 audio chunks to the
-   Google STT API (≈ 14 400 × 15 s = 60 hours of API audio at standard rates).
+1. **Cost money** — the run calls the live Google STT and Translation APIs
+   continuously for four hours, incurring real charges at standard rates.
 2. **Block pull-request merges for 4+ hours** on a shared runner.
 3. **Require a real Google Cloud API key** committed as a secret on the CI
    runner, which violates the principle that the standard CI gate must work
@@ -35,7 +35,7 @@ declared and the JSON report is committed to `verification-evidence/`.
 
 | Requirement | Detail |
 |-------------|--------|
-| **Windows 10 / 11** | The soak test spawns `tui-translator.exe`, which uses WASAPI audio capture and therefore requires Windows.  The dry-run works on Linux. |
+| **Windows 10 / 11** | The soak test spawns `tui-translator.exe`, which is a Windows-only binary.  The soak procedure writes a config with `"audio_source": "file"` (introduced in issue #110), so the run **does not** invoke WASAPI loopback capture; the fixture is replayed from disk instead.  Windows is required because the binary targets Windows, not because the soak exercises WASAPI.  The dry-run works on Linux. |
 | **Administrator shell** | The network-disconnect test (§6.3) adds a Windows Firewall block rule via `netsh advfirewall`.  If you run without admin rights the soak continues, but `network_disconnect_test.succeeded` will be `false` in the report. |
 | **Google Cloud API key** | A key with `Speech-to-Text` and `Translation` APIs enabled, placed in your `config.json` (see `config.example.json`).  Do **not** commit `config.json` — it may contain a real key. |
 | **Release binary built** | Run `cargo build --release --bins` before starting the soak.  The runner looks for the binary in `target/release/tui-translator.exe` by default. |
@@ -95,7 +95,7 @@ check:
 - Memory growth: compare `samples[0].memory_mb` with
   `samples[-1].memory_mb`; growth must be < 50 MiB to pass release
   blocker B-09 (see `docs/04-verification-plan.md` §6.1).
-- CPU: all `cpu_pct` values must be < 40% sustained (release blocker B-10).
+- CPU: all `cpu_pct` values must be < 60% sustained (release blocker B-10).
 - `network_disconnect_test.succeeded` should be `true` when run as
   Administrator; `process_recovered` must be `true`.
 
@@ -217,9 +217,9 @@ From `docs/04-verification-plan.md` §6:
 |---------|-----------|------------|
 | B-09 | Memory growth < 50 MiB over 4 hours | Manual: compare first/last `memory_mb` sample |
 | B-10 | CPU < 60% sustained | Manual: inspect all `cpu_pct` samples |
-| B-11 | Displayed cost within 10% of actual billing | Gap 2 — not automated; manual GCP console check |
-| B-12 | < 2% audio chunks dropped | Gap 1 — `total_chunks_dropped` is `null`; manual log inspection |
-| B-13 | < 2% API call failures | Gap 1 — `api_failures` is `null`; manual log inspection |
+| B-11 | Chunk loss < 5% in any 15-minute block | Gap 1 — `total_chunks_dropped` is `null`; manual log inspection |
+| B-12 | Subtitle latency < 5 s in any 15-minute block | Gap 1 — `latest_subtitle_latency_ms` is `null`; manual log inspection |
+| B-13 | Cost counter within 15% of actual billing | Gap 2 — not automated; manual GCP console check |
 | B-14 | Application recovers from 30-second network outage | `network_disconnect_test.process_recovered` in report |
 
 Blockers B-11 through B-13 cannot be fully automated until Gaps 1 and 2 are
