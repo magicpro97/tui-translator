@@ -85,6 +85,33 @@ jobs:
       - name: Run contract tests (mock-only, no API keys)
         run: cargo test --test contract -- --skip real_api
 
+  # ── Integration tests (Issue #99 / WP-16.01) ────────────────────────────────
+  # Runs the dedicated `integration` test binary with pre-committed WAV fixtures
+  # and a mock STT provider.  No API keys or network access are required.
+  #
+  # Note: `tests/integration.rs` imports `src/providers/mod.rs` via `#[path]`,
+  # which transitively pulls in the Google provider sub-modules and their inline
+  # `#[cfg(test)]` unit tests.  The `--skip providers::google` filter keeps this
+  # job scoped to the fixture + mock-STT tests that are its stated purpose and
+  # avoids duplicating the provider unit tests that `cargo test --bins` already
+  # covers in the `test` job.
+  integration-test:
+    name: Integration tests (fixture + mock STT)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run integration tests (mock-only, no API keys)
+        run: cargo test --test integration -- --nocapture --skip providers::google
+
   # ── Packaging verification (Issue #90 / WP-14.01) ────────────────────────────
   # Confirm that the release binary for x86_64-pc-windows-msvc has no external
   # VC++ runtime DLL dependencies (vcruntime140.dll, msvcp140.dll).
