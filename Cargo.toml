@@ -64,6 +64,8 @@ rodio = "0.17"
 insta = "1"
 # Temp files for config tests
 tempfile = "3"
+# Tokio time-control for retry-backoff tests (start_paused = true)
+tokio = { version = "1", features = ["test-util"] }
 
 [profile.release]
 # Optimise for small binary size — users download a single .exe
