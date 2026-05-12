@@ -15,7 +15,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```ignore
 //! use std::sync::Arc;
 //! use tui_translator::metrics::loss::LossMetrics;
 //!

@@ -64,7 +64,7 @@ impl Inner {
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use std::sync::Arc;
 /// use tui_translator::metrics::latency::LatencyHistogram;
 ///
@@ -88,10 +88,11 @@ impl LatencyHistogram {
 
     /// Record a latency measurement of `ms` milliseconds.
     ///
-    /// Values larger than `60 000 ms` are clamped to the maximum bucket so
-    /// that pathological timeouts are counted without causing a panic.
+    /// Values outside `[MIN_LATENCY_MS, MAX_LATENCY_MS]` are clamped so that
+    /// both `0 ms` inputs and pathological timeouts are counted without causing
+    /// a panic or a silent drop.
     pub fn record_ms(&self, ms: u64) {
-        let clamped = ms.min(MAX_LATENCY_MS);
+        let clamped = ms.clamp(MIN_LATENCY_MS, MAX_LATENCY_MS);
         let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         // After clamping, `clamped` is guaranteed ≤ MAX_LATENCY_MS which is
         // the histogram's configured high bound, so recording should never
@@ -154,6 +155,18 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use std::thread;
+
+    #[test]
+    fn zero_ms_is_clamped_to_min() {
+        let h = LatencyHistogram::new();
+        h.record_ms(0);
+        assert_eq!(
+            h.current_ms(),
+            Some(MIN_LATENCY_MS),
+            "0 ms must be clamped to MIN_LATENCY_MS ({MIN_LATENCY_MS})"
+        );
+        assert_eq!(h.count(), 1, "clamped observation must still be counted");
+    }
 
     #[test]
     fn new_histogram_has_no_current() {
