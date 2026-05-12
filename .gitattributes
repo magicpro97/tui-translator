@@ -1,0 +1,5 @@
+# Treat WAV files as binary: prevents git from attempting text diffs or
+# three-way merges on audio data, which would silently corrupt the files.
+# The soak fixture (tests/soak/soak_audio.wav) is committed directly at
+# ≈ 938 KiB — no Git LFS is required at this size.
+*.wav binary

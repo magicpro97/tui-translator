@@ -55,7 +55,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-pty-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build (debug)
         run: cargo build --bins
       - name: Build (release)
@@ -88,7 +88,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-pty-${{ hashFiles('**/Cargo.lock') }}
       - name: Run PTY tests (issue #108)
         run: cargo test --test pty -- --nocapture
 
@@ -194,6 +194,29 @@ jobs:
             exit 1
           }
           Write-Host "PASS: no vcruntime140.dll or msvcp140.dll in dependency list."
+
+  # ── Soak fixture validation (Issue #109 / WP-18.01) ─────────────────────────
+  # Validates tests/soak/soak_audio.wav: WAV format, leading silence, speech RMS,
+  # loud transient peak, and trailing silence.  The fixture is committed directly
+  # to the repository (≈ 938 KiB — well within normal git limits) so no LFS or
+  # network access is needed.  The test does NOT run a 4-hour soak loop; it only
+  # validates the small pre-generated fixture file.
+  soak-test:
+    name: Soak fixture validation (issue #109)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-soak-${{ hashFiles('**/Cargo.lock') }}
+      - name: Validate soak fixture
+        run: cargo test --test soak -- --nocapture
 
   # ── Linux smoke ─────────────────────────────────────────────────────────────
   # We also build on Linux so that CI does not fail if a contributor uses
