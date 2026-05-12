@@ -19,7 +19,7 @@ it in CI on every push would:
    runner, which violates the principle that the standard CI gate must work
    without live credentials.
 
-CI instead runs a **30-second dry-run** (see
+CI instead runs a **≈ 5-second dry-run** (5 samples, 1 second apart) (see
 [§ CI dry-run vs. manual full run](#ci-dry-run-vs-manual-full-run) below)
 that validates the fixture file, the report structure, and the `run_soak`
 binary itself — without spawning the application binary or calling any API.
@@ -35,7 +35,7 @@ declared and the JSON report is committed to `verification-evidence/`.
 
 | Requirement | Detail |
 |-------------|--------|
-| **Windows 10 / 11** | The soak test spawns `tui-translator.exe`, which is a Windows-only binary.  The soak procedure writes a config with `"audio_source": "file"` (introduced in issue #110), so the run **does not** invoke WASAPI loopback capture; the fixture is replayed from disk instead.  Windows is required because the binary targets Windows, not because the soak exercises WASAPI.  The dry-run works on Linux. |
+| **Windows 10 / 11** | Release-candidate evidence must be produced on the platform the binary ships on (Windows 10 / 11).  Additionally, the network-disconnect test (§6.3) drives `netsh advfirewall`, which is available only on Windows.  The soak procedure writes `"audio_source": "file"` in its config (introduced in issue #110), so it does **not** invoke WASAPI loopback capture; the fixture is replayed from disk instead.  The `--dry-run` mode works on any platform. |
 | **Administrator shell** | The network-disconnect test (§6.3) adds a Windows Firewall block rule via `netsh advfirewall`.  If you run without admin rights the soak continues, but `network_disconnect_test.succeeded` will be `false` in the report. |
 | **Google Cloud API key** | A key with `Speech-to-Text` and `Translation` APIs enabled, placed in your `config.json` (see `config.example.json`).  Do **not** commit `config.json` — it may contain a real key. |
 | **Release binary built** | Run `cargo build --release --bins` before starting the soak.  The runner looks for the binary in `target/release/tui-translator.exe` by default. |
@@ -71,7 +71,8 @@ The runner:
    `TUI_TRANSLATOR_CONFIG=<soak-config.json>`.
 4. Samples `memory_mb` and `cpu_pct` every **5 minutes** via `sysinfo`.
 5. At the **2-hour mark**, attempts a 30-second network-disconnect test using
-   `netsh advfirewall` (requires admin; gracefully skipped if not available).
+   `netsh advfirewall` (requires admin; if unavailable, the test is still
+   attempted and recorded as failed in the report — see Gap 3 below).
 6. After **4 hours**, kills the child process and writes the final report to
    `verification-evidence/<YYYY-MM-DD>/soak-report.json`.
 
@@ -120,7 +121,7 @@ git commit -m "evidence(soak): 4-hour soak report YYYY-MM-DD"
 [run_soak] triggering 30-second network disconnect test
 [run_soak] disconnect test: succeeded=true recovered=Some(true)
 ...
-[run_soak] sample at 14400s: mem=54.2MiB cpu=4.8%
+[run_soak] sample at 14100s: mem=54.2MiB cpu=4.8%
 [run_soak] soak run finished in 14403s — report: verification-evidence\2025-07-15\soak-report.json
 ```
 
@@ -163,7 +164,7 @@ actual spend requires an OAuth service-account key and a Cloud Billing export
 configured in the GCP project.  Neither is set up here.
 
 See `docs/04-verification-plan.md` §6.2 (Cost Accuracy Soak, release
-blocker B-11).
+blocker B-13).
 
 ### Gap 3 — Network disconnect requires administrator privileges
 
