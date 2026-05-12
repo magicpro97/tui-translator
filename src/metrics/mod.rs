@@ -1,6 +1,9 @@
 //! Cost and runtime metrics.
 //!
-//! [`cost`] contains the thread-safe [`CostCounter`] (issues #71–#76).
+//! * [`cost`] — thread-safe [`CostCounter`] (issues #71–#76).
+//! * [`latency`] — HDR latency histogram wrapper (issue #78).
+//! * [`loss`] — atomic audio-chunk loss tracker (issue #81).
+//!
 //! The [`SessionMetrics`] and [`SttState`] types remain as the primary
 //! snapshot value published to the TUI watch channel.
 
@@ -8,7 +11,15 @@
 #![allow(dead_code)]
 
 pub mod cost;
+pub mod latency;
+pub mod loss;
+
 pub use cost::{format_cost_display, CostCounter};
+// Re-exported for convenience; not yet wired into the TUI (Phase 4).
+#[allow(unused_imports)]
+pub use latency::LatencyHistogram;
+#[allow(unused_imports)]
+pub use loss::LossMetrics;
 
 use std::time::Instant;
 
