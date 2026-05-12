@@ -145,6 +145,24 @@ impl Default for MetricsSnapshot {
     }
 }
 
+/// Format a raw second count as a human-readable elapsed string.
+///
+/// Returns `"m:ss"` for durations under one hour and `"h:mm:ss"` for one hour
+/// and above.  Extracted as a pure function so tests can exercise the
+/// formatting logic without manipulating [`Instant`] values (which can be
+/// unreliable on Windows CI where `checked_sub` may return `None` for large
+/// durations close to the system boot time).
+fn format_duration_secs(total: u64) -> String {
+    let h = total / 3600;
+    let m = (total % 3600) / 60;
+    let s = total % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 impl MetricsSnapshot {
     /// Elapsed wall-clock seconds since `session_start`.
     pub fn elapsed_secs(&self) -> u64 {
@@ -153,15 +171,7 @@ impl MetricsSnapshot {
 
     /// Human-readable elapsed time, e.g. `"3:07"` or `"1:02:45"`.
     pub fn format_elapsed(&self) -> String {
-        let total = self.elapsed_secs();
-        let h = total / 3600;
-        let m = (total % 3600) / 60;
-        let s = total % 60;
-        if h > 0 {
-            format!("{h}:{m:02}:{s:02}")
-        } else {
-            format!("{m}:{s:02}")
-        }
+        format_duration_secs(self.elapsed_secs())
     }
 
     /// Apply a [`ProcessSnapshot`](crate::metrics::process::ProcessSnapshot)
@@ -218,18 +228,18 @@ mod tests {
 
     #[test]
     fn format_elapsed_produces_hours_when_over_3600s() {
-        let mut s = MetricsSnapshot::default();
-        // Back-date session_start by ~2 hours to force the h:mm:ss branch.
-        s.session_start = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(7265))
-            .unwrap_or(s.session_start);
-        let formatted = s.format_elapsed();
-        // Should contain two colons (h:mm:ss).
+        // Call the pure helper directly with a known value (2 h 1 m 5 s).
+        // This avoids Instant::checked_sub returning None on Windows CI when
+        // the requested duration exceeds system uptime (PR #141 regression).
+        let formatted = format_duration_secs(7265);
+        // h:mm:ss must contain exactly two colons.
         let colon_count = formatted.chars().filter(|&c| c == ':').count();
         assert_eq!(
             colon_count, 2,
             "hour format should have 2 colons; got {formatted:?}"
         );
+        // Sanity-check the actual rendered value while we're here.
+        assert_eq!(formatted, "2:01:05");
     }
 
     #[test]
