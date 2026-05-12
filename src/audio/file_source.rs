@@ -165,7 +165,12 @@ fn parse_wav_pcm(bytes: &[u8], path: &Path) -> Result<Vec<i16>> {
 
     while offset + 8 <= len {
         let chunk_id = &bytes[offset..offset + 4];
-        let chunk_len = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap());
+        let chunk_len = u32::from_le_bytes([
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
+        ]);
         let body = offset + 8;
 
         if chunk_id == b"fmt " {
@@ -175,10 +180,25 @@ fn parse_wav_pcm(bytes: &[u8], path: &Path) -> Result<Vec<i16>> {
                     path.display()
                 );
             }
-            let audio_fmt = u16::from_le_bytes(bytes[body..body + 2].try_into().unwrap());
-            let channels = u16::from_le_bytes(bytes[body + 2..body + 4].try_into().unwrap());
-            let sample_rate = u32::from_le_bytes(bytes[body + 4..body + 8].try_into().unwrap());
-            let bit_depth = u16::from_le_bytes(bytes[body + 14..body + 16].try_into().unwrap());
+            // Ensure the declared body actually exists in the file before
+            // indexing into it; a truncated file would otherwise panic.
+            if body + 16 > len {
+                bail!(
+                    "fmt chunk body truncated (need {} bytes at offset {body}, \
+                     file ends at {len}): {}",
+                    body + 16,
+                    path.display()
+                );
+            }
+            let audio_fmt = u16::from_le_bytes([bytes[body], bytes[body + 1]]);
+            let channels = u16::from_le_bytes([bytes[body + 2], bytes[body + 3]]);
+            let sample_rate = u32::from_le_bytes([
+                bytes[body + 4],
+                bytes[body + 5],
+                bytes[body + 6],
+                bytes[body + 7],
+            ]);
+            let bit_depth = u16::from_le_bytes([bytes[body + 14], bytes[body + 15]]);
 
             if audio_fmt != WAV_PCM_FORMAT {
                 bail!(
@@ -366,6 +386,22 @@ mod tests {
         assert!(
             err.to_string().contains("BitsPerSample"),
             "error should mention BitsPerSample; got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_truncated_fmt_body() {
+        // Build a valid WAV, then truncate it right after the fmt chunk header
+        // so the declared 16-byte body is absent.  The parser must return Err
+        // instead of panicking.
+        let full = make_wav(1, 1, 16_000, 16, &[0i16; 4]);
+        // fmt chunk header starts at offset 12; header is 8 bytes.
+        // Truncate to offset 12 + 8 = 20 (body starts at 20, body is absent).
+        let truncated = &full[..20];
+        let err = parse_wav_pcm(truncated, Path::new("trunc.wav")).unwrap_err();
+        assert!(
+            err.to_string().contains("truncated") || err.to_string().contains("too short"),
+            "error should mention truncation or short file; got: {err}"
         );
     }
 
