@@ -68,7 +68,9 @@ pub struct PtySession {
     pub cols: u16,
     /// Counter of raw bytes received from the PTY master since spawn.
     bytes_rx: Arc<AtomicUsize>,
-    /// First raw bytes received (up to 256) for diagnostic purposes.
+    /// All raw PTY bytes received so far, retained for diagnostic and assertion
+    /// purposes.  The buffer grows without bound; callers that only need a
+    /// preview should read a bounded slice rather than cloning the whole vec.
     raw_capture: Arc<Mutex<Vec<u8>>>,
 }
 
@@ -133,14 +135,18 @@ impl PtySession {
             let writer_bg = Arc::clone(&writer);
             std::thread::spawn(move || {
                 let mut buf = vec![0u8; 4096];
+                // Rolling tail: carry the last 3 bytes of the previous read so
+                // that `\x1b[6n` is detected even when it straddles two reads.
+                let mut dsr_tail: Vec<u8> = Vec::with_capacity(3);
                 loop {
                     match reader.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
                             bytes_bg.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
+                            let data = &buf[..n];
                             {
                                 let mut cap = raw_bg.lock().unwrap();
-                                cap.extend_from_slice(&buf[..n]);
+                                cap.extend_from_slice(data);
                             }
                             // Respond to ANSI DSR cursor-position queries.
                             // crossterm sends \x1b[6n ("Device Status Report") to
@@ -149,13 +155,23 @@ impl PtySession {
                             // Windows ConPTY does not handle this automatically when
                             // used via portable-pty, so the harness responds on
                             // behalf of the terminal (cursor at row 1, col 1).
-                            let data = &buf[..n];
-                            if data.windows(4).any(|w| w == b"\x1b[6n") {
+                            //
+                            // The sequence is 4 bytes and may be split across two
+                            // reads.  Prepend the last 3 bytes of the previous read
+                            // before searching so split sequences are still caught.
+                            let check: Vec<u8> =
+                                dsr_tail.iter().chain(data.iter()).copied().collect();
+                            if check.windows(4).any(|w| w == b"\x1b[6n") {
                                 if let Ok(mut w) = writer_bg.lock() {
                                     let _ = w.write_all(b"\x1b[1;1R");
                                     let _ = w.flush();
                                 }
                             }
+                            // Update rolling tail: keep at most the last 3 bytes.
+                            let tail_start = data.len().saturating_sub(3);
+                            dsr_tail.clear();
+                            dsr_tail.extend_from_slice(&data[tail_start..]);
+
                             let mut p = parser_bg.lock().unwrap();
                             p.process(data);
                         }
@@ -192,12 +208,17 @@ impl PtySession {
         }
         // Diagnostic: show what is actually on screen when the wait times out.
         let bytes = self.bytes_rx.load(std::sync::atomic::Ordering::Relaxed);
-        let raw_preview = self.raw_capture.lock().unwrap().clone();
+        // Take only a small preview inside the lock to avoid cloning the
+        // (potentially large) unbounded capture buffer.
+        let raw_preview: Vec<u8> = {
+            let cap = self.raw_capture.lock().unwrap();
+            cap[..cap.len().min(32)].to_vec()
+        };
         eprintln!(
             "[PTY timeout] waited {:.1}s for {:?}; bytes_rx={bytes}; raw[0..32]={:?}; screen ({} rows):",
             timeout.as_secs_f32(),
             needle,
-            &raw_preview[..raw_preview.len().min(32)],
+            raw_preview,
             self.rows,
         );
         for (i, row) in self.all_rows().iter().enumerate() {

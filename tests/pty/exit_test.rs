@@ -44,7 +44,8 @@ use super::harness::{PtySession, EXIT_TIMEOUT, STARTUP_TIMEOUT};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Wait for the initial TUI frame and return the session.
+/// Wait for the initial TUI frame; panics if the hints bar is not visible
+/// within `STARTUP_TIMEOUT`.
 fn wait_for_ready(session: &PtySession, label: &str) {
     assert!(
         session.wait_for_text("Q quit", STARTUP_TIMEOUT),

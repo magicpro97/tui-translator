@@ -103,8 +103,13 @@ fn layout_80x24() {
         PtySession::spawn(80, 24, &[]).expect("failed to spawn tui-translator for layout_80x24");
     assert_initial_frame(&session, "80×24");
     check_layout(&session, 80, 24);
-    session.send(b"qq").expect("send quit");
-    session.wait_exit(EXIT_TIMEOUT);
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "layout_80x24: expected clean exit (code 0); got {code:?}"
+    );
 }
 
 #[test]
@@ -113,8 +118,13 @@ fn layout_120x40() {
         PtySession::spawn(120, 40, &[]).expect("failed to spawn tui-translator for layout_120x40");
     assert_initial_frame(&session, "120×40");
     check_layout(&session, 120, 40);
-    session.send(b"qq").expect("send quit");
-    session.wait_exit(EXIT_TIMEOUT);
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "layout_120x40: expected clean exit (code 0); got {code:?}"
+    );
 }
 
 #[test]
@@ -123,8 +133,13 @@ fn layout_200x50() {
         PtySession::spawn(200, 50, &[]).expect("failed to spawn tui-translator for layout_200x50");
     assert_initial_frame(&session, "200×50");
     check_layout(&session, 200, 50);
-    session.send(b"qq").expect("send quit");
-    session.wait_exit(EXIT_TIMEOUT);
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "layout_200x50: expected clean exit (code 0); got {code:?}"
+    );
 }
 
 #[test]
