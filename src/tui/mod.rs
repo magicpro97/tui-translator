@@ -881,7 +881,7 @@ impl StatusMetricsStrip<'_> {
         };
         lines.push(Line::from(Span::styled(
             format!(
-                "CPU:{:.0}%  RAM:{}MB  Net:↑{:.0}k/↓{:.0}k kbps  E2E:{}  Loss:{:.1}%",
+                "CPU:{:.0}%  RAM:{}MB  Net:↑{:.0}/↓{:.0} kbps  E2E:{}  Loss:{:.1}%",
                 self.cpu_pct,
                 ram_mb,
                 self.net_kbps_tx,
@@ -985,7 +985,7 @@ pub fn draw_ui(
 
     // Issue #65: the control hints bar is ALWAYS shown (1 row, no scroll).
     // Build layout — bottom section grows when the metrics panel is expanded.
-    let metrics_h = if expanded { 5u16 } else { 3u16 };
+    let metrics_h = if expanded { 6u16 } else { 3u16 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
