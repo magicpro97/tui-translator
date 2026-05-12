@@ -13,7 +13,7 @@
 //! | Permanent error (first call) | `with_retry` makes exactly **1** call; returns `Err` immediately |
 //! | Exhaustion → next chunk | after exhaustion returns `Err`, a subsequent call with a fresh mock succeeds |
 //! | Pipeline discard-and-continue | exhaustion → drop counted → warn logged → next chunk succeeds → no panic |
-//! | No crash on any error variant | all `ProviderError` variants complete without panicking |
+//! | No crash on any error variant | each `ProviderError` variant is exercised through `with_retry` and the call completes without panicking |
 //!
 //! # Design
 //!
@@ -291,55 +291,85 @@ async fn after_exhaustion_next_chunk_with_explicit_success() {
     );
 }
 
-/// Every `ProviderError` variant can be returned by `with_retry` without the
+/// Every `ProviderError` variant is exercised through `with_retry` without the
 /// application panicking.
 ///
-/// This test covers the "does not crash in any error scenario" requirement of
-/// issue #102.
+/// Transient variants are injected for all retry attempts and asserted to
+/// return the same error variant after exhaustion. Permanent variants are
+/// asserted to return immediately on the first call. This covers the "does not
+/// crash in any error scenario" requirement of issue #102 without overstating
+/// what the retry helper returns.
 #[tokio::test(start_paused = true)]
 async fn application_does_not_crash_on_any_error_variant() {
-    let variants: Vec<ProviderError> = vec![
-        ProviderError::NetworkError("net".to_owned()),
-        ProviderError::AuthError("auth".to_owned()),
-        ProviderError::RateLimitError("rate".to_owned()),
-        ProviderError::InvalidInput("input".to_owned()),
-        ProviderError::Unimplemented("nyi".to_owned()),
-        ProviderError::ServiceUnavailable("svc".to_owned()),
-        ProviderError::Unknown("unk".to_owned()),
+    let transient_cases: Vec<(SequenceMt, &'static str)> = vec![
+        (
+            SequenceMt::always_error(|| ProviderError::NetworkError("net".to_owned())),
+            "NetworkError",
+        ),
+        (
+            SequenceMt::always_error(|| ProviderError::RateLimitError("rate".to_owned())),
+            "RateLimitError",
+        ),
+        (
+            SequenceMt::always_error(|| ProviderError::ServiceUnavailable("svc".to_owned())),
+            "ServiceUnavailable",
+        ),
     ];
 
-    for variant in variants {
-        // Build a provider that returns just this one error variant.
-        let label = format!("{variant}");
-        let queue = Arc::new(Mutex::new(VecDeque::from([Err::<String, _>(variant)])));
-        let call_count = Arc::new(AtomicUsize::new(0));
-        let queue_ref = Arc::clone(&queue);
-        let count_ref = Arc::clone(&call_count);
+    for (provider, label) in transient_cases {
+        let result = with_retry(|| provider.translate("hello world", "en", "ja")).await;
+        assert_eq!(
+            provider.call_count(),
+            MAX_RETRY_ATTEMPTS as usize,
+            "{label}: transient errors must retry until exhaustion"
+        );
+        assert!(
+            matches!(
+                result,
+                Err(ProviderError::NetworkError(_))
+                    | Err(ProviderError::RateLimitError(_))
+                    | Err(ProviderError::ServiceUnavailable(_))
+            ),
+            "{label}: expected exhausted transient error, got {result:?}"
+        );
+    }
 
-        // Run with_retry; it must complete (not panic) regardless of variant.
-        let _result = with_retry(|| {
-            let q = Arc::clone(&queue_ref);
-            let c = Arc::clone(&count_ref);
-            async move {
-                c.fetch_add(1, Ordering::Relaxed);
-                let next = q.lock().unwrap_or_else(|p| p.into_inner()).pop_front();
-                match next {
-                    Some(Ok(t)) => Ok(MtResult {
-                        translated_text: t,
-                        detected_source_language: None,
-                    }),
-                    Some(Err(e)) => Err(e),
-                    None => Ok(MtResult {
-                        translated_text: "ok".to_owned(),
-                        detected_source_language: None,
-                    }),
-                }
-            }
-        })
-        .await;
+    let permanent_cases: Vec<(SequenceMt, &'static str)> = vec![
+        (
+            SequenceMt::always_error(|| ProviderError::AuthError("auth".to_owned())),
+            "AuthError",
+        ),
+        (
+            SequenceMt::always_error(|| ProviderError::InvalidInput("input".to_owned())),
+            "InvalidInput",
+        ),
+        (
+            SequenceMt::always_error(|| ProviderError::Unimplemented("nyi".to_owned())),
+            "Unimplemented",
+        ),
+        (
+            SequenceMt::always_error(|| ProviderError::Unknown("unk".to_owned())),
+            "Unknown",
+        ),
+    ];
 
-        // No panic = assertion passed.  Log the variant so output is readable.
-        let _ = &label; // suppress unused-variable lint
+    for (provider, label) in permanent_cases {
+        let result = with_retry(|| provider.translate("hello world", "en", "ja")).await;
+        assert_eq!(
+            provider.call_count(),
+            1,
+            "{label}: permanent errors must return on the first attempt"
+        );
+        assert!(
+            matches!(
+                result,
+                Err(ProviderError::AuthError(_))
+                    | Err(ProviderError::InvalidInput(_))
+                    | Err(ProviderError::Unimplemented(_))
+                    | Err(ProviderError::Unknown(_))
+            ),
+            "{label}: expected permanent error to propagate immediately, got {result:?}"
+        );
     }
 }
 
