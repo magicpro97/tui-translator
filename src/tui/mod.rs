@@ -947,8 +947,8 @@ pub fn draw_ui(
                 .add_modifier(Modifier::BOLD),
         ));
     }
-    // Issue #85: surface MT/TTS exhausted-retry error in the title bar when
-    // there is no ongoing STT error (STT errors render via SttState::Error).
+    // Issue #85: surface the latest MT/TTS exhausted-retry error in the title
+    // bar. STT errors still render through `SttState::Error`.
     if let Some(ref msg) = pipeline_err {
         title_spans.push(Span::styled(
             format!("   {msg}"),
@@ -1139,7 +1139,7 @@ pub fn render_auth_error_banner(
     message: &str,
     restart_required: bool,
 ) {
-    let panel_w = area.width.min(area.width);
+    let panel_w = area.width;
     let panel_h = 5u16.min(area.height);
     let x = area.x;
     // Anchor just below the title bar and audio gauge (6 rows combined),

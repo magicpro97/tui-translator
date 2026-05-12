@@ -129,7 +129,12 @@ where
         }
     }
 
-    Err(last_err.expect("loop always assigns last_err before exhausting attempts"))
+    match last_err {
+        Some(err) => Err(err),
+        None => Err(ProviderError::Unknown(
+            "retry loop exhausted without a provider error".to_string(),
+        )),
+    }
 }
 
 // ── Orchestrator context ──────────────────────────────────────────────────────
@@ -228,14 +233,21 @@ pub async fn run_orchestrator<S, M, T>(
     tracing::info!("orchestrator started");
     let mut seq: u64 = 0;
 
-    while let Some(chunk) = audio_rx.recv().await {
+    loop {
         if ctx.shutdown.load(Ordering::Relaxed) {
             tracing::info!("orchestrator: shutdown requested — exiting loop");
             break;
         }
 
-        // Always update the audio-level gauge and timing metrics.
-        update_audio_metrics(&chunk, &ctx);
+        let Some(chunk) = (tokio::select! {
+            maybe_chunk = audio_rx.recv() => maybe_chunk,
+            _ = tokio::time::sleep(Duration::from_millis(50)) => continue,
+        }) else {
+            break;
+        };
+
+        // Always update the audio-level gauge.
+        update_audio_level(&chunk, &ctx);
 
         if ctx.paused.load(Ordering::Relaxed) {
             ctx.audio_level.store(0, Ordering::Relaxed);
@@ -246,6 +258,7 @@ pub async fn run_orchestrator<S, M, T>(
             continue;
         }
 
+        update_audio_sent_metrics(&chunk, &ctx);
         let pcm = AudioChunk::into_pcm(chunk, seq);
         seq += 1;
         process_chunk(pcm, &stt, &mt, &tts, &ctx).await;
@@ -302,12 +315,14 @@ where
                 r.translated_text
             }
             Err(ProviderError::AuthError(msg)) => {
+                set_stt_state(&ctx.stt_state, SttState::Listening);
                 handle_auth_error(ctx, &format!("MT: {msg}"));
                 return;
             }
             Err(err) => {
                 let warn_msg = format!("⚠ Translation error: {err}");
                 tracing::warn!("{warn_msg}");
+                set_stt_state(&ctx.stt_state, SttState::Listening);
                 set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
                 return; // discard chunk, continue outer loop
             }
@@ -350,9 +365,12 @@ where
 
 // ── Audio / metrics helpers ───────────────────────────────────────────────────
 
-fn update_audio_metrics(chunk: &AudioChunk, ctx: &OrchestratorContext) {
+fn update_audio_level(chunk: &AudioChunk, ctx: &OrchestratorContext) {
     let encoded = (chunk.rms_energy().clamp(0.0, 1.0) * AUDIO_LEVEL_SCALE as f32) as u32;
     ctx.audio_level.store(encoded, Ordering::Relaxed);
+}
+
+fn update_audio_sent_metrics(chunk: &AudioChunk, ctx: &OrchestratorContext) {
     let mut m = ctx
         .session_metrics
         .lock()
@@ -672,6 +690,7 @@ mod tests {
         let (ctx, _tx) = make_context(Arc::clone(&shutdown));
         let err_msg = Arc::clone(&ctx.pipeline_error_msg);
         let pane = Arc::clone(&ctx.subtitle_pane);
+        let stt_state = Arc::clone(&ctx.stt_state);
 
         let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(2);
         inner_tx.send(speech_chunk()).await.unwrap();
@@ -697,6 +716,10 @@ mod tests {
             pane.lock().unwrap().pair_count(),
             0,
             "failed MT chunk must be discarded"
+        );
+        assert!(
+            matches!(&*stt_state.lock().unwrap(), SttState::Listening),
+            "STT state must return to Listening after MT failure"
         );
     }
 
@@ -828,6 +851,7 @@ mod tests {
         // Pre-halt the pipeline.
         ctx.pipeline_halted.store(true, Ordering::Relaxed);
         let pane = Arc::clone(&ctx.subtitle_pane);
+        let metrics = Arc::clone(&ctx.session_metrics);
 
         let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(4);
         for _ in 0..3 {
@@ -842,6 +866,11 @@ mod tests {
             0,
             "halted pipeline must produce no subtitle pairs"
         );
+        assert_eq!(
+            metrics.lock().unwrap().audio_seconds_sent,
+            0.0,
+            "halted pipeline must not count audio as sent"
+        );
     }
 
     /// Paused pipeline produces no subtitles.
@@ -851,6 +880,7 @@ mod tests {
         let (ctx, _tx) = make_context(Arc::clone(&shutdown));
         ctx.paused.store(true, Ordering::Relaxed);
         let pane = Arc::clone(&ctx.subtitle_pane);
+        let metrics = Arc::clone(&ctx.session_metrics);
 
         let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(4);
         inner_tx.send(speech_chunk()).await.unwrap();
@@ -859,20 +889,27 @@ mod tests {
         run_orchestrator(inner_rx, OkStt("hello"), OkMt, OkTts, ctx).await;
 
         assert_eq!(pane.lock().unwrap().pair_count(), 0);
+        assert_eq!(
+            metrics.lock().unwrap().audio_seconds_sent,
+            0.0,
+            "paused pipeline must not count audio as sent"
+        );
     }
 
-    /// Shutdown flag causes the loop to exit cleanly.
+    /// Shutdown flag causes the loop to exit cleanly even while waiting for audio.
     #[tokio::test]
-    async fn shutdown_flag_exits_loop() {
-        let shutdown = Arc::new(AtomicBool::new(true)); // pre-set
+    async fn shutdown_flag_exits_loop_while_waiting_for_audio() {
+        let shutdown = Arc::new(AtomicBool::new(false));
         let (ctx, _tx) = make_context(Arc::clone(&shutdown));
 
         let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(4);
-        // Channel stays open but we have the shutdown flag set.
-        // The first recv() will succeed, then the loop should exit.
-        inner_tx.send(speech_chunk()).await.unwrap();
+        let _keep_sender_alive = inner_tx;
+        let shutdown_task = Arc::clone(&shutdown);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            shutdown_task.store(true, Ordering::Relaxed);
+        });
 
-        // With a timeout so the test doesn't hang.
         tokio::time::timeout(
             Duration::from_secs(2),
             run_orchestrator(inner_rx, OkStt("hello"), OkMt, OkTts, ctx),
