@@ -30,6 +30,8 @@ Usage:
     python tests/soak/gen_fixture.py        # writes tests/soak/soak_audio.wav
 """
 
+from __future__ import annotations
+
 import math
 import os
 import random
@@ -128,10 +130,14 @@ def build_samples() -> list[int]:
     transient_count = 2 * sr                            # 32 000
     noise2_count = 28 * sr - 15 * sr - len(en1) - transient_count  # 73 200
 
-    assert gap1 > 0, f"gap1={gap1} must be positive; ja1 too long?"
-    assert gap2 > 0, f"gap2={gap2} must be positive; ja2 too long?"
-    assert noise1_count > 0, f"noise1_count={noise1_count} must be positive; ja3 too long?"
-    assert noise2_count > 0, f"noise2_count={noise2_count} must be positive; en1 too long?"
+    if gap1 <= 0:
+        raise ValueError(f"gap1={gap1} must be positive; ja1 too long?")
+    if gap2 <= 0:
+        raise ValueError(f"gap2={gap2} must be positive; ja2 too long?")
+    if noise1_count <= 0:
+        raise ValueError(f"noise1_count={noise1_count} must be positive; ja3 too long?")
+    if noise2_count <= 0:
+        raise ValueError(f"noise2_count={noise2_count} must be positive; en1 too long?")
 
     parts: list[int] = []
     parts += _silence(2 * sr)                      # 0.000–2.000 s  : silence
@@ -146,7 +152,9 @@ def build_samples() -> list[int]:
     parts += _background_noise(noise2_count, rng)  # 23.425–28.000 s: ambient noise
     parts += _silence(2 * sr)                      # 28.000–30.000 s: trailing silence
 
-    assert len(parts) == DURATION_S * sr, f"Expected {DURATION_S * sr} samples, got {len(parts)}"
+    total = len(parts)
+    if total != DURATION_S * sr:
+        raise ValueError(f"Expected {DURATION_S * sr} samples, got {total}")
     return parts
 
 

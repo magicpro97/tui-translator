@@ -127,7 +127,24 @@ fn soak_fixture_exists_and_is_valid_wav() {
     };
 
     let bytes_per_sample = (EXPECTED_BIT_DEPTH / 8) as usize;
-    let actual_samples = data_size as usize / (bytes_per_sample * EXPECTED_CHANNELS as usize);
+    let frame_bytes = bytes_per_sample * EXPECTED_CHANNELS as usize;
+
+    assert_eq!(
+        data_size as usize % frame_bytes,
+        0,
+        "data chunk size ({} bytes) is not a multiple of frame size ({} bytes); \
+         fixture may be corrupt or truncated",
+        data_size,
+        frame_bytes,
+    );
+    assert!(
+        data_offset + data_size as usize <= len,
+        "data chunk extends beyond end of file \
+         (data_offset={data_offset}, data_size={data_size}, file_len={len}); \
+         fixture is truncated.  Re-generate with: python tests/soak/gen_fixture.py"
+    );
+
+    let actual_samples = data_size as usize / frame_bytes;
     assert_eq!(
         actual_samples,
         EXPECTED_SAMPLES,
@@ -162,10 +179,9 @@ fn soak_fixture_exists_and_is_valid_wav() {
     // ── 7. Speech region (2 s–5.24 s = ja_speech_3s.wav) must have real RMS ─
     // ja_speech_3s.wav contributes 51 840 samples starting at sample 32 000.
     // We check a 1-second window inside that region (samples 32 000..48 000).
-    // Any real neural-TTS speech will have RMS well above 500; pure silence or
-    // AM tones at our previous amplitude of 4 000 would also trigger, but we
-    // additionally verify that the RMS is above a threshold consistent with
-    // actual speech (> 1 000 counts), ruling out accidental all-zero padding.
+    // Any real neural-TTS speech will have RMS well above 500; we assert
+    // > 500 as a conservative lower bound that rules out accidental all-zero
+    // padding while remaining robust to quieter fixture variants.
     let speech_start = 2 * EXPECTED_SAMPLE_RATE as usize; // 32 000
     let speech_check_end = speech_start + EXPECTED_SAMPLE_RATE as usize; // 48 000
     let speech_window = &pcm[speech_start..speech_check_end];
