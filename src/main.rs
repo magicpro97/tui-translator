@@ -612,9 +612,20 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     result
 }
 
-/// Returns the path to `config.json`, resolved relative to the running
-/// executable so the file stays portable regardless of the working directory.
+/// Returns the path to `config.json` to load at startup.
+///
+/// Resolution order:
+/// 1. `TUI_TRANSLATOR_CONFIG` environment variable — allows the soak runner
+///    (and other callers) to inject a temporary configuration without touching
+///    the binary's install directory.
+/// 2. The directory that contains the running executable joined with
+///    `config.json` — the normal production layout.
+/// 3. The literal string `"config.json"` in the current working directory as a
+///    last resort.
 fn config_json_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("TUI_TRANSLATOR_CONFIG") {
+        return std::path::PathBuf::from(path);
+    }
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("config.json")))
@@ -1529,6 +1540,39 @@ mod tests {
         assert!(
             state.auth_error_banner.lock().unwrap().is_some(),
             "auth_error_banner must remain visible even after a key change (restart needed)"
+        );
+    }
+
+    // ── config_json_path — TUI_TRANSLATOR_CONFIG env-var override (issue #110) ──
+
+    /// When `TUI_TRANSLATOR_CONFIG` is set, `config_json_path` must return that
+    /// path verbatim so the soak runner's generated config is actually loaded.
+    #[test]
+    fn config_json_path_uses_env_override() {
+        let var = "TUI_TRANSLATOR_CONFIG";
+        let expected = r"C:\tmp\soak-config.json";
+        // SAFETY: single-threaded section; no other thread reads this var.
+        unsafe { std::env::set_var(var, expected) };
+        let path = config_json_path();
+        unsafe { std::env::remove_var(var) };
+        assert_eq!(
+            path,
+            std::path::PathBuf::from(expected),
+            "config_json_path must honour TUI_TRANSLATOR_CONFIG"
+        );
+    }
+
+    /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` falls back to the
+    /// executable-relative path, which must end with `config.json`.
+    #[test]
+    fn config_json_path_fallback_ends_with_config_json() {
+        // Ensure the var is absent for this test.
+        unsafe { std::env::remove_var("TUI_TRANSLATOR_CONFIG") };
+        let path = config_json_path();
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("config.json"),
+            "fallback path must end with config.json; got {path:?}"
         );
     }
 }
