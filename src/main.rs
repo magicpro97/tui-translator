@@ -21,6 +21,13 @@
 //!   [`SessionMetrics`] to a `tokio::sync::watch` channel every second.
 //! - Issue #64: all required commands are implemented (Space, L, R, Esc, Q).
 //! - Issue #65: the control hints bar is always rendered, one row high.
+//!
+//! Phase 2 additions (issues #84–#89):
+//! - Issue #84: `run_orchestrator` drives the STT → MT → TTS pipeline.
+//! - Issue #85: exhausted retries produce visible status messages.
+//! - Issue #86: `AuthError` halts the pipeline until config is reloaded.
+//! - Issue #87: graceful shutdown — waits up to 2 s for in-progress calls.
+//! - Issue #88: Windows console control handler catches forced terminal close.
 
 use anyhow::Result;
 use crossterm::{
@@ -53,6 +60,79 @@ use tui::{
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
 
+// ── Issue #88 — Windows console-control handler ───────────────────────────────
+//
+// Handles CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT (window X button),
+// CTRL_LOGOFF_EVENT, and CTRL_SHUTDOWN_EVENT by setting a global flag that the
+// event loop checks at every frame.
+//
+// On non-Windows builds this is a no-op; Ctrl+C is still handled by the
+// crossterm keyboard task.
+
+/// Set to `true` by the Windows console handler when the terminal is closed
+/// or the process is signalled to exit.
+pub(crate) static FORCED_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+mod windows_signal {
+    use super::FORCED_SHUTDOWN;
+    use std::sync::atomic::Ordering;
+
+    const CTRL_C_EVENT: u32 = 0;
+    const CTRL_BREAK_EVENT: u32 = 1;
+    const CTRL_CLOSE_EVENT: u32 = 2;
+    const CTRL_LOGOFF_EVENT: u32 = 5;
+    const CTRL_SHUTDOWN_EVENT: u32 = 6;
+
+    /// Windows console control handler.
+    ///
+    /// # Safety
+    /// Called by the OS on a dedicated thread; only touches an `AtomicBool`.
+    unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> i32 {
+        match ctrl_type {
+            CTRL_C_EVENT
+            | CTRL_BREAK_EVENT
+            | CTRL_CLOSE_EVENT
+            | CTRL_LOGOFF_EVENT
+            | CTRL_SHUTDOWN_EVENT => {
+                FORCED_SHUTDOWN.store(true, Ordering::Relaxed);
+                1 // TRUE — we handled it; do not call the next handler
+            }
+            _ => 0, // FALSE — pass to next handler
+        }
+    }
+
+    extern "system" {
+        #[link_name = "SetConsoleCtrlHandler"]
+        fn set_console_ctrl_handler(
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
+    }
+
+    /// Register the console-control handler.
+    ///
+    /// Must be called once before the TUI starts so window-close events are
+    /// caught even if the user never presses Ctrl+C.
+    pub fn install() {
+        // SAFETY: `ctrl_handler` only writes to an `AtomicBool`.
+        let ok = unsafe { set_console_ctrl_handler(Some(ctrl_handler), 1) };
+        if ok != 0 {
+            tracing::info!("Windows console control handler installed (issue #88)");
+        } else {
+            tracing::warn!(
+                "SetConsoleCtrlHandler failed; forced-close events may not be caught (issue #88)"
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod windows_signal {
+    /// No-op on non-Windows platforms.
+    pub fn install() {}
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -62,6 +142,10 @@ fn main() -> Result<()> {
         .init();
 
     tracing::info!("tui-translator starting");
+
+    // Issue #88 — install the Windows console control handler before the TUI
+    // enters alternate-screen mode so a forced close triggers our cleanup.
+    windows_signal::install();
 
     // Load configuration, falling back to built-in defaults if config.json is absent.
     let cfg_path = config_json_path();
@@ -84,6 +168,16 @@ fn main() -> Result<()> {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .target_language
+            .clone(),
+    );
+    // Initialise source_language from the loaded config so AppState and the
+    // orchestrator start with the same value.
+    overwrite_source_language(
+        &state.source_language,
+        &current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .source_language
             .clone(),
     );
     state.set_tts_enabled(
@@ -109,6 +203,7 @@ fn main() -> Result<()> {
     if let Some(mut config_rx) = config_rx {
         let current_config = Arc::clone(&current_config);
         let target_language = Arc::clone(&state.target_language);
+        let source_language = Arc::clone(&state.source_language);
         let tts_enabled = Arc::clone(&state.tts_enabled);
         let restart_required = Arc::clone(&restart_required);
         let playback_service = Arc::clone(&playback_service);
@@ -119,11 +214,12 @@ fn main() -> Result<()> {
                 // offload to a dedicated thread so we don't block a Tokio worker.
                 let cc = Arc::clone(&current_config);
                 let tl = Arc::clone(&target_language);
+                let sl = Arc::clone(&source_language);
                 let te = Arc::clone(&tts_enabled);
                 let rr = Arc::clone(&restart_required);
                 let ps = Arc::clone(&playback_service);
                 tokio::task::spawn_blocking(move || {
-                    apply_runtime_config(&cc, &tl, &te, &rr, &ps, next_cfg);
+                    apply_runtime_config(&cc, &tl, &sl, &te, &rr, &ps, next_cfg);
                 })
                 .await
                 .ok();
@@ -131,33 +227,175 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── Issue #84 — orchestrator shutdown signal ──────────────────────────────
+    // Shared with `run_tui` so it can signal the orchestrator when Q is pressed.
+    let orchestrator_shutdown = Arc::new(AtomicBool::new(false));
+    // Handle returned by the orchestrator task; `None` when no API key is set.
+    let orchestrator_join: Option<tokio::task::JoinHandle<()>>;
+
     match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
-        Ok(mut stream) => {
+        Ok(stream) => {
             overwrite_device_name(&state.device_name, &stream.info.device_name);
             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
                 metrics::SttState::Listening;
 
-            let level_tx = state.audio_level.clone();
-            let paused = Arc::clone(&state.paused);
-            let session_metrics = Arc::clone(&state.session_metrics);
-            let stt_state = Arc::clone(&state.stt_state);
-            rt.spawn(async move {
-                loop {
-                    let Some(chunk) = stream.receiver.recv().await else {
-                        mark_audio_capture_stopped(&level_tx, &stt_state);
-                        break;
-                    };
-                    handle_audio_chunk(chunk, &paused, &level_tx, &session_metrics);
-                }
-            });
+            // ── Issue #84 — wire orchestrator or fall back to metrics-only ────
+            let api_key = current_config
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .google_api_key
+                .clone();
+
+            if let Some(key) = api_key {
+                // Build Google providers and start the orchestrator.
+                // Reuse the Arc already held in AppState so hot-reload writes
+                // are visible to the running orchestrator.
+                let source_language = Arc::clone(&state.source_language);
+
+                let stt_provider = match providers::google::stt::GoogleSttProvider::new(key.clone()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        tracing::error!("failed to create STT provider: {err}");
+                        // Fall back to metrics-only audio task.
+                        spawn_metrics_only_audio_task(&rt, stream, &state);
+                        orchestrator_join = None;
+                        return finish_main(
+                            rt,
+                            &state,
+                            &restart_required,
+                            &cfg_path,
+                            &current_config,
+                            &playback_service,
+                            orchestrator_join,
+                            orchestrator_shutdown,
+                        );
+                    }
+                };
+                let mt_provider = match providers::google::mt::GoogleMtProvider::new(key.clone()) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        tracing::error!("failed to create MT provider: {err}");
+                        spawn_metrics_only_audio_task(&rt, stream, &state);
+                        orchestrator_join = None;
+                        return finish_main(
+                            rt,
+                            &state,
+                            &restart_required,
+                            &cfg_path,
+                            &current_config,
+                            &playback_service,
+                            orchestrator_join,
+                            orchestrator_shutdown,
+                        );
+                    }
+                };
+                let tts_provider = match providers::google::tts::GoogleTtsProvider::new(key) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        tracing::error!("failed to create TTS provider: {err}");
+                        spawn_metrics_only_audio_task(&rt, stream, &state);
+                        orchestrator_join = None;
+                        return finish_main(
+                            rt,
+                            &state,
+                            &restart_required,
+                            &cfg_path,
+                            &current_config,
+                            &playback_service,
+                            orchestrator_join,
+                            orchestrator_shutdown,
+                        );
+                    }
+                };
+
+                let ctx = pipeline::OrchestratorContext {
+                    audio_level: Arc::clone(&state.audio_level),
+                    stt_state: Arc::clone(&state.stt_state),
+                    subtitle_pane: Arc::clone(&state.subtitle_pane),
+                    session_metrics: Arc::clone(&state.session_metrics),
+                    pipeline_error_msg: Arc::clone(&state.pipeline_error_msg),
+                    auth_error_banner: Arc::clone(&state.auth_error_banner),
+                    pipeline_halted: Arc::clone(&state.pipeline_halted),
+                    paused: Arc::clone(&state.paused),
+                    tts_enabled: Arc::clone(&state.tts_enabled),
+                    source_language,
+                    target_language: Arc::clone(&state.target_language),
+                    playback: Arc::clone(&playback_service),
+                    shutdown: Arc::clone(&orchestrator_shutdown),
+                };
+
+                orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
+                    stream.receiver,
+                    stt_provider,
+                    mt_provider,
+                    tts_provider,
+                    ctx,
+                )));
+            } else {
+                // No API key configured — run metrics-only audio task.
+                tracing::info!(
+                    "no google_api_key configured; running without STT/MT/TTS (issue #84)"
+                );
+                spawn_metrics_only_audio_task(&rt, stream, &state);
+                orchestrator_join = None;
+            }
         }
         Err(err) => {
             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
                 metrics::SttState::Error(err.to_string());
             tracing::error!("audio capture failed to start: {err}");
+            orchestrator_join = None;
         }
     }
 
+    finish_main(
+        rt,
+        &state,
+        &restart_required,
+        &cfg_path,
+        &current_config,
+        &playback_service,
+        orchestrator_join,
+        orchestrator_shutdown,
+    )
+}
+
+/// Spawn the legacy metrics-only audio task (used when no API key is set).
+fn spawn_metrics_only_audio_task(
+    rt: &tokio::runtime::Runtime,
+    mut stream: audio::CaptureStream,
+    state: &AppState,
+) {
+    let level_tx = Arc::clone(&state.audio_level);
+    let paused = Arc::clone(&state.paused);
+    let session_metrics = Arc::clone(&state.session_metrics);
+    let stt_state = Arc::clone(&state.stt_state);
+    rt.spawn(async move {
+        loop {
+            let Some(chunk) = stream.receiver.recv().await else {
+                mark_audio_capture_stopped(&level_tx, &stt_state);
+                break;
+            };
+            handle_audio_chunk(chunk, &paused, &level_tx, &session_metrics);
+        }
+    });
+}
+
+/// Run the TUI event loop, then orchestrate graceful shutdown and print the
+/// session summary.
+///
+/// Extracted from `main` so both the happy path and provider-init error paths
+/// share identical shutdown logic.
+fn finish_main(
+    rt: tokio::runtime::Runtime,
+    state: &AppState,
+    restart_required: &Arc<AtomicBool>,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
+    orchestrator_join: Option<tokio::task::JoinHandle<()>>,
+    orchestrator_shutdown: Arc<AtomicBool>,
+) -> Result<()> {
     // ── Issue #61: metrics observability background task ─────────────────────
     // Publish a fresh `SessionMetrics` snapshot to the watch channel every second
     // so the UI can read it lock-free via `state.metrics_snapshot()`.
@@ -210,7 +448,17 @@ fn main() -> Result<()> {
         key_rx,
     );
 
-    // Cancel background tasks without waiting for them to finish.
+    // ── Issue #87 — graceful orchestrator shutdown ────────────────────────────
+    // Signal the orchestrator to stop processing new chunks.
+    orchestrator_shutdown.store(true, Ordering::Relaxed);
+    // Wait up to 2 seconds for any in-progress STT/MT/TTS call to finish.
+    if let Some(join_handle) = orchestrator_join {
+        rt.block_on(async {
+            let _ = tokio::time::timeout(Duration::from_secs(2), join_handle).await;
+        });
+    }
+
+    // Cancel remaining background tasks without waiting for them to finish.
     rt.shutdown_background();
 
     // ── Issue #64: print session summary to stdout after terminal is restored ─
@@ -258,9 +506,23 @@ fn overwrite_target_language(slot: &Arc<std::sync::Mutex<String>>, next_language
     }
 }
 
+fn overwrite_source_language(slot: &Arc<std::sync::Mutex<String>>, next_language: &str) {
+    match slot.lock() {
+        Ok(mut guard) => {
+            *guard = next_language.to_string();
+        }
+        Err(poisoned) => {
+            tracing::warn!("source_language mutex was poisoned; recovering last known state");
+            let mut guard = poisoned.into_inner();
+            *guard = next_language.to_string();
+        }
+    }
+}
+
 fn apply_runtime_config(
     current_config: &Arc<Mutex<config::AppConfig>>,
     target_language: &Arc<std::sync::Mutex<String>>,
+    source_language: &Arc<std::sync::Mutex<String>>,
     tts_enabled: &Arc<AtomicBool>,
     restart_required: &Arc<AtomicBool>,
     playback_service: &SharedPlaybackService,
@@ -278,6 +540,7 @@ fn apply_runtime_config(
     }
 
     overwrite_target_language(target_language, &next_cfg.target_language);
+    overwrite_source_language(source_language, &next_cfg.source_language);
     // Sync the backend first; only set the UI flag to match what actually succeeded.
     let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
     tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
@@ -379,6 +642,12 @@ fn event_loop(
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     loop {
+        // ── Issue #88 — check for Windows forced-close signal ─────────────────
+        if FORCED_SHUTDOWN.load(Ordering::Relaxed) {
+            tracing::info!("forced shutdown signal received; exiting event loop (issue #88)");
+            break;
+        }
+
         let expanded = state.metrics_expanded.load(Ordering::Relaxed);
         let show_restart = restart_required.load(Ordering::Relaxed);
         let pane_area = subtitle_inner_area(terminal.size()?, expanded);
@@ -658,11 +927,17 @@ fn handle_action(
                 apply_runtime_config(
                     current_config,
                     &state.target_language,
+                    &state.source_language,
                     &state.tts_enabled,
                     restart_required,
                     playback_service,
                     next_cfg,
                 );
+                // Issue #86 — auth-error recovery requires a full restart.
+                // Providers still hold the old (possibly invalid) credential
+                // in-process; no un-halt is possible here regardless of
+                // whether the key changed.  The banner and pipeline_halted
+                // flag stay set until the application is restarted.
                 tracing::info!("config reloaded from {}", cfg_path.display());
             }
             Err(err) => {
@@ -953,5 +1228,140 @@ mod tests {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .is_none());
+    }
+
+    // ── Issue #86 — auth-recovery ReloadConfig tests ──────────────────────────
+
+    /// Pressing R when the pipeline is already halted and the API key is
+    /// unchanged must NOT clear the banner or un-halt the pipeline.
+    ///
+    /// The same invalid key is still in use; clearing the banner would cause
+    /// an immediate re-halt on the next chunk.
+    #[test]
+    fn reload_config_does_not_clear_banner_when_key_unchanged_and_halted() {
+        let mut config_file = NamedTempFile::new().unwrap();
+        // Write a config with no API key (same as default → restart_required stays false).
+        write!(
+            config_file,
+            r#"{{"source_language":"en-US","target_language":"vi","tts_enabled":false}}"#
+        )
+        .unwrap();
+
+        let state = AppState::new();
+        // Simulate an active auth-error halt.
+        *state.auth_error_banner.lock().unwrap() =
+            Some("authentication error: invalid API key".to_string());
+        state.pipeline_halted.store(true, Ordering::Relaxed);
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::ReloadConfig,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            config_file.path(),
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(
+            state.pipeline_halted.load(Ordering::Relaxed),
+            "pipeline must remain halted when the key is unchanged and still invalid"
+        );
+        assert!(
+            state.auth_error_banner.lock().unwrap().is_some(),
+            "auth_error_banner must remain visible when the key is unchanged and still invalid"
+        );
+    }
+
+    /// Pressing R when there is no active auth error (pipeline running normally)
+    /// must leave the pipeline unhalted and the banner as `None`.
+    ///
+    /// This is the happy-path reload: no auth condition needs fixing so the
+    /// pipeline state is untouched.
+    #[test]
+    fn reload_config_leaves_pipeline_running_when_no_auth_error() {
+        let mut config_file = NamedTempFile::new().unwrap();
+        write!(
+            config_file,
+            r#"{{"source_language":"en-US","target_language":"fr","tts_enabled":false}}"#
+        )
+        .unwrap();
+
+        let state = AppState::new();
+        // No active auth error — pipeline is running normally.
+        *state.auth_error_banner.lock().unwrap() = None;
+        state.pipeline_halted.store(false, Ordering::Relaxed);
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::ReloadConfig,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            config_file.path(),
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(
+            !state.pipeline_halted.load(Ordering::Relaxed),
+            "pipeline must remain unhalted when there was no auth error"
+        );
+        assert!(
+            state.auth_error_banner.lock().unwrap().is_none(),
+            "auth_error_banner must remain None when there was no auth error"
+        );
+    }
+
+    /// Pressing R after saving a new API key (restart_required = true) while
+    /// the pipeline is halted must NOT clear the banner or un-halt the pipeline.
+    ///
+    /// Providers still carry the old (invalid) credential in-process; only a
+    /// full application restart picks up the new key.
+    #[test]
+    fn reload_config_does_not_clear_banner_when_key_changed_and_halted() {
+        let mut config_file = NamedTempFile::new().unwrap();
+        // Key differs from default → apply_runtime_config will set restart_required true.
+        write!(
+            config_file,
+            r#"{{"source_language":"en-US","target_language":"vi","tts_enabled":false,"google_api_key":"new-key-value"}}"#
+        )
+        .unwrap();
+
+        let state = AppState::new();
+        *state.auth_error_banner.lock().unwrap() =
+            Some("authentication error: invalid API key".to_string());
+        state.pipeline_halted.store(true, Ordering::Relaxed);
+
+        // Simulate the flag already set from a previous watcher-detected change.
+        let restart_required = Arc::new(AtomicBool::new(true));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::ReloadConfig,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            config_file.path(),
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(
+            state.pipeline_halted.load(Ordering::Relaxed),
+            "pipeline must remain halted even after a key change (restart needed)"
+        );
+        assert!(
+            state.auth_error_banner.lock().unwrap().is_some(),
+            "auth_error_banner must remain visible even after a key change (restart needed)"
+        );
     }
 }
