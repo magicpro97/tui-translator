@@ -51,6 +51,8 @@ use tui::{
     draw_session_summary, draw_ui, subtitle_inner_area, AppState, UserAction, AUDIO_LEVEL_SCALE,
 };
 
+type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -90,6 +92,14 @@ fn main() -> Result<()> {
             .unwrap_or_else(|p| p.into_inner())
             .tts_enabled,
     );
+    let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+    {
+        let current_cfg = current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        sync_playback_service_state(&playback_service, &current_cfg, current_cfg.tts_enabled);
+    }
 
     // Build a multi-threaded Tokio runtime for background tasks.
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -101,16 +111,22 @@ fn main() -> Result<()> {
         let target_language = Arc::clone(&state.target_language);
         let tts_enabled = Arc::clone(&state.tts_enabled);
         let restart_required = Arc::clone(&restart_required);
+        let playback_service = Arc::clone(&playback_service);
         rt.spawn(async move {
             while config_rx.changed().await.is_ok() {
                 let next_cfg = config_rx.borrow().clone();
-                apply_runtime_config(
-                    &current_config,
-                    &target_language,
-                    &tts_enabled,
-                    &restart_required,
-                    next_cfg,
-                );
+                // PlaybackService::new does blocking I/O (startup_rx.recv + device enum);
+                // offload to a dedicated thread so we don't block a Tokio worker.
+                let cc = Arc::clone(&current_config);
+                let tl = Arc::clone(&target_language);
+                let te = Arc::clone(&tts_enabled);
+                let rr = Arc::clone(&restart_required);
+                let ps = Arc::clone(&playback_service);
+                tokio::task::spawn_blocking(move || {
+                    apply_runtime_config(&cc, &tl, &te, &rr, &ps, next_cfg);
+                })
+                .await
+                .ok();
             }
         });
     }
@@ -189,6 +205,7 @@ fn main() -> Result<()> {
         &restart_required,
         &cfg_path,
         &current_config,
+        &playback_service,
         &keyboard_shutdown,
         key_rx,
     );
@@ -246,6 +263,7 @@ fn apply_runtime_config(
     target_language: &Arc<std::sync::Mutex<String>>,
     tts_enabled: &Arc<AtomicBool>,
     restart_required: &Arc<AtomicBool>,
+    playback_service: &SharedPlaybackService,
     next_cfg: config::AppConfig,
 ) {
     let requires_restart = {
@@ -260,7 +278,37 @@ fn apply_runtime_config(
     }
 
     overwrite_target_language(target_language, &next_cfg.target_language);
-    tts_enabled.store(next_cfg.tts_enabled, Ordering::Relaxed);
+    // Sync the backend first; only set the UI flag to match what actually succeeded.
+    let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
+    tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
+}
+
+fn sync_playback_service_state(
+    playback_service: &SharedPlaybackService,
+    config: &config::AppConfig,
+    enabled: bool,
+) -> bool {
+    let mut service_slot = playback_service.lock().unwrap_or_else(|p| p.into_inner());
+
+    if let Some(service) = service_slot.as_ref() {
+        service.set_enabled(enabled);
+        return true;
+    }
+
+    if !enabled {
+        return true;
+    }
+
+    match pipeline::playback::PlaybackService::new(enabled, config.tts_output_device.as_deref()) {
+        Ok(service) => {
+            *service_slot = Some(service);
+            true
+        }
+        Err(err) => {
+            tracing::warn!("TTS playback unavailable: {err}");
+            false
+        }
+    }
 }
 
 fn handle_audio_chunk(
@@ -298,6 +346,7 @@ fn run_tui(
     restart_required: &Arc<AtomicBool>,
     cfg_path: &Path,
     current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
     keyboard_shutdown: &Arc<AtomicBool>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
@@ -308,6 +357,7 @@ fn run_tui(
         restart_required,
         cfg_path,
         current_config,
+        playback_service,
         key_rx,
     );
     keyboard_shutdown.store(true, Ordering::Relaxed);
@@ -325,6 +375,7 @@ fn event_loop(
     restart_required: &Arc<AtomicBool>,
     cfg_path: &Path,
     current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     loop {
@@ -362,6 +413,7 @@ fn event_loop(
                         restart_required,
                         cfg_path,
                         current_config,
+                        playback_service,
                     );
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -479,6 +531,7 @@ fn handle_action(
     restart_required: &Arc<AtomicBool>,
     cfg_path: &Path,
     current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
 ) {
     match action {
         // Scrolling
@@ -512,15 +565,17 @@ fn handle_action(
 
         // T — toggle TTS (issue #58)
         UserAction::ToggleTts => {
-            state.toggle_tts();
-            tracing::info!(
-                "TTS toggled: {}",
-                if state.tts_enabled.load(Ordering::Relaxed) {
-                    "on"
-                } else {
-                    "off"
-                }
-            );
+            let was_enabled = state.tts_enabled.load(Ordering::Relaxed);
+            let want_enabled = !was_enabled;
+            let current = current_config
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            // Sync the backend first; only update the UI flag to reflect what succeeded.
+            let service_ok = sync_playback_service_state(playback_service, &current, want_enabled);
+            let actual = want_enabled && service_ok;
+            state.tts_enabled.store(actual, Ordering::Relaxed);
+            tracing::info!("TTS toggled: {}", if actual { "on" } else { "off" });
         }
 
         // M — expand / collapse metrics (issue #41)
@@ -605,6 +660,7 @@ fn handle_action(
                     &state.target_language,
                     &state.tts_enabled,
                     restart_required,
+                    playback_service,
                     next_cfg,
                 );
                 tracing::info!("config reloaded from {}", cfg_path.display());
@@ -715,6 +771,7 @@ mod tests {
         *state.lang_input.lock().unwrap() = "en-US".to_string();
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
 
         handle_action(
             &UserAction::LangApply,
@@ -723,6 +780,7 @@ mod tests {
             &restart_required,
             Path::new("config.json"),
             &current_config,
+            &playback_service,
         );
 
         assert_eq!(state.target_language(), "en-US");
@@ -743,6 +801,7 @@ mod tests {
         let state = AppState::new();
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
 
         handle_action(
             &UserAction::ReloadConfig,
@@ -751,6 +810,7 @@ mod tests {
             &restart_required,
             config_file.path(),
             &current_config,
+            &playback_service,
         );
 
         assert_eq!(state.target_language(), "en");
@@ -831,6 +891,7 @@ mod tests {
         state.show_help.store(true, Ordering::Relaxed);
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
 
         handle_action(
             &UserAction::PromptLanguage,
@@ -839,6 +900,7 @@ mod tests {
             &restart_required,
             Path::new("config.json"),
             &current_config,
+            &playback_service,
         );
 
         assert!(state.lang_prompt_active.load(Ordering::Relaxed));
@@ -852,6 +914,7 @@ mod tests {
         *state.lang_input.lock().unwrap() = "vi".to_string();
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
 
         handle_action(
             &UserAction::ToggleHelp,
@@ -860,10 +923,24 @@ mod tests {
             &restart_required,
             Path::new("config.json"),
             &current_config,
+            &playback_service,
         );
 
         assert!(state.show_help.load(Ordering::Relaxed));
         assert!(!state.lang_prompt_active.load(Ordering::Relaxed));
         assert!(state.lang_input.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn disabled_tts_does_not_create_playback_service() {
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let config = config::AppConfig::default();
+
+        sync_playback_service_state(&playback_service, &config, false);
+
+        assert!(playback_service
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_none());
     }
 }
