@@ -410,14 +410,20 @@ fn spawn_metrics_only_audio_task(
     let paused = Arc::clone(&state.paused);
     let session_metrics = Arc::clone(&state.session_metrics);
     let stt_state = Arc::clone(&state.stt_state);
-    let cost_counter = Arc::clone(&state.cost_counter);
+    let metrics_only_cost_counter = Arc::new(metrics::CostCounter::new());
     rt.spawn(async move {
         loop {
             let Some(chunk) = stream.receiver.recv().await else {
                 mark_audio_capture_stopped(&level_tx, &stt_state);
                 break;
             };
-            handle_audio_chunk(chunk, &paused, &level_tx, &session_metrics, &cost_counter);
+            handle_audio_chunk(
+                chunk,
+                &paused,
+                &level_tx,
+                &session_metrics,
+                &metrics_only_cost_counter,
+            );
         }
     });
 }

@@ -39,8 +39,8 @@ use thiserror::Error;
 /// and `metrics` modules are in scope.  Wire it at construction time via
 /// `GoogleMtProvider::with_cost_reporter` / `GoogleTtsProvider::with_cost_reporter`.
 pub trait CostReporter: Send + Sync + std::fmt::Debug {
-    /// Called after a successful translation with the number of translated
-    /// characters in the returned text.
+    /// Called after a successful translation with the number of source/input
+    /// characters sent to the translation API.
     fn record_translated_characters(&self, count: usize);
 
     /// Called after a successful synthesis with the number of input characters

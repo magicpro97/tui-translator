@@ -111,11 +111,10 @@ impl CostCounter {
             .total_usd()
     }
 
-    /// Return `true` when the estimate has crossed `threshold_usd`.
+    /// Return `true` when the current estimate is above `threshold_usd`.
     ///
     /// A `threshold_usd` of `0.0` (or negative) disables the warning and
-    /// always returns `false`.  Once the threshold is crossed the return
-    /// value stays `true` for the remainder of the session.
+    /// always returns `false`.
     pub fn exceeds_warning_threshold(&self, threshold_usd: f64) -> bool {
         threshold_usd > 0.0 && self.current_estimate_usd() > threshold_usd
     }
