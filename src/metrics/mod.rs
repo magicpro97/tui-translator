@@ -1,10 +1,14 @@
-//! Cost and runtime metrics stub.
+//! Cost and runtime metrics.
 //!
-//! Phase 4 builds the real cost counter.  This stub defines the types so
-//! the TUI and pipeline can reference them without the implementation.
+//! [`cost`] contains the thread-safe [`CostCounter`] (issues #71–#76).
+//! The [`SessionMetrics`] and [`SttState`] types remain as the primary
+//! snapshot value published to the TUI watch channel.
 
 // Metrics types are used in Phase 4; suppress dead-code lint for now.
 #![allow(dead_code)]
+
+pub mod cost;
+pub use cost::{format_cost_display, CostCounter};
 
 use std::time::Instant;
 
@@ -57,7 +61,9 @@ impl SttState {
 pub struct SessionMetrics {
     /// Total audio duration sent to the STT API, in seconds.
     pub audio_seconds_sent: f64,
-    /// Total characters sent to the Translation API.
+    /// Total Unicode characters of MT input (source text) sent to the
+    /// Translation API — matches the billing basis used by Google Cloud
+    /// Translation (input chars, not output length).
     pub chars_translated: u64,
     /// Estimated session cost in USD, based on public Google pricing.
     pub estimated_cost_usd: f64,

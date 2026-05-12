@@ -140,6 +140,21 @@ mod windows_signal {
     pub fn install() {}
 }
 
+// ── CostReporter impl ─────────────────────────────────────────────────────────
+// Bridge between the `providers::CostReporter` hook (defined in the providers
+// module so it is accessible from the contract test binary) and the concrete
+// `metrics::CostCounter` that lives here in the binary crate root.
+impl providers::CostReporter for metrics::CostCounter {
+    fn record_translated_characters(&self, count: usize) {
+        // Use UFCS to unambiguously call the inherent method, not this trait impl.
+        metrics::CostCounter::record_translated_characters(self, count);
+    }
+
+    fn record_synthesized_characters(&self, count: usize) {
+        // Use UFCS to unambiguously call the inherent method, not this trait impl.
+        metrics::CostCounter::record_synthesized_characters(self, count);
+    }
+}
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -281,8 +296,12 @@ fn main() -> Result<()> {
                         );
                     }
                 };
+                // Issue #71–#76: wire cost reporter so MT API usage is billed
+                // against the shared CostCounter.
                 let mt_provider = match providers::google::mt::GoogleMtProvider::new(key.clone()) {
-                    Ok(p) => p,
+                    Ok(p) => p.with_cost_reporter(
+                        Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>
+                    ),
                     Err(err) => {
                         tracing::error!("failed to create MT provider: {err}");
                         spawn_metrics_only_audio_task(&rt, stream, &state);
@@ -301,8 +320,12 @@ fn main() -> Result<()> {
                         );
                     }
                 };
+                // Issue #71–#76: wire cost reporter so TTS API usage is billed
+                // against the shared CostCounter.
                 let tts_provider = match providers::google::tts::GoogleTtsProvider::new(key) {
-                    Ok(p) => p,
+                    Ok(p) => p.with_cost_reporter(
+                        Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>
+                    ),
                     Err(err) => {
                         tracing::error!("failed to create TTS provider: {err}");
                         spawn_metrics_only_audio_task(&rt, stream, &state);
@@ -327,6 +350,7 @@ fn main() -> Result<()> {
                     stt_state: Arc::clone(&state.stt_state),
                     subtitle_pane: Arc::clone(&state.subtitle_pane),
                     session_metrics: Arc::clone(&state.session_metrics),
+                    cost_counter: Arc::clone(&state.cost_counter),
                     pipeline_error_msg: Arc::clone(&state.pipeline_error_msg),
                     auth_error_banner: Arc::clone(&state.auth_error_banner),
                     pipeline_halted: Arc::clone(&state.pipeline_halted),
@@ -386,13 +410,20 @@ fn spawn_metrics_only_audio_task(
     let paused = Arc::clone(&state.paused);
     let session_metrics = Arc::clone(&state.session_metrics);
     let stt_state = Arc::clone(&state.stt_state);
+    let metrics_only_cost_counter = Arc::new(metrics::CostCounter::new());
     rt.spawn(async move {
         loop {
             let Some(chunk) = stream.receiver.recv().await else {
                 mark_audio_capture_stopped(&level_tx, &stt_state);
                 break;
             };
-            handle_audio_chunk(chunk, &paused, &level_tx, &session_metrics);
+            handle_audio_chunk(
+                chunk,
+                &paused,
+                &level_tx,
+                &session_metrics,
+                &metrics_only_cost_counter,
+            );
         }
     });
 }
@@ -420,6 +451,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let metrics_src = Arc::clone(&state.session_metrics);
         let metrics_tx = Arc::clone(&state.metrics_tx);
         let subtitle_pane = Arc::clone(&state.subtitle_pane);
+        let cost_counter = Arc::clone(&state.cost_counter);
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
@@ -432,7 +464,9 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
                     .pair_count() as u64;
-                snapshot.recalculate_cost();
+                // Issue #71–#76: derive the running cost estimate from the shared
+                // CostCounter so that STT, MT, and TTS costs are all included.
+                snapshot.estimated_cost_usd = cost_counter.current_estimate_usd();
                 let _ = metrics_tx.send(snapshot);
             }
         });
@@ -596,6 +630,7 @@ fn handle_audio_chunk(
     paused: &Arc<AtomicBool>,
     level_tx: &Arc<AtomicU32>,
     session_metrics: &Arc<Mutex<metrics::SessionMetrics>>,
+    cost_counter: &Arc<metrics::CostCounter>,
 ) {
     if paused.load(Ordering::Relaxed) {
         level_tx.store(0, Ordering::Relaxed);
@@ -605,9 +640,14 @@ fn handle_audio_chunk(
     let encoded = (chunk.rms_energy().clamp(0.0, 1.0) * AUDIO_LEVEL_SCALE as f32) as u32;
     level_tx.store(encoded, Ordering::Relaxed);
 
-    let mut metrics = session_metrics.lock().unwrap_or_else(|p| p.into_inner());
-    metrics.audio_seconds_sent += f64::from(chunk.duration_ms) / 1000.0;
-    metrics.recalculate_cost();
+    let audio_secs = f64::from(chunk.duration_ms) / 1000.0;
+    session_metrics
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .audio_seconds_sent += audio_secs;
+    // Record STT usage in the shared CostCounter (issues #71–#76).
+    // MT and TTS providers will call their respective record_* methods when wired.
+    cost_counter.record_audio_seconds(audio_secs);
 }
 
 fn mark_audio_capture_stopped(
@@ -679,8 +719,19 @@ fn event_loop(
 
         let level = state.level_ratio();
         let dev_name = state.device_name_str();
+        let cost_warning_usd = current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .cost_warning_usd;
         terminal.draw(|frame| {
-            draw_ui(frame, state, &dev_name, level, show_restart);
+            draw_ui(
+                frame,
+                state,
+                &dev_name,
+                level,
+                show_restart,
+                cost_warning_usd,
+            );
         })?;
 
         // Drain all pending key actions without blocking.
@@ -989,8 +1040,11 @@ fn print_session_summary_to_stdout(state: &AppState) {
     println!("  Duration:        {}", metrics.format_elapsed());
     println!("  Subtitle pairs:  {pair_count}");
     println!("  Audio processed: {:.0}s", metrics.audio_seconds_sent);
-    println!("  Characters:      {}", metrics.chars_translated);
-    println!("  Estimated cost:  ${:.4}", metrics.estimated_cost_usd);
+    println!("  MT input chars:  {}", metrics.chars_translated);
+    println!(
+        "  Estimated cost:  {}",
+        metrics::cost::format_cost_display(metrics.estimated_cost_usd)
+    );
     println!("  TTS output:      {}", if tts_on { "on" } else { "off" });
     println!("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}");
     println!();
@@ -1132,6 +1186,7 @@ mod tests {
             &paused,
             &level_tx,
             &session_metrics,
+            &Arc::new(metrics::CostCounter::new()),
         );
 
         assert_eq!(level_tx.load(Ordering::Relaxed), 0);
@@ -1155,6 +1210,7 @@ mod tests {
             &paused,
             &level_tx,
             &session_metrics,
+            &Arc::new(metrics::CostCounter::new()),
         );
 
         assert!(level_tx.load(Ordering::Relaxed) > 0);
