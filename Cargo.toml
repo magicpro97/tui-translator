@@ -66,6 +66,10 @@ insta = "1"
 tempfile = "3"
 # Tokio time-control for retry-backoff tests (start_paused = true)
 tokio = { version = "1", features = ["test-util"] }
+# Issue #104: PTY harness for Layer-3 terminal behaviour tests (#105–#107)
+portable-pty = "0.9"
+# VT100 / ANSI terminal emulator used to parse PTY output into a cell grid
+vt100 = "0.15"
 
 [profile.release]
 # Optimise for small binary size — users download a single .exe
