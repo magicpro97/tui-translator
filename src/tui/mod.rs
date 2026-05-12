@@ -26,7 +26,9 @@ use ratatui::{
 use tracing::warn;
 use unicode_width::UnicodeWidthChar;
 
-pub use crate::metrics::{format_cost_display, CostCounter, SessionMetrics, SttState};
+pub use crate::metrics::{
+    format_cost_display, CostCounter, MetricsSnapshot, SessionMetrics, SttState,
+};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -471,7 +473,9 @@ fn subtitle_block() -> Block<'static> {
 }
 
 pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool) -> Rect {
-    let metrics_h = if metrics_expanded { 5u16 } else { 3u16 };
+    // Expanded mode: 2 border rows + 4 content rows (STT/TTS, metrics, elapsed,
+    // runtime CPU/RAM/Net/E2E/Loss) = 6 total.  Compact mode keeps 3 rows.
+    let metrics_h = if metrics_expanded { 6u16 } else { 3u16 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -540,11 +544,11 @@ pub struct AppState {
     /// second and publishes it through the watch channel.
     pub cost_counter: Arc<CostCounter>,
     /// Watch channel sender — the observability background task calls
-    /// `metrics_tx.send(snapshot)` every second (issue #61).
-    pub metrics_tx: Arc<tokio::sync::watch::Sender<SessionMetrics>>,
+    /// `metrics_tx.send(snapshot)` every second (issue #61, #82).
+    pub metrics_tx: Arc<tokio::sync::watch::Sender<MetricsSnapshot>>,
     /// Watch channel receiver — the UI draw loop calls `metrics_snapshot()` to
-    /// get the latest published value without blocking (issue #61).
-    pub metrics_rx: tokio::sync::watch::Receiver<SessionMetrics>,
+    /// get the latest published value without blocking (issue #61, #82).
+    pub metrics_rx: tokio::sync::watch::Receiver<MetricsSnapshot>,
 
     // ── Issue #85 — exhausted-retry error surface ─────────────────────────
     /// Most recent MT or TTS error message (format: `⚠ Translation error: …`
@@ -569,7 +573,7 @@ pub struct AppState {
 impl AppState {
     /// Create a fresh state with level at zero and device name `"initializing…"`.
     pub fn new() -> Self {
-        let (metrics_tx, metrics_rx) = tokio::sync::watch::channel(SessionMetrics::default());
+        let (metrics_tx, metrics_rx) = tokio::sync::watch::channel(MetricsSnapshot::default());
         Self {
             audio_level: Arc::new(AtomicU32::new(0)),
             device_name: Arc::new(Mutex::new("initializing\u{2026}".to_string())),
@@ -669,11 +673,11 @@ impl AppState {
             .clone()
     }
 
-    /// Return the latest metrics published via the watch channel (issue #61).
+    /// Return the latest metrics published via the watch channel (issue #61, #82).
     ///
     /// This is a lock-free borrow of the most recently sent value; it never
     /// blocks the UI thread.
-    pub fn metrics_snapshot(&self) -> SessionMetrics {
+    pub fn metrics_snapshot(&self) -> MetricsSnapshot {
         self.metrics_rx.borrow().clone()
     }
 }
@@ -686,7 +690,7 @@ impl Default for AppState {
 
 // ── StatusMetricsStrip ────────────────────────────────────────────────────────
 
-/// Compact (3-row) or expanded (5-row) metrics strip rendered below the
+/// Compact (3-row) or expanded (6-row) metrics strip rendered below the
 /// subtitle pane.
 ///
 /// In **compact** mode (the default) the strip is a single bordered line
@@ -704,6 +708,19 @@ pub struct StatusMetricsStrip<'a> {
     pub expanded: bool,
     /// Warning threshold from `config.json`.  `0.0` disables the warning.
     pub cost_warning_usd: f64,
+    // ── Extended observability fields (issues #79–#83) ─────────────────────
+    /// CPU usage of the current process as a percentage (issue #79).
+    pub cpu_pct: f32,
+    /// Resident set size in bytes (issue #79).
+    pub ram_bytes: u64,
+    /// Outbound throughput to provider APIs in kbps (issue #80).
+    pub net_kbps_tx: f32,
+    /// Inbound throughput from provider APIs in kbps (issue #80).
+    pub net_kbps_rx: f32,
+    /// Last recorded end-to-end subtitle latency in ms (issue #83).
+    pub e2e_latency_ms: Option<u64>,
+    /// Audio chunk loss rate in percent (issue #81).
+    pub loss_pct: f64,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -855,6 +872,25 @@ impl StatusMetricsStrip<'_> {
                 restart_span,
             ]),
         ];
+
+        // Issue #79 / #80 / #81 / #83 — extended runtime metrics line.
+        let ram_mb = self.ram_bytes / (1024 * 1024);
+        let latency_str = match self.e2e_latency_ms {
+            Some(ms) => format!("{ms}ms"),
+            None => "—".to_string(),
+        };
+        lines.push(Line::from(Span::styled(
+            format!(
+                "CPU:{:.0}%  RAM:{}MB  Net:↑{:.0}k/↓{:.0}k kbps  E2E:{}  Loss:{:.1}%",
+                self.cpu_pct,
+                ram_mb,
+                self.net_kbps_tx,
+                self.net_kbps_rx,
+                latency_str,
+                self.loss_pct,
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
 
         // Issue #74: show warning line when estimate exceeds config threshold.
         let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
@@ -1047,6 +1083,12 @@ pub fn draw_ui(
         show_restart: show_restart_notice,
         expanded,
         cost_warning_usd,
+        cpu_pct: metrics.cpu_pct,
+        ram_bytes: metrics.ram_bytes,
+        net_kbps_tx: metrics.net_kbps_tx,
+        net_kbps_rx: metrics.net_kbps_rx,
+        e2e_latency_ms: metrics.e2e_latency_ms,
+        loss_pct: metrics.loss_pct,
     };
     frame.render_widget(&strip, chunks[3]);
 

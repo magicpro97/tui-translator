@@ -178,6 +178,12 @@ fn snapshot_status_strip_compact_idle() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -196,6 +202,12 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -217,6 +229,12 @@ fn snapshot_status_strip_compact_restart_notice() {
         show_restart: true,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -240,6 +258,12 @@ fn snapshot_status_strip_compact_sending() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -258,6 +282,12 @@ fn snapshot_status_strip_compact_waiting() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -276,6 +306,12 @@ fn snapshot_status_strip_compact_error() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -296,8 +332,14 @@ fn snapshot_status_strip_expanded_idle() {
         show_restart: false,
         expanded: true,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
-    insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 5));
+    insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 6));
 }
 
 #[test]
@@ -314,10 +356,16 @@ fn snapshot_status_strip_expanded_listening() {
         show_restart: false,
         expanded: true,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_expanded_listening",
-        render_strip(&strip, 80, 5)
+        render_strip(&strip, 80, 6)
     );
 }
 
@@ -338,6 +386,12 @@ fn snapshot_status_strip_narrow_abbreviated() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -360,6 +414,12 @@ fn snapshot_status_strip_wide_full_labels() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -436,6 +496,12 @@ fn stt_error_state_label_contains_message() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -459,6 +525,12 @@ fn narrow_strip_uses_abbreviated_labels() {
         show_restart: false,
         expanded: false,
         cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);

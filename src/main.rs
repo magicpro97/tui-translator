@@ -54,6 +54,10 @@ mod providers;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
+use metrics::{
+    spawn_process_metrics_task, LatencyHistogram, LossMetrics, MetricsSnapshot, NetworkMetrics,
+    ProcessSnapshot,
+};
 use tui::{
     draw_session_summary, draw_ui, subtitle_inner_area, AppState, UserAction, AUDIO_LEVEL_SCALE,
 };
@@ -68,6 +72,15 @@ struct FinishMainArgs<'a> {
     playback_service: &'a SharedPlaybackService,
     orchestrator_join: Option<tokio::task::JoinHandle<()>>,
     orchestrator_shutdown: Arc<AtomicBool>,
+    // ── Observability (issues #79–#83) ─────────────────────────────────────
+    /// Watch receiver for per-second process snapshots (issue #79).
+    process_rx: tokio::sync::watch::Receiver<ProcessSnapshot>,
+    /// Shared E2E latency histogram populated by the orchestrator (issue #83).
+    e2e_latency: Arc<LatencyHistogram>,
+    /// Shared network byte counters populated by the orchestrator (issue #80).
+    network_metrics: Arc<NetworkMetrics>,
+    /// Shared audio-chunk loss counters populated by the orchestrator (issue #81).
+    loss_metrics: Arc<LossMetrics>,
 }
 
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
@@ -255,6 +268,17 @@ fn main() -> Result<()> {
     // Handle returned by the orchestrator task; `None` when no API key is set.
     let orchestrator_join: Option<tokio::task::JoinHandle<()>>;
 
+    // ── Issues #79–#83 — shared observability objects ─────────────────────────
+    // Created here so both the orchestrator and the metrics-publisher can share
+    // the same Arcs.
+    let e2e_latency = Arc::new(LatencyHistogram::new());
+    let network_metrics = Arc::new(NetworkMetrics::new());
+    let loss_metrics = Arc::new(LossMetrics::new());
+
+    // Issue #79: start the process-metrics polling task and get its receiver.
+    let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
+    spawn_process_metrics_task(process_tx);
+
     match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
         Ok(stream) => {
             overwrite_device_name(&state.device_name, &stream.info.device_name);
@@ -292,6 +316,10 @@ fn main() -> Result<()> {
                                 playback_service: &playback_service,
                                 orchestrator_join,
                                 orchestrator_shutdown,
+                                process_rx: process_rx.clone(),
+                                e2e_latency: Arc::clone(&e2e_latency),
+                                network_metrics: Arc::clone(&network_metrics),
+                                loss_metrics: Arc::clone(&loss_metrics),
                             },
                         );
                     }
@@ -316,6 +344,10 @@ fn main() -> Result<()> {
                                 playback_service: &playback_service,
                                 orchestrator_join,
                                 orchestrator_shutdown,
+                                process_rx: process_rx.clone(),
+                                e2e_latency: Arc::clone(&e2e_latency),
+                                network_metrics: Arc::clone(&network_metrics),
+                                loss_metrics: Arc::clone(&loss_metrics),
                             },
                         );
                     }
@@ -340,6 +372,10 @@ fn main() -> Result<()> {
                                 playback_service: &playback_service,
                                 orchestrator_join,
                                 orchestrator_shutdown,
+                                process_rx: process_rx.clone(),
+                                e2e_latency: Arc::clone(&e2e_latency),
+                                network_metrics: Arc::clone(&network_metrics),
+                                loss_metrics: Arc::clone(&loss_metrics),
                             },
                         );
                     }
@@ -360,6 +396,9 @@ fn main() -> Result<()> {
                     target_language: Arc::clone(&state.target_language),
                     playback: Arc::clone(&playback_service),
                     shutdown: Arc::clone(&orchestrator_shutdown),
+                    e2e_latency: Arc::clone(&e2e_latency),
+                    network_metrics: Arc::clone(&network_metrics),
+                    loss_metrics: Arc::clone(&loss_metrics),
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
@@ -396,6 +435,10 @@ fn main() -> Result<()> {
             playback_service: &playback_service,
             orchestrator_join,
             orchestrator_shutdown,
+            process_rx,
+            e2e_latency,
+            network_metrics,
+            loss_metrics,
         },
     )
 }
@@ -442,31 +485,60 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         playback_service,
         orchestrator_join,
         orchestrator_shutdown,
+        process_rx,
+        e2e_latency,
+        network_metrics,
+        loss_metrics,
     } = args;
 
-    // ── Issue #61: metrics observability background task ─────────────────────
-    // Publish a fresh `SessionMetrics` snapshot to the watch channel every second
-    // so the UI can read it lock-free via `state.metrics_snapshot()`.
+    // ── Issues #61, #82: metrics observability background task ───────────────
+    // Publish a fresh `MetricsSnapshot` to the watch channel every second so the
+    // UI can read it lock-free via `state.metrics_snapshot()` (issue #82).
     {
         let metrics_src = Arc::clone(&state.session_metrics);
         let metrics_tx = Arc::clone(&state.metrics_tx);
         let subtitle_pane = Arc::clone(&state.subtitle_pane);
         let cost_counter = Arc::clone(&state.cost_counter);
+        let mut process_rx = process_rx;
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
                 interval.tick().await;
-                let mut snapshot = metrics_src
+                let session = metrics_src
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
                     .clone();
-                snapshot.line_pairs_shown = subtitle_pane
+                let line_pairs_shown = subtitle_pane
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
                     .pair_count() as u64;
-                // Issue #71–#76: derive the running cost estimate from the shared
-                // CostCounter so that STT, MT, and TTS costs are all included.
-                snapshot.estimated_cost_usd = cost_counter.current_estimate_usd();
+                let net_snap = network_metrics.drain_window(1.0);
+                let proc_snap = process_rx.borrow_and_update().clone();
+
+                let mut snapshot = MetricsSnapshot {
+                    audio_seconds_sent: session.audio_seconds_sent,
+                    chars_translated: session.chars_translated,
+                    // Issue #71–#76: derive running cost from shared CostCounter so
+                    // STT, MT, and TTS costs are all included.
+                    estimated_cost_usd: cost_counter.current_estimate_usd(),
+                    line_pairs_shown,
+                    session_start: session.session_start,
+                    ..MetricsSnapshot::default()
+                };
+
+                // Issue #79: apply CPU/RAM from the process-metrics task.
+                snapshot.apply_process(&proc_snap);
+                // Issue #80: apply window network kbps.
+                snapshot.apply_network(&net_snap);
+                // Issue #83: apply E2E latency percentiles.
+                snapshot.e2e_latency_ms = e2e_latency.current_ms();
+                snapshot.e2e_latency_mean_ms = e2e_latency.mean_ms();
+                snapshot.e2e_latency_p95_ms = e2e_latency.percentile_ms(95.0);
+                // Issue #81: apply loss counters.
+                snapshot.loss_pct = loss_metrics.loss_pct();
+                snapshot.total_chunks = loss_metrics.total_chunks();
+                snapshot.dropped_chunks = loss_metrics.dropped_chunks();
+
                 let _ = metrics_tx.send(snapshot);
             }
         });
