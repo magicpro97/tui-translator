@@ -36,6 +36,10 @@ use tokio::sync::mpsc;
 #[cfg(windows)]
 mod wasapi_capture;
 
+// File-based audio source for soak testing (issue #110)
+pub mod file_source;
+pub use file_source::WavFileSource;
+
 // ─── Core types ──────────────────────────────────────────────────────────────
 
 /// A single chunk of captured audio, ready to be sent to the STT pipeline.
@@ -248,6 +252,74 @@ pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
     Ok(CaptureStream { info, receiver: rx })
 }
 
+/// Start a file-based capture stream from a WAV fixture (issue #110 / WP-18.02).
+///
+/// Opens `wav_path`, validates the format (16 kHz mono 16-bit PCM), and
+/// spawns a background Tokio task that loops the file indefinitely, pushing
+/// chunks into the returned [`CaptureStream`].
+///
+/// Unlike [`start_capture`] this function does not use WASAPI or require real
+/// audio hardware, making it suitable for soak tests and local reproducibility
+/// checks.
+///
+/// # Errors
+///
+/// Returns `Err` when `wav_path` cannot be read or does not conform to the
+/// required WAV format.  See [`WavFileSource`] for format requirements.
+pub async fn start_file_capture(wav_path: &str, silence_threshold: f32) -> Result<CaptureStream> {
+    let mut source = WavFileSource::open(wav_path)?;
+    let device_name = source.device_name().to_string();
+    let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
+
+    tokio::task::spawn_blocking(move || {
+        let mut detector = SilenceDetector::new(silence_threshold, DEFAULT_SILENCE_GATE_MS);
+        loop {
+            // Record the deadline *before* fetching the next chunk so that the
+            // full chunk duration is accounted for even when next_chunk() or the
+            // channel send takes non-trivial time.  This is a monotonic /
+            // deadline-based strategy: sleep = deadline − now, which is always
+            // ≥ 0 and never drifts early the way `duration − 1 ms` would.
+            let chunk_start = std::time::Instant::now();
+            match source.next_chunk() {
+                Ok(chunk) => {
+                    let chunk_duration = std::time::Duration::from_millis(chunk.duration_ms as u64);
+                    // When the silence gate is open, forward the chunk and stop
+                    // if the receiver has been dropped.  When the gate is
+                    // suppressing, we still need to detect receiver drop so the
+                    // background thread doesn't spin forever after the test (or
+                    // pipeline shutdown) closes the channel.
+                    let should_stop = if detector.process(&chunk) {
+                        tx.blocking_send(chunk).is_err()
+                    } else {
+                        tx.is_closed()
+                    };
+                    if should_stop {
+                        break; // receiver dropped — pipeline shutting down
+                    }
+                    // Sleep until the deadline, accounting for time already
+                    // spent in next_chunk() and blocking_send().  If we are
+                    // already past the deadline (e.g. the send blocked for
+                    // longer than chunk_duration) we skip the sleep entirely.
+                    let elapsed = chunk_start.elapsed();
+                    if chunk_duration > elapsed {
+                        std::thread::sleep(chunk_duration - elapsed);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "file audio source error; stopping");
+                    break;
+                }
+            }
+        }
+    });
+
+    let info = CaptureInfo {
+        device_name,
+        native_sample_rate: 16_000,
+    };
+    Ok(CaptureStream { info, receiver: rx })
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -391,5 +463,94 @@ mod tests {
 
         assert_eq!(first.samples.len(), 8_000);
         assert_eq!(second.samples.len(), 8_000);
+    }
+
+    // ── start_file_capture — silence gate and timing (issue #110 fixes) ──────
+    //
+    // These tests exercise the WavFileSource + SilenceDetector components
+    // directly (no async spawning) so they are fast, deterministic, and free
+    // of spawn_blocking timing concerns while still covering the exact logic
+    // that start_file_capture uses.
+
+    const SOAK_FIXTURE: &str = "tests/soak/soak_audio.wav";
+    /// Chunk count and sample count of the soak fixture.
+    const FIXTURE_SAMPLES: usize = 480_000;
+
+    /// The silence gate suppresses chunks once accumulated silent duration
+    /// exceeds DEFAULT_SILENCE_GATE_MS.
+    ///
+    /// With `f32::MAX` threshold every chunk's RMS is below the threshold, so
+    /// the gate fires after the first 256-ms chunk (accumulated = 512 ms > 500 ms).
+    #[test]
+    fn file_source_silence_gate_suppresses_after_first_chunk() {
+        if !std::path::Path::new(SOAK_FIXTURE).exists() {
+            return; // skip when fixture is absent (sparse CI checkout)
+        }
+        let mut source = WavFileSource::open(SOAK_FIXTURE).unwrap();
+        let mut detector = SilenceDetector::new(f32::MAX, DEFAULT_SILENCE_GATE_MS);
+
+        // Chunk 1 (256 ms): accumulated silence = 256 ms ≤ gate (500 ms) → pass.
+        let chunk1 = source.next_chunk().unwrap();
+        assert_eq!(chunk1.duration_ms, 256, "fixture chunk should be 256 ms");
+        assert!(
+            detector.process(&chunk1),
+            "first chunk should pass: accumulated silence below gate"
+        );
+
+        // Chunk 2 (256 ms): accumulated silence = 512 ms > gate (500 ms) → suppress.
+        let chunk2 = source.next_chunk().unwrap();
+        assert!(
+            !detector.process(&chunk2),
+            "second chunk should be suppressed: accumulated silence exceeds gate"
+        );
+    }
+
+    /// With threshold `0.0` every chunk is treated as non-silent so nothing is
+    /// ever suppressed, regardless of its RMS energy.
+    #[test]
+    fn file_source_zero_threshold_never_suppresses() {
+        if !std::path::Path::new(SOAK_FIXTURE).exists() {
+            return;
+        }
+        let mut source = WavFileSource::open(SOAK_FIXTURE).unwrap();
+        let mut detector = SilenceDetector::new(0.0, DEFAULT_SILENCE_GATE_MS);
+
+        for i in 0..5 {
+            let chunk = source.next_chunk().unwrap();
+            assert!(
+                detector.process(&chunk),
+                "chunk {i} should always pass with threshold 0.0"
+            );
+        }
+    }
+
+    /// Tail chunks at the loop boundary are shorter than DEFAULT_CHUNK_SAMPLES.
+    /// Their `duration_ms` must reflect the actual sample count so that
+    /// `start_file_capture` paces them correctly and avoids drift.
+    #[test]
+    fn file_source_tail_chunk_has_shorter_duration_than_full_chunk() {
+        if !std::path::Path::new(SOAK_FIXTURE).exists() {
+            return;
+        }
+        let full_chunk_ms = file_source::DEFAULT_CHUNK_SAMPLES as u32 * 1000 / 16_000; // 256 ms
+        let tail_samples = FIXTURE_SAMPLES % file_source::DEFAULT_CHUNK_SAMPLES; // 768
+        let expected_tail_ms = tail_samples as u32 * 1000 / 16_000; // 48 ms
+
+        let mut source = WavFileSource::open(SOAK_FIXTURE).unwrap();
+        let full_chunks_before_tail = FIXTURE_SAMPLES / file_source::DEFAULT_CHUNK_SAMPLES;
+        for _ in 0..full_chunks_before_tail {
+            source.next_chunk().unwrap();
+        }
+        let tail = source.next_chunk().unwrap();
+
+        assert_eq!(
+            tail.duration_ms, expected_tail_ms,
+            "tail chunk duration must match actual sample count, not DEFAULT_CHUNK_SAMPLES"
+        );
+        assert!(
+            tail.duration_ms < full_chunk_ms,
+            "tail chunk ({} ms) must be shorter than a full chunk ({full_chunk_ms} ms)",
+            tail.duration_ms
+        );
     }
 }

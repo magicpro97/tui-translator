@@ -218,6 +218,46 @@ jobs:
       - name: Validate soak fixture
         run: cargo test --test soak -- --nocapture
 
+  # ── Soak runner dry-run (Issue #110 / WP-18.02) ──────────────────────────────
+  # Validates the run_soak binary in --dry-run mode:
+  #   1. Builds the run_soak binary (confirms it compiles without warnings).
+  #   2. Runs the binary's internal unit tests (report serialisation, JSON
+  #      helpers, fixture existence check).
+  #   3. Runs the soak_runner integration test which invokes `run_soak --dry-run`
+  #      and validates the produced JSON report structure.
+  #
+  # The full 4-hour soak run is NOT executed here.  It is run manually before
+  # each release candidate and its report is committed as verification evidence.
+  soak-runner:
+    name: Soak runner dry-run (issue #110)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-soak-runner-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build run_soak binary
+        run: cargo build --bin run_soak
+      - name: Run run_soak unit tests
+        run: cargo test --bin run_soak -- --nocapture
+      - name: Run soak_runner integration test (dry-run)
+        run: cargo test --test soak_runner -- --nocapture
+      - name: Confirm report was produced and is valid JSON
+        run: |
+          report="verification-evidence/soak-report-ci.json"
+          if [ ! -f "$report" ]; then
+            echo "FAIL: $report was not created by the dry-run"
+            exit 1
+          fi
+          python3 -m json.tool "$report" > /dev/null && echo "PASS: $report is valid JSON"
+          cat "$report"
+
   # ── Linux smoke ─────────────────────────────────────────────────────────────
   # We also build on Linux so that CI does not fail if a contributor uses
   # a non-Windows machine.  Audio capture tests are excluded; they need

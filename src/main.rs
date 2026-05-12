@@ -282,7 +282,22 @@ fn main() -> Result<()> {
     let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
     spawn_process_metrics_task(process_tx, rt.handle());
 
-    match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
+    // ── Audio source selection (issue #110) ──────────────────────────────────
+    // Read the audio_source / audio_file_path from the loaded config and start
+    // the appropriate capture backend.  WASAPI is the production path;
+    // "file" is used exclusively for soak tests and local replay runs.
+    let (audio_source_kind, audio_file_path) = {
+        let cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        (cfg.audio_source.clone(), cfg.audio_file_path.clone())
+    };
+    let capture_result = if audio_source_kind == "file" {
+        let path = audio_file_path.as_deref().unwrap_or("");
+        rt.block_on(audio::start_file_capture(path, DEFAULT_SILENCE_THRESHOLD))
+    } else {
+        rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD))
+    };
+
+    match capture_result {
         Ok(stream) => {
             overwrite_device_name(&state.device_name, &stream.info.device_name);
             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
@@ -597,9 +612,20 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     result
 }
 
-/// Returns the path to `config.json`, resolved relative to the running
-/// executable so the file stays portable regardless of the working directory.
+/// Returns the path to `config.json` to load at startup.
+///
+/// Resolution order:
+/// 1. `TUI_TRANSLATOR_CONFIG` environment variable — allows the soak runner
+///    (and other callers) to inject a temporary configuration without touching
+///    the binary's install directory.
+/// 2. The directory that contains the running executable joined with
+///    `config.json` — the normal production layout.
+/// 3. The literal string `"config.json"` in the current working directory as a
+///    last resort.
 fn config_json_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("TUI_TRANSLATOR_CONFIG") {
+        return std::path::PathBuf::from(path);
+    }
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("config.json")))
@@ -1188,6 +1214,10 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
+    /// Serialises any test that reads or writes `TUI_TRANSLATOR_CONFIG` so
+    /// parallel test threads cannot observe each other's mutations.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn lang_apply_updates_runtime_target_language() {
         let state = AppState::new();
@@ -1514,6 +1544,41 @@ mod tests {
         assert!(
             state.auth_error_banner.lock().unwrap().is_some(),
             "auth_error_banner must remain visible even after a key change (restart needed)"
+        );
+    }
+
+    // ── config_json_path — TUI_TRANSLATOR_CONFIG env-var override (issue #110) ──
+
+    /// When `TUI_TRANSLATOR_CONFIG` is set, `config_json_path` must return that
+    /// path verbatim so the soak runner's generated config is actually loaded.
+    #[test]
+    fn config_json_path_uses_env_override() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let var = "TUI_TRANSLATOR_CONFIG";
+        let expected = r"C:\tmp\soak-config.json";
+        // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
+        unsafe { std::env::set_var(var, expected) };
+        let path = config_json_path();
+        unsafe { std::env::remove_var(var) };
+        assert_eq!(
+            path,
+            std::path::PathBuf::from(expected),
+            "config_json_path must honour TUI_TRANSLATOR_CONFIG"
+        );
+    }
+
+    /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` falls back to the
+    /// executable-relative path, which must end with `config.json`.
+    #[test]
+    fn config_json_path_fallback_ends_with_config_json() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
+        unsafe { std::env::remove_var("TUI_TRANSLATOR_CONFIG") };
+        let path = config_json_path();
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("config.json"),
+            "fallback path must end with config.json; got {path:?}"
         );
     }
 }

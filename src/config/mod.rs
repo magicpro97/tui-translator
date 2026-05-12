@@ -53,6 +53,22 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_output_device: Option<String>,
 
+    /// Audio input source.  Accepted values:
+    /// - `"wasapi"` *(default)* — Windows WASAPI loopback capture.
+    /// - `"file"` — read from `audio_file_path`; loops indefinitely.
+    ///   Requires `audio_file_path` to be set.  Intended for soak testing and
+    ///   local reproducibility runs (issue #110 / WP-18.02).
+    #[serde(default = "default_audio_source")]
+    pub audio_source: String,
+
+    /// Path to the WAV file used when `audio_source` is `"file"`.
+    ///
+    /// Must point to a 16 kHz mono 16-bit PCM WAV file (see
+    /// `tests/soak/soak_audio.wav` for the canonical soak fixture).  Ignored
+    /// when `audio_source` is `"wasapi"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_file_path: Option<String>,
+
     /// Estimated cost threshold in USD.  A warning appears in the status
     /// bar when the rolling estimate exceeds this value.  `0.0` disables
     /// the warning.
@@ -76,6 +92,8 @@ impl Default for AppConfig {
             google_api_key: None,
             tts_enabled: false,
             tts_output_device: None,
+            audio_source: default_audio_source(),
+            audio_file_path: None,
             cost_warning_usd: 0.0,
             comment: None,
         }
@@ -90,6 +108,11 @@ fn default_source_lang() -> String {
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_target_lang() -> String {
     "vi".to_string()
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+fn default_audio_source() -> String {
+    "wasapi".to_string()
 }
 
 impl AppConfig {
@@ -122,6 +145,20 @@ impl AppConfig {
                 "`tts_output_device` must not be empty — \
                  supply a device name or omit the field entirely"
             );
+        }
+        match self.audio_source.as_str() {
+            "wasapi" => {}
+            "file" => {
+                if self.audio_file_path.is_none() {
+                    bail!("`audio_file_path` is required when `audio_source` is \"file\"");
+                }
+                if matches!(&self.audio_file_path, Some(p) if p.trim().is_empty()) {
+                    bail!("`audio_file_path` must not be empty when `audio_source` is \"file\"");
+                }
+            }
+            other => {
+                bail!("`audio_source` must be \"wasapi\" or \"file\", got {other:?}");
+            }
         }
         Ok(())
     }
@@ -522,5 +559,78 @@ mod tests {
         }
 
         panic!("restart_required flag was not set after google_api_key changed");
+    }
+
+    // ── audio_source / audio_file_path tests ───────────────────────────────
+
+    #[test]
+    fn default_audio_source_is_wasapi() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.audio_source, "wasapi");
+        assert!(cfg.audio_file_path.is_none());
+    }
+
+    #[test]
+    fn validate_accepts_file_source_with_path() {
+        let cfg = AppConfig {
+            audio_source: "file".to_string(),
+            audio_file_path: Some("tests/soak/soak_audio.wav".to_string()),
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("file source with a path should be valid");
+    }
+
+    #[test]
+    fn validate_rejects_file_source_without_path() {
+        let cfg = AppConfig {
+            audio_source: "file".to_string(),
+            audio_file_path: None,
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("audio_file_path"),
+            "error should mention audio_file_path; got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unknown_audio_source() {
+        let cfg = AppConfig {
+            audio_source: "bluetooth".to_string(),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("audio_source"),
+            "error should mention audio_source; got: {err}"
+        );
+    }
+
+    #[test]
+    fn load_parses_file_source_config() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"{{"source_language":"ja-JP","target_language":"vi","audio_source":"file","audio_file_path":"tests/soak/soak_audio.wav"}}"#
+        )
+        .unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.audio_source, "file");
+        assert_eq!(
+            cfg.audio_file_path.as_deref(),
+            Some("tests/soak/soak_audio.wav")
+        );
+    }
+
+    #[test]
+    fn load_existing_config_without_audio_source_defaults_to_wasapi() {
+        // Configs written before issue #110 do not have audio_source.
+        // They must continue to parse and validate without error.
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.audio_source, "wasapi");
     }
 }
