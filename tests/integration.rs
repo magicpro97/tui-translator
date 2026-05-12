@@ -27,9 +27,11 @@
 #[path = "../src/providers/mod.rs"]
 mod providers;
 
-// The following path-imports bring the real application modules into the
-// integration-test binary so that tests in `error_retry` can drive
-// `pipeline::run_orchestrator` at the true application boundary (issue #102).
+// The following path-imports intentionally broaden this binary beyond
+// fixture-only coverage. They bring the real application modules into the
+// integration-test binary so that `error_retry` can drive
+// `pipeline::run_orchestrator` at the true application boundary (issue #102),
+// even though that also pulls in these modules' inline `#[cfg(test)]` tests.
 
 #[path = "../src/audio/mod.rs"]
 mod audio;
