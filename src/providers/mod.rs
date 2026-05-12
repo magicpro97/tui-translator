@@ -26,6 +26,28 @@
 
 use thiserror::Error;
 
+// ── CostReporter hook ────────────────────────────────────────────────────────
+
+/// Hook that provider implementations call after each successful API request
+/// to record billable usage.
+///
+/// Define this in the `providers` module so that Google provider
+/// implementations (which are included into the contract-test binary via
+/// `#[path = …]`) can reference it without pulling in `crate::metrics`.
+///
+/// The concrete implementation lives in `main.rs`, where both the `providers`
+/// and `metrics` modules are in scope.  Wire it at construction time via
+/// `GoogleMtProvider::with_cost_reporter` / `GoogleTtsProvider::with_cost_reporter`.
+pub trait CostReporter: Send + Sync + std::fmt::Debug {
+    /// Called after a successful translation with the number of translated
+    /// characters in the returned text.
+    fn record_translated_characters(&self, count: usize);
+
+    /// Called after a successful synthesis with the number of input characters
+    /// that were synthesised.
+    fn record_synthesized_characters(&self, count: usize);
+}
+
 pub mod google;
 
 // ── Error type ───────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ use ratatui::{
 use tracing::warn;
 use unicode_width::UnicodeWidthChar;
 
-pub use crate::metrics::{SessionMetrics, SttState};
+pub use crate::metrics::{format_cost_display, CostCounter, SessionMetrics, SttState};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -532,6 +532,13 @@ pub struct AppState {
     /// Accumulated session metrics; written by the pipeline, published to
     /// [`metrics_tx`](AppState::metrics_tx) once per second (issue #61).
     pub session_metrics: Arc<Mutex<SessionMetrics>>,
+    /// Shared cost counter (issues #71–#76).
+    ///
+    /// STT, MT, and TTS provider tasks call `record_*` on this counter after
+    /// every API call.  The metrics background task reads
+    /// [`current_estimate_usd`](CostCounter::current_estimate_usd) once per
+    /// second and publishes it through the watch channel.
+    pub cost_counter: Arc<CostCounter>,
     /// Watch channel sender — the observability background task calls
     /// `metrics_tx.send(snapshot)` every second (issue #61).
     pub metrics_tx: Arc<tokio::sync::watch::Sender<SessionMetrics>>,
@@ -577,6 +584,7 @@ impl AppState {
             target_language: Arc::new(Mutex::new("vi".to_string())),
             stt_state: Arc::new(Mutex::new(SttState::default())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
+            cost_counter: Arc::new(CostCounter::new()),
             metrics_tx: Arc::new(metrics_tx),
             metrics_rx,
             pipeline_error_msg: Arc::new(Mutex::new(None)),
@@ -694,6 +702,8 @@ pub struct StatusMetricsStrip<'a> {
     pub elapsed: String,
     pub show_restart: bool,
     pub expanded: bool,
+    /// Warning threshold from `config.json`.  `0.0` disables the warning.
+    pub cost_warning_usd: f64,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -727,50 +737,65 @@ impl StatusMetricsStrip<'_> {
         //   80-119 cols → standard labels
         //  ≥ 120  cols → full labels (adds audio seconds)
         let tts_str = if self.tts_on { "on" } else { "off" };
-        let restart_suffix = if self.show_restart {
-            " \u{2502} \u{26a0} restart req'd"
-        } else {
-            ""
-        };
+        let cost_str = format_cost_display(self.cost_usd);
 
-        let text = if area.width < 80 {
+        let main_text = if area.width < 80 {
             format!(
-                " {} | L:{} | T:{} | {}p | ${:.4} | {}{}",
+                " {} | L:{} | T:{} | {}p | {} | {}",
                 self.stt_abbrev(),
                 self.target_language,
                 tts_str,
                 self.pairs,
-                self.cost_usd,
+                cost_str,
                 self.elapsed,
-                restart_suffix,
             )
         } else if area.width >= 120 {
             format!(
-                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} Audio:{:.0}s \u{2502} ${:.4} \u{2502} {}{}",
+                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} Audio:{:.0}s \u{2502} {} \u{2502} {}",
                 self.stt.label(),
                 self.target_language,
                 tts_str,
                 self.pairs,
                 self.audio_secs,
-                self.cost_usd,
+                cost_str,
                 self.elapsed,
-                restart_suffix,
             )
         } else {
             format!(
-                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} ${:.4} \u{2502} {}{}",
+                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} {} \u{2502} {}",
                 self.stt.label(),
                 self.target_language,
                 tts_str,
                 self.pairs,
-                self.cost_usd,
+                cost_str,
                 self.elapsed,
-                restart_suffix,
             )
         };
 
-        Paragraph::new(text)
-            .style(Style::default().fg(Color::DarkGray))
+        let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
+
+        let mut spans = vec![Span::styled(
+            main_text,
+            Style::default().fg(Color::DarkGray),
+        )];
+
+        if over_threshold {
+            spans.push(Span::styled(
+                format!(" \u{26a0} Cost warning: ${:.2}", self.cost_usd),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        if self.show_restart {
+            spans.push(Span::styled(
+                " \u{2502} \u{26a0} restart req'd",
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        Paragraph::new(Line::from(spans))
             .alignment(Alignment::Left)
             .block(Block::default().borders(Borders::ALL))
             .render(area, buf);
@@ -792,25 +817,27 @@ impl StatusMetricsStrip<'_> {
             Span::raw("")
         };
 
+        let cost_str = format_cost_display(self.cost_usd);
+
         // Adaptive detail level (issue #60): wide terminals get audio seconds.
         let metrics_line = if area.width >= 120 {
             Line::from(Span::raw(format!(
-                "Target: {}   Pairs: {}   Audio: {:.0}s   Cost: ${:.4}",
-                self.target_language, self.pairs, self.audio_secs, self.cost_usd,
+                "Target: {}   Pairs: {}   Audio: {:.0}s   Cost: {}",
+                self.target_language, self.pairs, self.audio_secs, cost_str,
             )))
         } else if area.width < 80 {
             Line::from(Span::raw(format!(
-                "L:{}  {}p  ${:.4}",
-                self.target_language, self.pairs, self.cost_usd,
+                "L:{}  {}p  {}",
+                self.target_language, self.pairs, cost_str,
             )))
         } else {
             Line::from(Span::raw(format!(
-                "Target: {}   Pairs: {}   Cost: ${:.4}",
-                self.target_language, self.pairs, self.cost_usd,
+                "Target: {}   Pairs: {}   Cost: {}",
+                self.target_language, self.pairs, cost_str,
             )))
         };
 
-        let lines: Vec<Line<'_>> = vec![
+        let mut lines: Vec<Line<'_>> = vec![
             Line::from(vec![
                 // Use the full label directly — no separate "STT: " prefix to
                 // avoid the double-prefix that was in the original snapshot.
@@ -828,6 +855,17 @@ impl StatusMetricsStrip<'_> {
                 restart_span,
             ]),
         ];
+
+        // Issue #74: show warning line when estimate exceeds config threshold.
+        let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
+        if over_threshold {
+            lines.push(Line::from(Span::styled(
+                format!("\u{26a0} Cost warning: ${:.2}", self.cost_usd),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
 
         Paragraph::new(lines)
             .block(
@@ -887,6 +925,7 @@ pub fn draw_ui(
     device_name: &str,
     audio_level: f64,
     show_restart_notice: bool,
+    cost_warning_usd: f64,
 ) {
     let area = frame.size();
     let expanded = state.metrics_expanded.load(Ordering::Relaxed);
@@ -1007,6 +1046,7 @@ pub fn draw_ui(
         elapsed: metrics.format_elapsed(),
         show_restart: show_restart_notice,
         expanded,
+        cost_warning_usd,
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -1221,10 +1261,10 @@ pub fn draw_session_summary(
             "  Audio processed:   {:.0}s",
             metrics.audio_seconds_sent
         )),
-        Line::from(format!("  Characters:        {}", metrics.chars_translated)),
+        Line::from(format!("  MT input chars:    {}", metrics.chars_translated)),
         Line::from(format!(
-            "  Estimated cost:    ${:.4}",
-            metrics.estimated_cost_usd
+            "  Estimated cost:    {}",
+            format_cost_display(metrics.estimated_cost_usd)
         )),
         Line::from(format!(
             "  TTS output:        {}",

@@ -28,9 +28,10 @@
 
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::providers::{MtProvider, MtResult, ProviderError};
+use crate::providers::{CostReporter, MtProvider, MtResult, ProviderError};
 
 // ── Google Translation REST API URL ──────────────────────────────────────────
 
@@ -83,6 +84,7 @@ struct TranslationResult {
 pub struct GoogleMtProvider {
     api_key: String,
     client: Client,
+    cost_reporter: Option<Arc<dyn CostReporter>>,
 }
 
 impl GoogleMtProvider {
@@ -108,7 +110,18 @@ impl GoogleMtProvider {
                 ))
             })?;
 
-        Ok(Self { api_key, client })
+        Ok(Self {
+            api_key,
+            client,
+            cost_reporter: None,
+        })
+    }
+
+    /// Attach a shared [`CostReporter`] so that every successful translation
+    /// automatically records the translated character count.
+    pub fn with_cost_reporter(mut self, reporter: Arc<dyn CostReporter>) -> Self {
+        self.cost_reporter = Some(reporter);
+        self
     }
 }
 
@@ -233,10 +246,19 @@ impl MtProvider for GoogleMtProvider {
             ProviderError::NetworkError("Google MT returned an empty translations list".to_string())
         })?;
 
-        Ok(MtResult {
+        let result = MtResult {
             translated_text: translation.translated_text,
             detected_source_language: translation.detected_source_language,
-        })
+        };
+
+        // Google Cloud Translation billing is based on the number of *input*
+        // (source) characters sent, not the length of the translated output.
+        // See: https://cloud.google.com/translate/pricing
+        if let Some(cc) = &self.cost_reporter {
+            cc.record_translated_characters(payload.chars().count());
+        }
+
+        Ok(result)
     }
 }
 

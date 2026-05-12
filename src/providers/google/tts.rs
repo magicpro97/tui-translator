@@ -18,9 +18,10 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 
-use crate::providers::{ProviderError, TtsProvider, TtsResult};
+use crate::providers::{CostReporter, ProviderError, TtsProvider, TtsResult};
 
 // ── Google TTS REST API URL ───────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ struct SynthesizeResponse {
 pub struct GoogleTtsProvider {
     api_key: String,
     client: Client,
+    cost_reporter: Option<Arc<dyn CostReporter>>,
 }
 
 impl GoogleTtsProvider {
@@ -102,7 +104,18 @@ impl GoogleTtsProvider {
                 ))
             })?;
 
-        Ok(Self { api_key, client })
+        Ok(Self {
+            api_key,
+            client,
+            cost_reporter: None,
+        })
+    }
+
+    /// Attach a shared [`CostReporter`] so that every successful synthesis
+    /// automatically records the synthesised character count.
+    pub fn with_cost_reporter(mut self, reporter: Arc<dyn CostReporter>) -> Self {
+        self.cost_reporter = Some(reporter);
+        self
     }
 }
 
@@ -209,6 +222,10 @@ impl TtsProvider for GoogleTtsProvider {
         let audio_bytes = STANDARD.decode(&resp.audio_content).map_err(|e| {
             ProviderError::NetworkError(format!("failed to base64-decode TTS audio content: {e}"))
         })?;
+
+        if let Some(cc) = &self.cost_reporter {
+            cc.record_synthesized_characters(text.chars().count());
+        }
 
         Ok(TtsResult {
             audio_bytes,

@@ -177,6 +177,7 @@ fn snapshot_status_strip_compact_idle() {
         elapsed: "0:00".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -194,6 +195,7 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         elapsed: "1:23".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -214,6 +216,7 @@ fn snapshot_status_strip_compact_restart_notice() {
         elapsed: "0:00".to_string(),
         show_restart: true,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -236,6 +239,7 @@ fn snapshot_status_strip_compact_sending() {
         elapsed: "0:30".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -253,6 +257,7 @@ fn snapshot_status_strip_compact_waiting() {
         elapsed: "0:45".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -270,6 +275,7 @@ fn snapshot_status_strip_compact_error() {
         elapsed: "0:05".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -289,6 +295,7 @@ fn snapshot_status_strip_expanded_idle() {
         elapsed: "0:00".to_string(),
         show_restart: false,
         expanded: true,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 5));
 }
@@ -306,6 +313,7 @@ fn snapshot_status_strip_expanded_listening() {
         elapsed: "3:00".to_string(),
         show_restart: false,
         expanded: true,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_expanded_listening",
@@ -329,6 +337,7 @@ fn snapshot_status_strip_narrow_abbreviated() {
         elapsed: "0:20".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -350,6 +359,7 @@ fn snapshot_status_strip_wide_full_labels() {
         elapsed: "1:00".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -425,6 +435,7 @@ fn stt_error_state_label_contains_message() {
         elapsed: "0:00".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -447,6 +458,7 @@ fn narrow_strip_uses_abbreviated_labels() {
         elapsed: "0:00".to_string(),
         show_restart: false,
         expanded: false,
+        cost_warning_usd: 0.0,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);

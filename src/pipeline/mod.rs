@@ -39,7 +39,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     audio::AudioChunk,
-    metrics::{SessionMetrics, SttState},
+    metrics::{CostCounter, SessionMetrics, SttState},
     providers::{MtProvider, PcmChunk, ProviderError, SttProvider, TtsProvider},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
@@ -160,6 +160,10 @@ pub struct OrchestratorContext {
     // ── Metrics ────────────────────────────────────────────────────────────
     /// Cost / usage counters updated after each provider call.
     pub session_metrics: Arc<Mutex<SessionMetrics>>,
+
+    /// Shared cost counter — receives STT audio-seconds so the live cost
+    /// estimate displayed by the metrics publisher includes STT charges.
+    pub cost_counter: Arc<CostCounter>,
 
     // ── Error surface (#85) ────────────────────────────────────────────────
     /// Most recent MT or TTS error for display in the status strip.
@@ -307,10 +311,12 @@ where
     let translation =
         match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
             Ok(r) => {
+                // Track MT input chars (billing basis: source chars sent to the API,
+                // matching the count used by GoogleMtProvider::translate).
                 ctx.session_metrics
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
-                    .chars_translated += r.translated_text.len() as u64;
+                    .chars_translated += transcript.trim().chars().count() as u64;
                 clear_pipeline_error(&ctx.pipeline_error_msg);
                 r.translated_text
             }
@@ -371,12 +377,15 @@ fn update_audio_level(chunk: &AudioChunk, ctx: &OrchestratorContext) {
 }
 
 fn update_audio_sent_metrics(chunk: &AudioChunk, ctx: &OrchestratorContext) {
+    let audio_secs = f64::from(chunk.duration_ms) / 1000.0;
     let mut m = ctx
         .session_metrics
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    m.audio_seconds_sent += f64::from(chunk.duration_ms) / 1000.0;
-    m.recalculate_cost();
+    m.audio_seconds_sent += audio_secs;
+    drop(m);
+    // Record STT cost in the shared counter so the live estimate includes it.
+    ctx.cost_counter.record_audio_seconds(audio_secs);
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────────
@@ -604,6 +613,7 @@ mod tests {
             stt_state: Arc::new(Mutex::new(SttState::Idle)),
             subtitle_pane: Arc::new(Mutex::new(crate::tui::SubtitlePane::new())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
+            cost_counter: Arc::new(CostCounter::new()),
             pipeline_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
