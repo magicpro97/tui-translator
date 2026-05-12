@@ -1,11 +1,12 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 366
-expression: "render_strip(&strip, 80, 6)"
+assertion_line: 400
+expression: "render_strip(&strip, 80, height)"
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
 │● STT: listening   TTS: on                                                    │
-│Target: vi   Pairs: 12   Cost: ~$0.072                                        │
-│Elapsed: 3:00                                                                 │
-│CPU:0%  RAM:0MB  Net:↑0/↓0 kbps  E2E:—  Loss:0.0%                             │
+│Target: vi   Pairs: 20   Cost: ~$0.750                                        │
+│Elapsed: 5:00                                                                 │
+│CPU:12%  RAM:64MB  Net:↑8/↓32 kbps  E2E:420ms  Loss:0.0%                      │
+│⚠ Cost warning: $0.75                                                         │
 └──────────────────────────────────────────────────────────────────────────────┘

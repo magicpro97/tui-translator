@@ -32,14 +32,16 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tokio::sync::mpsc;
 
 use crate::{
     audio::AudioChunk,
-    metrics::{CostCounter, SessionMetrics, SttState},
+    metrics::{
+        CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttState,
+    },
     providers::{MtProvider, PcmChunk, ProviderError, SttProvider, TtsProvider},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
@@ -202,6 +204,27 @@ pub struct OrchestratorContext {
     // ── Shutdown (#87) ─────────────────────────────────────────────────────
     /// Set to `true` to request a clean exit after the current chunk.
     pub shutdown: Arc<AtomicBool>,
+
+    // ── Observability (#79–#83) ────────────────────────────────────────────
+    /// End-to-end subtitle latency histogram (issue #83).
+    ///
+    /// The orchestrator records one sample per subtitle pair: the elapsed
+    /// time from the moment the audio chunk is submitted to STT until the
+    /// translated text is ready to display.  The metrics-publisher task reads
+    /// the histogram each second for the watch-channel snapshot.
+    pub e2e_latency: Arc<LatencyHistogram>,
+
+    /// Network byte-transfer counters (issue #80).
+    ///
+    /// The orchestrator records approximate content bytes for every provider
+    /// round-trip so the metrics publisher can compute rolling kbps.
+    pub network_metrics: Arc<NetworkMetrics>,
+
+    /// Audio-chunk loss counters (issue #81).
+    ///
+    /// The orchestrator increments `total_chunks` when a chunk is offered to
+    /// the pipeline and `dropped_chunks` when all retries are exhausted.
+    pub loss_metrics: Arc<LossMetrics>,
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
@@ -262,6 +285,9 @@ pub async fn run_orchestrator<S, M, T>(
             continue;
         }
 
+        // Count every non-paused, non-halted chunk offered to the pipeline.
+        ctx.loss_metrics.record_chunk();
+
         update_audio_sent_metrics(&chunk, &ctx);
         let pcm = AudioChunk::into_pcm(chunk, seq);
         seq += 1;
@@ -274,6 +300,10 @@ pub async fn run_orchestrator<S, M, T>(
 // ── Per-chunk helpers ─────────────────────────────────────────────────────────
 
 /// Drive one [`PcmChunk`] through STT → MT → (optional) TTS.
+///
+/// Records the end-to-end subtitle latency (issue #83): the elapsed time
+/// from STT submission until the translated text is pushed to the subtitle
+/// pane.  STT errors cause the chunk to be dropped and counted as a loss.
 async fn process_chunk<S, M, T>(pcm: PcmChunk, stt: &S, mt: &M, tts: &T, ctx: &OrchestratorContext)
 where
     S: SttProvider,
@@ -282,8 +312,17 @@ where
 {
     let source_lang = lock_clone_str(&ctx.source_language);
 
+    // Issue #83: start the E2E latency clock just before the STT call so the
+    // measurement includes the full STT → MT round-trip time.
+    let e2e_start = Instant::now();
+
     // ── STT ──────────────────────────────────────────────────────────────────
     set_stt_state(&ctx.stt_state, SttState::Sending);
+
+    // Issue #80: approximate STT bytes sent = PCM samples × 2 bytes (i16).
+    let stt_bytes_sent = (pcm.samples.len() as u64).saturating_mul(2);
+    ctx.network_metrics.record_bytes_sent(stt_bytes_sent);
+
     let transcript = match with_retry(|| stt.transcribe(&pcm, &source_lang)).await {
         Ok(r) if r.text.trim().is_empty() => {
             // Silent / empty result — nothing to translate.
@@ -291,6 +330,8 @@ where
             return;
         }
         Ok(r) => {
+            // Issue #80: approximate STT bytes received = transcript length.
+            ctx.network_metrics.record_bytes_recv(r.text.len() as u64);
             set_stt_state(&ctx.stt_state, SttState::Waiting);
             r.text
         }
@@ -302,12 +343,19 @@ where
             let warn_msg = format!("⚠ STT error: {err}");
             tracing::warn!("{warn_msg}");
             set_stt_state(&ctx.stt_state, SttState::Error(warn_msg));
+            // Issue #81: STT failure counts as a dropped chunk.
+            ctx.loss_metrics.record_drop();
             return; // discard chunk, continue outer loop
         }
     };
 
     // ── MT ───────────────────────────────────────────────────────────────────
     let target_lang = lock_clone_str(&ctx.target_language);
+
+    // Issue #80: approximate MT bytes sent = transcript byte length.
+    ctx.network_metrics
+        .record_bytes_sent(transcript.len() as u64);
+
     let translation =
         match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
             Ok(r) => {
@@ -317,6 +365,9 @@ where
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
                     .chars_translated += transcript.trim().chars().count() as u64;
+                // Issue #80: approximate MT bytes received = translated text length.
+                ctx.network_metrics
+                    .record_bytes_recv(r.translated_text.len() as u64);
                 clear_pipeline_error(&ctx.pipeline_error_msg);
                 r.translated_text
             }
@@ -330,6 +381,8 @@ where
                 tracing::warn!("{warn_msg}");
                 set_stt_state(&ctx.stt_state, SttState::Listening);
                 set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                // Issue #81: MT failure counts as a dropped chunk.
+                ctx.loss_metrics.record_drop();
                 return; // discard chunk, continue outer loop
             }
         };
@@ -341,10 +394,24 @@ where
         .unwrap_or_else(|p| p.into_inner())
         .push(SubtitlePair::new(transcript.clone(), translation.clone()));
 
+    // Issue #83: record the end-to-end latency now that the subtitle pair is
+    // ready for display.  The measurement covers STT submission → translated
+    // text pushed to the pane (excluding TTS playback, which is async).
+    let e2e_ms = e2e_start.elapsed().as_millis() as u64;
+    ctx.e2e_latency.record_ms(e2e_ms);
+    tracing::debug!(e2e_ms, "subtitle pair produced; e2e latency recorded");
+
     // ── TTS (optional, non-fatal) ─────────────────────────────────────────────
     if ctx.tts_enabled.load(Ordering::Relaxed) {
+        // Issue #80: approximate TTS bytes sent = translation text length.
+        ctx.network_metrics
+            .record_bytes_sent(translation.len() as u64);
+
         match with_retry(|| tts.synthesise(&translation, &target_lang)).await {
             Ok(r) => {
+                // Issue #80: approximate TTS bytes received = audio bytes length.
+                ctx.network_metrics
+                    .record_bytes_recv(r.audio_bytes.len() as u64);
                 clear_pipeline_error(&ctx.pipeline_error_msg);
                 if let Some(svc) = ctx
                     .playback
@@ -623,6 +690,9 @@ mod tests {
             target_language: Arc::new(Mutex::new("en".to_string())),
             playback: Arc::new(Mutex::new(None)),
             shutdown,
+            e2e_latency: Arc::new(crate::metrics::LatencyHistogram::new()),
+            network_metrics: Arc::new(crate::metrics::NetworkMetrics::new()),
+            loss_metrics: Arc::new(crate::metrics::LossMetrics::new()),
         };
         (ctx, tx)
     }
@@ -926,5 +996,121 @@ mod tests {
         )
         .await
         .expect("orchestrator should exit within 2s when shutdown flag is set");
+    }
+
+    // ── E2E latency (#83) ─────────────────────────────────────────────────────
+
+    /// Happy path: one subtitle pair records an E2E latency sample.
+    #[tokio::test]
+    async fn successful_chunk_records_e2e_latency() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let latency = Arc::clone(&ctx.e2e_latency);
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(rx2, OkStt("hello world"), OkMt, OkTts, ctx).await;
+
+        assert_eq!(
+            latency.count(),
+            1,
+            "one successful chunk must record exactly one E2E latency sample"
+        );
+        // Any measurable latency is valid (even 0 ms on fast machines).
+        assert!(
+            latency.current_ms().is_some(),
+            "e2e_latency must have a recorded value after a successful chunk"
+        );
+    }
+
+    /// STT error: no E2E latency sample is recorded, chunk counted as dropped.
+    #[tokio::test]
+    async fn stt_error_does_not_record_latency_and_counts_drop() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let latency = Arc::clone(&ctx.e2e_latency);
+        let loss = Arc::clone(&ctx.loss_metrics);
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            ErrStt(|| ProviderError::NetworkError("timeout".to_string())),
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            latency.count(),
+            0,
+            "failed chunk must not record an E2E latency sample"
+        );
+        assert_eq!(
+            loss.dropped_chunks(),
+            1,
+            "STT exhausted-retry must increment dropped_chunks"
+        );
+    }
+
+    // ── Network metrics (#80) ─────────────────────────────────────────────────
+
+    /// Happy path: bytes are recorded for the STT + MT round-trip.
+    #[tokio::test]
+    async fn successful_chunk_records_network_bytes() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let net = Arc::clone(&ctx.network_metrics);
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(rx2, OkStt("hello"), OkMt, OkTts, ctx).await;
+
+        // STT bytes sent ≥ sample count × 2 bytes (i16) + MT text bytes sent.
+        assert!(
+            net.total_bytes_sent() > 0,
+            "successful chunk must record network bytes sent"
+        );
+        assert!(
+            net.total_bytes_recv() > 0,
+            "successful chunk must record network bytes received"
+        );
+    }
+
+    // ── Loss metrics (#81) ────────────────────────────────────────────────────
+
+    /// MT error increments both total_chunks and dropped_chunks.
+    #[tokio::test]
+    async fn mt_error_increments_loss_counters() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let loss = Arc::clone(&ctx.loss_metrics);
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("hello"),
+            ErrMt(|| ProviderError::NetworkError("mt timeout".to_string())),
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(loss.total_chunks(), 1, "one chunk was offered");
+        assert_eq!(
+            loss.dropped_chunks(),
+            1,
+            "MT exhausted-retry must increment dropped_chunks"
+        );
     }
 }
