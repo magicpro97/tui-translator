@@ -814,8 +814,19 @@ mod tests {
         );
 
         assert_eq!(state.target_language(), "en");
-        assert!(state.tts_enabled.load(Ordering::Relaxed));
         assert_eq!(current_config.lock().unwrap().target_language, "en");
+
+        // The UI flag mirrors whether the PlaybackService actually started.
+        // On CI runners without an audio output device the service startup
+        // fails and the flag stays false; on hardware where it succeeds the
+        // flag becomes true.  Either way the flag must be consistent with the
+        // service slot rather than blindly reflecting config intent.
+        let service_running = playback_service.lock().unwrap().is_some();
+        assert_eq!(
+            state.tts_enabled.load(Ordering::Relaxed),
+            service_running,
+            "tts_enabled UI flag must match whether PlaybackService actually started"
+        );
     }
 
     #[test]
