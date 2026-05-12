@@ -6,6 +6,9 @@ Real-time bilingual subtitles for terminal-based translation workflows.
 Version 1 focuses on Zoom meetings and is delivered as a single Windows
 executable — no Zoom account, no host cooperation required.
 
+**→ [Releases page](https://github.com/magicpro97/tui-translator/releases)**  
+**→ [Setup and usage guide (USAGE.md)](USAGE.md)**
+
 ---
 
 ## What this does
@@ -38,7 +41,21 @@ speakers.
 
 ---
 
-## Quick start (current repository state)
+## End-user release status
+
+Public end-user builds will be published on the
+[Releases page](https://github.com/magicpro97/tui-translator/releases).
+There is **no public packaged release yet**.
+
+The planned setup flow is documented in **[USAGE.md](USAGE.md)** so reviewers,
+testers, and future end users can see exactly how the packaged application will
+be configured and run.
+
+---
+
+
+
+## Quick start (current repository state — developers and reviewers)
 
 > There is **no end-user release yet**.
 > Right now, this repository contains the Phase 0 project skeleton for
@@ -160,11 +177,13 @@ Full details: [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadm
 
 | Document | What it covers |
 |----------|---------------|
+| [`USAGE.md`](USAGE.md) | End-user setup guide: download, configure, run |
 | [`docs/01-business-requirements.md`](docs/01-business-requirements.md) | What the product does and who it is for |
 | [`docs/02-google-first-provider.md`](docs/02-google-first-provider.md) | Why Google Cloud is the first provider |
 | [`docs/03-system-design.md`](docs/03-system-design.md) | How the components fit together |
 | [`docs/04-verification-plan.md`](docs/04-verification-plan.md) | How correctness is proved before release |
 | [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadmap.md) | Step-by-step delivery plan |
+| [`docs/07-packaging-verification.md`](docs/07-packaging-verification.md) | Build verification and portability audit |
 
 ---
 
