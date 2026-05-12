@@ -7,6 +7,20 @@
 //!
 //! The bilingual subtitle pane (issues #54–57) is wired in here: Up/Down
 //! arrows scroll the pane; End jumps back to the auto-follow bottom.
+//!
+//! Issues #41, #51, #58–#66 (Wave 5): richer status/metrics strip, STT state
+//! indicator, TTS toggle (T), metrics expand/collapse (M), help overlay (?),
+//! and quit/session-summary behaviour.
+//!
+//! Architecture (Wave 5 additions):
+//! - Issue #63: a dedicated `tokio::task::spawn_blocking` keyboard task
+//!   converts crossterm key events into [`UserAction`] values and sends them
+//!   via an `std::sync::mpsc` channel so the event loop is decoupled from raw
+//!   key scanning.
+//! - Issue #61: a background `tokio::spawn` task publishes updated
+//!   [`SessionMetrics`] to a `tokio::sync::watch` channel every second.
+//! - Issue #64: all required commands are implemented (Space, L, R, Esc, Q).
+//! - Issue #65: the control hints bar is always rendered, one row high.
 
 use anyhow::Result;
 use crossterm::{
@@ -14,18 +28,13 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Gauge, Paragraph},
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     io,
+    path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, Arc, Mutex,
     },
     time::Duration,
 };
@@ -38,7 +47,11 @@ mod providers;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
-use tui::{subtitle_inner_area, AppState, SubtitlePane, AUDIO_LEVEL_SCALE};
+use tui::{
+    draw_session_summary, draw_ui, subtitle_inner_area, AppState, UserAction, AUDIO_LEVEL_SCALE,
+};
+
+type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -48,15 +61,16 @@ fn main() -> Result<()> {
         )
         .init();
 
-    tracing::info!("tui-translator starting (Phase 0)");
+    tracing::info!("tui-translator starting");
 
     // Load configuration, falling back to built-in defaults if config.json is absent.
     let cfg_path = config_json_path();
     let cfg = config::load(&cfg_path)?;
+    let current_config = Arc::new(Mutex::new(cfg.clone()));
     let restart_required = Arc::new(AtomicBool::new(false));
 
     // Start the hot-reload watcher; keep the receiver alive for the process lifetime.
-    let _config_rx = match config::start_watcher(&cfg_path, cfg, restart_required.clone()) {
+    let config_rx = match config::start_watcher(&cfg_path, cfg, restart_required.clone()) {
         Ok(rx) => Some(rx),
         Err(err) => {
             tracing::warn!("config hot-reload unavailable: {err:#}");
@@ -65,36 +79,146 @@ fn main() -> Result<()> {
     };
 
     let state = AppState::new();
+    state.set_target_language(
+        current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .target_language
+            .clone(),
+    );
+    state.set_tts_enabled(
+        current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .tts_enabled,
+    );
+    let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+    {
+        let current_cfg = current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        sync_playback_service_state(&playback_service, &current_cfg, current_cfg.tts_enabled);
+    }
 
-    // Build a multi-threaded Tokio runtime for the background audio capture task.
-    // The TUI event loop runs on the main thread; audio runs on worker threads.
+    // Build a multi-threaded Tokio runtime for background tasks.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
 
+    if let Some(mut config_rx) = config_rx {
+        let current_config = Arc::clone(&current_config);
+        let target_language = Arc::clone(&state.target_language);
+        let tts_enabled = Arc::clone(&state.tts_enabled);
+        let restart_required = Arc::clone(&restart_required);
+        let playback_service = Arc::clone(&playback_service);
+        rt.spawn(async move {
+            while config_rx.changed().await.is_ok() {
+                let next_cfg = config_rx.borrow().clone();
+                // PlaybackService::new does blocking I/O (startup_rx.recv + device enum);
+                // offload to a dedicated thread so we don't block a Tokio worker.
+                let cc = Arc::clone(&current_config);
+                let tl = Arc::clone(&target_language);
+                let te = Arc::clone(&tts_enabled);
+                let rr = Arc::clone(&restart_required);
+                let ps = Arc::clone(&playback_service);
+                tokio::task::spawn_blocking(move || {
+                    apply_runtime_config(&cc, &tl, &te, &rr, &ps, next_cfg);
+                })
+                .await
+                .ok();
+            }
+        });
+    }
+
     match rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD)) {
         Ok(mut stream) => {
             overwrite_device_name(&state.device_name, &stream.info.device_name);
+            *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                metrics::SttState::Listening;
 
             let level_tx = state.audio_level.clone();
+            let paused = Arc::clone(&state.paused);
+            let session_metrics = Arc::clone(&state.session_metrics);
+            let stt_state = Arc::clone(&state.stt_state);
             rt.spawn(async move {
-                while let Some(chunk) = stream.receiver.recv().await {
-                    // Encode RMS as integer to allow atomic storage.
-                    let encoded =
-                        (chunk.rms_energy().clamp(0.0, 1.0) * AUDIO_LEVEL_SCALE as f32) as u32;
-                    level_tx.store(encoded, Ordering::Relaxed);
+                loop {
+                    let Some(chunk) = stream.receiver.recv().await else {
+                        mark_audio_capture_stopped(&level_tx, &stt_state);
+                        break;
+                    };
+                    handle_audio_chunk(chunk, &paused, &level_tx, &session_metrics);
                 }
             });
         }
         Err(err) => {
+            *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                metrics::SttState::Error(err.to_string());
             tracing::error!("audio capture failed to start: {err}");
         }
     }
 
-    let result = run_tui(&state, &restart_required);
+    // ── Issue #61: metrics observability background task ─────────────────────
+    // Publish a fresh `SessionMetrics` snapshot to the watch channel every second
+    // so the UI can read it lock-free via `state.metrics_snapshot()`.
+    {
+        let metrics_src = Arc::clone(&state.session_metrics);
+        let metrics_tx = Arc::clone(&state.metrics_tx);
+        let subtitle_pane = Arc::clone(&state.subtitle_pane);
+        rt.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                let mut snapshot = metrics_src
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone();
+                snapshot.line_pairs_shown = subtitle_pane
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .pair_count() as u64;
+                snapshot.recalculate_cost();
+                let _ = metrics_tx.send(snapshot);
+            }
+        });
+    }
+
+    // ── Issue #63: dedicated keyboard task ───────────────────────────────────
+    // A `tokio::task::spawn_blocking` task blocks on crossterm key reads so the
+    // event loop never needs to poll for keys directly.
+    let (key_tx, key_rx) = mpsc::channel::<UserAction>();
+    let keyboard_shutdown = Arc::new(AtomicBool::new(false));
+    {
+        let lang_flag = Arc::clone(&state.lang_prompt_active);
+        let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
+        rt.spawn(async move {
+            tokio::task::spawn_blocking(move || {
+                keyboard_task(key_tx, lang_flag, keyboard_shutdown)
+            })
+            .await
+            .ok();
+        });
+    }
+
+    let result = run_tui(
+        &state,
+        &restart_required,
+        &cfg_path,
+        &current_config,
+        &playback_service,
+        &keyboard_shutdown,
+        key_rx,
+    );
 
     // Cancel background tasks without waiting for them to finish.
     rt.shutdown_background();
+
+    // ── Issue #64: print session summary to stdout after terminal is restored ─
+    // The alternate screen was left when `run_tui` returned (TerminalGuard::drop).
+    // Only print when the user quit intentionally (not on error paths).
+    if result.is_ok() {
+        print_session_summary_to_stdout(&state);
+    }
 
     result
 }
@@ -108,7 +232,7 @@ fn config_json_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("config.json"))
 }
 
-fn overwrite_device_name(slot: &Arc<Mutex<String>>, next_name: &str) {
+fn overwrite_device_name(slot: &Arc<std::sync::Mutex<String>>, next_name: &str) {
     match slot.lock() {
         Ok(mut guard) => {
             *guard = next_name.to_string();
@@ -121,28 +245,143 @@ fn overwrite_device_name(slot: &Arc<Mutex<String>>, next_name: &str) {
     }
 }
 
-/// Run the minimal terminal interface for Phase 0.
-fn run_tui(state: &AppState, restart_required: &Arc<AtomicBool>) -> Result<()> {
-    let mut terminal_guard = TerminalGuard::enter()?;
-    event_loop(terminal_guard.terminal_mut(), state, restart_required)
+fn overwrite_target_language(slot: &Arc<std::sync::Mutex<String>>, next_language: &str) {
+    match slot.lock() {
+        Ok(mut guard) => {
+            *guard = next_language.to_string();
+        }
+        Err(poisoned) => {
+            tracing::warn!("target_language mutex was poisoned; recovering last known state");
+            let mut guard = poisoned.into_inner();
+            *guard = next_language.to_string();
+        }
+    }
 }
 
-/// Main event loop: draw the UI, then poll for keyboard input.
+fn apply_runtime_config(
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    target_language: &Arc<std::sync::Mutex<String>>,
+    tts_enabled: &Arc<AtomicBool>,
+    restart_required: &Arc<AtomicBool>,
+    playback_service: &SharedPlaybackService,
+    next_cfg: config::AppConfig,
+) {
+    let requires_restart = {
+        let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        let requires_restart = current.requires_restart(&next_cfg);
+        *current = next_cfg.clone();
+        requires_restart
+    };
+
+    if requires_restart {
+        restart_required.store(true, Ordering::Relaxed);
+    }
+
+    overwrite_target_language(target_language, &next_cfg.target_language);
+    // Sync the backend first; only set the UI flag to match what actually succeeded.
+    let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
+    tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
+}
+
+fn sync_playback_service_state(
+    playback_service: &SharedPlaybackService,
+    config: &config::AppConfig,
+    enabled: bool,
+) -> bool {
+    let mut service_slot = playback_service.lock().unwrap_or_else(|p| p.into_inner());
+
+    if let Some(service) = service_slot.as_ref() {
+        service.set_enabled(enabled);
+        return true;
+    }
+
+    if !enabled {
+        return true;
+    }
+
+    match pipeline::playback::PlaybackService::new(enabled, config.tts_output_device.as_deref()) {
+        Ok(service) => {
+            *service_slot = Some(service);
+            true
+        }
+        Err(err) => {
+            tracing::warn!("TTS playback unavailable: {err}");
+            false
+        }
+    }
+}
+
+fn handle_audio_chunk(
+    chunk: audio::AudioChunk,
+    paused: &Arc<AtomicBool>,
+    level_tx: &Arc<AtomicU32>,
+    session_metrics: &Arc<Mutex<metrics::SessionMetrics>>,
+) {
+    if paused.load(Ordering::Relaxed) {
+        level_tx.store(0, Ordering::Relaxed);
+        return;
+    }
+
+    let encoded = (chunk.rms_energy().clamp(0.0, 1.0) * AUDIO_LEVEL_SCALE as f32) as u32;
+    level_tx.store(encoded, Ordering::Relaxed);
+
+    let mut metrics = session_metrics.lock().unwrap_or_else(|p| p.into_inner());
+    metrics.audio_seconds_sent += f64::from(chunk.duration_ms) / 1000.0;
+    metrics.recalculate_cost();
+}
+
+fn mark_audio_capture_stopped(
+    level_tx: &Arc<AtomicU32>,
+    stt_state: &Arc<Mutex<metrics::SttState>>,
+) {
+    level_tx.store(0, Ordering::Relaxed);
+    *stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+        metrics::SttState::Error("audio capture stopped".to_string());
+}
+
+/// Run the terminal interface.  Enters the alternate screen, runs the event
+/// loop, then returns.  The [`TerminalGuard`] restores the terminal on drop.
+fn run_tui(
+    state: &AppState,
+    restart_required: &Arc<AtomicBool>,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
+    keyboard_shutdown: &Arc<AtomicBool>,
+    key_rx: mpsc::Receiver<UserAction>,
+) -> Result<()> {
+    let mut terminal_guard = TerminalGuard::enter()?;
+    let result = event_loop(
+        terminal_guard.terminal_mut(),
+        state,
+        restart_required,
+        cfg_path,
+        current_config,
+        playback_service,
+        key_rx,
+    );
+    keyboard_shutdown.store(true, Ordering::Relaxed);
+    result
+}
+
+/// Main event loop: draw the UI, then process key actions from the keyboard
+/// task channel.
 ///
-/// Uses `event::poll` with a 50 ms timeout so the audio-level bar refreshes
-/// at ~20 fps regardless of user input.  Crossterm resize events are handled
-/// implicitly: the next `terminal.draw()` call picks up the new size
-/// automatically, so no explicit resize handler is needed.
+/// The loop runs at approximately 20 fps (50 ms sleep between draws).
+/// Key actions arrive on `key_rx` from the dedicated keyboard task (issue #63).
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &AppState,
     restart_required: &Arc<AtomicBool>,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
+    key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     loop {
-        let level = state.level_ratio();
-        let dev_name = state.device_name_str();
-        let show_restart_notice = restart_required.load(Ordering::Relaxed);
-        let pane_area = subtitle_inner_area(terminal.size()?);
+        let expanded = state.metrics_expanded.load(Ordering::Relaxed);
+        let show_restart = restart_required.load(Ordering::Relaxed);
+        let pane_area = subtitle_inner_area(terminal.size()?, expanded);
 
         {
             let mut pane = state
@@ -152,50 +391,317 @@ fn event_loop(
             pane.clamp_scroll(pane_area.width, pane_area.height);
         }
 
+        let level = state.level_ratio();
+        let dev_name = state.device_name_str();
         terminal.draw(|frame| {
-            let pane = state
-                .subtitle_pane
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            draw_ui(frame, level, &dev_name, &pane, show_restart_notice);
+            draw_ui(frame, state, &dev_name, level, show_restart);
         })?;
 
-        if event::poll(Duration::from_millis(50))? {
-            match event::read()? {
-                Event::Key(key) => {
-                    if is_quit_key(&key) {
-                        tracing::info!("user requested shutdown");
-                        break;
-                    }
-                    handle_scroll_key(&key, state, pane_area);
+        // Drain all pending key actions without blocking.
+        let mut should_quit = false;
+        loop {
+            match key_rx.try_recv() {
+                Ok(UserAction::Quit) => {
+                    should_quit = true;
                 }
-                // Resize: ratatui auto-reflows on the next draw; no action needed.
-                Event::Resize(_, _) => {}
-                _ => {}
+                Ok(UserAction::AnyKey) => {}
+                Ok(action) => {
+                    handle_action(
+                        &action,
+                        state,
+                        pane_area,
+                        restart_required,
+                        cfg_path,
+                        current_config,
+                        playback_service,
+                    );
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // Keyboard task exited; treat as quit.
+                    should_quit = true;
+                    break;
+                }
             }
         }
+
+        if should_quit {
+            tracing::info!("user requested shutdown");
+            // Draw the in-TUI session summary overlay, then wait for any key.
+            terminal.draw(|frame| {
+                draw_session_summary(frame, state, show_restart);
+            })?;
+            loop {
+                match key_rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            }
+            break;
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
     }
     Ok(())
 }
 
-fn is_quit_key(key: &KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q'))
-        || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
+// ── Issue #63: keyboard task ──────────────────────────────────────────────────
+
+/// Translate a raw crossterm [`KeyEvent`] into a [`UserAction`].
+///
+/// `in_lang_prompt` routes character input to the language-change prompt rather
+/// than to the normal command set (issue #64).
+fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
+    if in_lang_prompt {
+        return match key.code {
+            KeyCode::Enter => Some(UserAction::LangApply),
+            KeyCode::Esc => Some(UserAction::LangCancel),
+            KeyCode::Backspace => Some(UserAction::LangBackspace),
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::LangChar(c))
+            }
+            _ => Some(UserAction::AnyKey),
+        };
+    }
+    match key.code {
+        // Quit (issue #64)
+        KeyCode::Char('q') | KeyCode::Char('Q') => Some(UserAction::Quit),
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(UserAction::Quit)
+        }
+        // Overlay dismissal — Escape (issue #64)
+        KeyCode::Esc => Some(UserAction::DismissOverlay),
+        // Commands (issue #64)
+        KeyCode::Char(' ') => Some(UserAction::TogglePause),
+        KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::ToggleTts),
+        KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::ToggleMetrics),
+        KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::PromptLanguage),
+        KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
+        KeyCode::Char('?') => Some(UserAction::ToggleHelp),
+        // Scrolling
+        KeyCode::Up => Some(UserAction::ScrollUp),
+        KeyCode::Down => Some(UserAction::ScrollDown),
+        KeyCode::Home => Some(UserAction::ScrollTop),
+        KeyCode::End => Some(UserAction::ScrollBottom),
+        _ => Some(UserAction::AnyKey),
+    }
 }
 
-/// Translate scroll keys into pane scroll commands.
-fn handle_scroll_key(key: &KeyEvent, state: &AppState, pane_area: Rect) {
-    let mut pane = state
+/// Blocking keyboard reader managed by Tokio (issue #63).
+///
+/// Runs forever on a dedicated OS thread (via `tokio::task::spawn_blocking`).
+/// Converts every crossterm key event to a [`UserAction`] and sends it to the
+/// event loop via `key_tx`. Uses `event::poll()` so shutdown is observed even
+/// while no actionable key is pressed.
+fn keyboard_task(
+    key_tx: mpsc::Sender<UserAction>,
+    lang_prompt_active: Arc<AtomicBool>,
+    shutdown: Arc<AtomicBool>,
+) {
+    while !shutdown.load(Ordering::Relaxed) {
+        match event::poll(Duration::from_millis(100)) {
+            Ok(false) => continue,
+            Ok(true) => {}
+            Err(_) => break,
+        }
+
+        match event::read() {
+            Ok(Event::Key(key)) => {
+                let in_prompt = lang_prompt_active.load(Ordering::Relaxed);
+                if let Some(action) = key_to_action(&key, in_prompt) {
+                    if key_tx.send(action).is_err() {
+                        // Receiver dropped; app is shutting down.
+                        break;
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+}
+
+// ── Issue #64: action handler ─────────────────────────────────────────────────
+
+/// Execute a [`UserAction`] against the shared application state.
+fn handle_action(
+    action: &UserAction,
+    state: &AppState,
+    pane_area: ratatui::layout::Rect,
+    restart_required: &Arc<AtomicBool>,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    playback_service: &SharedPlaybackService,
+) {
+    match action {
+        // Scrolling
+        UserAction::ScrollUp => state
+            .subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .scroll_up(pane_area.width, pane_area.height),
+        UserAction::ScrollDown => state
+            .subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .scroll_down(pane_area.width, pane_area.height),
+        UserAction::ScrollTop => state
+            .subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .scroll_to_top(pane_area.width, pane_area.height),
+        UserAction::ScrollBottom => state
+            .subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .scroll_to_bottom(),
+
+        // Space — pause / resume (issue #64)
+        UserAction::TogglePause => {
+            let v = state.paused.load(Ordering::Relaxed);
+            state.paused.store(!v, Ordering::Relaxed);
+            tracing::info!("translation {}", if !v { "paused" } else { "resumed" });
+        }
+
+        // T — toggle TTS (issue #58)
+        UserAction::ToggleTts => {
+            let was_enabled = state.tts_enabled.load(Ordering::Relaxed);
+            let want_enabled = !was_enabled;
+            let current = current_config
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            // Sync the backend first; only update the UI flag to reflect what succeeded.
+            let service_ok = sync_playback_service_state(playback_service, &current, want_enabled);
+            let actual = want_enabled && service_ok;
+            state.tts_enabled.store(actual, Ordering::Relaxed);
+            tracing::info!("TTS toggled: {}", if actual { "on" } else { "off" });
+        }
+
+        // M — expand / collapse metrics (issue #41)
+        UserAction::ToggleMetrics => {
+            state.toggle_metrics();
+        }
+
+        // ? — show / hide help (issue #66)
+        UserAction::ToggleHelp => {
+            let show_help = !state.show_help.load(Ordering::Relaxed);
+            state.show_help.store(show_help, Ordering::Relaxed);
+            if show_help {
+                state.lang_prompt_active.store(false, Ordering::Relaxed);
+                *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+            }
+        }
+
+        // Escape — dismiss open overlay (issue #64)
+        UserAction::DismissOverlay => {
+            if state.lang_prompt_active.load(Ordering::Relaxed) {
+                state.lang_prompt_active.store(false, Ordering::Relaxed);
+                *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+            } else if state.show_help.load(Ordering::Relaxed) {
+                state.show_help.store(false, Ordering::Relaxed);
+            }
+        }
+
+        // L — open language prompt (issue #64)
+        UserAction::PromptLanguage => {
+            if !state.lang_prompt_active.load(Ordering::Relaxed) {
+                state.show_help.store(false, Ordering::Relaxed);
+                *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                state.lang_prompt_active.store(true, Ordering::Relaxed);
+            }
+        }
+
+        // Language prompt input (issue #64)
+        UserAction::LangChar(c) => {
+            state
+                .lang_input
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push(*c);
+        }
+        UserAction::LangBackspace => {
+            state
+                .lang_input
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .pop();
+        }
+        UserAction::LangApply => {
+            let input = state
+                .lang_input
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            let next_language = input.trim();
+            if !next_language.is_empty() {
+                state.set_target_language(next_language.to_string());
+                {
+                    let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+                    current.target_language = next_language.to_string();
+                }
+                tracing::info!("target language changed to {next_language}");
+            }
+            state.lang_prompt_active.store(false, Ordering::Relaxed);
+            *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        }
+        UserAction::LangCancel => {
+            state.lang_prompt_active.store(false, Ordering::Relaxed);
+            *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        }
+
+        UserAction::AnyKey => {}
+
+        // R — signal config reload (issue #64)
+        UserAction::ReloadConfig => match config::load(cfg_path) {
+            Ok(next_cfg) => {
+                apply_runtime_config(
+                    current_config,
+                    &state.target_language,
+                    &state.tts_enabled,
+                    restart_required,
+                    playback_service,
+                    next_cfg,
+                );
+                tracing::info!("config reloaded from {}", cfg_path.display());
+            }
+            Err(err) => {
+                tracing::warn!("config reload requested with R key failed: {err:#}");
+            }
+        },
+
+        // Quit is handled in the outer loop, not here.
+        UserAction::Quit => {}
+    }
+}
+
+// ── Issue #64: stdout session summary ────────────────────────────────────────
+
+/// Print the session summary to stdout after the alternate screen is left.
+///
+/// This satisfies the requirement that Q/Ctrl+C "restores the terminal and
+/// prints a session summary to stdout before exiting with code 0".
+fn print_session_summary_to_stdout(state: &AppState) {
+    let metrics = state.metrics_snapshot();
+    let pair_count = state
         .subtitle_pane
         .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    match key.code {
-        KeyCode::Up => pane.scroll_up(pane_area.width, pane_area.height),
-        KeyCode::Down => pane.scroll_down(pane_area.width, pane_area.height),
-        KeyCode::Home => pane.scroll_to_top(pane_area.width, pane_area.height),
-        KeyCode::End => pane.scroll_to_bottom(),
-        _ => {}
-    }
+        .unwrap_or_else(|p| p.into_inner())
+        .pair_count();
+    let tts_on = state.tts_enabled.load(Ordering::Relaxed);
+
+    println!();
+    println!(
+        "\u{2500}\u{2500}\u{2500} TUI Translator \u{2014} Session Summary \u{2500}\u{2500}\u{2500}"
+    );
+    println!("  Duration:        {}", metrics.format_elapsed());
+    println!("  Subtitle pairs:  {pair_count}");
+    println!("  Audio processed: {:.0}s", metrics.audio_seconds_sent);
+    println!("  Characters:      {}", metrics.chars_translated);
+    println!("  Estimated cost:  ${:.4}", metrics.estimated_cost_usd);
+    println!("  TTS output:      {}", if tts_on { "on" } else { "off" });
+    println!("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}");
+    println!();
 }
 
 struct TerminalGuard {
@@ -248,76 +754,204 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Draw the Phase 0 loading UI.
-///
-/// - `audio_level`: current RMS energy as a ratio in `[0.0, 1.0]`.
-/// - `device_name`: human-readable name of the active capture device.
-/// - `subtitle_pane`: the stateful bilingual subtitle widget.
-fn draw_ui(
-    frame: &mut ratatui::Frame,
-    audio_level: f64,
-    device_name: &str,
-    subtitle_pane: &SubtitlePane,
-    show_restart_notice: bool,
-) {
-    let area = frame.size();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::AudioChunk;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::layout::Rect;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // title bar
-            Constraint::Length(3), // audio level bar
-            Constraint::Min(1),    // subtitle pane
-            Constraint::Length(3), // status bar
-        ])
-        .split(area);
+    #[test]
+    fn lang_apply_updates_runtime_target_language() {
+        let state = AppState::new();
+        state.set_target_language("vi");
+        state.lang_prompt_active.store(true, Ordering::Relaxed);
+        *state.lang_input.lock().unwrap() = "en-US".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
 
-    // Title bar — placeholder title per issue #26: "TUI Translator — Loading…"
-    let title = Paragraph::new("TUI Translator \u{2014} Loading\u{2026}")
-        .style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(title, chunks[0]);
+        handle_action(
+            &UserAction::LangApply,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
 
-    // Live audio-level bar — reacts to captured audio (issue #31).
-    // Colour: dark grey = silent, green = quiet, yellow = moderate, red = loud.
-    let bar_color = if audio_level < 0.001 {
-        Color::DarkGray
-    } else if audio_level < 0.3 {
-        Color::Green
-    } else if audio_level < 0.7 {
-        Color::Yellow
-    } else {
-        Color::Red
-    };
-    let bar_title = format!(" Audio \u{2014} {device_name} ");
-    let gauge = Gauge::default()
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(bar_title.as_str()),
-        )
-        .gauge_style(Style::default().fg(bar_color))
-        .ratio(audio_level.clamp(0.0, 1.0));
-    frame.render_widget(gauge, chunks[1]);
-
-    // Bilingual subtitle pane (issues #54–57).
-    frame.render_widget(subtitle_pane, chunks[2]);
-
-    // Status bar
-    let mut status_text = " Status: loading  |  Phase: 0 — skeleton ".to_string();
-    if show_restart_notice {
-        status_text.push_str(" |  ⚠ Restart required for some settings");
+        assert_eq!(state.target_language(), "en-US");
+        assert_eq!(current_config.lock().unwrap().target_language, "en-US");
+        assert!(!state.lang_prompt_active.load(Ordering::Relaxed));
+        assert!(state.lang_input.lock().unwrap().is_empty());
     }
-    status_text.push_str(" |  ↑↓ scroll  |  End: follow  |  q / Ctrl+C: quit ");
 
-    let status = Paragraph::new(status_text)
-        .style(Style::default().fg(Color::DarkGray))
-        .alignment(Alignment::Left)
-        .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(status, chunks[3]);
+    #[test]
+    fn reload_config_applies_tts_and_target_language() {
+        let mut config_file = NamedTempFile::new().unwrap();
+        write!(
+            config_file,
+            r#"{{"source_language":"ja-JP","target_language":"en","tts_enabled":true}}"#
+        )
+        .unwrap();
+
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::ReloadConfig,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            config_file.path(),
+            &current_config,
+            &playback_service,
+        );
+
+        assert_eq!(state.target_language(), "en");
+        assert_eq!(current_config.lock().unwrap().target_language, "en");
+
+        // The UI flag mirrors whether the PlaybackService actually started.
+        // On CI runners without an audio output device the service startup
+        // fails and the flag stays false; on hardware where it succeeds the
+        // flag becomes true.  Either way the flag must be consistent with the
+        // service slot rather than blindly reflecting config intent.
+        let service_running = playback_service.lock().unwrap().is_some();
+        assert_eq!(
+            state.tts_enabled.load(Ordering::Relaxed),
+            service_running,
+            "tts_enabled UI flag must match whether PlaybackService actually started"
+        );
+    }
+
+    #[test]
+    fn paused_audio_chunk_is_dropped_without_updating_metrics() {
+        let paused = Arc::new(AtomicBool::new(true));
+        let level_tx = Arc::new(AtomicU32::new(42));
+        let session_metrics = Arc::new(Mutex::new(metrics::SessionMetrics::default()));
+
+        handle_audio_chunk(
+            AudioChunk::new(vec![i16::MAX; 160]),
+            &paused,
+            &level_tx,
+            &session_metrics,
+        );
+
+        assert_eq!(level_tx.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            session_metrics
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .audio_seconds_sent,
+            0.0
+        );
+    }
+
+    #[test]
+    fn active_audio_chunk_updates_level_and_metrics() {
+        let paused = Arc::new(AtomicBool::new(false));
+        let level_tx = Arc::new(AtomicU32::new(0));
+        let session_metrics = Arc::new(Mutex::new(metrics::SessionMetrics::default()));
+
+        handle_audio_chunk(
+            AudioChunk::new(vec![i16::MAX; 160]),
+            &paused,
+            &level_tx,
+            &session_metrics,
+        );
+
+        assert!(level_tx.load(Ordering::Relaxed) > 0);
+        assert!(
+            session_metrics
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .audio_seconds_sent
+                > 0.0
+        );
+    }
+
+    #[test]
+    fn audio_capture_stop_sets_error_state_and_clears_level() {
+        let level_tx = Arc::new(AtomicU32::new(99));
+        let stt_state = Arc::new(Mutex::new(metrics::SttState::Listening));
+
+        mark_audio_capture_stopped(&level_tx, &stt_state);
+
+        assert_eq!(level_tx.load(Ordering::Relaxed), 0);
+        assert!(matches!(
+            &*stt_state.lock().unwrap_or_else(|p| p.into_inner()),
+            metrics::SttState::Error(message) if message == "audio capture stopped"
+        ));
+    }
+
+    #[test]
+    fn unmapped_key_wakes_any_key_waits() {
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+
+        assert_eq!(key_to_action(&key, false), Some(UserAction::AnyKey));
+    }
+
+    #[test]
+    fn prompt_language_hides_help_overlay() {
+        let state = AppState::new();
+        state.show_help.store(true, Ordering::Relaxed);
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::PromptLanguage,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(state.lang_prompt_active.load(Ordering::Relaxed));
+        assert!(!state.show_help.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn opening_help_closes_language_prompt() {
+        let state = AppState::new();
+        state.lang_prompt_active.store(true, Ordering::Relaxed);
+        *state.lang_input.lock().unwrap() = "vi".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::ToggleHelp,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(state.show_help.load(Ordering::Relaxed));
+        assert!(!state.lang_prompt_active.load(Ordering::Relaxed));
+        assert!(state.lang_input.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn disabled_tts_does_not_create_playback_service() {
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let config = config::AppConfig::default();
+
+        sync_playback_service_state(&playback_service, &config, false);
+
+        assert!(playback_service
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_none());
+    }
 }

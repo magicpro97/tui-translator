@@ -1,9 +1,8 @@
 //! Terminal user interface components.
 //!
-//! Provides the scrollable [`SubtitlePane`] widget and shared [`AppState`] for
-//! the bilingual subtitle display.  The pane renders source/target pairs in
-//! chronological order, auto-following new pairs unless the user has manually
-//! scrolled up.
+//! Provides the scrollable [`SubtitlePane`] widget, shared [`AppState`],
+//! status/metrics widgets, and top-level draw routines for the bilingual
+//! subtitle display.
 
 // Some items are public API surface for future pipeline wiring; suppress
 // dead-code lints until Phase 4 connects them.
@@ -11,7 +10,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
     time::SystemTime,
@@ -19,13 +18,15 @@ use std::{
 
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Widget},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, Widget},
 };
 use tracing::warn;
 use unicode_width::UnicodeWidthChar;
+
+pub use crate::metrics::{SessionMetrics, SttState};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -44,14 +45,23 @@ const TGT_PREFIX: &str = "[TGT] ";
 
 /// All keyboard shortcuts supported by the application.
 ///
-/// The TUI translates raw crossterm key events into these actions so the
-/// rest of the code never needs to inspect key codes directly.
+/// The dedicated keyboard task (issue #63) translates raw crossterm key events
+/// into these actions so the rest of the code never needs to inspect key codes
+/// directly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserAction {
     /// Space — pause or resume translation.
     TogglePause,
-    /// L — change the target language.
-    ChangeLanguage,
+    /// L — open the language-change prompt.
+    PromptLanguage,
+    /// A printable character typed while the language prompt is active.
+    LangChar(char),
+    /// Enter — apply the language typed in the prompt.
+    LangApply,
+    /// Escape while the language prompt is active — cancel without change.
+    LangCancel,
+    /// Backspace while the language prompt is active.
+    LangBackspace,
     /// T — toggle translated audio on or off.
     ToggleTts,
     /// M — expand or collapse the detailed metrics view.
@@ -60,8 +70,20 @@ pub enum UserAction {
     ReloadConfig,
     /// ? — show or hide the keyboard-shortcut help panel.
     ToggleHelp,
+    /// Escape (outside prompt) — dismiss any open overlay (help, etc.).
+    DismissOverlay,
     /// Q or Ctrl+C — quit and show the session summary.
     Quit,
+    /// ↑ arrow — scroll the subtitle pane up.
+    ScrollUp,
+    /// ↓ arrow — scroll the subtitle pane down.
+    ScrollDown,
+    /// Home — jump to the oldest subtitle.
+    ScrollTop,
+    /// End — jump to the newest subtitle and re-enable auto-follow.
+    ScrollBottom,
+    /// Any other key that should wake generic "press any key" waits.
+    AnyKey,
 }
 
 // ── SubtitlePair ─────────────────────────────────────────────────────────────
@@ -196,6 +218,11 @@ impl SubtitlePane {
     /// Jump to the oldest pair.
     pub fn scroll_to_top(&mut self, width: u16, height: u16) {
         self.scroll = self.max_scroll(width, height);
+    }
+
+    /// Number of subtitle pairs stored in the pane.
+    pub fn pair_count(&self) -> usize {
+        self.pairs.len()
     }
 
     /// `true` when the pane is auto-following new pairs (pinned to bottom).
@@ -443,14 +470,16 @@ fn subtitle_block() -> Block<'static> {
         .style(Style::default().fg(Color::White))
 }
 
-pub fn subtitle_inner_area(area: Rect) -> Rect {
+pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool) -> Rect {
+    let metrics_h = if metrics_expanded { 5u16 } else { 3u16 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(3),         // title bar
+            Constraint::Length(3),         // audio gauge
+            Constraint::Min(1),            // subtitle pane
+            Constraint::Length(metrics_h), // metrics strip
+            Constraint::Length(1),         // control hints bar (always shown)
         ])
         .split(area);
 
@@ -462,8 +491,12 @@ pub fn subtitle_inner_area(area: Rect) -> Rect {
 /// Shared application state updated by the audio capture task and read by the
 /// TUI renderer.
 ///
-/// All fields are `Arc`-wrapped so the audio background task and the main
-/// thread can share them without a runtime borrow.
+/// All fields are designed for concurrent access: atomics for simple flags,
+/// `Arc<Mutex<_>>` for complex values shared across tasks.
+///
+/// Issue #61: metric values arrive via a [`tokio::sync::watch`] channel updated
+/// every second by the observability background task.  The UI reads the latest
+/// snapshot through [`metrics_snapshot`](AppState::metrics_snapshot).
 pub struct AppState {
     /// RMS energy encoded as `(rms * AUDIO_LEVEL_SCALE as f32) as u32`, updated atomically.
     ///
@@ -473,16 +506,56 @@ pub struct AppState {
     pub device_name: Arc<Mutex<String>>,
     /// Scrollable subtitle pane; guarded so shared app state can mutate and read
     /// it safely as more pipeline wiring is added.
-    pub subtitle_pane: Mutex<SubtitlePane>,
+    pub subtitle_pane: Arc<Mutex<SubtitlePane>>,
+    /// Whether TTS audio output is currently enabled.
+    pub tts_enabled: Arc<AtomicBool>,
+    /// Whether the metrics panel is shown in expanded (detailed) mode.
+    pub metrics_expanded: AtomicBool,
+    /// Whether the help overlay is currently visible.
+    pub show_help: AtomicBool,
+    /// Whether translation is paused (Space key, issue #64).
+    pub paused: Arc<AtomicBool>,
+    /// Whether the language-change prompt is currently open (L key, issue #64).
+    ///
+    /// Wrapped in `Arc` so the keyboard task can read it to decide how to route
+    /// character input (issue #63).
+    pub lang_prompt_active: Arc<AtomicBool>,
+    /// Text being typed in the language-change prompt.
+    pub lang_input: Mutex<String>,
+    /// Currently selected translation target language code.
+    pub target_language: Arc<Mutex<String>>,
+    /// Current STT engine state; updated by the pipeline.
+    pub stt_state: Arc<Mutex<SttState>>,
+    /// Accumulated session metrics; written by the pipeline, published to
+    /// [`metrics_tx`](AppState::metrics_tx) once per second (issue #61).
+    pub session_metrics: Arc<Mutex<SessionMetrics>>,
+    /// Watch channel sender — the observability background task calls
+    /// `metrics_tx.send(snapshot)` every second (issue #61).
+    pub metrics_tx: Arc<tokio::sync::watch::Sender<SessionMetrics>>,
+    /// Watch channel receiver — the UI draw loop calls `metrics_snapshot()` to
+    /// get the latest published value without blocking (issue #61).
+    pub metrics_rx: tokio::sync::watch::Receiver<SessionMetrics>,
 }
 
 impl AppState {
     /// Create a fresh state with level at zero and device name `"initializing…"`.
     pub fn new() -> Self {
+        let (metrics_tx, metrics_rx) = tokio::sync::watch::channel(SessionMetrics::default());
         Self {
             audio_level: Arc::new(AtomicU32::new(0)),
             device_name: Arc::new(Mutex::new("initializing\u{2026}".to_string())),
-            subtitle_pane: Mutex::new(SubtitlePane::new()),
+            subtitle_pane: Arc::new(Mutex::new(SubtitlePane::new())),
+            tts_enabled: Arc::new(AtomicBool::new(false)),
+            metrics_expanded: AtomicBool::new(false),
+            show_help: AtomicBool::new(false),
+            paused: Arc::new(AtomicBool::new(false)),
+            lang_prompt_active: Arc::new(AtomicBool::new(false)),
+            lang_input: Mutex::new(String::new()),
+            target_language: Arc::new(Mutex::new("vi".to_string())),
+            stt_state: Arc::new(Mutex::new(SttState::default())),
+            session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
+            metrics_tx: Arc::new(metrics_tx),
+            metrics_rx,
         }
     }
 
@@ -504,6 +577,71 @@ impl AppState {
             }
         }
     }
+
+    /// Toggle TTS output on/off.
+    pub fn toggle_tts(&self) {
+        let v = self.tts_enabled.load(Ordering::Relaxed);
+        self.tts_enabled.store(!v, Ordering::Relaxed);
+    }
+
+    /// Force the current TTS runtime state to `enabled`.
+    pub fn set_tts_enabled(&self, enabled: bool) {
+        self.tts_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Toggle the metrics panel between compact and expanded.
+    pub fn toggle_metrics(&self) {
+        let v = self.metrics_expanded.load(Ordering::Relaxed);
+        self.metrics_expanded.store(!v, Ordering::Relaxed);
+    }
+
+    /// Toggle the help overlay.
+    pub fn toggle_help(&self) {
+        let v = self.show_help.load(Ordering::Relaxed);
+        self.show_help.store(!v, Ordering::Relaxed);
+    }
+
+    /// Current target language code used for translation output.
+    pub fn target_language(&self) -> String {
+        match self.target_language.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => {
+                warn!("target_language mutex was poisoned; recovering last known state");
+                poisoned.into_inner().clone()
+            }
+        }
+    }
+
+    /// Replace the current target language code.
+    pub fn set_target_language(&self, next: impl Into<String>) {
+        let next = next.into();
+        match self.target_language.lock() {
+            Ok(mut guard) => {
+                *guard = next;
+            }
+            Err(poisoned) => {
+                warn!("target_language mutex was poisoned; recovering last known state");
+                let mut guard = poisoned.into_inner();
+                *guard = next;
+            }
+        }
+    }
+
+    /// Clone the current STT state for rendering (cheap enum clone).
+    pub fn stt_state_snapshot(&self) -> SttState {
+        self.stt_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// Return the latest metrics published via the watch channel (issue #61).
+    ///
+    /// This is a lock-free borrow of the most recently sent value; it never
+    /// blocks the UI thread.
+    pub fn metrics_snapshot(&self) -> SessionMetrics {
+        self.metrics_rx.borrow().clone()
+    }
 }
 
 impl Default for AppState {
@@ -512,7 +650,524 @@ impl Default for AppState {
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// ── StatusMetricsStrip ────────────────────────────────────────────────────────
+
+/// Compact (3-row) or expanded (5-row) metrics strip rendered below the
+/// subtitle pane.
+///
+/// In **compact** mode (the default) the strip is a single bordered line
+/// showing the key runtime metrics. In **expanded** mode the block grows to
+/// show one metric per row, styled with colour cues.
+pub struct StatusMetricsStrip<'a> {
+    pub stt: &'a SttState,
+    pub tts_on: bool,
+    pub target_language: String,
+    pub pairs: u64,
+    pub audio_secs: f64,
+    pub cost_usd: f64,
+    pub elapsed: String,
+    pub show_restart: bool,
+    pub expanded: bool,
+}
+
+impl Widget for &StatusMetricsStrip<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        if self.expanded {
+            self.render_expanded(area, buf);
+        } else {
+            self.render_compact(area, buf);
+        }
+    }
+}
+
+impl StatusMetricsStrip<'_> {
+    /// Abbreviated STT label for narrow terminals (< 80 columns, issue #60).
+    fn stt_abbrev(&self) -> String {
+        match self.stt {
+            SttState::Idle => "idle".to_string(),
+            SttState::Listening => "\u{25cf}list".to_string(),
+            SttState::Sending => "\u{25cc}send".to_string(),
+            SttState::Waiting => "\u{25cb}wait".to_string(),
+            SttState::Error(msg) => {
+                let short: String = msg.chars().take(6).collect();
+                format!("\u{2717}{short}")
+            }
+        }
+    }
+
+    fn render_compact(&self, area: Rect, buf: &mut Buffer) {
+        // Adaptive label width (issue #60):
+        //   < 80  cols → minimal abbreviated labels
+        //   80-119 cols → standard labels
+        //  ≥ 120  cols → full labels (adds audio seconds)
+        let tts_str = if self.tts_on { "on" } else { "off" };
+        let restart_suffix = if self.show_restart {
+            " \u{2502} \u{26a0} restart req'd"
+        } else {
+            ""
+        };
+
+        let text = if area.width < 80 {
+            format!(
+                " {} | L:{} | T:{} | {}p | ${:.4} | {}{}",
+                self.stt_abbrev(),
+                self.target_language,
+                tts_str,
+                self.pairs,
+                self.cost_usd,
+                self.elapsed,
+                restart_suffix,
+            )
+        } else if area.width >= 120 {
+            format!(
+                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} Audio:{:.0}s \u{2502} ${:.4} \u{2502} {}{}",
+                self.stt.label(),
+                self.target_language,
+                tts_str,
+                self.pairs,
+                self.audio_secs,
+                self.cost_usd,
+                self.elapsed,
+                restart_suffix,
+            )
+        } else {
+            format!(
+                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} ${:.4} \u{2502} {}{}",
+                self.stt.label(),
+                self.target_language,
+                tts_str,
+                self.pairs,
+                self.cost_usd,
+                self.elapsed,
+                restart_suffix,
+            )
+        };
+
+        Paragraph::new(text)
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Left)
+            .block(Block::default().borders(Borders::ALL))
+            .render(area, buf);
+    }
+
+    fn render_expanded(&self, area: Rect, buf: &mut Buffer) {
+        let stt_color = stt_color(self.stt);
+        let tts_color = if self.tts_on {
+            Color::Green
+        } else {
+            Color::DarkGray
+        };
+        let restart_span: Span<'static> = if self.show_restart {
+            Span::styled(
+                "   \u{26a0} Restart required for some settings",
+                Style::default().fg(Color::Yellow),
+            )
+        } else {
+            Span::raw("")
+        };
+
+        // Adaptive detail level (issue #60): wide terminals get audio seconds.
+        let metrics_line = if area.width >= 120 {
+            Line::from(Span::raw(format!(
+                "Target: {}   Pairs: {}   Audio: {:.0}s   Cost: ${:.4}",
+                self.target_language, self.pairs, self.audio_secs, self.cost_usd,
+            )))
+        } else if area.width < 80 {
+            Line::from(Span::raw(format!(
+                "L:{}  {}p  ${:.4}",
+                self.target_language, self.pairs, self.cost_usd,
+            )))
+        } else {
+            Line::from(Span::raw(format!(
+                "Target: {}   Pairs: {}   Cost: ${:.4}",
+                self.target_language, self.pairs, self.cost_usd,
+            )))
+        };
+
+        let lines: Vec<Line<'_>> = vec![
+            Line::from(vec![
+                // Use the full label directly — no separate "STT: " prefix to
+                // avoid the double-prefix that was in the original snapshot.
+                Span::styled(self.stt.label(), Style::default().fg(stt_color)),
+                Span::raw("   "),
+                Span::styled("TTS: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if self.tts_on { "on" } else { "off" },
+                    Style::default().fg(tts_color),
+                ),
+            ]),
+            metrics_line,
+            Line::from(vec![
+                Span::raw(format!("Elapsed: {}", self.elapsed)),
+                restart_span,
+            ]),
+        ];
+
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(" Metrics ")
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(Color::DarkGray)),
+            )
+            .render(area, buf);
+    }
+}
+
+// ── ControlHintsBar ───────────────────────────────────────────────────────────
+
+/// Single borderless row of keyboard hint labels.
+///
+/// Issue #65: this bar is **always shown**, one row high, and never scrolls.
+/// It replaces the hint text that was previously embedded in the compact
+/// metrics strip (which now shows only metrics).
+pub struct ControlHintsBar {
+    pub tts_on: bool,
+}
+
+impl Widget for &ControlHintsBar {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // Adaptive label width (issue #60):
+        //   < 80  cols → abbreviated
+        //  ≥ 80  cols → standard hints including all required controls (issue #64/#65)
+        let text = if area.width < 80 {
+            " ?  Spc  T  L  M  R  Q ".to_string()
+        } else {
+            let _ = self.tts_on;
+            " ? help  Space pause  T audio  L lang  M metrics  R reload  Q quit ".to_string()
+        };
+
+        buf.set_stringn(
+            area.x,
+            area.y,
+            &text,
+            area.width as usize,
+            Style::default().fg(Color::DarkGray),
+        );
+    }
+}
+
+// ── Top-level draw routines ───────────────────────────────────────────────────
+
+/// Draw the full TUI for a single frame.
+///
+/// Builds the adaptive layout (compact vs. expanded metrics) and renders all
+/// widgets: title bar with STT indicator, audio gauge, subtitle pane,
+/// status/metrics strip, the always-visible control hints bar (issue #65),
+/// and any active overlays (help, language prompt, quit summary).
+pub fn draw_ui(
+    frame: &mut ratatui::Frame,
+    state: &AppState,
+    device_name: &str,
+    audio_level: f64,
+    show_restart_notice: bool,
+) {
+    let area = frame.size();
+    let expanded = state.metrics_expanded.load(Ordering::Relaxed);
+    let tts_on = state.tts_enabled.load(Ordering::Relaxed);
+    let show_help = state.show_help.load(Ordering::Relaxed);
+    let paused = state.paused.load(Ordering::Relaxed);
+    let lang_active = state.lang_prompt_active.load(Ordering::Relaxed);
+    let target_language = state.target_language();
+    let stt = state.stt_state_snapshot();
+    let metrics = state.metrics_snapshot();
+
+    // Issue #65: the control hints bar is ALWAYS shown (1 row, no scroll).
+    // Build layout — bottom section grows when the metrics panel is expanded.
+    let metrics_h = if expanded { 5u16 } else { 3u16 };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),         // title bar
+            Constraint::Length(3),         // audio gauge
+            Constraint::Min(1),            // subtitle pane
+            Constraint::Length(metrics_h), // metrics strip (compact or expanded)
+            Constraint::Length(1),         // control hints bar — always shown
+        ])
+        .split(area);
+
+    // ── Title bar with STT indicator ─────────────────────────────────────────
+    let stt_color_val = stt_color(&stt);
+    let mut title_spans = vec![
+        Span::styled(
+            "TUI Translator",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("   \u{2502}   ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            stt.label(),
+            Style::default()
+                .fg(stt_color_val)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if paused {
+        title_spans.push(Span::styled(
+            "   \u{23f8} PAUSED",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    frame.render_widget(
+        Paragraph::new(Line::from(title_spans))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL)),
+        chunks[0],
+    );
+
+    // ── Audio level gauge ────────────────────────────────────────────────────
+    let bar_color = if audio_level < 0.001 {
+        Color::DarkGray
+    } else if audio_level < 0.3 {
+        Color::Green
+    } else if audio_level < 0.7 {
+        Color::Yellow
+    } else {
+        Color::Red
+    };
+    let bar_title = format!(" Audio \u{2014} {device_name} ");
+    frame.render_widget(
+        Gauge::default()
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(bar_title.as_str()),
+            )
+            .gauge_style(Style::default().fg(bar_color))
+            .ratio(audio_level.clamp(0.0, 1.0)),
+        chunks[1],
+    );
+
+    // ── Subtitle pane ────────────────────────────────────────────────────────
+    {
+        let pane = state
+            .subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        frame.render_widget(&*pane, chunks[2]);
+    }
+
+    // ── Status / metrics strip ───────────────────────────────────────────────
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on,
+        target_language,
+        pairs: metrics.line_pairs_shown,
+        audio_secs: metrics.audio_seconds_sent,
+        cost_usd: metrics.estimated_cost_usd,
+        elapsed: metrics.format_elapsed(),
+        show_restart: show_restart_notice,
+        expanded,
+    };
+    frame.render_widget(&strip, chunks[3]);
+
+    // ── Control hints bar — always rendered (issue #65) ──────────────────────
+    frame.render_widget(&ControlHintsBar { tts_on }, chunks[4]);
+
+    // ── Language prompt overlay (issue #64) ──────────────────────────────────
+    if lang_active {
+        let input = state
+            .lang_input
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        render_language_prompt(frame, area, &input);
+    }
+
+    // ── Help overlay ─────────────────────────────────────────────────────────
+    if show_help {
+        render_help_overlay(frame, area);
+    }
+}
+
+/// Render a centered help overlay listing all keyboard shortcuts.
+pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
+    let panel_w = 56u16.min(area.width);
+    let panel_h = 16u16.min(area.height);
+    let x = area.x + area.width.saturating_sub(panel_w) / 2;
+    let y = area.y + area.height.saturating_sub(panel_h) / 2;
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(Clear, panel);
+
+    let lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            " Keyboard Shortcuts",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  \u{2191} / \u{2193}     Scroll subtitle pane"),
+        Line::from("  Home       Scroll to top"),
+        Line::from("  End        Scroll to bottom / auto-follow"),
+        Line::from("  Space      Pause / resume translation"),
+        Line::from("  T          Toggle TTS audio output"),
+        Line::from("  M          Toggle metrics panel (compact/expanded)"),
+        Line::from("  L          Change target language"),
+        Line::from("  R          Reload config from disk"),
+        Line::from("  ?          Show / hide this help"),
+        Line::from("  Esc        Dismiss this overlay"),
+        Line::from("  q / Ctrl+C Quit \u{2014} shows session summary"),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" Help \u{2014} press ? or Esc to close ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::White)),
+        ),
+        panel,
+    );
+}
+
+/// Render a centered language-change prompt (issue #64).
+///
+/// The user types a BCP-47 language code (e.g. `ja`, `fr`).
+/// Enter applies; Escape cancels.
+pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &str) {
+    let panel_w = 52u16.min(area.width);
+    let panel_h = 5u16.min(area.height);
+    let x = area.x + area.width.saturating_sub(panel_w) / 2;
+    let y = area.y + area.height.saturating_sub(panel_h) / 2;
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(Clear, panel);
+
+    // Show a blinking cursor approximation with a trailing underscore.
+    let display = format!(" > {input}_");
+    let lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            " Target language code (e.g. ja, fr, de)",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(Span::raw(display)),
+        Line::from(Span::styled(
+            " Enter: apply   Esc: cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" Change Language ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan)),
+        ),
+        panel,
+    );
+}
+
+/// Draw the session-summary overlay that appears when the user presses quit.
+///
+/// Clears the whole terminal area and shows a centred panel with session
+/// statistics.  The caller is responsible for waiting for a keypress before
+/// exiting.
+pub fn draw_session_summary(
+    frame: &mut ratatui::Frame,
+    state: &AppState,
+    show_restart_notice: bool,
+) {
+    let area = frame.size();
+    frame.render_widget(Clear, area);
+
+    let metrics = state.metrics_snapshot();
+    let pair_count = state
+        .subtitle_pane
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .pair_count() as u64;
+    let tts_on = state.tts_enabled.load(Ordering::Relaxed);
+
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            " Session Summary",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(format!("  Duration:          {}", metrics.format_elapsed())),
+        Line::from(format!("  Subtitle pairs:    {}", pair_count)),
+        Line::from(format!(
+            "  Audio processed:   {:.0}s",
+            metrics.audio_seconds_sent
+        )),
+        Line::from(format!("  Characters:        {}", metrics.chars_translated)),
+        Line::from(format!(
+            "  Estimated cost:    ${:.4}",
+            metrics.estimated_cost_usd
+        )),
+        Line::from(format!(
+            "  TTS output:        {}",
+            if tts_on { "on" } else { "off" }
+        )),
+        Line::from(""),
+    ];
+
+    if show_restart_notice {
+        lines.push(Line::from(Span::styled(
+            "  \u{26a0}  Some settings require a restart to take effect.",
+            Style::default().fg(Color::Yellow),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(Span::styled(
+        "  Press any key to exit.",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let panel_w = 52u16.min(area.width);
+    let panel_h = (lines.len() as u16 + 2).min(area.height);
+    let x = area.x + area.width.saturating_sub(panel_w) / 2;
+    let y = area.y + area.height.saturating_sub(panel_h) / 2;
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" TUI Translator \u{2014} Goodbye! ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Green)),
+        ),
+        panel,
+    );
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Colour for an STT state indicator.
+fn stt_color(state: &SttState) -> Color {
+    match state {
+        SttState::Idle => Color::DarkGray,
+        SttState::Listening => Color::Green,
+        SttState::Sending => Color::Cyan,
+        SttState::Waiting => Color::Yellow,
+        SttState::Error(_) => Color::Red,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -550,11 +1205,9 @@ mod tests {
 
     #[test]
     fn device_name_recovery_returns_poisoned_inner_value() {
-        let state = AppState {
-            audio_level: Arc::new(AtomicU32::new(0)),
-            device_name: Arc::new(Mutex::new("WASAPI Speakers".to_string())),
-            subtitle_pane: Mutex::new(SubtitlePane::new()),
-        };
+        let state = AppState::new();
+        // Overwrite device name with a known value.
+        *state.device_name.lock().unwrap() = "WASAPI Speakers".to_string();
         let poisoned_name = state.device_name.clone();
         let _ = thread::spawn(move || {
             let _guard = poisoned_name.lock().unwrap();
