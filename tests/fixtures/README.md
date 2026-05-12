@@ -51,7 +51,7 @@ procedure and then committed permanently:
    Measured silence-floor RMS ≈ 727, estimated SNR ≈ 15.6 dB.
 
 **Why neural TTS, not microphone recordings?**
-Neural TTS (Microsoft Edge, Naomi/Keita voices) produces genuine speech
+Neural TTS (Microsoft Edge, Nanami/Keita voices) produces genuine speech
 intelligible to Google STT with documented Japanese language support.  The
 alternative — microphone recordings by a fluent speaker — cannot be produced
 reproducibly in a CI-accessible build environment.  All three files are real

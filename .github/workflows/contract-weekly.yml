@@ -75,9 +75,10 @@ jobs:
           key: ${{ runner.os }}-cargo-contract-${{ hashFiles('**/Cargo.lock') }}
 
       # ── 1b. Run the live-API contract tests ────────────────────────────────
-      # Tests whose names contain `real_api` require the env var; all others
-      # run the local validation path.  If the step fails, the job exits with
-      # a non-zero status and `notify-failure` picks that up.
+      # `real_api` is a test-name filter: only tests whose names contain
+      # `real_api` are selected and run.  No other tests in the binary execute
+      # under this filter.  If the step fails, the job exits with a non-zero
+      # status and `notify-failure` picks that up.
       - name: Run live contract tests
         if: steps.key_check.outputs.has_key == 'true'
         env:

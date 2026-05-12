@@ -3,8 +3,12 @@
 //! Run with:
 //!   cargo test --test integration -- --nocapture
 //!
-//! All tests here use mock providers; no API keys or network access are
-//! required.  The live-API path is exercised manually with
+//! The fixture tests in this binary use mock providers; no API keys or network
+//! access are required for them.  Note that `#[path = "../src/providers/mod.rs"]`
+//! also compiles the Google provider sub-modules into this binary, so their
+//! inline `#[cfg(test)]` unit tests are present here as well.  Run with
+//! `--skip providers::google` (as CI does) to scope execution to the fixture
+//! and mock-STT tests only.  The live-API path is exercised manually with
 //! `--features live_api` before each release.
 //!
 //! # Submodules

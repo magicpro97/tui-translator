@@ -14,10 +14,13 @@
 //! required.  The live-API path (enabled with `--features live_api` before
 //! release) would be exercised against real Google STT credentials.
 //!
-//! # Running in CI (mock-only)
+//! # Running locally (matches CI scope)
 //! ```sh
-//! cargo test --test integration -- --nocapture
+//! cargo test --test integration -- --nocapture --skip providers::google
 //! ```
+//! The `--skip providers::google` filter matches what CI runs; it excludes the
+//! provider unit tests that are compiled into this binary transitively via the
+//! `#[path]` import of `src/providers/mod.rs`.
 
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
@@ -87,6 +90,11 @@ fn wav_to_pcm_chunk(path: &str, sequence_number: u64) -> PcmChunk {
     assert_eq!(sample_rate, 16_000, "{path}: fixture must be 16 kHz");
     assert_eq!(bits_per_sample, 16, "{path}: fixture must be 16-bit PCM");
     let data = find_chunk(&wav, b"data").unwrap_or_else(|| panic!("{path}: missing data chunk"));
+    assert!(
+        data.len() % 2 == 0,
+        "{path}: data chunk length {} is odd — WAV data must be a whole number of 16-bit samples",
+        data.len()
+    );
     let samples: Vec<i16> = data
         .chunks_exact(2)
         .map(|b| i16::from_le_bytes([b[0], b[1]]))
