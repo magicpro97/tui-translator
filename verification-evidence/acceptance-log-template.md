@@ -73,19 +73,29 @@ on Machine B watches the subtitle panel and records what appears on screen.
    below immediately after the subtitle appears (or after the 6-second timeout).
 5. After all ten sentences, the reviewer calculates the totals row.
 
-> **Ten test sentences (copy or translate as appropriate for your test session):**
-> Record them here before starting the test so the speaker can read from this list.
+> **Ten test sentences — predetermined for L5-1 and L5-2:**
+> These sentences are pre-filled to ensure consistency across test sessions.
+> They represent typical Zoom meeting conversation at varied complexity.
+> The speaker on Machine A reads each sentence aloud in natural conversational
+> Japanese. Reviewers may substitute different sentences only if a specific
+> domain vocabulary must be tested; document any substitution in the
+> **Notes / sentence substitutions** field for this section.
 >
-> 1. _(Enter Japanese test sentence 1)_
-> 2. _(Enter Japanese test sentence 2)_
-> 3. _(Enter Japanese test sentence 3)_
-> 4. _(Enter Japanese test sentence 4)_
-> 5. _(Enter Japanese test sentence 5)_
-> 6. _(Enter Japanese test sentence 6)_
-> 7. _(Enter Japanese test sentence 7)_
-> 8. _(Enter Japanese test sentence 8)_
-> 9. _(Enter Japanese test sentence 9)_
-> 10. _(Enter Japanese test sentence 10)_
+> Vietnamese reference translations are provided for L5-2 (bilingual review).
+> They reflect the intended meaning, not the verbatim machine output.
+>
+> | # | Japanese sentence | Vietnamese reference meaning |
+> |---|-------------------|------------------------------|
+> | 1 | おはようございます。本日の会議を始めます。 | Xin chào buổi sáng. Chúng ta bắt đầu cuộc họp hôm nay. |
+> | 2 | アジェンダを確認してください。 | Vui lòng kiểm tra chương trình nghị sự. |
+> | 3 | まず、先週の進捗について話しましょう。 | Trước tiên, hãy nói về tiến độ tuần trước. |
+> | 4 | 質問はありますか？ | Bạn có câu hỏi nào không? |
+> | 5 | この件についてご意見をお聞かせください。 | Vui lòng chia sẻ ý kiến của bạn về vấn đề này. |
+> | 6 | スケジュールが少し遅れています。 | Tiến độ đang bị chậm một chút. |
+> | 7 | 次のステップは何ですか？ | Các bước tiếp theo là gì? |
+> | 8 | それでは、担当者を決めましょう。 | Vậy thì, hãy quyết định người phụ trách. |
+> | 9 | 来週の月曜日までにお願いします。 | Vui lòng hoàn thành trước thứ Hai tuần tới. |
+> | 10 | 本日はご参加ありがとうございました。 | Cảm ơn mọi người đã tham dự hôm nay. |
 
 ### Recording table
 
@@ -128,6 +138,7 @@ garbled, **blocks the release.**
 | Reviewer 2 name | |
 | Reviewer 2 signature | |
 | Reviewer 2 date | YYYY-MM-DD |
+| Notes / sentence substitutions | |
 
 ---
 
@@ -162,18 +173,25 @@ panel and rates whether it conveys the meaning of the original Japanese.
 
 ### Recording table
 
+Use the predetermined sentences from the L5-1 section above. The
+"Original sentence spoken" column is pre-filled below. Do not modify it
+unless you intentionally substitute a sentence and record that change in
+the **Notes / sentence substitutions** field for this section. Record
+exactly what appeared as the Vietnamese subtitle on Machine B in the
+"Vietnamese subtitle shown" column.
+
 | # | Original sentence spoken | Vietnamese subtitle shown | Rating |
 |---|--------------------------|--------------------------|--------|
-| 1 | | | conveys intended meaning / partially correct / misleading |
-| 2 | | | conveys intended meaning / partially correct / misleading |
-| 3 | | | conveys intended meaning / partially correct / misleading |
-| 4 | | | conveys intended meaning / partially correct / misleading |
-| 5 | | | conveys intended meaning / partially correct / misleading |
-| 6 | | | conveys intended meaning / partially correct / misleading |
-| 7 | | | conveys intended meaning / partially correct / misleading |
-| 8 | | | conveys intended meaning / partially correct / misleading |
-| 9 | | | conveys intended meaning / partially correct / misleading |
-| 10 | | | conveys intended meaning / partially correct / misleading |
+| 1 | おはようございます。本日の会議を始めます。 | | conveys intended meaning / partially correct / misleading |
+| 2 | アジェンダを確認してください。 | | conveys intended meaning / partially correct / misleading |
+| 3 | まず、先週の進捗について話しましょう。 | | conveys intended meaning / partially correct / misleading |
+| 4 | 質問はありますか？ | | conveys intended meaning / partially correct / misleading |
+| 5 | この件についてご意見をお聞かせください。 | | conveys intended meaning / partially correct / misleading |
+| 6 | スケジュールが少し遅れています。 | | conveys intended meaning / partially correct / misleading |
+| 7 | 次のステップは何ですか？ | | conveys intended meaning / partially correct / misleading |
+| 8 | それでは、担当者を決めましょう。 | | conveys intended meaning / partially correct / misleading |
+| 9 | 来週の月曜日までにお願いします。 | | conveys intended meaning / partially correct / misleading |
+| 10 | 本日はご参加ありがとうございました。 | | conveys intended meaning / partially correct / misleading |
 | **Totals** | | | _conveys: x / partially: x / misleading: x_ |
 
 ### Pass criteria (copied from Section 7.2)
@@ -197,6 +215,7 @@ Two or more misleading translations in a single session **blocks the release.**
 | Second reviewer name (must be fluent in Japanese and Vietnamese) | |
 | Second reviewer signature | |
 | Second reviewer date | YYYY-MM-DD |
+| Notes / sentence substitutions | |
 
 ---
 
