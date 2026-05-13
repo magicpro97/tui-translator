@@ -67,13 +67,13 @@ fn render_hints(bar: &ControlHintsBar, width: u16, height: u16) -> String {
 }
 
 /// Render the help overlay on a blank terminal of the given size.
-fn render_help(width: u16, height: u16) -> String {
+fn render_help(width: u16, height: u16, scroll_offset: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
             let area = frame.size();
-            render_help_overlay(frame, area);
+            render_help_overlay(frame, area, scroll_offset);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -844,7 +844,7 @@ fn snapshot_status_strip_very_narrow_30cols() {
 /// Help overlay at small size: fits without overflowing the terminal (#185).
 #[test]
 fn snapshot_help_overlay_narrow() {
-    let rendered = render_help(40, 15);
+    let rendered = render_help(40, 15, 0);
     assert!(!rendered.is_empty(), "help overlay must render at 40×15");
     insta::assert_snapshot!("help_overlay_narrow_40x15", rendered);
 }
@@ -975,4 +975,89 @@ fn expanded_metrics_narrow_uses_lang_label() {
         !rendered.contains("L:fr"),
         "expanded narrow strip must not use bare 'L:' prefix; got: {rendered:?}"
     );
+}
+
+// ── Help overlay — issue #191 ─────────────────────────────────────────────────
+
+/// At 80×24 the full content fits; no scroll indicator should appear.
+#[test]
+fn help_overlay_80x24_no_scroll_indicator() {
+    let rendered = render_help(80, 24, 0);
+    // The "?" title implies the static, non-scrolling title format.
+    assert!(
+        rendered.contains("press ? or Esc to close"),
+        "80×24: expected static title with no scroll indicator; got:\n{rendered}"
+    );
+    // All shortcuts must be visible.
+    assert!(
+        rendered.contains("Space"),
+        "80×24: 'Space' shortcut not visible; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Ctrl+C"),
+        "80×24: 'Ctrl+C' shortcut not visible; got:\n{rendered}"
+    );
+}
+
+/// Snapshot: help overlay at 80×24, no scroll.
+#[test]
+fn snapshot_help_overlay_80x24() {
+    insta::assert_snapshot!("help_overlay_80x24", render_help(80, 24, 0));
+}
+
+/// At 80×8 the panel is shorter than 13 content lines; a scroll indicator
+/// must appear in the title.
+#[test]
+fn help_overlay_constrained_shows_scroll_indicator() {
+    let rendered = render_help(80, 8, 0);
+    // Scroll indicator contains the position format "[N/M]".
+    assert!(
+        rendered.contains('['),
+        "constrained 80×8: expected scroll indicator '[N/M]' in title; got:\n{rendered}"
+    );
+}
+
+/// At 80×8 with a non-zero scroll offset the indicator must reflect the
+/// clamped position, not the raw (potentially out-of-bounds) value.
+#[test]
+fn help_overlay_constrained_scroll_clamped() {
+    // A very large scroll_offset must not panic and must be clamped.
+    let rendered_far = render_help(80, 8, 9999);
+    // The rendered output must still contain the block border without crashing.
+    assert!(
+        rendered_far.contains("Help"),
+        "constrained 80×8 with large offset: expected 'Help' in title; got:\n{rendered_far}"
+    );
+    // The last shortcut entry must be visible after scrolling to the bottom.
+    assert!(
+        rendered_far.contains("Ctrl+C"),
+        "constrained 80×8 scrolled to bottom: 'Ctrl+C' must be visible; got:\n{rendered_far}"
+    );
+}
+
+/// Snapshot: help overlay at 80×8 (constrained height), scroll at 0.
+#[test]
+fn snapshot_help_overlay_80x8_top() {
+    insta::assert_snapshot!("help_overlay_80x8_top", render_help(80, 8, 0));
+}
+
+/// Snapshot: help overlay at 80×8, scrolled to bottom.
+#[test]
+fn snapshot_help_overlay_80x8_bottom() {
+    insta::assert_snapshot!("help_overlay_80x8_bottom", render_help(80, 8, 9999));
+}
+
+/// At a very narrow terminal (30 cols) the panel still renders without panic.
+#[test]
+fn help_overlay_very_narrow_no_panic() {
+    // Just verify no panic.
+    let _ = render_help(30, 20, 0);
+}
+
+/// At the absolute minimum (panel clamped to 4 rows) the block renders without
+/// crashing.
+#[test]
+fn help_overlay_minimum_height_no_panic() {
+    // height=4 → MIN_H=4, inner_h=2 → max_scroll=11 → must not panic.
+    let _ = render_help(80, 4, 0);
 }

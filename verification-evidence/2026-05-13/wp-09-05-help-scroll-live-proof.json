@@ -1,0 +1,16 @@
+{
+  "after_repeated_down": {
+    "stored_scroll": 7,
+    "title": "            Γöî Help [7/7] ΓÇö ΓåæΓåô scroll ┬╖ Esc close ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÉ            "
+  },
+  "after_single_up": {
+    "stored_scroll": 6,
+    "title": "            Γöî Help [6/7] ΓÇö ΓåæΓåô scroll ┬╖ Esc close ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÉ            "
+  },
+  "max_scroll": 7,
+  "proof": "issue-191-help-scroll-render",
+  "terminal": {
+    "cols": 80,
+    "rows": 8
+  }
+}
