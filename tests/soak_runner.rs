@@ -222,7 +222,18 @@ fn sample_report_matches_schema() {
             sample["timestamp_utc"].is_string(),
             "sample[{i}].timestamp_utc must be a string"
         );
-        // Gap 1 fields are always null — verify the keys exist even when null.
+        // Resource-usage fields must be numeric so that renaming or removing
+        // them causes an immediate test failure (MetricSample shape drift).
+        assert!(
+            sample["memory_mb"].is_number(),
+            "sample[{i}].memory_mb must be a number"
+        );
+        assert!(
+            sample["cpu_pct"].is_number(),
+            "sample[{i}].cpu_pct must be a number"
+        );
+        // Gap-1 fields must be null in the committed dry-run sample — the same
+        // invariant enforced by dry_run_produces_valid_report.
         for key in [
             "total_chunks_sent",
             "total_chunks_dropped",
@@ -231,8 +242,8 @@ fn sample_report_matches_schema() {
             "estimated_cost_usd",
         ] {
             assert!(
-                sample.get(key).is_some(),
-                "sample[{i}].{key} must be present (may be null)"
+                sample[key].is_null(),
+                "sample[{i}].{key} must be null in the committed dry-run sample (Gap 1)"
             );
         }
     }
