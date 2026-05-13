@@ -1282,7 +1282,7 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 
 /// Render a persistent auth-error banner as a floating overlay (#86).
 ///
-/// Appears near the top of the terminal, full-width, with a yellow border.
+/// Appears near the top of the terminal, full-width, with a red border.
 /// The banner stays until the application is restarted.  When
 /// `restart_required` is true the user has already saved the new key;
 /// when it is false the user still needs to fix `config.json` first.

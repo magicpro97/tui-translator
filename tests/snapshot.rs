@@ -853,7 +853,16 @@ fn snapshot_help_overlay_narrow() {
 #[test]
 fn snapshot_lang_prompt_narrow() {
     let rendered = render_lang_prompt("ja", 40, 8);
+    let rows: Vec<&str> = rendered.split('\n').collect();
     assert!(!rendered.is_empty(), "lang prompt must render at 40×8");
+    assert!(
+        rows[0].trim().is_empty() && rows[6].trim().is_empty() && rows[7].trim().is_empty(),
+        "lang prompt at 40×8 must keep the top row and bottom padding rows blank; got: {rows:?}"
+    );
+    assert!(
+        rows[1].contains("Change Language") && rows[5].contains("┘"),
+        "lang prompt at 40×8 must stay vertically centered inside its 5-row panel; got: {rows:?}"
+    );
     // The prompt instruction must still be visible.
     assert!(
         rendered.contains("Enter") || rendered.contains("Esc") || rendered.contains("language"),
@@ -923,6 +932,15 @@ fn full_ui_below_minimum_shows_fallback() {
 fn snapshot_full_ui_too_small_fallback() {
     // Below minimum — should show fallback, not panic.
     let rendered = render_full_ui(15, 5);
+    let rows: Vec<&str> = rendered.split('\n').collect();
+    assert!(
+        rows[0].contains("Resize terminal"),
+        "full UI fallback at 15×5 must render the resize message in the visible frame; got: {rows:?}"
+    );
+    assert!(
+        rows[1..].iter().all(|row| row.trim().is_empty()),
+        "full UI fallback at 15×5 must leave the remaining rows blank after the message; got: {rows:?}"
+    );
     insta::assert_snapshot!("full_ui_too_small_15x5", rendered);
 }
 
