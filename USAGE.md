@@ -3,10 +3,13 @@
 This guide is written for users who are not software developers.
 It takes about ten minutes from start to finish.
 
-> **Current release status:** there is no public packaged release yet.
-> When public builds are published, they will appear on the GitHub Releases
-> page. Until then, this guide is still the correct setup flow for any packaged
-> build shared directly by the project owner.
+> **Current release status:** packaged Windows builds are published on the
+> [Releases page](https://github.com/magicpro97/tui-translator/releases) as
+> **pre-releases** until Layer 5 human-acceptance review is complete.
+> The build is self-contained (no VC++ Redistributable needed) and the full
+> v1 runtime is merged on `main`, but the final named-human review gate is
+> still pending. This guide describes the intended end-user setup flow for all
+> packaged builds.
 
 ---
 
@@ -21,11 +24,13 @@ It takes about ten minutes from start to finish.
 
 ## Step 1 — Download the application
 
-When a public build is available, download the latest `tui-translator.exe` from
-the [Releases page](https://github.com/magicpro97/tui-translator/releases). If
-you are testing before the first public release, ask the project owner for the
-packaged application folder and save it anywhere you like — for example,
-`C:\Tools\tui-translator\`.
+Download the latest Windows pre-release zip from the
+[Releases page](https://github.com/magicpro97/tui-translator/releases)
+(for example `tui-translator-v0.1.0-x86_64-pc-windows-msvc.zip`):
+
+Extract it to any folder — for example, `C:\Tools\tui-translator\`.
+The archive contains `tui-translator.exe` and `config.example.json`.
+No Visual C++ Redistributable is required; the runtime is statically linked.
 
 ---
 

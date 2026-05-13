@@ -25,9 +25,12 @@ While a Zoom meeting plays on your Windows computer, this program:
 Optional: the program can also read the translated line aloud through your
 speakers.
 
-> **Current status: Phase 0 — project skeleton.**
-> The terminal window opens and closes cleanly.
-> Audio, transcription, and translation are not yet implemented.
+> **Current status: Phase 4 feature set merged.**
+> WASAPI audio capture, Google Speech-to-Text, Google Translation,
+> Google Text-to-Speech, cost tracking, and live keyboard controls are
+> implemented on `main`.
+> Packaged GitHub Releases remain **pre-releases** until Layer 5 human
+> acceptance (issues #115–#122) is completed by named reviewers.
 
 ---
 
@@ -43,13 +46,17 @@ speakers.
 
 ## End-user release status
 
-Public end-user builds will be published on the
+Packaged builds are published on the
 [Releases page](https://github.com/magicpro97/tui-translator/releases).
-There is **no public packaged release yet**.
 
-The planned setup flow is documented in **[USAGE.md](USAGE.md)** so reviewers,
-testers, and future end users can see exactly how the packaged application will
-be configured and run.
+> **⚠️ Release policy:** packaged builds on the
+> [Releases page](https://github.com/magicpro97/tui-translator/releases)
+> are published as **pre-releases** until Layer 5 human-acceptance review
+> (issues #115–#122) is completed.
+> The runtime is feature-complete on `main`, but the final human review
+> gate is still pending.
+
+The setup flow for any packaged build is documented in **[USAGE.md](USAGE.md)**.
 
 ---
 
@@ -57,12 +64,19 @@ be configured and run.
 
 ## Quick start (current repository state — developers and reviewers)
 
-> There is **no end-user release yet**.
-> Right now, this repository contains the Phase 0 project skeleton for
-> developers and reviewers. The production translation workflow is still being
-> built.
+> **Feature-complete pre-release lane.**  
+> Packaged Windows builds are published on the
+> [Releases page](https://github.com/magicpro97/tui-translator/releases).
+> It contains a self-contained `tui-translator.exe` (no VC++ Redistributable
+> needed). The application captures Zoom audio through WASAPI loopback,
+> uses Google STT/MT/TTS when configured, and exposes the full TUI controls
+> and metrics panels.
+> A valid Google Cloud API key and an active Windows playback device are
+> required for live subtitle generation.
+> Layer 5 human-acceptance (issues #115–#122) is not yet complete;
+> the release is marked *pre-release* on GitHub accordingly.
 
-If you want to try the current skeleton build:
+If you want to try the current build from source:
 
 1. Build the project from source (see [Building from source](#building-from-source)).
 2. Run the generated executable:
@@ -71,12 +85,12 @@ If you want to try the current skeleton build:
    .\target\release\tui-translator.exe
    ```
 
-3. Confirm the placeholder terminal window opens.
-4. Press `q` to close it cleanly.
-
-At this stage, the app proves the Rust project, terminal UI shell, and local
-tooling are wired correctly. It does **not** yet capture audio, call Google
-services, or show live subtitles.
+3. The terminal window opens showing the subtitle area, audio-level bar,
+   and status strip. The current WASAPI device name appears in the audio bar.
+4. If `config.json` does not contain a valid Google API key, the app still
+   launches and renders the TUI shell, but cloud transcription/translation
+   requests will not succeed.
+5. Press `q` or `Ctrl+C` to close cleanly and show the session summary.
 
 ### Keyboard controls
 
@@ -143,13 +157,13 @@ Never put your real API key in `config.example.json`.
 ```
 tui-translator/
 ├── src/
-│   ├── main.rs          Entry point and Phase 0 TUI
+│   ├── main.rs          Entry point; wires audio, pipeline, TUI, metrics
 │   ├── config/          Configuration loading (config.json)
-│   ├── audio/           Windows WASAPI loopback capture (Phase 1)
-│   ├── pipeline/        Audio → STT → translate → display (Phase 2–4)
-│   ├── providers/       Provider traits and Google implementation (Phase 2–4)
-│   ├── tui/             Terminal user interface (Phase 4)
-│   └── metrics/         Cost counter and session statistics (Phase 4)
+│   ├── audio/           Windows WASAPI loopback capture
+│   ├── pipeline/        Audio → STT → translate → display orchestration
+│   ├── providers/       Provider traits and Google implementations
+│   ├── tui/             Terminal user interface and runtime controls
+│   └── metrics/         Cost counter and session statistics
 ├── docs/                Design, requirements, verification, and roadmap
 ├── Cargo.toml           Rust package manifest
 └── config.example.json  Template configuration file
@@ -162,11 +176,11 @@ tui-translator/
 | Phase | Goal | Status |
 |-------|------|--------|
 | 0 | Project skeleton — builds, TUI opens | ✅ Done |
-| 1 | Live audio capture from Windows sound system | 🔲 Planned |
-| 2 | Speech-to-text via Google | 🔲 Planned |
-| 3 | Translation via Google | 🔲 Planned |
-| 4 | Full v1 — cost tracking, live controls, TTS | 🔲 Planned |
-| 5 | Post-v1 validation gates | 🔲 Planned |
+| 1 | Live audio capture from Windows sound system | ✅ Done |
+| 2 | Speech-to-text via Google | ✅ Done |
+| 3 | Translation via Google | ✅ Done |
+| 4 | Full v1 — cost tracking, live controls, TTS | ✅ Done |
+| 5 | Post-v1 validation gates | ⏳ In progress |
 | 6 | Azure and Ollama provider support | 🔲 Planned |
 
 Full details: [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadmap.md)
