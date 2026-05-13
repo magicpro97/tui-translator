@@ -82,6 +82,15 @@ fn dry_run_produces_valid_report() {
             sample["timestamp_utc"].is_string(),
             "sample[{i}].timestamp_utc must be a string"
         );
+        // Resource-usage fields must be numeric (MetricSample shape drift guard).
+        assert!(
+            sample["memory_mb"].is_number(),
+            "sample[{i}].memory_mb must be a number"
+        );
+        assert!(
+            sample["cpu_pct"].is_number(),
+            "sample[{i}].cpu_pct must be a number"
+        );
         // These are explicitly null in dry-run (Gap 1: no IPC).
         assert!(
             sample["total_chunks_sent"].is_null(),
