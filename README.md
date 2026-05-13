@@ -56,7 +56,8 @@ Packaged builds are published on the
 > The runtime is feature-complete on `main`, but the final human review
 > gate is still pending.
 
-The setup flow for any packaged build is documented in **[USAGE.md](USAGE.md)**.
+The setup flow for both the installer and the portable zip is documented in
+**[USAGE.md](USAGE.md)**.
 
 ---
 
@@ -67,7 +68,8 @@ The setup flow for any packaged build is documented in **[USAGE.md](USAGE.md)**.
 > **Feature-complete pre-release lane.**  
 > Packaged Windows builds are published on the
 > [Releases page](https://github.com/magicpro97/tui-translator/releases).
-> It contains a self-contained `tui-translator.exe` (no VC++ Redistributable
+> Each pre-release includes both a per-user Windows installer and a portable zip.
+> The installed or extracted app is self-contained (no VC++ Redistributable
 > needed). The application captures Zoom audio through WASAPI loopback,
 > uses Google STT/MT/TTS when configured, and exposes the full TUI controls
 > and metrics panels.

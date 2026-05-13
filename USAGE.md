@@ -24,23 +24,34 @@ It takes about ten minutes from start to finish.
 
 ## Step 1 — Download the application
 
-Download the latest Windows pre-release zip from the
+Download the latest Windows pre-release from the
 [Releases page](https://github.com/magicpro97/tui-translator/releases)
-(for example `tui-translator-v0.1.0-x86_64-pc-windows-msvc.zip`):
+(for example `tui-translator-vX.Y.Z-setup.exe` or
+`tui-translator-vX.Y.Z-x86_64-pc-windows-msvc.zip`).
 
-Extract it to any folder — for example, `C:\Tools\tui-translator\`.
-The archive contains `tui-translator.exe` and `config.example.json`.
+**Recommended:** run the `-setup.exe` installer.
+It installs the app to your user profile by default, adds a Start Menu shortcut,
+and creates an initial `config.json` from the example file if you do not already
+have one.
+
+If you prefer a portable copy, extract the zip to any folder — for example,
+`C:\Tools\tui-translator\`. The archive contains `tui-translator.exe`,
+`config.example.json`, and `USAGE.md`.
 No Visual C++ Redistributable is required; the runtime is statically linked.
 
 ---
 
 ## Step 2 — Create your configuration file
 
-1. If your packaged folder already includes `config.example.json`, use that copy.
-   Otherwise download it directly from the repository root:
+1. If you used the installer, open the install folder (by default
+   `%LOCALAPPDATA%\Programs\TUI Translator\`) and edit the `config.json`
+   created there.
+2. If you used the zip, take the included `config.example.json`,
+   place it in the same folder as `tui-translator.exe`, and rename it to
+   `config.json`.
+3. If your packaged folder does not include `config.example.json`, download it
+   directly from the repository root:
    <https://github.com/magicpro97/tui-translator/blob/main/config.example.json>.
-2. Place it **in the same folder** as `tui-translator.exe`.
-3. Rename it to `config.json`.
 4. Open `config.json` in Notepad and fill in these four values:
 
    | Setting | What to put | Example |
