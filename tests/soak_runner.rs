@@ -219,10 +219,7 @@ fn sample_report_matches_schema() {
     );
 
     // Top-level identity and timing fields (schema drift guard).
-    assert!(
-        report["run_id"].is_string(),
-        "run_id must be a string"
-    );
+    assert!(report["run_id"].is_string(), "run_id must be a string");
     assert!(
         report["started_at_utc"].is_string(),
         "started_at_utc must be a string"
