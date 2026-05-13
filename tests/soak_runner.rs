@@ -92,14 +92,18 @@ fn dry_run_produces_valid_report() {
             "sample[{i}].cpu_pct must be a number"
         );
         // These are explicitly null in dry-run (Gap 1: no IPC).
-        assert!(
-            sample["total_chunks_sent"].is_null(),
-            "sample[{i}].total_chunks_sent must be null (Gap 1)"
-        );
-        assert!(
-            sample["api_failures"].is_null(),
-            "sample[{i}].api_failures must be null (Gap 1)"
-        );
+        for key in [
+            "total_chunks_sent",
+            "total_chunks_dropped",
+            "api_failures",
+            "latest_subtitle_latency_ms",
+            "estimated_cost_usd",
+        ] {
+            assert!(
+                sample[key].is_null(),
+                "sample[{i}].{key} must be null in dry-run (Gap 1)"
+            );
+        }
     }
 
     // Gaps array must be present and non-empty.
@@ -212,6 +216,46 @@ fn sample_report_matches_schema() {
     assert_eq!(
         report["schema_version"], "1",
         "sample schema_version must be '1'"
+    );
+
+    // Top-level identity and timing fields (schema drift guard).
+    assert!(
+        report["run_id"].is_string(),
+        "run_id must be a string"
+    );
+    assert!(
+        report["started_at_utc"].is_string(),
+        "started_at_utc must be a string"
+    );
+    assert!(
+        report["finished_at_utc"].is_string(),
+        "finished_at_utc must be a string"
+    );
+    assert!(
+        report["duration_secs"].is_number(),
+        "duration_secs must be a number"
+    );
+    assert!(
+        report["audio_fixture"].is_string(),
+        "audio_fixture must be a string"
+    );
+    // In dry-run mode the app binary and config path are not resolved.
+    assert!(
+        report["app_binary"].is_null(),
+        "app_binary must be null in a dry-run sample"
+    );
+    assert!(
+        report["soak_config_path"].is_null(),
+        "soak_config_path must be null in a dry-run sample"
+    );
+    // Network-disconnect test and billing cost are null in dry-run.
+    assert!(
+        report["network_disconnect_test"].is_null(),
+        "network_disconnect_test must be null in a dry-run sample"
+    );
+    assert!(
+        report["billing_actual_usd"].is_null(),
+        "billing_actual_usd must be null in a dry-run sample (Gap 2)"
     );
 
     // Must have at least one metric sample with required keys.
