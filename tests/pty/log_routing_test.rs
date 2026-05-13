@@ -13,9 +13,8 @@
 //! The previous workaround was to force `RUST_LOG=off` in every PTY test so
 //! that `tracing` emitted nothing at all.
 //!
-//! The fix (issue #183) routes tracing output to a file via
-//! `with_writer(Mutex::new(file))`, keeping the ConPTY byte stream clean even
-//! when logging is enabled.
+//! The fix (issue #183) routes tracing output to a dedicated file appender,
+//! keeping the ConPTY byte stream clean even when logging is enabled.
 //!
 //! ## What this test proves
 //!
@@ -76,6 +75,7 @@ fn log_output_not_in_pty_stream() {
     // Capture the full raw PTY byte stream accumulated since spawn.
     let raw = session.raw_bytes_captured();
     let raw_text = String::from_utf8_lossy(&raw);
+    let preview: String = raw_text.chars().take(512).collect();
 
     // None of the log-leak patterns must appear in the raw PTY output.
     //
@@ -90,7 +90,7 @@ fn log_output_not_in_pty_stream() {
              of the log file.  Check init_tracing() in src/main.rs.\n\
              Raw PTY snippet (first 512 chars):\n{:?}",
             pattern,
-            &raw_text[..raw_text.len().min(512)],
+            preview,
         );
     }
 
