@@ -1,0 +1,33 @@
+{
+  "captured_at": "2026-05-13",
+  "command": ".\\target\\debug\\tui-translator.exe",
+  "environment": {
+    "RUST_LOG": "off",
+    "TUI_TRANSLATOR_CONFIG": "%TEMP%\\tui-translator-zero-state-proof.json"
+  },
+  "issue": 190,
+  "result": {
+    "exit": "ok",
+    "launch": "ok",
+    "notes": [
+      "App launched in an interactive TTY with a file-backed audio fixture config.",
+      "The live frame rendered title bar, audio gauge, subtitle pane, status strip, and control hints bar.",
+      "The session was exited cleanly with the standard double-q quit flow."
+    ],
+    "observed_screen_excerpt": [
+      "│                                         TUI Translator   │   ● STT: listening                                        │",
+      "┌ Audio — file (soak fixture) ─────────────────────────────────────────────────────────────────────────────────────────┐",
+      "│                                                  No subtitles yet.                                                   │",
+      "│ ● STT: listening │ Lang:vi │ TTS:off │ 0 pairs │ Audio:0s │ no charges │ 0:00                                        │",
+      " ? help  Space pause  T audio  L lang  M metrics  R reload  Q quit"
+    ]
+  },
+  "title": "WP-08.06 zero-state readability live proof",
+  "verification": {
+    "clippy": "pass",
+    "commit": "02f50a23ccbcc57b8812f7578127d723768bc64f",
+    "fmt_check": "pass",
+    "snapshot_test": "pass"
+  },
+  "worktree": "%USERPROFILE%\\tt-wt-wp08-06"
+}

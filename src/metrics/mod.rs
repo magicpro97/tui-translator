@@ -22,7 +22,7 @@ pub mod network;
 pub mod process;
 pub mod snapshot;
 
-pub use cost::{format_cost_display, CostCounter};
+pub use cost::{format_cost_or_zero_state, CostCounter};
 #[allow(unused_imports)]
 pub use latency::LatencyHistogram;
 #[allow(unused_imports)]
