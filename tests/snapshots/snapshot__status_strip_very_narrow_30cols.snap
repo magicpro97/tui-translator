@@ -1,0 +1,7 @@
+---
+source: tests/snapshot.rs
+expression: rendered
+---
+┌────────────────────────────┐
+│ ●list | Lang:ja | TTS:on | │
+└────────────────────────────┘

@@ -43,6 +43,22 @@ const UNREAD_COLOR: Color = Color::Yellow;
 const SRC_PREFIX: &str = "[SRC] ";
 const TGT_PREFIX: &str = "[TGT] ";
 
+/// Minimum terminal width (columns) for the full UI to render meaningfully.
+///
+/// Below this the whole-screen fallback message is shown instead.
+const MIN_USABLE_COLS: u16 = 20;
+
+/// Minimum terminal height (rows) for the full UI to render meaningfully.
+///
+/// Derived from the compact-mode fixed-row budget so this threshold stays
+/// in sync with the layout constants:
+///   title bar (3) + audio gauge (3) + metrics strip compact (3) + hints bar (1) = 10.
+/// Below this the whole-screen fallback message is shown instead.
+const MIN_USABLE_ROWS: u16 = 3   // title bar
+    + 3   // audio gauge
+    + 3   // metrics strip (compact mode minimum)
+    + 1; // control hints bar
+
 // ── UserAction ───────────────────────────────────────────────────────────────
 
 /// All keyboard shortcuts supported by the application.
@@ -499,7 +515,7 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
         .constraints([
             Constraint::Length(3),         // title bar
             Constraint::Length(3),         // audio gauge
-            Constraint::Min(1),            // subtitle pane
+            Constraint::Min(0),            // subtitle pane (zero-safe, matches draw_ui)
             Constraint::Length(metrics_h), // metrics strip
             Constraint::Length(1),         // control hints bar (always shown)
         ])
@@ -784,7 +800,7 @@ impl StatusMetricsStrip<'_> {
 
         let main_text = if area.width < 80 {
             format!(
-                " {} | L:{} | T:{} | {}p | {} | {}",
+                " {} | Lang:{} | TTS:{} | {}p | {} | {}",
                 self.stt_abbrev(),
                 self.target_language,
                 tts_str,
@@ -833,7 +849,7 @@ impl StatusMetricsStrip<'_> {
 
         if self.show_restart {
             spans.push(Span::styled(
-                " \u{2502} \u{26a0} restart req'd",
+                " \u{2502} \u{26a0} restart required",
                 Style::default().fg(Color::DarkGray),
             ));
         }
@@ -870,7 +886,7 @@ impl StatusMetricsStrip<'_> {
             )))
         } else if area.width < 80 {
             Line::from(Span::raw(format!(
-                "L:{}  {}p  {}",
+                "Lang:{}  {}p  {}",
                 self.target_language, self.pairs, cost_str,
             )))
         } else {
@@ -990,6 +1006,25 @@ pub fn draw_ui(
     cost_warning_usd: f64,
 ) {
     let area = frame.size();
+
+    // Fallback for terminals that are too small to show the full UI (#185).
+    if area.width < MIN_USABLE_COLS || area.height < MIN_USABLE_ROWS {
+        let msg = if area.width < MIN_USABLE_COLS {
+            "Resize terminal"
+        } else {
+            "Resize terminal — too few rows"
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                msg,
+                Style::default().fg(Color::Yellow),
+            )))
+            .alignment(Alignment::Center),
+            area,
+        );
+        return;
+    }
+
     let expanded = state.metrics_expanded.load(Ordering::Relaxed);
     let tts_on = state.tts_enabled.load(Ordering::Relaxed);
     let show_help = state.show_help.load(Ordering::Relaxed);
@@ -1020,7 +1055,7 @@ pub fn draw_ui(
         .constraints([
             Constraint::Length(3),         // title bar
             Constraint::Length(3),         // audio gauge
-            Constraint::Min(1),            // subtitle pane
+            Constraint::Min(0),            // subtitle pane (zero-safe for tiny terminals)
             Constraint::Length(metrics_h), // metrics strip (compact or expanded)
             Constraint::Length(1),         // control hints bar — always shown
         ])
@@ -1126,8 +1161,16 @@ pub fn draw_ui(
 
     // ── Auth-error persistent banner (#86) ───────────────────────────────────
     // Rendered as a floating overlay so the layout does not shift.
+    // Anchor uses chunks[2].y (top of subtitle pane) rather than a magic constant (#185).
     if let Some(ref banner_msg) = auth_banner {
-        render_auth_error_banner(frame, area, banner_msg, show_restart_notice);
+        let subtitle_y_offset = chunks[2].y.saturating_sub(area.y);
+        render_auth_error_banner(
+            frame,
+            area,
+            banner_msg,
+            show_restart_notice,
+            subtitle_y_offset,
+        );
     }
 
     // ── Language prompt overlay (issue #64) ──────────────────────────────────
@@ -1239,23 +1282,29 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 
 /// Render a persistent auth-error banner as a floating overlay (#86).
 ///
-/// Appears near the top of the terminal, full-width, with a yellow border.
+/// Appears near the top of the terminal, full-width, with a red border.
 /// The banner stays until the application is restarted.  When
 /// `restart_required` is true the user has already saved the new key;
 /// when it is false the user still needs to fix `config.json` first.
 /// Both paths require a restart — no in-process recovery is possible.
+///
+/// `subtitle_y_offset` is the y distance from `area.y` to the top of the
+/// subtitle pane (i.e. `chunks[2].y - area.y` from the caller).  This
+/// replaces the former hard-coded value of 6 and keeps the banner anchored
+/// correctly even if the title-bar or gauge heights change (#185).
 pub fn render_auth_error_banner(
     frame: &mut ratatui::Frame,
     area: Rect,
     message: &str,
     restart_required: bool,
+    subtitle_y_offset: u16,
 ) {
     let panel_w = area.width;
     let panel_h = 5u16.min(area.height);
     let x = area.x;
-    // Anchor just below the title bar and audio gauge (6 rows combined),
-    // clamped so the panel never overflows the screen.
-    let y = area.y + 6u16.min(area.height.saturating_sub(panel_h));
+    // Place the banner at the top of the subtitle pane, clamped so it never
+    // overflows the screen.
+    let y = (area.y + subtitle_y_offset).min(area.y + area.height.saturating_sub(panel_h));
     let panel = Rect {
         x,
         y,
