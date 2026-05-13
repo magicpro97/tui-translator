@@ -1,0 +1,136 @@
+name: Release
+
+# Triggers on any tag that looks like a version (e.g. v0.1.0, v1.2.3-rc1).
+# The job builds the Windows MSVC static binary, packages it into a zip,
+# and publishes it as a GitHub Release pre-release until Layer 5
+# human-acceptance is completed by named reviewers.
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-windows:
+    name: Build and publish Windows release
+    runs-on: windows-latest
+    permissions:
+      contents: write   # required by softprops/action-gh-release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so softprops can generate a changelog
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release exe (MSVC static target)
+        run: cargo build --release --target x86_64-pc-windows-msvc --bin tui-translator
+
+      - name: Verify no VC++ runtime DLLs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & $vswhere -latest -products * `
+                       -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                       -property installationPath
+          $dumpbin = Join-Path $vsPath "VC\Tools\MSVC" |
+                     Get-ChildItem -Directory | Sort-Object Name -Descending |
+                     Select-Object -First 1 |
+                     ForEach-Object { Join-Path $_.FullName "bin\Hostx64\x64\dumpbin.exe" }
+          $exe = "target\x86_64-pc-windows-msvc\release\tui-translator.exe"
+          $raw = & $dumpbin /DEPENDENTS $exe 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin failed: $($raw -join ' ')" }
+          $banned = $raw | Select-String -Pattern "vcruntime140|msvcp140" -CaseSensitive:$false
+          if ($banned) { throw "Banned VC++ runtime DLLs found: $banned" }
+          Write-Host "PASS: no vcruntime140.dll or msvcp140.dll found."
+
+      - name: Package release zip
+        id: package
+        shell: pwsh
+        run: |
+          $tag     = "${{ github.ref_name }}"
+          $zipName = "tui-translator-${tag}-x86_64-pc-windows-msvc.zip"
+          $stage   = "release-stage"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\tui-translator.exe" "$stage\"
+          Copy-Item "config.example.json" "$stage\"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zipName -CompressionLevel Optimal
+          $size = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
+          Write-Host "Packaged: $zipName  ($size MB)"
+          echo "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release (pre-release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "${{ github.ref_name }} — Windows pre-release"
+          prerelease: true
+          body: |
+            ## Windows pre-release
+
+            > **⚠️ This build is published as a pre-release, not a final stable release.**
+            > The full v1 runtime is merged on `main`, but Layer 5
+            > human-acceptance review (issues #115–#122) has **not** been completed.
+            > Keep this build in evaluator / early-adopter use until that gate is signed off.
+            > This release is published so users can download a packaged Windows build
+            > while that final human-review gate remains pending.
+
+            ### What works in this build
+
+            - WASAPI loopback audio capture from the current Windows playback device
+            - Google Speech-to-Text, Google Translation, and optional Google Text-to-Speech
+            - Bilingual subtitle display, cost tracking, and runtime keyboard controls
+            - Configuration loaded from `config.json` in the same folder as the `.exe`
+            - No Visual C++ Redistributable required — the CRT is statically linked.
+
+            ### What is still pending before a final stable release
+
+            | Item | Status |
+            |------|--------|
+            | Layer 5 human acceptance (issues #115–#122) | Pending named human reviewers |
+            | Final stable release promotion | Blocked on Layer 5 completion |
+
+            ### Quick start
+
+            1. Download `tui-translator-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip`.
+            2. Extract to any folder (e.g. `C:\Tools\tui-translator\`).
+            3. Copy `config.example.json` → `config.json` and fill in your Google API key.
+            4. Open Windows Terminal / PowerShell in that folder and run:
+               ```
+               .\tui-translator.exe
+               ```
+            5. Join or start your Zoom meeting. The app listens to the default Windows
+               playback device, so keep Zoom audio routed through that output.
+            6. Press `q` to close cleanly.
+
+            Full setup guide: [USAGE.md](https://github.com/magicpro97/tui-translator/blob/main/USAGE.md)
+
+            ### Keyboard shortcuts
+
+            | Key | Action |
+            |-----|--------|
+            | Space | Pause / resume |
+            | L | Change target language |
+            | T | Toggle TTS audio |
+            | M | Toggle metrics panel |
+            | R | Reload config |
+            | ? | Help |
+            | Q / Ctrl+C | Quit |
+          files: ${{ steps.package.outputs.zip_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
