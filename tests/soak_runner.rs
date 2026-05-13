@@ -82,15 +82,28 @@ fn dry_run_produces_valid_report() {
             sample["timestamp_utc"].is_string(),
             "sample[{i}].timestamp_utc must be a string"
         );
+        // Resource-usage fields must be numeric (MetricSample shape drift guard).
+        assert!(
+            sample["memory_mb"].is_number(),
+            "sample[{i}].memory_mb must be a number"
+        );
+        assert!(
+            sample["cpu_pct"].is_number(),
+            "sample[{i}].cpu_pct must be a number"
+        );
         // These are explicitly null in dry-run (Gap 1: no IPC).
-        assert!(
-            sample["total_chunks_sent"].is_null(),
-            "sample[{i}].total_chunks_sent must be null (Gap 1)"
-        );
-        assert!(
-            sample["api_failures"].is_null(),
-            "sample[{i}].api_failures must be null (Gap 1)"
-        );
+        for key in [
+            "total_chunks_sent",
+            "total_chunks_dropped",
+            "api_failures",
+            "latest_subtitle_latency_ms",
+            "estimated_cost_usd",
+        ] {
+            assert!(
+                sample[key].is_null(),
+                "sample[{i}].{key} must be null in dry-run (Gap 1)"
+            );
+        }
     }
 
     // Gaps array must be present and non-empty.
@@ -165,5 +178,184 @@ fn dry_run_produces_valid_report() {
         "soak_runner: dry-run report OK — {} samples, {} gaps",
         samples.len(),
         gaps.len()
+    );
+}
+
+/// The committed schema sample in verification-evidence/sample/ conforms to
+/// the current SoakReport JSON schema.
+///
+/// This test catches silent schema drift: if `SoakReport`, `MetricSample`, or
+/// `ThresholdEvaluation` change shape, this test fails until the sample is
+/// regenerated with `run_soak --dry-run`.
+///
+/// The sample is expected to have `dry_run == true` (it was produced in dry-run
+/// mode and is NOT release evidence).  See `verification-evidence/sample/README.md`.
+#[test]
+fn sample_report_matches_schema() {
+    let sample_path = PathBuf::from("verification-evidence/sample/soak-report-sample.json");
+
+    assert!(
+        sample_path.exists(),
+        "schema sample not found at {:?} — regenerate with: \
+         cargo run --bin run_soak -- --dry-run \
+         --output verification-evidence/sample/soak-report-sample.json",
+        sample_path
+    );
+
+    let raw = std::fs::read_to_string(&sample_path).expect("cannot read schema sample file");
+    let report: serde_json::Value =
+        serde_json::from_str(&raw).expect("schema sample is not valid JSON");
+
+    // Must be marked as a dry-run sample — not release evidence.
+    assert_eq!(
+        report["dry_run"], true,
+        "sample must have dry_run=true (it is not release evidence)"
+    );
+
+    // Schema version must be present and match the current version.
+    assert_eq!(
+        report["schema_version"], "1",
+        "sample schema_version must be '1'"
+    );
+
+    // Top-level identity and timing fields (schema drift guard).
+    assert!(report["run_id"].is_string(), "run_id must be a string");
+    assert!(
+        report["started_at_utc"].is_string(),
+        "started_at_utc must be a string"
+    );
+    assert!(
+        report["finished_at_utc"].is_string(),
+        "finished_at_utc must be a string"
+    );
+    assert!(
+        report["duration_secs"].is_number(),
+        "duration_secs must be a number"
+    );
+    assert!(
+        report["audio_fixture"].is_string(),
+        "audio_fixture must be a string"
+    );
+    // In dry-run mode the app binary and config path are not resolved.
+    assert!(
+        report["app_binary"].is_null(),
+        "app_binary must be null in a dry-run sample"
+    );
+    assert!(
+        report["soak_config_path"].is_null(),
+        "soak_config_path must be null in a dry-run sample"
+    );
+    // Network-disconnect test and billing cost are null in dry-run.
+    assert!(
+        report["network_disconnect_test"].is_null(),
+        "network_disconnect_test must be null in a dry-run sample"
+    );
+    assert!(
+        report["billing_actual_usd"].is_null(),
+        "billing_actual_usd must be null in a dry-run sample (Gap 2)"
+    );
+
+    // Must have at least one metric sample with required keys.
+    let samples = report["samples"]
+        .as_array()
+        .expect("'samples' must be a JSON array");
+    assert!(
+        !samples.is_empty(),
+        "schema sample must contain at least one metric sample"
+    );
+    for (i, sample) in samples.iter().enumerate() {
+        assert!(
+            sample["elapsed_secs"].is_number(),
+            "sample[{i}].elapsed_secs must be a number"
+        );
+        assert!(
+            sample["timestamp_utc"].is_string(),
+            "sample[{i}].timestamp_utc must be a string"
+        );
+        // Resource-usage fields must be numeric so that renaming or removing
+        // them causes an immediate test failure (MetricSample shape drift).
+        assert!(
+            sample["memory_mb"].is_number(),
+            "sample[{i}].memory_mb must be a number"
+        );
+        assert!(
+            sample["cpu_pct"].is_number(),
+            "sample[{i}].cpu_pct must be a number"
+        );
+        // Gap-1 fields must be null in the committed dry-run sample — the same
+        // invariant enforced by dry_run_produces_valid_report.
+        for key in [
+            "total_chunks_sent",
+            "total_chunks_dropped",
+            "api_failures",
+            "latest_subtitle_latency_ms",
+            "estimated_cost_usd",
+        ] {
+            assert!(
+                sample[key].is_null(),
+                "sample[{i}].{key} must be null in the committed dry-run sample (Gap 1)"
+            );
+        }
+    }
+
+    // Gaps array must be present and non-empty.
+    let gaps = report["gaps"]
+        .as_array()
+        .expect("'gaps' must be a JSON array");
+    assert!(
+        !gaps.is_empty(),
+        "schema sample must document at least one known gap"
+    );
+
+    // threshold_evaluation must be present with all nine blocker entries.
+    let te = &report["threshold_evaluation"];
+    assert!(te.is_object(), "threshold_evaluation must be a JSON object");
+    for key in [
+        "b09_memory_growth",
+        "b10_cpu_typical",
+        "b10_cpu_any_sample",
+        "b11_chunk_loss_overall",
+        "b11_chunk_loss_window",
+        "b12_subtitle_latency_avg",
+        "b12_subtitle_latency_window",
+        "b13_cost_discrepancy",
+        "b14_network_recovery",
+    ] {
+        let entry = &te[key];
+        assert!(
+            entry.is_object(),
+            "threshold_evaluation.{key} must be an object"
+        );
+        assert!(
+            entry["blocker"].is_string(),
+            "threshold_evaluation.{key}.blocker must be a string"
+        );
+        assert!(
+            entry["verdict"].is_string(),
+            "threshold_evaluation.{key}.verdict must be a string"
+        );
+        let verdict = entry["verdict"].as_str().unwrap_or("");
+        assert!(
+            matches!(verdict, "PASS" | "FAIL" | "UNEVALUABLE_PENDING"),
+            "threshold_evaluation.{key}.verdict must be PASS, FAIL, or \
+             UNEVALUABLE_PENDING; got: {verdict}"
+        );
+    }
+    assert!(
+        te["all_evaluated_pass"].is_boolean(),
+        "threshold_evaluation.all_evaluated_pass must be a boolean"
+    );
+    assert!(
+        te["any_blocker_triggered"].is_boolean(),
+        "threshold_evaluation.any_blocker_triggered must be a boolean"
+    );
+
+    println!(
+        "soak_runner: schema sample OK — {} samples, {} gaps, \
+         all_evaluated_pass={}, any_blocker_triggered={}",
+        samples.len(),
+        gaps.len(),
+        te["all_evaluated_pass"],
+        te["any_blocker_triggered"]
     );
 }

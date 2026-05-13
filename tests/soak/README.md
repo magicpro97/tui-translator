@@ -96,7 +96,7 @@ check:
 - Memory growth: compare `samples[0].memory_mb` with
   `samples[-1].memory_mb`; growth must be < 50 MiB to pass release
   blocker B-09 (see `docs/04-verification-plan.md` §6.1).
-- CPU: all `cpu_pct` values must be < 60% sustained (release blocker B-10).
+- CPU: all `cpu_pct` values must be < 60% at any sample (release blocker B-10).
 - `network_disconnect_test.succeeded` should be `true` when run as
   Administrator; `process_recovered` must be `true`.
 
@@ -201,6 +201,27 @@ The child process is not killed; sampling continues to the end of the run.
 | When it runs | Every push / PR via `.github/workflows/ci.yml` job `soak-runner` | Manually, before each release candidate |
 | Purpose | Confirm `run_soak` compiles, fixture exists, report JSON is valid | Provide actual stability evidence for the release gate |
 
+---
+
+## Schema sample (issue #113 / WP-18.05)
+
+`verification-evidence/sample/soak-report-sample.json` is a **committed
+reference example** of a complete soak report.  It was produced by:
+
+```powershell
+cargo run --bin run_soak -- --dry-run --output verification-evidence/sample/soak-report-sample.json
+```
+
+**It is not release evidence.**  The `"dry_run": true` field is the
+authoritative marker.  The file exists so contributors can see the exact JSON
+shape without running the binary themselves.
+
+The Rust test `sample_report_matches_schema` in `tests/soak_runner.rs` reads
+and validates this file on every `cargo test` run.  If the report schema
+changes, re-run the command above to regenerate the sample.  See
+`verification-evidence/sample/README.md` for the full comparison table between
+sample and real evidence.
+
 The CI job for the dry-run is defined in `.github/workflows/ci.yml` under the
 `soak-runner` job.  It does **not** run the 4-hour loop; its comment block
 explicitly states:
@@ -217,7 +238,7 @@ From `docs/04-verification-plan.md` §6:
 | Blocker | Criterion | Checked by |
 |---------|-----------|------------|
 | B-09 | Memory growth < 50 MiB over 4 hours | Manual: compare first/last `memory_mb` sample |
-| B-10 | CPU < 60% sustained | Manual: inspect all `cpu_pct` samples |
+| B-10 | CPU < 60% at any sample | Manual: inspect all `cpu_pct` samples |
 | B-11 | Chunk loss < 5% in any 15-minute block | Gap 1 — `total_chunks_dropped` is `null`; manual log inspection |
 | B-12 | Subtitle latency < 5 s in any 15-minute block | Gap 1 — `latest_subtitle_latency_ms` is `null`; manual log inspection |
 | B-13 | Cost counter within 15% of actual billing | Gap 2 — not automated; manual GCP console check |
