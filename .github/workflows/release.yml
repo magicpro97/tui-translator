@@ -90,8 +90,44 @@ jobs:
           Write-Host "Packaged: $zipName  ($size MB)"
           echo "zip_name=$zipName" >> $env:GITHUB_OUTPUT
 
-      - name: Install Inno Setup
-        run: choco install innosetup --version=6.3.3 --yes --no-progress
+      - name: Ensure Inno Setup compiler is available
+        id: inno
+        shell: pwsh
+        run: |
+          function Find-Iscc {
+            $command = Get-Command iscc.exe -ErrorAction SilentlyContinue
+            if ($command) {
+              return $command.Source
+            }
+
+            $candidates = @(
+              "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+              "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
+              "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+            )
+
+            foreach ($candidate in $candidates) {
+              if ($candidate -and (Test-Path $candidate)) {
+                return $candidate
+              }
+            }
+
+            return $null
+          }
+
+          $iscc = Find-Iscc
+          if (-not $iscc) {
+            choco install innosetup --yes --no-progress
+            $iscc = Find-Iscc
+          }
+
+          if (-not $iscc) {
+            throw "ISCC.exe not found after installing Inno Setup"
+          }
+
+          Write-Host "Using ISCC at: $iscc"
+          echo "iscc_path=$iscc" >> $env:GITHUB_OUTPUT
 
       - name: Build Windows installer
         id: installer
@@ -100,7 +136,7 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $appVersion = if ($tag.StartsWith('v')) { $tag.Substring(1) } else { $tag }
           $script = "packaging\windows\tui-translator.iss"
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $iscc = "${{ steps.inno.outputs.iscc_path }}"
           if (-not (Test-Path $script)) {
             throw "Installer script not found at $script"
           }
