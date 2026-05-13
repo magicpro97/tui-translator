@@ -22,8 +22,8 @@ use metrics::SttState;
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
-    render_language_prompt, truncate_device_name, AppState, ControlHintsBar,
-    StatusMetricsStrip, SubtitlePair, SubtitlePane,
+    render_language_prompt, truncate_device_name, AppState, ControlHintsBar, StatusMetricsStrip,
+    SubtitlePair, SubtitlePane,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -731,7 +731,10 @@ fn snapshot_status_strip_zero_state_narrow() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
     };
-    insta::assert_snapshot!("status_strip_zero_state_narrow", render_strip(&strip, 60, 3));
+    insta::assert_snapshot!(
+        "status_strip_zero_state_narrow",
+        render_strip(&strip, 60, 3)
+    );
 }
 
 /// Zero-state expanded snapshot — regression guard.
@@ -756,7 +759,10 @@ fn snapshot_status_strip_zero_state_expanded() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
     };
-    insta::assert_snapshot!("status_strip_zero_state_expanded", render_strip(&strip, 80, 6));
+    insta::assert_snapshot!(
+        "status_strip_zero_state_expanded",
+        render_strip(&strip, 80, 6)
+    );
 }
 
 /// Short device names pass through unchanged.
