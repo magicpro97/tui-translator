@@ -462,7 +462,10 @@ async fn main() {
     #[cfg(windows)]
     let _playback = match fixture_player::start() {
         Ok(guard) => {
-            info!(fixture = "tests/soak/soak_audio.wav", "fixture playback started — loopback will receive audio");
+            info!(
+                fixture = "tests/soak/soak_audio.wav",
+                "fixture playback started — loopback will receive audio"
+            );
             Some(guard)
         }
         Err(ref e) => {
