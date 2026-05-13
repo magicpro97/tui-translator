@@ -1,0 +1,19 @@
+---
+source: tests/snapshot.rs
+expression: rendered
+---
+┌ Help — press ? or Esc to close ──────┐
+│ Keyboard Shortcuts                   │
+│                                      │
+│  ↑ / ↓     Scroll subtitle pane      │
+│  Home       Scroll to top            │
+│  End        Scroll to bottom / auto-f│
+│  Space      Pause / resume translatio│
+│  T          Toggle TTS audio output  │
+│  M          Toggle metrics panel (com│
+│  L          Change target language   │
+│  R          Reload config from disk  │
+│  ?          Show / hide this help    │
+│  Esc        Dismiss this overlay     │
+│  q / Ctrl+C Quit — shows session summ│
+└──────────────────────────────────────┘

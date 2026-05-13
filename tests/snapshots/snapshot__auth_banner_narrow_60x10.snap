@@ -1,0 +1,14 @@
+---
+source: tests/snapshot.rs
+expression: rendered
+---
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
+┌ ⚠ Authentication Error — API calls halted ───────────────┐
+│ ⚠  API Key Error                                         │
+│                                                          │
+│ invalid API key                                          │
+└──────────────────────────────────────────────────────────┘

@@ -3,7 +3,8 @@
 //!
 //! Covers three representative terminal sizes: 80×24, 120×40, 200×50.
 //! Also covers: narrow (60 col) and wide (130 col) adaptive layouts (issue #60),
-//! new SttState variants (issue #41), and always-shown hints bar (issue #65).
+//! new SttState variants (issue #41), always-shown hints bar (issue #65), and
+//! narrow/short terminal fallback behavior (issues #185-#187).
 //!
 //! Run once to generate snapshots:
 //!   INSTA_UPDATE=new cargo test --test snapshot
@@ -20,7 +21,9 @@ mod tui;
 use metrics::SttState;
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
-    expanded_metrics_height, ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane,
+    draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
+    render_language_prompt, AppState, ControlHintsBar, StatusMetricsStrip, SubtitlePair,
+    SubtitlePane,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,7 +66,60 @@ fn render_hints(bar: &ControlHintsBar, width: u16, height: u16) -> String {
     buffer_to_string(terminal.backend().buffer())
 }
 
-/// Convert a ratatui test buffer to a multi-line string.
+/// Render the help overlay on a blank terminal of the given size.
+fn render_help(width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.size();
+            render_help_overlay(frame, area);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
+/// Render the language prompt on a blank terminal of the given size.
+fn render_lang_prompt(input: &str, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.size();
+            render_language_prompt(frame, area, input);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
+/// Render the auth error banner on a blank terminal of the given size.
+fn render_auth_banner(message: &str, restart: bool, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.size();
+            // Simulate the y_offset as if this were anchored below a 6-row header.
+            let subtitle_y_offset = 6u16.min(area.height.saturating_sub(5));
+            render_auth_error_banner(frame, area, message, restart, subtitle_y_offset);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
+/// Render the full UI via `draw_ui` at the given terminal size.
+fn render_full_ui(width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let state = AppState::new();
+    terminal
+        .draw(|frame| {
+            draw_ui(frame, &state, "Test Device", 0.0, false, 0.0);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
 ///
 /// Each row becomes one line; cells containing multi-column characters are
 /// represented by their first Unicode scalar so every row has exactly `width`
@@ -650,5 +706,246 @@ fn expanded_warning_renders_when_over_threshold() {
     assert!(
         !rendered_6.contains("Cost warning"),
         "at 6 rows the warning row IS clipped — confirms fix was needed; got:\n{rendered_6}"
+    );
+}
+
+// ── Regression tests for issues #185-#187 ────────────────────────────────────
+
+/// Narrow compact strip now uses "Lang:" instead of "L:" (#186).
+#[test]
+fn narrow_compact_strip_uses_lang_label() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: true,
+        target_language: "vi".to_string(),
+        pairs: 3,
+        audio_secs: 10.0,
+        cost_usd: 0.004,
+        elapsed: "0:10".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    let rendered = render_strip(&strip, 60, 3);
+    assert!(
+        rendered.contains("Lang:"),
+        "narrow strip must spell out 'Lang:' not 'L:'; got: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("| L:"),
+        "narrow strip must not use bare 'L:' abbreviation; got: {rendered:?}"
+    );
+}
+
+/// Narrow compact strip now uses "TTS:" instead of "T:" (#186).
+#[test]
+fn narrow_compact_strip_uses_tts_label() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "en".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    let rendered = render_strip(&strip, 60, 3);
+    assert!(
+        rendered.contains("TTS:"),
+        "narrow strip must spell out 'TTS:' not 'T:'; got: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("| T:"),
+        "narrow strip must not use bare 'T:' abbreviation; got: {rendered:?}"
+    );
+}
+
+/// Compact restart notice now says "restart required" (#186).
+#[test]
+fn compact_restart_notice_is_spelled_out() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: true,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    let rendered = render_strip(&strip, 120, 3);
+    assert!(
+        rendered.contains("restart required"),
+        "restart notice must say 'restart required'; got: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("req'd"),
+        "restart notice must not use 'req'd' abbreviation; got: {rendered:?}"
+    );
+}
+
+/// Narrow snapshot at 30 cols: renders without panic and shows something (#185).
+#[test]
+fn snapshot_status_strip_very_narrow_30cols() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: true,
+        target_language: "ja".to_string(),
+        pairs: 1,
+        audio_secs: 5.0,
+        cost_usd: 0.001,
+        elapsed: "0:05".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    let rendered = render_strip(&strip, 30, 3);
+    // Must not be empty and must render borders at minimum.
+    assert!(!rendered.is_empty(), "very narrow strip must render something at 30 cols");
+    insta::assert_snapshot!("status_strip_very_narrow_30cols", rendered);
+}
+
+/// Help overlay at small size: fits without overflowing the terminal (#185).
+#[test]
+fn snapshot_help_overlay_narrow() {
+    let rendered = render_help(40, 15);
+    assert!(!rendered.is_empty(), "help overlay must render at 40×15");
+    insta::assert_snapshot!("help_overlay_narrow_40x15", rendered);
+}
+
+/// Language prompt at small size: renders with correct structure (#185).
+#[test]
+fn snapshot_lang_prompt_narrow() {
+    let rendered = render_lang_prompt("ja", 40, 8);
+    assert!(!rendered.is_empty(), "lang prompt must render at 40×8");
+    // The prompt instruction must still be visible.
+    assert!(
+        rendered.contains("Enter") || rendered.contains("Esc") || rendered.contains("language"),
+        "lang prompt at 40×8 must include instruction text; got: {rendered:?}"
+    );
+    insta::assert_snapshot!("lang_prompt_narrow_40x8", rendered);
+}
+
+/// Auth error banner at a short terminal: stays within bounds (#185).
+#[test]
+fn auth_banner_clamped_to_terminal_bounds() {
+    // Very short terminal — banner must not extend past the bottom.
+    let height: u16 = 10;
+    let rendered = render_auth_banner("invalid API key", false, 60, height);
+    assert!(!rendered.is_empty(), "auth banner must render at 60×{height}");
+    // Count rendered rows — must equal height (no overflow).
+    let row_count = rendered.lines().count() as u16;
+    assert_eq!(
+        row_count, height,
+        "rendered output must have exactly {height} rows; got {row_count}"
+    );
+}
+
+/// Snapshot for auth banner at narrow width (#185).
+#[test]
+fn snapshot_auth_banner_narrow() {
+    let rendered = render_auth_banner("invalid API key", false, 60, 10);
+    insta::assert_snapshot!("auth_banner_narrow_60x10", rendered);
+}
+
+/// Full UI at minimum usable size does not panic (#185).
+///
+/// MIN_USABLE_ROWS = 10 (title 3 + audio 3 + metrics-compact 3 + hints 1),
+/// MIN_USABLE_COLS = 20 — rendering exactly at the threshold must not panic.
+#[test]
+fn full_ui_at_minimum_size_does_not_panic() {
+    // Exactly at the boundary: full UI is rendered (no fallback).
+    let rendered = render_full_ui(20, 10);
+    assert!(!rendered.is_empty(), "draw_ui must render something at 20×10");
+    // One row below: fallback must appear instead of a broken layout.
+    let rendered_below = render_full_ui(20, 9);
+    assert!(
+        rendered_below.contains("Resize") || rendered_below.contains("resize"),
+        "draw_ui at 20×9 (below MIN_USABLE_ROWS=10) must show resize message; got: {rendered_below:?}"
+    );
+}
+
+/// Full UI below minimum size shows fallback message instead of crashing (#185).
+#[test]
+fn full_ui_below_minimum_shows_fallback() {
+    // Both dimensions below the minimum thresholds.
+    let rendered = render_full_ui(10, 4);
+    assert!(
+        rendered.contains("Resize") || rendered.contains("resize"),
+        "terminal below minimum must show resize message; got: {rendered:?}"
+    );
+}
+
+/// Snapshot: full UI at minimum usable size (#185).
+#[test]
+fn snapshot_full_ui_too_small_fallback() {
+    // Below minimum — should show fallback, not panic.
+    let rendered = render_full_ui(15, 5);
+    insta::assert_snapshot!("full_ui_too_small_15x5", rendered);
+}
+
+/// Expanded metrics strip narrow mode uses "Lang:" label (#186).
+#[test]
+fn expanded_metrics_narrow_uses_lang_label() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "fr".to_string(),
+        pairs: 5,
+        audio_secs: 30.0,
+        cost_usd: 0.01,
+        elapsed: "0:30".to_string(),
+        show_restart: false,
+        expanded: true,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    let rendered = render_strip(&strip, 60, 6);
+    assert!(
+        rendered.contains("Lang:"),
+        "expanded narrow strip must use 'Lang:' label; got: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("L:fr"),
+        "expanded narrow strip must not use bare 'L:' prefix; got: {rendered:?}"
     );
 }
