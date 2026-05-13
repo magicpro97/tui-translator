@@ -1,6 +1,6 @@
 name: Release
 
-# Triggers on any tag that looks like a version (e.g. v0.1.0, v1.2.3-rc1).
+# Triggers on any tag that starts with `v` (for example `v0.1.0` or `v1.2.3-rc1`).
 # The job builds the Windows MSVC static binary, packages it into a zip,
 # and publishes it as a GitHub Release pre-release until Layer 5
 # human-acceptance is completed by named reviewers.
@@ -22,8 +22,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # full history so softprops can generate a changelog
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -38,23 +36,41 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Run release safety tests
+        run: cargo test --locked --bin tui-translator
+
       - name: Build release exe (MSVC static target)
-        run: cargo build --release --target x86_64-pc-windows-msvc --bin tui-translator
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin tui-translator
 
       - name: Verify no VC++ runtime DLLs
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere"
+          }
           $vsPath  = & $vswhere -latest -products * `
                        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
                        -property installationPath
+          if (-not $vsPath) {
+            throw "vswhere did not return a Visual Studio installation path"
+          }
           $dumpbin = Join-Path $vsPath "VC\Tools\MSVC" |
                      Get-ChildItem -Directory | Sort-Object Name -Descending |
                      Select-Object -First 1 |
-                     ForEach-Object { Join-Path $_.FullName "bin\Hostx64\x64\dumpbin.exe" }
+                      ForEach-Object { Join-Path $_.FullName "bin\Hostx64\x64\dumpbin.exe" }
+          if (-not $dumpbin -or -not (Test-Path $dumpbin)) {
+            throw "dumpbin.exe not found under Visual Studio installation at $vsPath"
+          }
           $exe = "target\x86_64-pc-windows-msvc\release\tui-translator.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Expected release executable not found at $exe"
+          }
+          Write-Host "Using dumpbin at: $dumpbin"
           $raw = & $dumpbin /DEPENDENTS $exe 2>&1
           if ($LASTEXITCODE -ne 0) { throw "dumpbin failed: $($raw -join ' ')" }
+          Write-Host "Dependent DLLs reported by dumpbin:"
+          $raw | ForEach-Object { Write-Host $_ }
           $banned = $raw | Select-String -Pattern "vcruntime140|msvcp140" -CaseSensitive:$false
           if ($banned) { throw "Banned VC++ runtime DLLs found: $banned" }
           Write-Host "PASS: no vcruntime140.dll or msvcp140.dll found."
@@ -118,7 +134,7 @@ jobs:
                playback device, so keep Zoom audio routed through that output.
             6. Press `q` to close cleanly.
 
-            Full setup guide: [USAGE.md](https://github.com/magicpro97/tui-translator/blob/main/USAGE.md)
+            Full setup guide: [USAGE.md](https://github.com/magicpro97/tui-translator/blob/${{ github.ref_name }}/USAGE.md)
 
             ### Keyboard shortcuts
 
