@@ -63,7 +63,9 @@ on Machine B watches the subtitle panel and records what appears on screen.
 1. Start a Zoom meeting on Machine A with at least the speaker and one reviewer
    as participants.
 2. On Machine B, launch `tui-translator.exe` and confirm the status bar shows
-   "Listening".
+   the STT listening indicator (full-width rendering: `● STT: listening`;
+   may be abbreviated on narrow terminals). The `●` symbol and the word
+   "listening" are the distinguishing markers.
 3. The speaker reads each of the ten Japanese test sentences below, at a
    natural conversational pace, one at a time. Wait for the subtitle to appear
    (or for 6 seconds to elapse with no subtitle) before reading the next.
@@ -192,7 +194,7 @@ Two or more misleading translations in a single session **blocks the release.**
 | Reviewer name (must be fluent in Japanese and Vietnamese) | |
 | Reviewer signature | |
 | Reviewer date | YYYY-MM-DD |
-| Second reviewer name | |
+| Second reviewer name (must be fluent in Japanese and Vietnamese) | |
 | Second reviewer signature | |
 | Second reviewer date | YYYY-MM-DD |
 
@@ -554,5 +556,5 @@ Confirm that none of the following blockers are active:
 ---
 
 _Template source: `verification-evidence/acceptance-log-template.md`  
-Criteria source: `docs/04-verification-plan.md` Sections 7.1–7.6 and 8  
+Criteria source: `docs/04-verification-plan.md` Sections 7.1–7.6, 8, and 10  
 Issue: [#114](https://github.com/magicpro97/tui-translator/issues/114)_
