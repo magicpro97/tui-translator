@@ -2,7 +2,7 @@
   "issue": 190,
   "title": "WP-08.06 zero-state readability live proof",
   "captured_at": "2026-05-13",
-  "worktree": "C:\\Users\\linhnt102\\tt-wt-wp08-06",
+  "worktree": "%USERPROFILE%\\tt-wt-wp08-06",
   "command": ".\\target\\debug\\tui-translator.exe",
   "environment": {
     "RUST_LOG": "off",

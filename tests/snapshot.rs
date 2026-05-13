@@ -786,8 +786,8 @@ fn truncate_device_name_long_gets_ellipsis() {
 /// Wide glyphs must also be truncated by terminal display width, not char count.
 #[test]
 fn truncate_device_name_wide_chars_respects_display_width() {
-    let result = truncate_device_name("麦克风Audio", 5);
-    assert_eq!(result, "麦克…");
+    let result = truncate_device_name("日本語Audio", 5);
+    assert_eq!(result, "日本…");
 }
 
 /// Truncation to 0 produces an empty string (no panic).

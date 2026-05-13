@@ -488,33 +488,46 @@ fn subtitle_block() -> Block<'static> {
         .style(Style::default().fg(Color::White))
 }
 
-/// Truncate a device name to at most `max_chars` Unicode scalar values,
+/// Truncate a device name to at most `max_cols` terminal columns,
 /// appending `…` (U+2026) if the string is longer.
 ///
 /// This prevents over-long WASAPI device names from consuming the entire
 /// audio gauge title area and pushing the level bar off screen.
 ///
-/// `max_chars == 0` returns an empty string.  The ellipsis itself counts
-/// toward `max_chars` (so `max_chars = 1` yields `"…"` for any long input).
-pub(crate) fn truncate_device_name(name: &str, max_chars: usize) -> String {
+/// `max_cols == 0` returns an empty string. The ellipsis itself counts
+/// toward `max_cols` (so `max_cols = 1` yields `"…"` for any long input).
+pub(crate) fn truncate_device_name(name: &str, max_cols: usize) -> String {
     const ELLIPSIS: char = '\u{2026}';
-    let char_count = name.chars().count();
-    if char_count <= max_chars {
+    let ellipsis_cols = char_width(ELLIPSIS);
+    if display_width(name) <= max_cols {
         name.to_string()
+    } else if max_cols == 0 {
+        String::new()
+    } else if max_cols <= ellipsis_cols {
+        ELLIPSIS.to_string()
     } else {
-        let take = max_chars.saturating_sub(1);
-        let mut s: String = name.chars().take(take).collect();
-        if max_chars > 0 {
-            s.push(ELLIPSIS);
+        let mut used_cols = 0usize;
+        let mut truncated = String::new();
+        let budget = max_cols.saturating_sub(ellipsis_cols);
+
+        for ch in name.chars() {
+            let ch_cols = char_width(ch);
+            if used_cols + ch_cols > budget {
+                break;
+            }
+            truncated.push(ch);
+            used_cols += ch_cols;
         }
-        s
+
+        truncated.push(ELLIPSIS);
+        truncated
     }
 }
 
-/// Maximum number of Unicode scalars shown from a device name in the gauge
-/// title.  Long WASAPI names (e.g. "Speakers (Realtek High Definition Audio)")
-/// are silently truncated beyond this limit so the gauge bar remains visible.
-const MAX_DEVICE_NAME_CHARS: usize = 32;
+/// Maximum number of terminal columns shown from a device name in the gauge
+/// title. Long WASAPI names are silently truncated beyond this limit so the
+/// gauge bar remains visible.
+const MAX_DEVICE_NAME_COLS: usize = 32;
 
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
@@ -1198,7 +1211,7 @@ pub fn draw_ui(
     } else {
         Color::Red
     };
-    let device_display = truncate_device_name(device_name, MAX_DEVICE_NAME_CHARS);
+    let device_display = truncate_device_name(device_name, MAX_DEVICE_NAME_COLS);
     let bar_title = format!(" Audio \u{2014} {device_display} ");
     frame.render_widget(
         Gauge::default()

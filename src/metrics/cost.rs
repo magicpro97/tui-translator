@@ -146,8 +146,8 @@ pub fn format_cost_display(cost_usd: f64) -> String {
 ///
 /// Returns `"no charges"` when `cost_usd` is exactly `0.0`, meaning no
 /// billable activity has occurred in this session yet.  Showing `~$0.000`
-/// at startup is confusing — it looks like an actual charge.  For any
-/// positive value this delegates to [`format_cost_display`] so the format
+/// at startup is confusing — it looks like an actual charge. For any
+/// non-zero value this delegates to [`format_cost_display`] so the format
 /// is consistent with all other cost surfaces.
 ///
 /// # Examples
