@@ -40,7 +40,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 Source: "..\..\target\x86_64-pc-windows-msvc\release\tui-translator.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\config.example.json"; DestDir: "{app}"; DestName: "config.json"; Flags: onlyifdoesntexist
+Source: "..\..\config.example.json"; DestDir: "{app}"; DestName: "config.json"; Flags: onlyifdoesntexist uninsneveruninstall
 Source: "..\..\USAGE.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
