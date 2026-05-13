@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-05-13T10:30:24Z",
+  "machine_os": "Microsoft Windows 11 Enterprise",
+  "test_binary": "target\\debug\\deps\\wasapi_probe-ec1ac2707d2204b7.exe",
+  "test_result": {
+    "total": 3,
+    "tests": [
+      {
+        "name": "default_render_endpoint_opens",
+        "result": "ok",
+        "output": "default render device: Headphones (High Definition Audio Device)"
+      },
+      {
+        "name": "default_render_endpoint_format_is_queryable",
+        "result": "ok",
+        "output": "mix format: channels=2, sample_rate=48000 Hz, bits=32"
+      },
+      {
+        "name": "default_render_endpoint_initialises_for_loopback",
+        "result": "ok",
+        "output": "loopback client initialised successfully"
+      }
+    ],
+    "passed": 3,
+    "failed": 0
+  },
+  "conclusion": "WASAPI loopback is available on this workstation. The default render endpoint opens, its mix format is queryable, and the audio client initialises in shared loopback mode. The environmental blocker recorded in the previous session is resolved. A full 10-minute stability soak (issue #32 acceptance criterion) can now be run on this machine.",
+  "audio_endpoints": {
+    "ok_render_endpoints": {
+      "status": "OK",
+      "friendly_name": "Headphones (High Definition Audio Device)",
+      "instance_id": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{A78D922A-51E8-4398-AB69-9CE23608D79C}"
+    },
+    "all_endpoints": [
+      {
+        "status": "Unknown",
+        "friendly_name": "Headset (X7)",
+        "instance_id": "SWD\\MMDEVAPI\\{0.0.1.00000000}.{AA7E669B-F263-4D4B-BC0E-60B27C9ED064}"
+      },
+      {
+        "status": "Unknown",
+        "friendly_name": "Headphones (X7)",
+        "instance_id": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{06B8EC07-D9A4-4A3C-B3A3-17ED9706C16E}"
+      },
+      {
+        "status": "OK",
+        "friendly_name": "Headphones (High Definition Audio Device)",
+        "instance_id": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{A78D922A-51E8-4398-AB69-9CE23608D79C}"
+      },
+      {
+        "status": "OK",
+        "friendly_name": "Microphone (High Definition Audio Device)",
+        "instance_id": "SWD\\MMDEVAPI\\{0.0.1.00000000}.{1BDC6EE1-4BDE-40CD-88B4-28B379110B0D}"
+      },
+      {
+        "status": "Unknown",
+        "friendly_name": "Headset (X7 Hands-Free)",
+        "instance_id": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{0D10641D-7FD5-4537-ABEE-E791DA35577A}"
+      },
+      {
+        "status": "Unknown",
+        "friendly_name": "VA24D (HD Audio Driver for Display Audio)",
+        "instance_id": "SWD\\MMDEVAPI\\{0.0.0.00000000}.{54D7B2EE-5C65-4A18-BAF7-AECC26DA59C4}"
+      }
+    ]
+  },
+  "default_render_device": {
+    "bits_per_sample": 32,
+    "loopback_init": "success",
+    "name": "Headphones (High Definition Audio Device)",
+    "channels": 2,
+    "sample_rate_hz": 48000
+  },
+  "remaining_gap": "The 10-minute stability soak requires audio to be actively playing through the speakers during the run. This cannot be automated without a loopback audio fixture injected at the OS level, but the fundamental WASAPI access is now proven."
+}

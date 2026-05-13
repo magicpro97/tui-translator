@@ -20,6 +20,10 @@ path = "src/main.rs"
 name = "run_soak"
 path = "tests/soak/run_soak.rs"
 
+[[bin]]
+name = "audio_stability_proof"
+path = "src/bin/audio_stability_proof.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.26"

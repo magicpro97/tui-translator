@@ -40,6 +40,9 @@ mod wasapi_capture;
 pub mod file_source;
 pub use file_source::WavFileSource;
 
+/// Soak-proof evidence types and Issue #32 pass-fail thresholds.
+pub mod probe;
+
 // ─── Core types ──────────────────────────────────────────────────────────────
 
 /// A single chunk of captured audio, ready to be sent to the STT pipeline.

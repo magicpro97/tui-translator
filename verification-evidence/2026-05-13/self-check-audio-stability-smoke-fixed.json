@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "issue": "#32",
+  "harness_version": "0.1.0",
+  "started_at": "2026-05-13T04:14:29Z",
+  "ended_at": "2026-05-13T04:14:59Z",
+  "duration_secs": 30,
+  "device": {
+    "name": "Headphones (High Definition Audio Device)",
+    "native_sample_rate": 48000
+  },
+  "chunks": {
+    "delivered": 3001,
+    "stall_windows": 0,
+    "loss_percent": 0.0,
+    "longest_gap_ms": 24
+  },
+  "memory": {
+    "start_bytes": 12201984,
+    "end_bytes": 13205504,
+    "growth_bytes": 1003520,
+    "snapshots": []
+  },
+  "thresholds": {
+    "max_memory_growth_bytes": 10485760,
+    "max_chunk_loss_percent": 5.0,
+    "min_duration_secs": 600
+  },
+  "capture_error": null,
+  "passed": false,
+  "failure_reasons": [
+    "run duration 30s is below the required minimum 600s (re-run with --duration-secs 600)"
+  ]
+}
