@@ -26,8 +26,10 @@ cargo run --bin run_soak -- --dry-run --output verification-evidence/sample/soak
 ```
 
 Run this whenever `SoakReport`, `MetricSample`, or `ThresholdEvaluation` in
-`tests/soak/run_soak.rs` changes shape.  The CI job `sample-schema-check` in
-`.github/workflows/ci.yml` will catch schema drift automatically.
+`tests/soak/run_soak.rs` changes shape.  The Rust test
+`sample_report_matches_schema` in `tests/soak_runner.rs` reads this file on
+every `cargo test` run and will fail with a descriptive error if the sample
+drifts from the current schema.
 
 ---
 
