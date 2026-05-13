@@ -49,10 +49,8 @@ const LOG_LEAK_PATTERNS: &[&str] = &[
 fn log_output_not_in_pty_stream() {
     // Spawn with logging explicitly enabled — unlike all other PTY tests,
     // this one does NOT suppress tracing so the fix is genuinely exercised.
-    let mut session =
-        PtySession::spawn(80, 24, &[("RUST_LOG", "tui_translator=info")]).expect(
-            "failed to spawn tui-translator for log_output_not_in_pty_stream",
-        );
+    let mut session = PtySession::spawn(80, 24, &[("RUST_LOG", "tui_translator=info")])
+        .expect("failed to spawn tui-translator for log_output_not_in_pty_stream");
 
     // Wait for the process to emit at least its first batch of PTY bytes.
     // We do NOT require a complete TUI frame here — we only need enough time
