@@ -834,7 +834,10 @@ fn snapshot_status_strip_very_narrow_30cols() {
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
-    assert!(!rendered.is_empty(), "very narrow strip must render something at 30 cols");
+    assert!(
+        !rendered.is_empty(),
+        "very narrow strip must render something at 30 cols"
+    );
     insta::assert_snapshot!("status_strip_very_narrow_30cols", rendered);
 }
 
@@ -865,7 +868,10 @@ fn auth_banner_clamped_to_terminal_bounds() {
     // Very short terminal — banner must not extend past the bottom.
     let height: u16 = 10;
     let rendered = render_auth_banner("invalid API key", false, 60, height);
-    assert!(!rendered.is_empty(), "auth banner must render at 60×{height}");
+    assert!(
+        !rendered.is_empty(),
+        "auth banner must render at 60×{height}"
+    );
     // Count rendered rows — must equal height (no overflow).
     let row_count = rendered.lines().count() as u16;
     assert_eq!(
@@ -889,7 +895,10 @@ fn snapshot_auth_banner_narrow() {
 fn full_ui_at_minimum_size_does_not_panic() {
     // Exactly at the boundary: full UI is rendered (no fallback).
     let rendered = render_full_ui(20, 10);
-    assert!(!rendered.is_empty(), "draw_ui must render something at 20×10");
+    assert!(
+        !rendered.is_empty(),
+        "draw_ui must render something at 20×10"
+    );
     // One row below: fallback must appear instead of a broken layout.
     let rendered_below = render_full_ui(20, 9);
     assert!(

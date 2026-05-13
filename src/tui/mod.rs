@@ -57,7 +57,7 @@ const MIN_USABLE_COLS: u16 = 20;
 const MIN_USABLE_ROWS: u16 = 3   // title bar
     + 3   // audio gauge
     + 3   // metrics strip (compact mode minimum)
-    + 1;  // control hints bar
+    + 1; // control hints bar
 
 // ── UserAction ───────────────────────────────────────────────────────────────
 
@@ -1164,7 +1164,13 @@ pub fn draw_ui(
     // Anchor uses chunks[2].y (top of subtitle pane) rather than a magic constant (#185).
     if let Some(ref banner_msg) = auth_banner {
         let subtitle_y_offset = chunks[2].y.saturating_sub(area.y);
-        render_auth_error_banner(frame, area, banner_msg, show_restart_notice, subtitle_y_offset);
+        render_auth_error_banner(
+            frame,
+            area,
+            banner_msg,
+            show_restart_notice,
+            subtitle_y_offset,
+        );
     }
 
     // ── Language prompt overlay (issue #64) ──────────────────────────────────
