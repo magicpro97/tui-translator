@@ -16,8 +16,9 @@
 //! **Environment notes:**
 //! - Each test starts a fresh process; WASAPI audio initialisation may take up
 //!   to 5 s before the TUI appears, hence the generous `STARTUP_TIMEOUT`.
-//! - `RUST_LOG=off` is always injected so `tracing` log lines do not pollute
-//!   the raw PTY byte stream.
+//! - Since issue #183, tracing output is routed to a log file in the OS temp
+//!   directory (`tui-translator.log`), so log lines never pollute the raw PTY
+//!   byte stream.  `RUST_LOG=off` is no longer injected by the harness.
 //! - Tests work whether or not a real audio render device is present: the TUI
 //!   renders its full layout even when audio capture returns an error state.
 
@@ -32,3 +33,6 @@ mod exit_test;
 
 #[path = "pty/monochrome_test.rs"]
 mod monochrome_test;
+
+#[path = "pty/log_routing_test.rs"]
+mod log_routing_test;

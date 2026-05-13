@@ -168,13 +168,47 @@ impl providers::CostReporter for metrics::CostCounter {
         metrics::CostCounter::record_synthesized_characters(self, count);
     }
 }
+/// Initialise the tracing subscriber, routing output to a log file so that
+/// diagnostic lines never reach the ConPTY terminal stream (issue #183).
+///
+/// The log file is `tui-translator.log` in the OS temp directory. Appending is
+/// used so successive runs accumulate in one file without truncating earlier
+/// output. Falls back to stderr if the log file cannot be opened.
+fn init_tracing() {
+    let log_dir = std::env::temp_dir();
+
+    match tracing_appender::rolling::RollingFileAppender::builder()
+        .filename_prefix("tui-translator")
+        .filename_suffix("log")
+        .build(&log_dir)
+    {
+        Ok(file_appender) => {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| "tui_translator=info".into()),
+                )
+                .with_writer(file_appender)
+                .init();
+        }
+        Err(error) => {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| "tui_translator=info".into()),
+                )
+                .init();
+            tracing::warn!(
+                log_dir = %log_dir.display(),
+                error = %error,
+                "failed to initialize temp log file; falling back to stderr"
+            );
+        }
+    }
+}
+
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "tui_translator=info".into()),
-        )
-        .init();
+    init_tracing();
 
     tracing::info!("tui-translator starting");
 
