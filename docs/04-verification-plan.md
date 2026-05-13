@@ -176,7 +176,7 @@ The application runs for four hours with a continuous audio stream. The audio st
 - No more than 2% of API calls may fail.
 - Average subtitle latency must stay below 3 seconds throughout the run.
 
-**Release blocker:** Memory growth exceeding 50 megabytes, CPU exceeding 60% sustained, chunk loss exceeding 5% in any 15-minute sample, or subtitle latency exceeding 5 seconds at any 15-minute sample blocks the release.
+**Release blocker:** Memory growth exceeding 50 megabytes, CPU exceeding 60% at any sample, chunk loss exceeding 5% in any 15-minute sample, or subtitle latency exceeding 5 seconds at any 15-minute sample blocks the release.
 
 ### 6.2 Cost Accuracy Soak
 
@@ -317,7 +317,7 @@ The following is a complete list of conditions that, if present, prevent a relea
 | B-07 | Terminal | Application leaves terminal in broken state after exit |
 | B-08 | Terminal | Application crashes or produces unreadable output in monochrome mode |
 | B-09 | Soak | Memory growth exceeds 50 MB over four-hour run |
-| B-10 | Soak | CPU usage exceeds 60% sustained during soak |
+| B-10 | Soak | CPU usage exceeds 60% at any sample during soak |
 | B-11 | Soak | Chunk loss exceeds 5% in any 15-minute block during soak |
 | B-12 | Soak | Subtitle latency exceeds 5 seconds in any 15-minute block during soak |
 | B-13 | Soak | Cost counter differs from actual billing by more than 15% |

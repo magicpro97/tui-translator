@@ -242,7 +242,11 @@ pub struct MetricSample {
     ///
     /// `None` if the process is not being monitored (dry-run or spawn failed).
     pub memory_mb: Option<f64>,
-    /// CPU usage of the monitored process as a percentage.
+    /// CPU usage of the monitored process as a percentage in `[0.0, 100.0]`.
+    ///
+    /// The value is normalised by the number of logical cores so that 100 %
+    /// means all CPU capacity on the machine is consumed by this process.
+    /// This matches the threshold semantics in `thresholds::CPU_*_MAX_PCT`.
     ///
     /// `None` if the process is not being monitored (dry-run or spawn failed).
     pub cpu_pct: Option<f32>,
@@ -835,13 +839,23 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     std::fs::write(path, json).with_context(|| format!("cannot write report to {}", path.display()))
 }
 
-/// Read CPU % and RSS (MiB) for a process by PID.
-fn poll_process(sys: &mut System, pid: u32) -> (Option<f32>, Option<f64>) {
+/// Read normalised CPU % and RSS (MiB) for a process by PID.
+///
+/// `sysinfo` reports `Process::cpu_usage()` in the range
+/// `[0, n_logical_cores × 100]`.  Dividing by `n_cores` converts this to a
+/// machine-capacity percentage in `[0, 100]`, which is the scale expected by
+/// `thresholds::CPU_TYPICAL_MAX_PCT` (40 %) and
+/// `thresholds::CPU_ANY_SAMPLE_MAX_PCT` (60 %).
+///
+/// Callers must supply `n_cores` — obtain it once with
+/// `std::thread::available_parallelism()` at start-up.
+fn poll_process(sys: &mut System, pid: u32, n_cores: usize) -> (Option<f32>, Option<f64>) {
     let refresh_kind = ProcessRefreshKind::new().with_cpu().with_memory();
     sys.refresh_process_specifics(Pid::from_u32(pid), refresh_kind);
     match sys.process(Pid::from_u32(pid)) {
         Some(proc) => {
-            let cpu = proc.cpu_usage();
+            // Normalise from sysinfo's [0, n_cores × 100] to [0, 100].
+            let cpu = proc.cpu_usage() / n_cores.max(1) as f32;
             let ram_mb = proc.memory() as f64 / (1024.0 * 1024.0);
             (Some(cpu), Some(ram_mb))
         }
@@ -1025,6 +1039,11 @@ fn run_dry_run(args: Args) -> Result<()> {
 
     let mut report = SoakReport::new(true, fixture_path, None);
 
+    // Determine logical core count once; used to normalise sysinfo CPU values.
+    let n_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+
     // Take 5 samples of the current process (demonstrates sysinfo integration).
     let self_pid = std::process::id();
     let refresh_kind = ProcessRefreshKind::new().with_cpu().with_memory();
@@ -1033,7 +1052,7 @@ fn run_dry_run(args: Args) -> Result<()> {
     let start = Instant::now();
     let n_samples = 5usize;
     for i in 0..n_samples {
-        let (cpu, ram_mb) = poll_process(&mut sys, self_pid);
+        let (cpu, ram_mb) = poll_process(&mut sys, self_pid, n_cores);
         let elapsed = start.elapsed().as_secs();
         let sample = MetricSample {
             elapsed_secs: elapsed,
@@ -1127,6 +1146,11 @@ fn run_full_soak(args: Args) -> Result<()> {
     let refresh_kind = ProcessRefreshKind::new().with_cpu().with_memory();
     let mut sys = System::new_with_specifics(RefreshKind::new().with_processes(refresh_kind));
 
+    // Determine logical core count once; used to normalise sysinfo CPU values.
+    let n_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+
     let total_duration = Duration::from_secs_f64(args.hours * 3600.0);
     let sample_interval = Duration::from_secs_f64(args.sample_mins * 60.0);
     let disconnect_at = Duration::from_secs(2 * 3600);
@@ -1145,7 +1169,7 @@ fn run_full_soak(args: Args) -> Result<()> {
 
         // Sample metrics on the scheduled interval.
         if now >= next_sample {
-            let (cpu, ram_mb) = poll_process(&mut sys, child_pid);
+            let (cpu, ram_mb) = poll_process(&mut sys, child_pid, n_cores);
             let sample = MetricSample {
                 elapsed_secs: elapsed.as_secs(),
                 timestamp_utc: utc_now_iso8601(),
