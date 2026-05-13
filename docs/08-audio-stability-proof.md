@@ -134,10 +134,12 @@ A `"passed": true` field in the artifact confirms all four criteria were met.
 
 ---
 
-## Automated gates (CI)
+## Recommended verification commands
 
-The 10-minute run is too slow for regular CI.  The repository gates cover the
-evaluation logic instead:
+The 10-minute run is too slow for regular CI.  The commands below are the
+recommended local verification set for this harness.  CI runs the matching
+format, lint, build, and targeted test jobs separately rather than one literal
+`cargo test --all-targets` invocation:
 
 ```powershell
 cargo fmt --all -- --check

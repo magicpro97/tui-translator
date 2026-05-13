@@ -63,11 +63,13 @@ mod wasapi_probe {
         assert!(channels > 0, "channel count must be > 0");
         assert!(sample_rate > 0, "sample rate must be > 0");
         assert!(bits > 0, "bit depth must be > 0");
-        // Only 16-bit and 32-bit are handled by wasapi_capture.rs.
+        // The capture path currently handles 16-bit samples and 32-bit sample
+        // containers; the 32-bit path is decoded as f32 samples in
+        // wasapi_capture.rs.
         assert!(
             bits == 16 || bits == 32,
             "bit depth {bits} is not handled by the capture module; \
-             only 16-bit and 32-bit PCM are supported"
+             only 16-bit and 32-bit sample containers are supported"
         );
     }
 

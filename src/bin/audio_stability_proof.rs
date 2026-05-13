@@ -24,7 +24,10 @@
 #[path = "../audio/mod.rs"]
 mod audio;
 
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    process::ExitCode,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 // ─── Fixture playback (Windows only) ─────────────────────────────────────────
 //
@@ -104,44 +107,58 @@ const DEFAULT_OUT_DIR: &str = "verification-evidence";
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
+#[derive(Debug, PartialEq, Eq)]
 struct Args {
     duration_secs: u64,
     out: Option<String>,
 }
 
-fn parse_args() -> Args {
-    let raw: Vec<String> = std::env::args().collect();
+#[derive(Debug, PartialEq, Eq)]
+enum CliAction {
+    Run(Args),
+    Help,
+}
+
+const USAGE: &str = "audio_stability_proof [--duration-secs N] [--out PATH]\n\n\
+                     Exit codes: 0=PASS  1=FAIL  2=capture-error";
+
+fn parse_args() -> Result<CliAction, String> {
+    parse_args_from(std::env::args())
+}
+
+fn parse_args_from<I>(args: I) -> Result<CliAction, String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let raw: Vec<String> = args.into_iter().collect();
     let mut duration_secs = DEFAULT_DURATION_SECS;
     let mut out: Option<String> = None;
     let mut i = 1usize;
     while i < raw.len() {
         match raw[i].as_str() {
             "--duration-secs" => {
-                if let Some(v) = raw.get(i + 1) {
-                    duration_secs = v.parse().unwrap_or(DEFAULT_DURATION_SECS);
-                    i += 2;
-                    continue;
-                }
+                let Some(v) = raw.get(i + 1) else {
+                    return Err("missing value for --duration-secs".into());
+                };
+                duration_secs = v
+                    .parse()
+                    .map_err(|_| format!("invalid value for --duration-secs: {v}"))?;
+                i += 2;
+                continue;
             }
             "--out" => {
-                if let Some(v) = raw.get(i + 1) {
-                    out = Some(v.clone());
-                    i += 2;
-                    continue;
-                }
+                let Some(v) = raw.get(i + 1) else {
+                    return Err("missing value for --out".into());
+                };
+                out = Some(v.clone());
+                i += 2;
+                continue;
             }
-            "--help" | "-h" => {
-                eprintln!(
-                    "audio_stability_proof [--duration-secs N] [--out PATH]\n\n\
-                     Exit codes: 0=PASS  1=FAIL  2=capture-error"
-                );
-                std::process::exit(0);
-            }
-            _ => {}
+            "--help" | "-h" => return Ok(CliAction::Help),
+            other => return Err(format!("unknown argument: {other}")),
         }
-        i += 1;
     }
-    Args { duration_secs, out }
+    Ok(CliAction::Run(Args { duration_secs, out }))
 }
 
 // ─── Memory measurement ───────────────────────────────────────────────────────
@@ -442,8 +459,18 @@ fn capture_error_report(err: &str) -> ProbeReport {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
-async fn main() {
-    let args = parse_args();
+async fn main() -> ExitCode {
+    let args = match parse_args() {
+        Ok(CliAction::Run(args)) => args,
+        Ok(CliAction::Help) => {
+            eprintln!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        Err(err) => {
+            eprintln!("error: {err}\n\n{USAGE}");
+            return ExitCode::from(2);
+        }
+    };
     let out_path = args.out.clone().unwrap_or_else(default_out_path);
 
     tracing_subscriber::fmt()
@@ -498,7 +525,7 @@ async fn main() {
             if artifact_written_to_disk {
                 println!("ERROR  Artifact: {out_path}");
             }
-            std::process::exit(2);
+            return ExitCode::from(2);
         }
     };
     let device = DeviceInfo {
@@ -544,12 +571,70 @@ async fn main() {
             "PASS  duration={}s  chunks={}  memory_growth={}B\nArtifact: {out_path}",
             report.duration_secs, report.chunks.delivered, report.memory.growth_bytes,
         );
-        std::process::exit(0);
+        ExitCode::SUCCESS
     } else {
         println!("FAIL  Artifact: {out_path}");
         for r in &report.failure_reasons {
             println!("  \u{2717} {r}");
         }
-        std::process::exit(1);
+        ExitCode::from(1)
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{parse_args_from, Args, CliAction, DEFAULT_DURATION_SECS};
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        std::iter::once("audio_stability_proof".to_string())
+            .chain(parts.iter().map(|part| (*part).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn parse_args_accepts_explicit_values() {
+        let parsed = parse_args_from(args(&["--duration-secs", "30", "--out", "proof.json"]));
+        assert_eq!(
+            parsed,
+            Ok(CliAction::Run(Args {
+                duration_secs: 30,
+                out: Some("proof.json".into()),
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_args_uses_defaults_when_flags_absent() {
+        let parsed = parse_args_from(args(&[]));
+        assert_eq!(
+            parsed,
+            Ok(CliAction::Run(Args {
+                duration_secs: DEFAULT_DURATION_SECS,
+                out: None,
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_args_rejects_invalid_duration() {
+        let parsed = parse_args_from(args(&["--duration-secs", "abc"]));
+        assert_eq!(parsed, Err("invalid value for --duration-secs: abc".into()));
+    }
+
+    #[test]
+    fn parse_args_rejects_missing_values() {
+        assert_eq!(
+            parse_args_from(args(&["--duration-secs"])),
+            Err("missing value for --duration-secs".into())
+        );
+        assert_eq!(
+            parse_args_from(args(&["--out"])),
+            Err("missing value for --out".into())
+        );
+    }
+
+    #[test]
+    fn parse_args_recognises_help() {
+        assert_eq!(parse_args_from(args(&["--help"])), Ok(CliAction::Help));
     }
 }
