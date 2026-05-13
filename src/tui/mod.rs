@@ -27,7 +27,7 @@ use tracing::warn;
 use unicode_width::UnicodeWidthChar;
 
 pub use crate::metrics::{
-    format_cost_display, CostCounter, MetricsSnapshot, SessionMetrics, SttState,
+    format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttState,
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -488,6 +488,34 @@ fn subtitle_block() -> Block<'static> {
         .style(Style::default().fg(Color::White))
 }
 
+/// Truncate a device name to at most `max_chars` Unicode scalar values,
+/// appending `…` (U+2026) if the string is longer.
+///
+/// This prevents over-long WASAPI device names from consuming the entire
+/// audio gauge title area and pushing the level bar off screen.
+///
+/// `max_chars == 0` returns an empty string.  The ellipsis itself counts
+/// toward `max_chars` (so `max_chars = 1` yields `"…"` for any long input).
+pub(crate) fn truncate_device_name(name: &str, max_chars: usize) -> String {
+    const ELLIPSIS: char = '\u{2026}';
+    let char_count = name.chars().count();
+    if char_count <= max_chars {
+        name.to_string()
+    } else {
+        let take = max_chars.saturating_sub(1);
+        let mut s: String = name.chars().take(take).collect();
+        if max_chars > 0 {
+            s.push(ELLIPSIS);
+        }
+        s
+    }
+}
+
+/// Maximum number of Unicode scalars shown from a device name in the gauge
+/// title.  Long WASAPI names (e.g. "Speakers (Realtek High Definition Audio)")
+/// are silently truncated beyond this limit so the gauge bar remains visible.
+const MAX_DEVICE_NAME_CHARS: usize = 32;
+
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
 /// In expanded mode the block is normally 6 rows (2 border + 4 content).
@@ -830,15 +858,18 @@ impl StatusMetricsStrip<'_> {
     }
 
     /// Abbreviated STT label for narrow terminals (< 80 columns, issue #60).
+    ///
+    /// Uses plain ASCII text without Unicode geometric-shape prefixes so that
+    /// the label renders consistently on all fonts and terminal emulators.
     fn stt_abbrev(&self) -> String {
         match self.stt {
             SttState::Idle => "idle".to_string(),
-            SttState::Listening => "\u{25cf}list".to_string(),
-            SttState::Sending => "\u{25cc}send".to_string(),
-            SttState::Waiting => "\u{25cb}wait".to_string(),
+            SttState::Listening => "listen".to_string(),
+            SttState::Sending => "send".to_string(),
+            SttState::Waiting => "wait".to_string(),
             SttState::Error(msg) => {
                 let short: String = msg.chars().take(6).collect();
-                format!("\u{2717}{short}")
+                format!("err:{short}")
             }
         }
     }
@@ -849,7 +880,7 @@ impl StatusMetricsStrip<'_> {
         //   80-119 cols → standard labels
         //  ≥ 120  cols → full labels (adds audio seconds)
         let tts_str = if self.tts_on { "on" } else { "off" };
-        let cost_str = format_cost_display(self.cost_usd);
+        let cost_str = format_cost_or_zero_state(self.cost_usd);
 
         let main_text = if area.width < 80 {
             format!(
@@ -929,7 +960,7 @@ impl StatusMetricsStrip<'_> {
             Span::raw("")
         };
 
-        let cost_str = format_cost_display(self.cost_usd);
+        let cost_str = format_cost_or_zero_state(self.cost_usd);
 
         // Adaptive detail level (issue #60): wide terminals get audio seconds.
         let metrics_line = if area.width >= 120 {
@@ -1167,7 +1198,8 @@ pub fn draw_ui(
     } else {
         Color::Red
     };
-    let bar_title = format!(" Audio \u{2014} {device_name} ");
+    let device_display = truncate_device_name(device_name, MAX_DEVICE_NAME_CHARS);
+    let bar_title = format!(" Audio \u{2014} {device_display} ");
     frame.render_widget(
         Gauge::default()
             .block(
@@ -1470,7 +1502,7 @@ pub fn draw_session_summary(
         Line::from(format!("  MT input chars:    {}", metrics.chars_translated)),
         Line::from(format!(
             "  Estimated cost:    {}",
-            format_cost_display(metrics.estimated_cost_usd)
+            format_cost_or_zero_state(metrics.estimated_cost_usd)
         )),
         Line::from(format!(
             "  TTS output:        {}",

@@ -1242,7 +1242,7 @@ fn print_session_summary_to_stdout(state: &AppState) {
     println!("  MT input chars:  {}", metrics.chars_translated);
     println!(
         "  Estimated cost:  {}",
-        metrics::cost::format_cost_display(metrics.estimated_cost_usd)
+        metrics::cost::format_cost_or_zero_state(metrics.estimated_cost_usd)
     );
     println!("  TTS output:      {}", if tts_on { "on" } else { "off" });
     println!("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}");

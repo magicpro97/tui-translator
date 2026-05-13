@@ -142,6 +142,30 @@ pub fn format_cost_display(cost_usd: f64) -> String {
     format!("~${:.3}", rounded)
 }
 
+/// Format a cost estimate for zero-state-safe display.
+///
+/// Returns `"no charges"` when `cost_usd` is exactly `0.0`, meaning no
+/// billable activity has occurred in this session yet.  Showing `~$0.000`
+/// at startup is confusing — it looks like an actual charge.  For any
+/// positive value this delegates to [`format_cost_display`] so the format
+/// is consistent with all other cost surfaces.
+///
+/// # Examples
+///
+/// ```ignore
+/// use tui_translator::metrics::cost::format_cost_or_zero_state;
+/// assert_eq!(format_cost_or_zero_state(0.0),   "no charges");
+/// assert_eq!(format_cost_or_zero_state(0.006), "~$0.006");
+/// assert_eq!(format_cost_or_zero_state(1.5),   "~$1.500");
+/// ```
+pub fn format_cost_or_zero_state(cost_usd: f64) -> String {
+    if cost_usd == 0.0 {
+        "no charges".to_string()
+    } else {
+        format_cost_display(cost_usd)
+    }
+}
+
 // ── Unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -343,5 +367,36 @@ mod tests {
                 "expected 3 decimal places for cost={cost}; got {s:?}"
             );
         }
+    }
+
+    // ── format_cost_or_zero_state ─────────────────────────────────────────────
+
+    #[test]
+    fn zero_state_returns_no_charges_string() {
+        assert_eq!(format_cost_or_zero_state(0.0), "no charges");
+    }
+
+    #[test]
+    fn zero_state_positive_cost_delegates_to_format_cost_display() {
+        assert_eq!(format_cost_or_zero_state(0.006), format_cost_display(0.006));
+        assert_eq!(format_cost_or_zero_state(1.5), format_cost_display(1.5));
+    }
+
+    #[test]
+    fn zero_state_positive_cost_starts_with_tilde_dollar() {
+        let s = format_cost_or_zero_state(0.001);
+        assert!(
+            s.starts_with("~$"),
+            "positive cost must start with ~$; got {s:?}"
+        );
+    }
+
+    #[test]
+    fn zero_state_zero_does_not_contain_dollar_sign() {
+        let s = format_cost_or_zero_state(0.0);
+        assert!(
+            !s.contains('$'),
+            "zero-state must not contain a dollar sign; got {s:?}"
+        );
     }
 }

@@ -22,8 +22,8 @@ use metrics::SttState;
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
-    render_language_prompt, AppState, ControlHintsBar, StatusMetricsStrip, SubtitlePair,
-    SubtitlePane,
+    render_language_prompt, truncate_device_name, AppState, ControlHintsBar,
+    StatusMetricsStrip, SubtitlePair, SubtitlePane,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -707,6 +707,99 @@ fn expanded_warning_renders_when_over_threshold() {
         !rendered_6.contains("Cost warning"),
         "at 6 rows the warning row IS clipped — confirms fix was needed; got:\n{rendered_6}"
     );
+}
+
+/// Zero-state narrow strip snapshot — regression guard for zero cost at 60 cols.
+#[test]
+fn snapshot_status_strip_zero_state_narrow() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    insta::assert_snapshot!("status_strip_zero_state_narrow", render_strip(&strip, 60, 3));
+}
+
+/// Zero-state expanded snapshot — regression guard.
+#[test]
+fn snapshot_status_strip_zero_state_expanded() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: true,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+    };
+    insta::assert_snapshot!("status_strip_zero_state_expanded", render_strip(&strip, 80, 6));
+}
+
+/// Short device names pass through unchanged.
+#[test]
+fn truncate_device_name_short_unchanged() {
+    assert_eq!(truncate_device_name("Speakers", 32), "Speakers");
+    assert_eq!(truncate_device_name("", 32), "");
+    assert_eq!(truncate_device_name("A", 1), "A");
+}
+
+/// Names longer than max_cols are truncated with an ellipsis (U+2026).
+#[test]
+fn truncate_device_name_long_gets_ellipsis() {
+    let long = "Speakers (Realtek High Definition Audio) [Loopback]";
+    let result = truncate_device_name(long, 16);
+    assert_eq!(
+        unicode_width::UnicodeWidthStr::width(result.as_str()),
+        16,
+        "truncated result must be exactly max_cols columns wide; got {result:?}"
+    );
+    assert!(
+        result.ends_with('\u{2026}'),
+        "truncated result must end with ellipsis; got {result:?}"
+    );
+}
+
+/// Wide glyphs must also be truncated by terminal display width, not char count.
+#[test]
+fn truncate_device_name_wide_chars_respects_display_width() {
+    let result = truncate_device_name("麦克风Audio", 5);
+    assert_eq!(result, "麦克…");
+}
+
+/// Truncation to 0 produces an empty string (no panic).
+#[test]
+fn truncate_device_name_zero_max_is_empty() {
+    assert_eq!(truncate_device_name("anything", 0), "");
+}
+
+/// Truncation to 1 produces just the ellipsis for long input.
+#[test]
+fn truncate_device_name_one_max_is_just_ellipsis() {
+    assert_eq!(truncate_device_name("long name", 1), "\u{2026}");
 }
 
 // ── Regression tests for issues #185-#187 ────────────────────────────────────

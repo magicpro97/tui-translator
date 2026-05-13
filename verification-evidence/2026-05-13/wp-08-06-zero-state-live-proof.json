@@ -1,0 +1,31 @@
+{
+  "issue": 190,
+  "title": "WP-08.06 zero-state readability live proof",
+  "captured_at": "2026-05-13",
+  "worktree": "C:\\Users\\linhnt102\\tt-wt-wp08-06",
+  "command": ".\\target\\debug\\tui-translator.exe",
+  "environment": {
+    "RUST_LOG": "off",
+    "TUI_TRANSLATOR_CONFIG": "%TEMP%\\tui-translator-missing-config.json"
+  },
+  "result": {
+    "launch": "ok",
+    "exit": "ok",
+    "notes": [
+      "App launched in an interactive TTY with no config file present.",
+      "The live frame rendered title bar, audio gauge, subtitle pane, status strip, and control hints bar.",
+      "The session was exited cleanly with the standard double-q quit flow."
+    ],
+    "observed_screen_excerpt": [
+      "TUI Translator",
+      "Audio - initializing...",
+      "No subtitles yet.",
+      "? help  Space pause  T audio  L lang  M metrics  R reload  Q quit"
+    ]
+  },
+  "verification": {
+    "fmt_check": "pass",
+    "clippy": "pass",
+    "snapshot_test": "pass"
+  }
+}
