@@ -1,0 +1,24 @@
+---
+source: tests/snapshot.rs
+expression: "render_help(80, 24, 0)"
+---
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+            ┌ Help — press ? or Esc to close ──────────────────────┐            
+            │ Keyboard Shortcuts                                   │            
+            │                                                      │            
+            │  ↑ / ↓     Scroll subtitles (or scroll this help)    │            
+            │  Home       Scroll to top                            │            
+            │  End        Scroll to bottom / auto-follow           │            
+            │  Space      Pause / resume translation               │            
+            │  T          Toggle TTS audio output                  │            
+            │  M          Toggle metrics panel (compact/expanded)  │            
+            │  L          Change target language                   │            
+            │  R          Reload config from disk                  │            
+            │  ?          Show / hide this help                    │            
+            │  Esc        Dismiss this overlay                     │            
+            │  q / Ctrl+C Quit — shows session summary             │            
+            │                                                      │            
+            └──────────────────────────────────────────────────────┘

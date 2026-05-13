@@ -524,6 +524,20 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
     subtitle_block().inner(chunks[2])
 }
 
+const HELP_OVERLAY_IDEAL_W: u16 = 56;
+const HELP_OVERLAY_IDEAL_H: u16 = 16;
+const HELP_OVERLAY_MIN_H: u16 = 4;
+const HELP_OVERLAY_CONTENT_LINES: u16 = 13;
+
+/// Return the maximum valid scroll offset for the help overlay at `area`.
+pub fn help_overlay_max_scroll(area: Rect) -> u16 {
+    let panel_h = HELP_OVERLAY_IDEAL_H
+        .min(area.height)
+        .max(HELP_OVERLAY_MIN_H.min(area.height));
+    let inner_h = panel_h.saturating_sub(2);
+    HELP_OVERLAY_CONTENT_LINES.saturating_sub(inner_h)
+}
+
 // ── AppState ─────────────────────────────────────────────────────────────────
 
 /// Shared application state updated by the audio capture task and read by the
@@ -551,6 +565,12 @@ pub struct AppState {
     pub metrics_expanded: AtomicBool,
     /// Whether the help overlay is currently visible.
     pub show_help: AtomicBool,
+    /// Vertical scroll offset of the help overlay (lines from the top).
+    ///
+    /// Reset to zero whenever the overlay is opened.  Incremented/decremented
+    /// by ↑/↓ arrow keys while the overlay is visible.  The renderer clamps
+    /// this to `max_scroll` so callers never need to worry about overshooting.
+    pub help_scroll: AtomicU32,
     /// Whether translation is paused (Space key, issue #64).
     pub paused: Arc<AtomicBool>,
     /// Whether the language-change prompt is currently open (L key, issue #64).
@@ -615,6 +635,7 @@ impl AppState {
             tts_enabled: Arc::new(AtomicBool::new(false)),
             metrics_expanded: AtomicBool::new(false),
             show_help: AtomicBool::new(false),
+            help_scroll: AtomicU32::new(0),
             paused: Arc::new(AtomicBool::new(false)),
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
@@ -671,6 +692,38 @@ impl AppState {
     pub fn toggle_help(&self) {
         let v = self.show_help.load(Ordering::Relaxed);
         self.show_help.store(!v, Ordering::Relaxed);
+    }
+
+    /// Scroll the help overlay up by one line (no-op when already at top).
+    pub fn scroll_help_up(&self) {
+        let v = self.help_scroll.load(Ordering::Relaxed);
+        self.help_scroll
+            .store(v.saturating_sub(1), Ordering::Relaxed);
+    }
+
+    /// Scroll the help overlay down by one line, clamped to `max_scroll`.
+    pub fn scroll_help_down(&self, max_scroll: u32) {
+        let v = self.help_scroll.load(Ordering::Relaxed);
+        self.help_scroll
+            .store(v.saturating_add(1).min(max_scroll), Ordering::Relaxed);
+    }
+
+    /// Jump the help overlay scroll position to the first line.
+    pub fn scroll_help_to_top(&self) {
+        self.help_scroll.store(0, Ordering::Relaxed);
+    }
+
+    /// Jump the help overlay scroll position to the last line.
+    ///
+    /// The caller passes `max_scroll` because it is derived from the current
+    /// terminal height, which only the renderer/draw-loop knows.
+    pub fn scroll_help_to_bottom(&self, max_scroll: u32) {
+        self.help_scroll.store(max_scroll, Ordering::Relaxed);
+    }
+
+    /// Reset the help scroll position to zero (called when the overlay is opened).
+    pub fn reset_help_scroll(&self) {
+        self.help_scroll.store(0, Ordering::Relaxed);
     }
 
     /// Current target language code used for translation output.
@@ -1028,6 +1081,7 @@ pub fn draw_ui(
     let expanded = state.metrics_expanded.load(Ordering::Relaxed);
     let tts_on = state.tts_enabled.load(Ordering::Relaxed);
     let show_help = state.show_help.load(Ordering::Relaxed);
+    let help_scroll = state.help_scroll.load(Ordering::Relaxed) as u16;
     let paused = state.paused.load(Ordering::Relaxed);
     let lang_active = state.lang_prompt_active.load(Ordering::Relaxed);
     let target_language = state.target_language();
@@ -1185,14 +1239,29 @@ pub fn draw_ui(
 
     // ── Help overlay ─────────────────────────────────────────────────────────
     if show_help {
-        render_help_overlay(frame, area);
+        render_help_overlay(frame, area, help_scroll);
     }
 }
 
 /// Render a centered help overlay listing all keyboard shortcuts.
-pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
-    let panel_w = 56u16.min(area.width);
-    let panel_h = 16u16.min(area.height);
+///
+/// On terminals where the panel is tall enough to display all content (≥ 16
+/// rows), the overlay behaves exactly as before.  On shorter terminals the
+/// content is scrollable: ↑/↓ arrows move through it one line at a time and
+/// the block title shows the current position.
+///
+/// `scroll_offset` is the raw value stored in [`AppState::help_scroll`]; the
+/// renderer clamps it to the maximum valid offset so callers never need to
+/// know the current terminal height.
+pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset: u16) {
+    // ── Dimensions ────────────────────────────────────────────────────────────
+    // Prefer the ideal 56×16 panel; shrink to fit the terminal but keep at
+    // least 4 rows (2 border + 2 visible content lines) so something useful
+    // is always shown.
+    let panel_w = HELP_OVERLAY_IDEAL_W.min(area.width);
+    let panel_h = HELP_OVERLAY_IDEAL_H
+        .min(area.height)
+        .max(HELP_OVERLAY_MIN_H.min(area.height));
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -1202,8 +1271,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
         height: panel_h,
     };
 
-    frame.render_widget(Clear, panel);
-
+    // ── Content lines ─────────────────────────────────────────────────────────
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             " Keyboard Shortcuts",
@@ -1212,7 +1280,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  \u{2191} / \u{2193}     Scroll subtitle pane"),
+        Line::from("  \u{2191} / \u{2193}     Scroll subtitles (or scroll this help)"),
         Line::from("  Home       Scroll to top"),
         Line::from("  End        Scroll to bottom / auto-follow"),
         Line::from("  Space      Pause / resume translation"),
@@ -1225,10 +1293,28 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
         Line::from("  q / Ctrl+C Quit \u{2014} shows session summary"),
     ];
 
+    // ── Scroll arithmetic ─────────────────────────────────────────────────────
+    // inner_h = visible lines inside the border (panel_h - 2 border rows).
+    // When all content fits there is no scrolling; otherwise clamp the
+    // caller-supplied offset and surface a position indicator in the title.
+    let max_scroll = help_overlay_max_scroll(area);
+    let clamped = scroll_offset.min(max_scroll);
+
+    let title: String = if max_scroll > 0 {
+        format!(
+            " Help [{}/{}] \u{2014} \u{2191}\u{2193} scroll \u{b7} Esc close ",
+            clamped, max_scroll,
+        )
+    } else {
+        " Help \u{2014} press ? or Esc to close ".to_string()
+    };
+
+    frame.render_widget(Clear, panel);
+
     frame.render_widget(
-        Paragraph::new(lines).block(
+        Paragraph::new(lines).scroll((clamped, 0)).block(
             Block::default()
-                .title(" Help \u{2014} press ? or Esc to close ")
+                .title(title)
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::White)),
         ),
