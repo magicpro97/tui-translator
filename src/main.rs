@@ -168,13 +168,42 @@ impl providers::CostReporter for metrics::CostCounter {
         metrics::CostCounter::record_synthesized_characters(self, count);
     }
 }
+/// Initialise the tracing subscriber, routing output to a log file so that
+/// diagnostic lines never reach the ConPTY terminal stream (issue #183).
+///
+/// The log file is `tui-translator.log` in the OS temp directory.  Appending
+/// is used so successive runs accumulate in one file without truncating earlier
+/// output.
+///
+/// Falls back to stderr if the log file cannot be opened (e.g. read-only
+/// filesystem), so the application still starts in restricted environments.
+fn init_tracing() {
+    let log_path = std::env::temp_dir().join("tui-translator.log");
+    if let Ok(file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "tui_translator=info".into()),
+            )
+            .with_writer(std::sync::Mutex::new(file))
+            .init();
+    } else {
+        // Fallback: write to stderr when the log file cannot be opened.
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "tui_translator=info".into()),
+            )
+            .init();
+    }
+}
+
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "tui_translator=info".into()),
-        )
-        .init();
+    init_tracing();
 
     tracing::info!("tui-translator starting");
 

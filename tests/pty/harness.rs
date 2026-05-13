@@ -17,11 +17,13 @@
 //! - [`PtySession::drop`] kills the child process unconditionally so test
 //!   failures never leave orphan processes.
 //!
-//! ## Why `RUST_LOG=off`
-//! The `tracing-subscriber` formatter writes structured log lines to *stderr*,
-//! which on a ConPTY slave is the same file descriptor as stdout.  Injecting
-//! `RUST_LOG=off` keeps the byte stream clean so the vt100 parser sees only
-//! ratatui's escape-sequence output.
+//! ## Log routing
+//! Since issue #183, `init_tracing()` in `src/main.rs` routes tracing output
+//! to a log file (`tui-translator.log` in the OS temp directory) rather than
+//! stderr.  Log lines therefore never enter the ConPTY byte stream, so the
+//! harness no longer needs to suppress logging via `RUST_LOG=off`.  Tests
+//! that want to exercise logging explicitly can pass `("RUST_LOG", "...")` in
+//! `extra_env`.
 
 #![allow(dead_code)]
 
@@ -78,7 +80,7 @@ impl PtySession {
     /// Spawn the binary in a PTY of the given dimensions.
     ///
     /// `extra_env` is a slice of `(key, value)` pairs appended to the child's
-    /// environment.  `RUST_LOG=off` is always prepended.
+    /// environment.
     ///
     /// The working directory is set to `std::env::temp_dir()` so no accidental
     /// `config.json` from the repository root is loaded.
@@ -94,8 +96,6 @@ impl PtySession {
             .map_err(|e| format!("openpty({cols}×{rows}): {e}"))?;
 
         let mut cmd = CommandBuilder::new(BINARY);
-        // Silence tracing output so it doesn't pollute the PTY byte stream.
-        cmd.env("RUST_LOG", "off");
         // Neutral working directory to avoid picking up a real config.json.
         cmd.cwd(std::env::temp_dir());
         for (k, v) in extra_env {
