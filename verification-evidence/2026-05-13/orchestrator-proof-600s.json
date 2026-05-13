@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "issue": "#32",
+  "harness_version": "0.1.0",
+  "started_at": "2026-05-13T04:28:44Z",
+  "ended_at": "2026-05-13T04:38:44Z",
+  "duration_secs": 600,
+  "device": {
+    "name": "Headphones (High Definition Audio Device)",
+    "native_sample_rate": 48000
+  },
+  "chunks": {
+    "delivered": 59951,
+    "stall_windows": 0,
+    "loss_percent": 0.0,
+    "longest_gap_ms": 40
+  },
+  "memory": {
+    "start_bytes": 12177408,
+    "end_bytes": 13508608,
+    "growth_bytes": 1331200,
+    "snapshots": [
+      {
+        "elapsed_secs": 30,
+        "rss_bytes": 13172736
+      },
+      {
+        "elapsed_secs": 60,
+        "rss_bytes": 13172736
+      },
+      {
+        "elapsed_secs": 90,
+        "rss_bytes": 13172736
+      },
+      {
+        "elapsed_secs": 120,
+        "rss_bytes": 13172736
+      },
+      {
+        "elapsed_secs": 150,
+        "rss_bytes": 13225984
+      },
+      {
+        "elapsed_secs": 180,
+        "rss_bytes": 13225984
+      },
+      {
+        "elapsed_secs": 210,
+        "rss_bytes": 13193216
+      },
+      {
+        "elapsed_secs": 240,
+        "rss_bytes": 13193216
+      },
+      {
+        "elapsed_secs": 270,
+        "rss_bytes": 13193216
+      },
+      {
+        "elapsed_secs": 300,
+        "rss_bytes": 13287424
+      },
+      {
+        "elapsed_secs": 330,
+        "rss_bytes": 13287424
+      },
+      {
+        "elapsed_secs": 360,
+        "rss_bytes": 13287424
+      },
+      {
+        "elapsed_secs": 390,
+        "rss_bytes": 13287424
+      },
+      {
+        "elapsed_secs": 420,
+        "rss_bytes": 13250560
+      },
+      {
+        "elapsed_secs": 450,
+        "rss_bytes": 13250560
+      },
+      {
+        "elapsed_secs": 480,
+        "rss_bytes": 13250560
+      },
+      {
+        "elapsed_secs": 510,
+        "rss_bytes": 13250560
+      },
+      {
+        "elapsed_secs": 540,
+        "rss_bytes": 13250560
+      },
+      {
+        "elapsed_secs": 570,
+        "rss_bytes": 13250560
+      }
+    ]
+  },
+  "thresholds": {
+    "max_memory_growth_bytes": 10485760,
+    "max_chunk_loss_percent": 5.0,
+    "min_duration_secs": 600
+  },
+  "capture_error": null,
+  "passed": true,
+  "failure_reasons": []
+}
