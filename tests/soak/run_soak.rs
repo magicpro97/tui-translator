@@ -97,8 +97,15 @@ pub mod thresholds {
     /// B-12: maximum subtitle latency in any 15-minute window, in milliseconds.
     pub const SUBTITLE_LATENCY_WINDOW_MAX_MS: u64 = 5_000;
 
-    /// B-13: maximum acceptable discrepancy ratio vs actual Google bill (fraction).
-    pub const COST_DISCREPANCY_MAX: f64 = 0.10;
+    /// B-13: advisory cost-accuracy target — displayed cost should be within
+    /// this fraction of the actual Google bill (evidence-required level from
+    /// docs/04-verification-plan.md §6.2).
+    pub const COST_DISCREPANCY_ADVISORY_MAX: f64 = 0.10;
+
+    /// B-13: release-blocker threshold — a discrepancy exceeding this fraction
+    /// of the actual Google bill blocks the release.
+    /// Source: docs/04-verification-plan.md §6.2 ("Release blocker: …more than 15%").
+    pub const COST_DISCREPANCY_BLOCKER_MAX: f64 = 0.15;
 
     /// B-14: maximum seconds the application may take to resume transcription
     /// after a transient network interruption is repaired.
@@ -413,14 +420,18 @@ pub struct ThresholdEvaluation {
     pub b12_subtitle_latency_avg: ThresholdResult,
     /// B-12 (window) — subtitle latency ≤ 5 s in any 15-minute window.
     pub b12_subtitle_latency_window: ThresholdResult,
-    /// B-13 — cost discrepancy ≤ 10% vs actual Google bill.
+    /// B-13 — cost discrepancy ≤ 10% advisory / ≤ 15% release-blocker vs actual Google bill.
     pub b13_cost_discrepancy: ThresholdResult,
     /// B-14 — recovery from network interruption within 60 seconds.
     pub b14_network_recovery: ThresholdResult,
     /// `true` when every *evaluated* threshold passed (UNEVALUABLE_PENDING
     /// thresholds are excluded from this flag).
     pub all_evaluated_pass: bool,
-    /// `true` when at least one threshold has `verdict == FAIL` — a release blocker.
+    /// `true` when at least one *release-blocker* threshold has `verdict == FAIL`.
+    ///
+    /// Advisory thresholds (e.g. `b10_cpu_typical` at ≤40%) are excluded; only
+    /// hard-gate thresholds defined as release blockers in the verification plan
+    /// contribute to this flag.
     pub any_blocker_triggered: bool,
 }
 
@@ -499,7 +510,13 @@ pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
         } else {
             let mut sorted = cpus.clone();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let median = sorted[sorted.len() / 2];
+            // True median: average the two middle elements for even-length arrays.
+            let n = sorted.len();
+            let median = if n % 2 == 1 {
+                sorted[n / 2]
+            } else {
+                (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+            };
             ThresholdResult {
                 blocker: "B-10".to_string(),
                 description: format!(
@@ -614,10 +631,11 @@ pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
     let b13_cost_discrepancy = ThresholdResult {
         blocker: "B-13".to_string(),
         description: format!(
-            "Cost discrepancy ≤ {:.0}% vs actual Google bill",
-            COST_DISCREPANCY_MAX * 100.0
+            "Cost discrepancy ≤ {:.0}% advisory / ≤ {:.0}% release-blocker vs actual Google bill",
+            COST_DISCREPANCY_ADVISORY_MAX * 100.0,
+            COST_DISCREPANCY_BLOCKER_MAX * 100.0,
         ),
-        limit: format!("{:.0}%", COST_DISCREPANCY_MAX * 100.0),
+        limit: format!("{:.0}%", COST_DISCREPANCY_BLOCKER_MAX * 100.0),
         measured: None,
         verdict: ThresholdVerdict::UnevaluablePending,
         pending_reason: Some(
@@ -721,7 +739,22 @@ pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
         &b14_network_recovery,
     ];
 
-    let any_blocker_triggered = all_results
+    // `b10_cpu_typical` (≤40% advisory) is NOT a release blocker.  The hard
+    // release-blocker for B-10 is the 60% sustained ceiling (`b10_cpu_any_sample`).
+    // Excluding the advisory result from `any_blocker_triggered` prevents a
+    // median slightly above 40% from falsely blocking a release.
+    let blocker_results = [
+        &b09_memory_growth,
+        &b10_cpu_any_sample,
+        &b11_chunk_loss_overall,
+        &b11_chunk_loss_window,
+        &b12_subtitle_latency_avg,
+        &b12_subtitle_latency_window,
+        &b13_cost_discrepancy,
+        &b14_network_recovery,
+    ];
+
+    let any_blocker_triggered = blocker_results
         .iter()
         .any(|r| r.verdict == ThresholdVerdict::Fail);
 
@@ -1133,8 +1166,11 @@ fn run_full_soak(args: Args) -> Result<()> {
             report.samples.push(sample);
             next_sample = now + sample_interval;
 
-            // Flush a partial report so we have evidence even if the run
-            // is aborted early.
+            // Flush a partial report so we have evidence even if the run is
+            // aborted early.  Compute threshold_evaluation first so every
+            // on-disk file is self-consistent (threshold_evaluation is never
+            // null in any file written to disk).
+            report.threshold_evaluation = Some(evaluate_thresholds(&report));
             let _ = write_json(&args.output, &report);
         }
 
@@ -1526,7 +1562,8 @@ mod tests {
         assert_eq!(thresholds::CHUNK_LOSS_WINDOW_MAX, 0.05);
         assert_eq!(thresholds::SUBTITLE_LATENCY_AVG_MAX_MS, 3_000);
         assert_eq!(thresholds::SUBTITLE_LATENCY_WINDOW_MAX_MS, 5_000);
-        assert_eq!(thresholds::COST_DISCREPANCY_MAX, 0.10);
+        assert_eq!(thresholds::COST_DISCREPANCY_ADVISORY_MAX, 0.10);
+        assert_eq!(thresholds::COST_DISCREPANCY_BLOCKER_MAX, 0.15);
         assert_eq!(thresholds::NETWORK_RECOVERY_MAX_SECS, 60);
     }
 
@@ -1628,5 +1665,80 @@ mod tests {
         let path = dir.path().join("nested").join("report.json");
         write_json(&path, &serde_json::json!({"ok": true})).unwrap();
         assert!(path.exists(), "write_json should create parent directories");
+    }
+
+    /// Even-length CPU sample set: true median (average of two middle elements)
+    /// must be used, not the upper-middle element.
+    ///
+    /// Sorted samples: [38.0, 39.0, 41.0, 42.0]
+    /// Correct median  = (39.0 + 41.0) / 2.0 = 40.0  → PASS (≤ 40% limit)
+    /// Buggy upper-mid = sorted[2]           = 41.0   → would be FAIL
+    #[test]
+    fn evaluate_thresholds_cpu_median_even_length_boundary() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        for cpu in [41.0f32, 38.0, 42.0, 39.0] {
+            r.samples.push(MetricSample {
+                elapsed_secs: 0,
+                timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+                memory_mb: Some(100.0),
+                cpu_pct: Some(cpu),
+                total_chunks_sent: None,
+                total_chunks_dropped: None,
+                api_failures: None,
+                latest_subtitle_latency_ms: None,
+                estimated_cost_usd: None,
+            });
+        }
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(
+            ev.b10_cpu_typical.verdict,
+            ThresholdVerdict::Pass,
+            "true median is 40.0% (exactly at the ≤40% limit) and must PASS"
+        );
+        assert_eq!(
+            ev.b10_cpu_typical.measured.as_deref(),
+            Some("40.0%"),
+            "measured median must be displayed as 40.0%"
+        );
+    }
+
+    /// CPU median above 40% (advisory fail) but all samples below 60% (hard
+    /// ceiling pass) must NOT trigger any_blocker_triggered.
+    ///
+    /// The 40% typical ceiling is advisory evidence; only the 60% hard ceiling
+    /// (`b10_cpu_any_sample`) is a real release blocker for B-10.
+    #[test]
+    fn evaluate_thresholds_cpu_advisory_fail_is_not_blocker() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        // Median = 45.0% — above advisory 40%, well below hard ceiling 60%.
+        for cpu in [42.0f32, 45.0, 48.0] {
+            r.samples.push(MetricSample {
+                elapsed_secs: 0,
+                timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+                memory_mb: Some(100.0),
+                cpu_pct: Some(cpu),
+                total_chunks_sent: None,
+                total_chunks_dropped: None,
+                api_failures: None,
+                latest_subtitle_latency_ms: None,
+                estimated_cost_usd: None,
+            });
+        }
+        let ev = evaluate_thresholds(&r);
+        assert_eq!(
+            ev.b10_cpu_typical.verdict,
+            ThresholdVerdict::Fail,
+            "advisory ceiling (40%) is exceeded — verdict must be FAIL"
+        );
+        assert_eq!(
+            ev.b10_cpu_any_sample.verdict,
+            ThresholdVerdict::Pass,
+            "hard ceiling (60%) is not exceeded — hard-ceiling verdict must be PASS"
+        );
+        assert!(
+            !ev.any_blocker_triggered,
+            "advisory failure alone must not trigger any_blocker_triggered; \
+             only the 60% hard ceiling is a release blocker for B-10"
+        );
     }
 }
