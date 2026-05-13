@@ -9,7 +9,7 @@ expression: "render_help(80, 24, 0)"
             ┌ Help — press ? or Esc to close ──────────────────────┐            
             │ Keyboard Shortcuts                                   │            
             │                                                      │            
-            │  ↑ / ↓     Scroll subtitles (or scroll this help)    │            
+            │  ↑ / ↓     Scroll subtitles/help                     │            
             │  Home       Scroll to top                            │            
             │  End        Scroll to bottom / auto-follow           │            
             │  Space      Pause / resume translation               │            

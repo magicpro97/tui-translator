@@ -1011,23 +1011,23 @@ fn handle_action(
     current_config: &Arc<Mutex<config::AppConfig>>,
     playback_service: &SharedPlaybackService,
 ) {
-    let expanded = state.metrics_expanded.load(Ordering::Relaxed);
-    let cost_warning_usd = current_config
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .cost_warning_usd;
-    let metrics_snap = state.metrics_snapshot();
-    let over_threshold =
-        expanded && cost_warning_usd > 0.0 && metrics_snap.estimated_cost_usd > cost_warning_usd;
-    let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
-
     match action {
         // Scrolling — when the help overlay is open, ↑/↓/Home/End scroll the
         // help panel instead of the subtitle pane (issue #191).
         UserAction::ScrollUp => {
             if state.show_help.load(Ordering::Relaxed) {
-                state.scroll_help_up();
+                state.scroll_help_up(u32::from(help_overlay_max_scroll(terminal_area)));
             } else {
+                let expanded = state.metrics_expanded.load(Ordering::Relaxed);
+                let cost_warning_usd = current_config
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .cost_warning_usd;
+                let metrics_snap = state.metrics_snapshot();
+                let over_threshold = expanded
+                    && cost_warning_usd > 0.0
+                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
+                let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
                 state
                     .subtitle_pane
                     .lock()
@@ -1039,6 +1039,16 @@ fn handle_action(
             if state.show_help.load(Ordering::Relaxed) {
                 state.scroll_help_down(u32::from(help_overlay_max_scroll(terminal_area)));
             } else {
+                let expanded = state.metrics_expanded.load(Ordering::Relaxed);
+                let cost_warning_usd = current_config
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .cost_warning_usd;
+                let metrics_snap = state.metrics_snapshot();
+                let over_threshold = expanded
+                    && cost_warning_usd > 0.0
+                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
+                let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
                 state
                     .subtitle_pane
                     .lock()
@@ -1050,6 +1060,16 @@ fn handle_action(
             if state.show_help.load(Ordering::Relaxed) {
                 state.scroll_help_to_top();
             } else {
+                let expanded = state.metrics_expanded.load(Ordering::Relaxed);
+                let cost_warning_usd = current_config
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .cost_warning_usd;
+                let metrics_snap = state.metrics_snapshot();
+                let over_threshold = expanded
+                    && cost_warning_usd > 0.0
+                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
+                let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
                 state
                     .subtitle_pane
                     .lock()
@@ -1700,6 +1720,45 @@ mod tests {
             state.help_scroll.load(Ordering::Relaxed),
             max_scroll.saturating_sub(1),
             "ScrollUp should move immediately after repeated ScrollDown presses"
+        );
+    }
+
+    #[test]
+    fn help_scroll_up_clamps_stale_offset_after_resize() {
+        let state = AppState::new();
+        state.show_help.store(true, Ordering::Relaxed);
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let short_terminal = Rect::new(0, 0, 80, 8);
+        let tall_terminal = Rect::new(0, 0, 80, 24);
+        let max_scroll = u32::from(help_overlay_max_scroll(short_terminal));
+
+        handle_action(
+            &UserAction::ScrollBottom,
+            &state,
+            short_terminal,
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+        assert_eq!(state.help_scroll.load(Ordering::Relaxed), max_scroll);
+
+        handle_action(
+            &UserAction::ScrollUp,
+            &state,
+            tall_terminal,
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        assert_eq!(
+            state.help_scroll.load(Ordering::Relaxed),
+            0,
+            "ScrollUp should clamp stale help_scroll to the resized max before decrementing"
         );
     }
 

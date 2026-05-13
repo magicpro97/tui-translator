@@ -694,11 +694,11 @@ impl AppState {
         self.show_help.store(!v, Ordering::Relaxed);
     }
 
-    /// Scroll the help overlay up by one line (no-op when already at top).
-    pub fn scroll_help_up(&self) {
+    /// Scroll the help overlay up by one line, clamped to `max_scroll`.
+    pub fn scroll_help_up(&self, max_scroll: u32) {
         let v = self.help_scroll.load(Ordering::Relaxed);
         self.help_scroll
-            .store(v.saturating_sub(1), Ordering::Relaxed);
+            .store(v.min(max_scroll).saturating_sub(1), Ordering::Relaxed);
     }
 
     /// Scroll the help overlay down by one line, clamped to `max_scroll`.
@@ -1280,7 +1280,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  \u{2191} / \u{2193}     Scroll subtitles (or scroll this help)"),
+        Line::from("  \u{2191} / \u{2193}     Scroll subtitles/help"),
         Line::from("  Home       Scroll to top"),
         Line::from("  End        Scroll to bottom / auto-follow"),
         Line::from("  Space      Pause / resume translation"),
