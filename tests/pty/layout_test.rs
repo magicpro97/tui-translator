@@ -49,7 +49,8 @@ fn assert_initial_frame(session: &PtySession, label: &str) {
 /// 1. Control hints bar occupies the very last row and contains "Space" and "Q
 ///    quit".
 /// 2. "TUI Translator" appears in the title-bar area (rows 0–2).
-/// 3. At least one row contains "Subtitles" (the subtitle-pane border title).
+/// 3. The subtitle region is present; in auth-error state the banner can cover
+///    the border title, so the empty-pane text is accepted too.
 /// 4. No `[SRC]` or `[TGT]` pairs are visible on an empty startup.
 fn check_layout(session: &PtySession, cols: u16, rows: u16) {
     // ── Control hints bar — must be in the last row ───────────────────────────
@@ -79,10 +80,12 @@ fn check_layout(session: &PtySession, cols: u16, rows: u16) {
 
     // ── Subtitle pane — bordered widget with "Subtitles" title ────────────────
     let all_rows = session.all_rows();
-    let has_subtitle_border = all_rows.iter().any(|r| r.contains("Subtitles"));
+    let has_subtitle_region = all_rows
+        .iter()
+        .any(|r| r.contains("Subtitles") || r.contains("No subtitles yet."));
     assert!(
-        has_subtitle_border,
-        "subtitle pane border ('Subtitles') not found in {cols}×{rows} layout",
+        has_subtitle_region,
+        "subtitle region not found in {cols}×{rows} layout",
     );
 
     // ── Empty startup — no subtitle pairs yet ─────────────────────────────────
@@ -107,7 +110,9 @@ fn wait_for_layout(session: &PtySession, cols: u16, rows: u16, timeout: Duration
         if last_row.contains("Q quit")
             && last_row.contains("Space")
             && title_area.contains("TUI Translator")
-            && all_rows.iter().any(|r| r.contains("Subtitles"))
+            && all_rows
+                .iter()
+                .any(|r| r.contains("Subtitles") || r.contains("No subtitles yet."))
         {
             return true;
         }
