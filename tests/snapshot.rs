@@ -117,7 +117,7 @@ fn render_full_ui(width: u16, height: u16) -> String {
     let state = AppState::new();
     terminal
         .draw(|frame| {
-            draw_ui(frame, &state, "Test Device", 0.0, false, 0.0);
+            draw_ui(frame, &state, 0.0, false, 0.0);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -155,13 +155,13 @@ fn render_overlay_then_ui(width: u16, height: u16) -> String {
     );
     terminal
         .draw(|frame| {
-            draw_ui(frame, &state, "Test Device", 0.0, false, 0.0);
+            draw_ui(frame, &state, 0.0, false, 0.0);
         })
         .unwrap();
     state.close_config_editor();
     terminal
         .draw(|frame| {
-            draw_ui(frame, &state, "Test Device", 0.0, false, 0.0);
+            draw_ui(frame, &state, 0.0, false, 0.0);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())

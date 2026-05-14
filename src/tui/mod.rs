@@ -804,6 +804,13 @@ pub struct AppState {
     pub source_language: Arc<Mutex<String>>,
     /// Currently selected translation target language code.
     pub target_language: Arc<Mutex<String>>,
+    /// Human-readable capture device label shown in the audio gauge title.
+    ///
+    /// Holds `"Default device"` when no explicit `capture_device` is configured, or the
+    /// configured device name when one has been selected.  Updated at startup and on every
+    /// config hot-reload so the operator always sees the active setting without having to
+    /// open the settings overlay.
+    pub capture_device_label: Arc<Mutex<String>>,
     /// Current STT engine state; updated by the pipeline.
     pub stt_state: Arc<Mutex<SttState>>,
     /// Accumulated session metrics; written by the pipeline, published to
@@ -862,6 +869,7 @@ impl AppState {
             config_editor: Mutex::new(None),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("vi".to_string())),
+            capture_device_label: Arc::new(Mutex::new("Default device".to_string())),
             stt_state: Arc::new(Mutex::new(SttState::default())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
             cost_counter: Arc::new(CostCounter::new()),
@@ -969,6 +977,29 @@ impl AppState {
                 warn!("target_language mutex was poisoned; recovering last known state");
                 let mut guard = poisoned.into_inner();
                 *guard = next;
+            }
+        }
+    }
+
+    /// Current source language code forwarded to the STT provider.
+    pub fn source_language(&self) -> String {
+        match self.source_language.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => {
+                warn!("source_language mutex was poisoned; recovering last known state");
+                poisoned.into_inner().clone()
+            }
+        }
+    }
+
+    /// Human-readable capture device label: `"Default device"` when no explicit device is
+    /// configured, or the configured device name when one has been selected.
+    pub fn capture_device_label(&self) -> String {
+        match self.capture_device_label.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => {
+                warn!("capture_device_label mutex was poisoned; recovering last known state");
+                poisoned.into_inner().clone()
             }
         }
     }
@@ -1310,10 +1341,12 @@ impl Widget for &ControlHintsBar {
 /// widgets: title bar with STT indicator, audio gauge, subtitle pane,
 /// status/metrics strip, the always-visible control hints bar (issue #65),
 /// and any active overlays (help, language prompt, auth-error banner, quit summary).
+///
+/// The audio gauge title is derived from [`AppState::capture_device_label`] so
+/// operators see the configured capture source at a glance (issue #197).
 pub fn draw_ui(
     frame: &mut ratatui::Frame,
     state: &AppState,
-    device_name: &str,
     audio_level: f64,
     show_restart_notice: bool,
     cost_warning_usd: f64,
@@ -1345,6 +1378,7 @@ pub fn draw_ui(
     let paused = state.paused.load(Ordering::Relaxed);
     let lang_active = state.lang_prompt_active.load(Ordering::Relaxed);
     let config_editor_active = state.config_editor_active.load(Ordering::Relaxed);
+    let source_language = state.source_language();
     let target_language = state.target_language();
     let stt = state.stt_state_snapshot();
     let metrics = state.metrics_snapshot();
@@ -1385,6 +1419,12 @@ pub fn draw_ui(
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled("   \u{2502}   ", Style::default().fg(Color::DarkGray)),
+        // Issue #197: surface active language pair so operators can verify
+        // source → target at a glance before relying on subtitles.
+        Span::styled(source_language, Style::default().fg(Color::Cyan)),
+        Span::styled(" \u{2192} ", Style::default().fg(Color::DarkGray)),
+        Span::styled(target_language.clone(), Style::default().fg(Color::Green)),
         Span::styled("   \u{2502}   ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             stt.label(),
@@ -1428,7 +1468,12 @@ pub fn draw_ui(
     } else {
         Color::Red
     };
-    let device_display = truncate_device_name(device_name, MAX_DEVICE_NAME_COLS);
+    // Issue #197: show the configured capture device label ("Default device" when
+    // no explicit device is configured) so operators can verify the capture
+    // endpoint at a glance.  `device_name` continues to hold the runtime WASAPI
+    // name used internally; the label is the operator-facing config summary.
+    let capture_label = state.capture_device_label();
+    let device_display = truncate_device_name(&capture_label, MAX_DEVICE_NAME_COLS);
     let bar_title = format!(" Audio \u{2014} {device_display} ");
     frame.render_widget(
         Gauge::default()
@@ -1966,6 +2011,106 @@ mod tests {
         })
         .join();
         assert_eq!(state.device_name_str(), "WASAPI Speakers");
+    }
+
+    // ── Issue #197 — language pair and capture device label ─────────────────
+
+    #[test]
+    fn new_state_defaults_source_language_to_ja_jp() {
+        let state = AppState::new();
+        assert_eq!(state.source_language(), "ja-JP");
+    }
+
+    #[test]
+    fn new_state_defaults_capture_device_label_to_default_device() {
+        let state = AppState::new();
+        assert_eq!(state.capture_device_label(), "Default device");
+    }
+
+    #[test]
+    fn capture_device_label_reflects_configured_device() {
+        let state = AppState::new();
+        *state.capture_device_label.lock().unwrap() = "Speakers (Realtek Audio)".to_string();
+        assert_eq!(state.capture_device_label(), "Speakers (Realtek Audio)");
+    }
+
+    #[test]
+    fn draw_ui_title_bar_contains_language_pair() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new();
+        // Set a recognisable language pair.
+        *state.source_language.lock().unwrap() = "en-US".to_string();
+        *state.target_language.lock().unwrap() = "fr".to_string();
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            rendered.contains("en-US"),
+            "title bar should contain source language; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("fr"),
+            "title bar should contain target language; got: {rendered:?}"
+        );
+        // Arrow separator between source and target.
+        assert!(
+            rendered.contains('\u{2192}'),
+            "title bar should contain → arrow; got: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn draw_ui_audio_gauge_shows_default_device_label() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new(); // capture_device_label defaults to "Default device"
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            rendered.contains("Default device"),
+            "audio gauge should show 'Default device' when no explicit device is configured; got: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn draw_ui_audio_gauge_shows_configured_device_label() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new();
+        *state.capture_device_label.lock().unwrap() = "Speakers (Realtek Audio)".to_string();
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            rendered.contains("Speakers (Realtek"),
+            "audio gauge should show configured device name; got: {rendered:?}"
+        );
     }
 
     #[test]
