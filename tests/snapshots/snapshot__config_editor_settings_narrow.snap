@@ -1,0 +1,18 @@
+---
+source: tests/snapshot.rs
+expression: "render_config_editor(&editor, 60, 16)"
+---
+                                                            
+┌ Settings ────────────────────────────────────────────────┐
+│ Edit the saved config and press Enter to persist changes.│
+│ Path: C:\Users\demo\.tui-translator\config.json          │
+│                                                          │
+│  Source language : ja-JP                                 │
+│> Target language : vi_                                   │
+│  Google API key  : —                                     │
+│  Audio source    : wasapi                                │
+│  Audio file path : —                                     │
+│                                                          │
+│ Tab/Down: next   Shift+Tab/Up: previous   Enter: save    │
+│Esc: close                                                │
+└──────────────────────────────────────────────────────────┘

@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 use std::{
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
@@ -21,10 +22,12 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, Paragraph, Widget},
+    widgets::{Block, Borders, Clear, Gauge, Paragraph, Widget, Wrap},
 };
 use tracing::warn;
 use unicode_width::UnicodeWidthChar;
+
+use crate::config::AppConfig;
 
 pub use crate::metrics::{
     format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttState,
@@ -80,6 +83,18 @@ pub enum UserAction {
     LangCancel,
     /// Backspace while the language prompt is active.
     LangBackspace,
+    /// S — open the config editor / settings overlay.
+    OpenSettings,
+    /// A printable character typed while the config editor is active.
+    ConfigChar(char),
+    /// Backspace while the config editor is active.
+    ConfigBackspace,
+    /// Move to the next config-editor field.
+    ConfigNextField,
+    /// Move to the previous config-editor field.
+    ConfigPrevField,
+    /// Save the current config-editor contents.
+    ConfigSave,
     /// T — toggle translated audio on or off.
     ToggleTts,
     /// M — expand or collapse the detailed metrics view.
@@ -102,6 +117,116 @@ pub enum UserAction {
     ScrollBottom,
     /// Any other key that should wake generic "press any key" waits.
     AnyKey,
+}
+
+/// Mode for the shared config editor overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigEditorMode {
+    /// First-run setup shown automatically when no home config exists.
+    Onboarding,
+    /// User-opened settings editor for later edits.
+    Settings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfigEditorField {
+    SourceLanguage,
+    TargetLanguage,
+    GoogleApiKey,
+    AudioSource,
+    AudioFilePath,
+}
+
+impl ConfigEditorField {
+    const ALL: [Self; 5] = [
+        Self::SourceLanguage,
+        Self::TargetLanguage,
+        Self::GoogleApiKey,
+        Self::AudioSource,
+        Self::AudioFilePath,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::SourceLanguage => "Source language",
+            Self::TargetLanguage => "Target language",
+            Self::GoogleApiKey => "Google API key",
+            Self::AudioSource => "Audio source",
+            Self::AudioFilePath => "Audio file path",
+        }
+    }
+}
+
+/// Mutable data shown in the onboarding/settings overlay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigEditorState {
+    pub mode: ConfigEditorMode,
+    pub selected_field: usize,
+    pub source_language: String,
+    pub target_language: String,
+    pub google_api_key: String,
+    pub audio_source: String,
+    pub audio_file_path: String,
+    pub config_path: String,
+    pub status_message: Option<String>,
+}
+
+impl ConfigEditorState {
+    pub fn from_config(config: &AppConfig, config_path: &Path, mode: ConfigEditorMode) -> Self {
+        Self {
+            mode,
+            selected_field: 0,
+            source_language: config.source_language.clone(),
+            target_language: config.target_language.clone(),
+            google_api_key: config.google_api_key.clone().unwrap_or_default(),
+            audio_source: config.audio_source.clone(),
+            audio_file_path: config.audio_file_path.clone().unwrap_or_default(),
+            config_path: config_path.display().to_string(),
+            status_message: None,
+        }
+    }
+
+    fn active_field(&self) -> ConfigEditorField {
+        ConfigEditorField::ALL[self.selected_field.min(ConfigEditorField::ALL.len() - 1)]
+    }
+
+    fn active_field_mut(&mut self) -> &mut String {
+        match self.active_field() {
+            ConfigEditorField::SourceLanguage => &mut self.source_language,
+            ConfigEditorField::TargetLanguage => &mut self.target_language,
+            ConfigEditorField::GoogleApiKey => &mut self.google_api_key,
+            ConfigEditorField::AudioSource => &mut self.audio_source,
+            ConfigEditorField::AudioFilePath => &mut self.audio_file_path,
+        }
+    }
+
+    pub fn push_char(&mut self, c: char) {
+        self.active_field_mut().push(c);
+        self.status_message = None;
+    }
+
+    pub fn backspace(&mut self) {
+        self.active_field_mut().pop();
+        self.status_message = None;
+    }
+
+    pub fn next_field(&mut self) {
+        self.selected_field = (self.selected_field + 1) % ConfigEditorField::ALL.len();
+        self.status_message = None;
+    }
+
+    pub fn prev_field(&mut self) {
+        if self.selected_field == 0 {
+            self.selected_field = ConfigEditorField::ALL.len() - 1;
+        } else {
+            self.selected_field -= 1;
+        }
+        self.status_message = None;
+    }
+
+    pub fn set_status_message(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+    }
 }
 
 // ── SubtitlePair ─────────────────────────────────────────────────────────────
@@ -621,6 +746,10 @@ pub struct AppState {
     pub lang_prompt_active: Arc<AtomicBool>,
     /// Text being typed in the language-change prompt.
     pub lang_input: Mutex<String>,
+    /// Whether the shared config editor overlay is active.
+    pub config_editor_active: Arc<AtomicBool>,
+    /// State for the shared first-run / settings editor overlay.
+    pub config_editor: Mutex<Option<ConfigEditorState>>,
     /// BCP-47 source language code forwarded to the STT provider.
     /// Updated on hot-reload so the running orchestrator sees the new value.
     pub source_language: Arc<Mutex<String>>,
@@ -680,6 +809,8 @@ impl AppState {
             paused: Arc::new(AtomicBool::new(false)),
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
+            config_editor_active: Arc::new(AtomicBool::new(false)),
+            config_editor: Mutex::new(None),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("vi".to_string())),
             stt_state: Arc::new(Mutex::new(SttState::default())),
@@ -807,6 +938,41 @@ impl AppState {
     /// blocks the UI thread.
     pub fn metrics_snapshot(&self) -> MetricsSnapshot {
         self.metrics_rx.borrow().clone()
+    }
+
+    pub fn open_config_editor(
+        &self,
+        mode: ConfigEditorMode,
+        config: &AppConfig,
+        config_path: &Path,
+    ) {
+        self.show_help.store(false, Ordering::Relaxed);
+        self.lang_prompt_active.store(false, Ordering::Relaxed);
+        *self.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) =
+            Some(ConfigEditorState::from_config(config, config_path, mode));
+        self.config_editor_active.store(true, Ordering::Relaxed);
+    }
+
+    pub fn close_config_editor(&self) {
+        self.config_editor_active.store(false, Ordering::Relaxed);
+        *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    pub fn config_editor_snapshot(&self) -> Option<ConfigEditorState> {
+        self.config_editor
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    pub fn with_config_editor_mut<R>(
+        &self,
+        f: impl FnOnce(&mut ConfigEditorState) -> R,
+    ) -> Option<R> {
+        let mut guard = self.config_editor.lock().unwrap_or_else(|p| p.into_inner());
+        let editor = guard.as_mut()?;
+        Some(f(editor))
     }
 }
 
@@ -1070,10 +1236,11 @@ impl Widget for &ControlHintsBar {
         //   < 80  cols → abbreviated
         //  ≥ 80  cols → standard hints including all required controls (issue #64/#65)
         let text = if area.width < 80 {
-            " ?  Spc  T  L  M  R  Q ".to_string()
+            " ?  Spc  T  L  S  M  R  Q ".to_string()
         } else {
             let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  M metrics  R reload  Q quit ".to_string()
+            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit "
+                .to_string()
         };
 
         buf.set_stringn(
@@ -1128,6 +1295,7 @@ pub fn draw_ui(
     let help_scroll = state.help_scroll.load(Ordering::Relaxed) as u16;
     let paused = state.paused.load(Ordering::Relaxed);
     let lang_active = state.lang_prompt_active.load(Ordering::Relaxed);
+    let config_editor_active = state.config_editor_active.load(Ordering::Relaxed);
     let target_language = state.target_language();
     let stt = state.stt_state_snapshot();
     let metrics = state.metrics_snapshot();
@@ -1282,6 +1450,12 @@ pub fn draw_ui(
         render_language_prompt(frame, area, &input);
     }
 
+    if config_editor_active {
+        if let Some(editor) = state.config_editor_snapshot() {
+            render_config_editor(frame, area, &editor);
+        }
+    }
+
     // ── Help overlay ─────────────────────────────────────────────────────────
     if show_help {
         render_help_overlay(frame, area, help_scroll);
@@ -1332,6 +1506,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from("  T          Toggle TTS audio output"),
         Line::from("  M          Toggle metrics panel (compact/expanded)"),
         Line::from("  L          Change target language"),
+        Line::from("  S          Open settings editor"),
         Line::from("  R          Reload config from disk"),
         Line::from("  ?          Show / hide this help"),
         Line::from("  Esc        Dismiss this overlay"),
@@ -1409,6 +1584,118 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
         ),
         panel,
     );
+}
+
+/// Render the shared first-run / settings editor overlay.
+pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &ConfigEditorState) {
+    let panel_w = 76u16.min(area.width);
+    let panel_h = 13u16.min(area.height);
+    let x = area.x + area.width.saturating_sub(panel_w) / 2;
+    let y = area.y + area.height.saturating_sub(panel_h) / 2;
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(Clear, panel);
+
+    let title = match editor.mode {
+        ConfigEditorMode::Onboarding => " First-Run Setup ",
+        ConfigEditorMode::Settings => " Settings ",
+    };
+    let intro = match editor.mode {
+        ConfigEditorMode::Onboarding => {
+            " Save your initial config to the home folder, then restart if prompted."
+        }
+        ConfigEditorMode::Settings => " Edit the saved config and press Enter to persist changes.",
+    };
+
+    let lines = vec![
+        Line::from(Span::styled(intro, Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            format!(" Path: {}", editor.config_path),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        config_editor_field_line(
+            ConfigEditorField::SourceLanguage,
+            &editor.source_language,
+            editor.active_field(),
+        ),
+        config_editor_field_line(
+            ConfigEditorField::TargetLanguage,
+            &editor.target_language,
+            editor.active_field(),
+        ),
+        config_editor_field_line(
+            ConfigEditorField::GoogleApiKey,
+            &editor.google_api_key,
+            editor.active_field(),
+        ),
+        config_editor_field_line(
+            ConfigEditorField::AudioSource,
+            &editor.audio_source,
+            editor.active_field(),
+        ),
+        config_editor_field_line(
+            ConfigEditorField::AudioFilePath,
+            &editor.audio_file_path,
+            editor.active_field(),
+        ),
+        Line::from(""),
+        Line::from(Span::styled(
+            " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            " Use audio_source=wasapi for live system audio or file for a WAV replay path.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            editor
+                .status_message
+                .clone()
+                .unwrap_or_else(|| " Ready to save.".to_string()),
+            Style::default().fg(Color::Yellow),
+        )),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Cyan)),
+        ),
+        panel,
+    );
+}
+
+fn config_editor_field_line(
+    field: ConfigEditorField,
+    value: &str,
+    active_field: ConfigEditorField,
+) -> Line<'static> {
+    let is_active = field == active_field;
+    let prefix = if is_active { "> " } else { "  " };
+    let display_value = if value.is_empty() { "—" } else { value };
+    let style = if is_active {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    Line::from(vec![
+        Span::styled(prefix, style),
+        Span::styled(format!("{:<16}", field.label()), style),
+        Span::raw(": "),
+        Span::styled(display_value.to_string(), style),
+        Span::styled(if is_active { "_" } else { "" }, style),
+    ])
 }
 
 /// Render a persistent auth-error banner as a floating overlay (#86).

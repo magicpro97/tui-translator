@@ -109,6 +109,7 @@ impl CostCounter {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .total_usd()
+            .max(0.0)
     }
 
     /// Return `true` when the current estimate is above `threshold_usd`.
@@ -137,6 +138,11 @@ impl CostCounter {
 /// assert_eq!(format_cost_display(1.5),    "~$1.500");
 /// ```
 pub fn format_cost_display(cost_usd: f64) -> String {
+    let cost_usd = if cost_usd.is_finite() {
+        cost_usd.max(0.0)
+    } else {
+        0.0
+    };
     // Ceiling at 3 decimal places (nearest 0.001 USD / 0.1 cent).
     let rounded = (cost_usd * 1000.0).ceil() / 1000.0;
     format!("~${:.3}", rounded)
@@ -326,6 +332,16 @@ mod tests {
     #[test]
     fn format_zero_is_tilde_zero() {
         assert_eq!(format_cost_display(0.0), "~$0.000");
+    }
+
+    #[test]
+    fn format_negative_cost_clamps_to_zero() {
+        assert_eq!(format_cost_display(-0.13), "~$0.000");
+    }
+
+    #[test]
+    fn format_nan_cost_clamps_to_zero() {
+        assert_eq!(format_cost_display(f64::NAN), "~$0.000");
     }
 
     #[test]

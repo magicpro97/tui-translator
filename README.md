@@ -31,6 +31,9 @@ speakers.
 > implemented on `main`.
 > Packaged GitHub Releases remain **pre-releases** until Layer 5 human
 > acceptance (issues #115–#122) is completed by named reviewers.
+> First-run setup, per-user config storage under `~\.tui-translator`, and the
+> in-app settings entry point are now included in the pre-release builds.
+> Per-device WASAPI selection is still pending.
 
 ---
 
@@ -56,8 +59,13 @@ Packaged builds are published on the
 > The runtime is feature-complete on `main`, but the final human review
 > gate is still pending.
 
-The setup flow for both the installer and the portable zip is documented in
-**[USAGE.md](USAGE.md)**.
+Each published release package includes at least:
+
+1. `tui-translator.exe`
+2. `config.example.json`
+3. `USAGE.md`
+
+The packaged flow is documented in **[USAGE.md](USAGE.md)**.
 
 ---
 
@@ -68,11 +76,12 @@ The setup flow for both the installer and the portable zip is documented in
 > **Feature-complete pre-release lane.**  
 > Packaged Windows builds are published on the
 > [Releases page](https://github.com/magicpro97/tui-translator/releases).
-> Each pre-release includes both a per-user Windows installer and a portable zip.
-> The installed or extracted app is self-contained (no VC++ Redistributable
-> needed). The application captures Zoom audio through WASAPI loopback,
-> uses Google STT/MT/TTS when configured, and exposes the full TUI controls
-> and metrics panels.
+> The packaged app is self-contained (no VC++ Redistributable needed).
+> First launch opens an onboarding flow and writes user config under
+> `%USERPROFILE%\.tui-translator\config.json`.
+> The application captures Zoom audio through WASAPI loopback,
+> uses Google STT/MT/TTS when configured, and exposes the full TUI controls,
+> settings overlay, and metrics panels.
 > A valid Google Cloud API key and an active Windows playback device are
 > required for live subtitle generation.
 > Layer 5 human-acceptance (issues #115–#122) is not yet complete;
@@ -102,7 +111,8 @@ If you want to try the current build from source:
 | L | Change the target language |
 | T | Toggle translated audio on or off |
 | M | Show or hide the detailed metrics panel |
-| R | Reload your `config.json` without restarting |
+| S | Open the in-app settings editor |
+| R | Reload your saved config without restarting |
 | ? | Show the help screen |
 | Q or Ctrl+C | Quit and see a session summary |
 
@@ -137,7 +147,15 @@ cargo fmt --check   # no formatting issues
 
 ## Configuration file reference
 
-Copy `config.example.json` to `config.json` and edit the values:
+Normal interactive runs use:
+
+```text
+%USERPROFILE%\.tui-translator\config.json
+```
+
+On first launch, the app opens a setup overlay and can create this file for
+you. Advanced users can still copy `config.example.json` manually and edit it
+before launch:
 
 ```jsonc
 {
@@ -149,7 +167,8 @@ Copy `config.example.json` to `config.json` and edit the values:
 }
 ```
 
-`config.json` is listed in `.gitignore` and will never be committed.
+The per-user `config.json` is listed in `.gitignore` patterns and should never
+be committed.
 Never put your real API key in `config.example.json`.
 
 ---
@@ -159,12 +178,12 @@ Never put your real API key in `config.example.json`.
 ```
 tui-translator/
 ├── src/
-│   ├── main.rs          Entry point; wires audio, pipeline, TUI, metrics
-│   ├── config/          Configuration loading (config.json)
+│   ├── main.rs          Entry point; wires audio, pipeline, onboarding, and TUI
+│   ├── config/          Configuration loading and per-user config persistence
 │   ├── audio/           Windows WASAPI loopback capture
 │   ├── pipeline/        Audio → STT → translate → display orchestration
 │   ├── providers/       Provider traits and Google implementations
-│   ├── tui/             Terminal user interface and runtime controls
+│   ├── tui/             Terminal user interface, overlays, and runtime controls
 │   └── metrics/         Cost counter and session statistics
 ├── docs/                Design, requirements, verification, and roadmap
 ├── Cargo.toml           Rust package manifest

@@ -1,7 +1,8 @@
 //! Configuration loading and live-reload support.
 //!
-//! The application reads a `config.json` file next to the executable.
-//! This module owns all parsing, validation, and hot-reload logic.
+//! The application reads a `config.json` file from the user's home directory by
+//! default (`~/.tui-translator/config.json` on Windows).
+//! This module owns all parsing, validation, persistence, and hot-reload logic.
 //! See `config.example.json` in the repository root for the full list of
 //! supported keys and per-field documentation.
 
@@ -16,6 +17,15 @@ use std::sync::{
 };
 use std::time::Duration;
 use tokio::sync::watch;
+
+/// Whether `load_with_state` found a persisted config file or fell back to defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadState {
+    /// `config.json` existed and was parsed successfully.
+    Found,
+    /// `config.json` was missing, so built-in defaults were returned.
+    Missing,
+}
 
 /// Top-level application configuration, parsed from `config.json`.
 ///
@@ -170,15 +180,37 @@ impl AppConfig {
     pub fn requires_restart(&self, next: &AppConfig) -> bool {
         self.google_api_key != next.google_api_key
             || self.tts_output_device != next.tts_output_device
+            || self.audio_source != next.audio_source
+            || self.audio_file_path != next.audio_file_path
     }
 }
 
-/// Load configuration from `path`.  Returns built-in defaults if the file
-/// does not exist so the app can always start without crashing.
+/// Return the user's home directory.
+pub fn home_dir() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
+        return Ok(PathBuf::from(path));
+    }
+    if let Some(path) = std::env::var_os("HOME").filter(|p| !p.is_empty()) {
+        return Ok(PathBuf::from(path));
+    }
+    bail!("could not resolve a home directory from USERPROFILE or HOME");
+}
+
+/// Return the default configuration directory under the user's home directory.
+pub fn default_config_dir() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".tui-translator"))
+}
+
+/// Return the default configuration file path under the user's home directory.
+pub fn default_config_path() -> Result<PathBuf> {
+    Ok(default_config_dir()?.join("config.json"))
+}
+
+/// Load configuration from `path` and report whether the file existed.
 ///
 /// Returns `Err` when the file exists but contains invalid JSON or fails
 /// semantic validation.
-pub fn load(path: &Path) -> Result<AppConfig> {
+pub fn load_with_state(path: &Path) -> Result<(AppConfig, LoadState)> {
     if !path
         .try_exists()
         .with_context(|| format!("failed to access {}", path.display()))?
@@ -188,7 +220,7 @@ pub fn load(path: &Path) -> Result<AppConfig> {
             "config.json not found — using built-in defaults. \
              Copy config.example.json to config.json to customise."
         );
-        return Ok(AppConfig::default());
+        return Ok((AppConfig::default(), LoadState::Missing));
     }
 
     let raw = std::fs::read_to_string(path)
@@ -208,7 +240,50 @@ pub fn load(path: &Path) -> Result<AppConfig> {
         "configuration loaded"
     );
 
-    Ok(cfg)
+    Ok((cfg, LoadState::Found))
+}
+
+/// Load configuration from `path`.  Returns built-in defaults if the file
+/// does not exist so the app can always start without crashing.
+pub fn load(path: &Path) -> Result<AppConfig> {
+    load_with_state(path).map(|(cfg, _)| cfg)
+}
+
+/// Persist configuration to `path`, creating the parent directory if needed.
+pub fn write_config(path: &Path, cfg: &AppConfig) -> Result<()> {
+    cfg.validate()
+        .with_context(|| format!("config for {} failed validation", path.display()))?;
+
+    let parent = path
+        .parent()
+        .context("config path must have a parent directory")?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create {}", parent.display()))?;
+
+    let payload =
+        serde_json::to_string_pretty(cfg).context("failed to serialize config as JSON")? + "\n";
+    let tmp_path = parent.join("config.json.tmp");
+    std::fs::write(&tmp_path, payload)
+        .with_context(|| format!("failed to write temporary config {}", tmp_path.display()))?;
+
+    if path
+        .try_exists()
+        .with_context(|| format!("failed to access {}", path.display()))?
+    {
+        std::fs::remove_file(path)
+            .with_context(|| format!("failed to replace {}", path.display()))?;
+    }
+
+    std::fs::rename(&tmp_path, path).with_context(|| {
+        format!(
+            "failed to move temporary config {} into {}",
+            tmp_path.display(),
+            path.display()
+        )
+    })?;
+
+    tracing::info!(path = %path.display(), "configuration written");
+    Ok(())
 }
 
 /// Start a background thread that watches `path` for file-system changes.
@@ -260,6 +335,14 @@ fn run_watcher_loop(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| config_path.clone());
+
+    if let Err(err) = std::fs::create_dir_all(&watch_dir) {
+        tracing::error!(
+            path = %watch_dir.display(),
+            "config watcher: cannot create watch directory: {err}"
+        );
+        return;
+    }
 
     if let Err(e) = watcher.watch(&watch_dir, RecursiveMode::NonRecursive) {
         tracing::error!(path = %watch_dir.display(), "config watcher: cannot watch: {e}");
@@ -330,7 +413,9 @@ mod tests {
         atomic::{AtomicBool, Ordering},
         Arc,
     };
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn default_config_is_valid() {
@@ -350,8 +435,10 @@ mod tests {
         let missing_path = temp_path.to_path_buf();
         drop(temp_path);
 
-        let cfg = load(&missing_path).expect("should return default, not error");
+        let (cfg, state) =
+            load_with_state(&missing_path).expect("should return default, not error");
         assert_eq!(cfg.source_language, "ja-JP");
+        assert_eq!(state, LoadState::Missing);
     }
 
     #[test]
@@ -428,6 +515,44 @@ mod tests {
         };
         cfg.validate()
             .expect("absent google_api_key should be accepted at startup");
+    }
+
+    #[test]
+    fn default_config_path_uses_home_directory() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let home = TempDir::new().unwrap();
+        // SAFETY: serialized by ENV_LOCK.
+        unsafe {
+            std::env::set_var("USERPROFILE", home.path());
+            std::env::remove_var("HOME");
+        }
+
+        let path = default_config_path().unwrap();
+
+        // SAFETY: serialized by ENV_LOCK.
+        unsafe {
+            std::env::remove_var("USERPROFILE");
+        }
+
+        assert_eq!(
+            path,
+            home.path().join(".tui-translator").join("config.json")
+        );
+    }
+
+    #[test]
+    fn write_config_creates_parent_directory() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join(".tui-translator").join("config.json");
+        let cfg = AppConfig {
+            google_api_key: Some("demo-key".to_string()),
+            ..AppConfig::default()
+        };
+
+        write_config(&path, &cfg).unwrap();
+
+        let persisted = load(&path).unwrap();
+        assert_eq!(persisted.google_api_key.as_deref(), Some("demo-key"));
     }
 
     #[test]

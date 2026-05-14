@@ -1,0 +1,20 @@
+---
+source: tests/snapshot.rs
+expression: "render_config_editor(&editor, 90, 20)"
+---
+                                                                                          
+                                                                                          
+                                                                                          
+       ┌ First-Run Setup ─────────────────────────────────────────────────────────┐       
+       │ Save your initial config to the home folder, then restart if prompted.   │       
+       │ Path: C:\Users\demo\.tui-translator\config.json                          │       
+       │                                                                          │       
+       │> Source language : ja-JP_                                                │       
+       │  Target language : vi                                                    │       
+       │  Google API key  : demo-key                                              │       
+       │  Audio source    : wasapi                                                │       
+       │  Audio file path : C:\capture\fixture.wav                                │       
+       │                                                                          │       
+       │ Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close       │       
+       │ Use audio_source=wasapi for live system audio or file for a WAV replay   │       
+       └──────────────────────────────────────────────────────────────────────────┘

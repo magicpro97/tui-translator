@@ -39,6 +39,9 @@ mod audio;
 #[path = "../src/metrics/mod.rs"]
 mod metrics;
 
+#[path = "../src/config/mod.rs"]
+mod config;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 

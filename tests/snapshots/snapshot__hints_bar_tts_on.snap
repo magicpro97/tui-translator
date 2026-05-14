@@ -2,4 +2,4 @@
 source: tests/snapshot.rs
 expression: "render_hints(&bar, 80, 1)"
 ---
- ? help  Space pause  T audio  L lang  M metrics  R reload  Q quit
+ ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit

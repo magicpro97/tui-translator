@@ -96,6 +96,9 @@ impl PtySession {
             .map_err(|e| format!("openpty({cols}×{rows}): {e}"))?;
 
         let mut cmd = CommandBuilder::new(BINARY);
+        // Most PTY tests assert the steady-state UI and intentionally bypass
+        // the first-run setup flow unless they override this flag explicitly.
+        cmd.env("TUI_TRANSLATOR_SKIP_ONBOARDING", "1");
         // Neutral working directory to avoid picking up a real config.json.
         cmd.cwd(std::env::temp_dir());
         for (k, v) in extra_env {

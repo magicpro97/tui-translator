@@ -15,6 +15,9 @@
 #[path = "../src/metrics/mod.rs"]
 mod metrics;
 
+#[path = "../src/config/mod.rs"]
+mod config;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
@@ -22,8 +25,8 @@ use metrics::SttState;
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
-    render_language_prompt, truncate_device_name, AppState, ControlHintsBar, StatusMetricsStrip,
-    SubtitlePair, SubtitlePane,
+    render_language_prompt, truncate_device_name, AppState, ConfigEditorMode,
+    ConfigEditorState, ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -120,6 +123,16 @@ fn render_full_ui(width: u16, height: u16) -> String {
     buffer_to_string(terminal.backend().buffer())
 }
 
+fn render_config_editor(editor: &ConfigEditorState, width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            tui::render_config_editor(frame, frame.size(), editor);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
 ///
 /// Each row becomes one line; cells containing multi-column characters are
 /// represented by their first Unicode scalar so every row has exactly `width`
@@ -538,6 +551,64 @@ fn snapshot_hints_bar_tts_on() {
 fn snapshot_hints_bar_narrow() {
     let bar = ControlHintsBar { tts_on: false };
     insta::assert_snapshot!("hints_bar_narrow", render_hints(&bar, 60, 1));
+}
+
+#[test]
+fn snapshot_config_editor_onboarding() {
+    let mut editor = ConfigEditorState::from_config(
+        &config::AppConfig::default(),
+        std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Onboarding,
+    );
+    editor.google_api_key = "demo-key".to_string();
+    editor.audio_file_path = r"C:\capture\fixture.wav".to_string();
+    insta::assert_snapshot!(
+        "config_editor_onboarding",
+        render_config_editor(&editor, 90, 20)
+    );
+}
+
+#[test]
+fn snapshot_config_editor_onboarding_narrow() {
+    let editor = ConfigEditorState::from_config(
+        &config::AppConfig::default(),
+        std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Onboarding,
+    );
+    insta::assert_snapshot!(
+        "config_editor_onboarding_narrow",
+        render_config_editor(&editor, 60, 16)
+    );
+}
+
+#[test]
+fn snapshot_config_editor_settings() {
+    let mut editor = ConfigEditorState::from_config(
+        &config::AppConfig::default(),
+        std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Settings,
+    );
+    editor.selected_field = 3;
+    editor.audio_source = "file".to_string();
+    editor.audio_file_path = r"C:\capture\meeting.wav".to_string();
+    insta::assert_snapshot!(
+        "config_editor_settings",
+        render_config_editor(&editor, 90, 20)
+    );
+}
+
+#[test]
+fn snapshot_config_editor_settings_narrow() {
+    let mut editor = ConfigEditorState::from_config(
+        &config::AppConfig::default(),
+        std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Settings,
+    );
+    editor.selected_field = 1;
+    insta::assert_snapshot!(
+        "config_editor_settings_narrow",
+        render_config_editor(&editor, 60, 16)
+    );
 }
 
 // ── Behavioral assertions (non-snapshot) ─────────────────────────────────────

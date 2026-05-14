@@ -1,0 +1,20 @@
+---
+source: tests/snapshot.rs
+expression: "render_config_editor(&editor, 90, 20)"
+---
+                                                                                          
+                                                                                          
+                                                                                          
+       ┌ Settings ────────────────────────────────────────────────────────────────┐       
+       │ Edit the saved config and press Enter to persist changes.                │       
+       │ Path: C:\Users\demo\.tui-translator\config.json                          │       
+       │                                                                          │       
+       │  Source language : ja-JP                                                 │       
+       │  Target language : vi                                                    │       
+       │  Google API key  : —                                                     │       
+       │> Audio source    : file_                                                 │       
+       │  Audio file path : C:\capture\meeting.wav                                │       
+       │                                                                          │       
+       │ Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close       │       
+       │ Use audio_source=wasapi for live system audio or file for a WAV replay   │       
+       └──────────────────────────────────────────────────────────────────────────┘

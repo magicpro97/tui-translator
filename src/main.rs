@@ -29,16 +29,16 @@
 //! - Issue #87: graceful shutdown — waits up to 2 s for in-progress calls.
 //! - Issue #88: Windows console control handler catches forced terminal close.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     io,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Arc, Mutex,
@@ -60,7 +60,7 @@ use metrics::{
 };
 use tui::{
     draw_session_summary, draw_ui, help_overlay_max_scroll, subtitle_inner_area, AppState,
-    UserAction, AUDIO_LEVEL_SCALE,
+    ConfigEditorMode, UserAction, AUDIO_LEVEL_SCALE,
 };
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
@@ -217,14 +217,19 @@ fn main() -> Result<()> {
     // enters alternate-screen mode so a forced close triggers our cleanup.
     windows_signal::install();
 
-    // Load configuration, falling back to built-in defaults if config.json is absent.
+    // Load configuration from the home-directory default unless a test or caller
+    // explicitly overrides it through TUI_TRANSLATOR_CONFIG.
     let cfg_path = config_json_path();
-    let cfg = config::load(&cfg_path)?;
+    bootstrap_legacy_config_if_needed(&cfg_path)?;
+    let (cfg, load_state) = config::load_with_state(&cfg_path)?;
+    let onboarding_required = load_state == config::LoadState::Missing
+        && !has_explicit_config_override()
+        && !skip_onboarding();
     let current_config = Arc::new(Mutex::new(cfg.clone()));
     let restart_required = Arc::new(AtomicBool::new(false));
 
     // Start the hot-reload watcher; keep the receiver alive for the process lifetime.
-    let config_rx = match config::start_watcher(&cfg_path, cfg, restart_required.clone()) {
+    let config_rx = match config::start_watcher(&cfg_path, cfg.clone(), restart_required.clone()) {
         Ok(rx) => Some(rx),
         Err(err) => {
             tracing::warn!("config hot-reload unavailable: {err:#}");
@@ -263,6 +268,14 @@ fn main() -> Result<()> {
             .unwrap_or_else(|p| p.into_inner())
             .clone();
         sync_playback_service_state(&playback_service, &current_cfg, current_cfg.tts_enabled);
+    }
+    if onboarding_required {
+        state.open_config_editor(ConfigEditorMode::Onboarding, &cfg, &cfg_path);
+        overwrite_device_name(&state.device_name, "first-run setup required");
+        tracing::info!(
+            path = %cfg_path.display(),
+            "home config missing; opening first-run setup"
+        );
     }
 
     // Build a multi-threaded Tokio runtime for background tasks.
@@ -316,6 +329,26 @@ fn main() -> Result<()> {
     // runtime context which is not yet established at this point).
     let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
     spawn_process_metrics_task(process_tx, rt.handle());
+
+    if onboarding_required {
+        let orchestrator_join = None;
+        return finish_main(
+            rt,
+            FinishMainArgs {
+                state: &state,
+                restart_required: &restart_required,
+                cfg_path: &cfg_path,
+                current_config: &current_config,
+                playback_service: &playback_service,
+                orchestrator_join,
+                orchestrator_shutdown,
+                process_rx,
+                e2e_latency,
+                network_metrics,
+                loss_metrics,
+            },
+        );
+    }
 
     // ── Audio source selection (issue #110) ──────────────────────────────────
     // Read the audio_source / audio_file_path from the loaded config and start
@@ -604,10 +637,11 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     let keyboard_shutdown = Arc::new(AtomicBool::new(false));
     {
         let lang_flag = Arc::clone(&state.lang_prompt_active);
+        let config_editor_flag = Arc::clone(&state.config_editor_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
             tokio::task::spawn_blocking(move || {
-                keyboard_task(key_tx, lang_flag, keyboard_shutdown)
+                keyboard_task(key_tx, lang_flag, config_editor_flag, keyboard_shutdown)
             })
             .await
             .ok();
@@ -652,19 +686,69 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 /// Resolution order:
 /// 1. `TUI_TRANSLATOR_CONFIG` environment variable — allows the soak runner
 ///    (and other callers) to inject a temporary configuration without touching
-///    the binary's install directory.
-/// 2. The directory that contains the running executable joined with
-///    `config.json` — the normal production layout.
-/// 3. The literal string `"config.json"` in the current working directory as a
+///    the user's home directory.
+/// 2. `~/.tui-translator/config.json`.
+/// 3. The directory that contains the running executable joined with
+///    `config.json` as a legacy fallback when the home directory cannot be
+///    resolved.
+/// 4. The literal string `"config.json"` in the current working directory as a
 ///    last resort.
-fn config_json_path() -> std::path::PathBuf {
+fn config_json_path() -> PathBuf {
     if let Ok(path) = std::env::var("TUI_TRANSLATOR_CONFIG") {
-        return std::path::PathBuf::from(path);
+        return PathBuf::from(path);
     }
+    config::default_config_path().unwrap_or_else(|_| {
+        legacy_config_json_path().unwrap_or_else(|| PathBuf::from("config.json"))
+    })
+}
+
+fn legacy_config_json_path() -> Option<PathBuf> {
     std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|dir| dir.join("config.json")))
-        .unwrap_or_else(|| std::path::PathBuf::from("config.json"))
+}
+
+fn has_explicit_config_override() -> bool {
+    std::env::var_os("TUI_TRANSLATOR_CONFIG").is_some()
+}
+
+fn skip_onboarding() -> bool {
+    matches!(
+        std::env::var("TUI_TRANSLATOR_SKIP_ONBOARDING"),
+        Ok(value) if value == "1" || value.eq_ignore_ascii_case("true")
+    )
+}
+
+fn bootstrap_legacy_config_if_needed(target_path: &Path) -> Result<()> {
+    if has_explicit_config_override() {
+        return Ok(());
+    }
+    if target_path
+        .try_exists()
+        .with_context(|| format!("failed to access {}", target_path.display()))?
+    {
+        return Ok(());
+    }
+
+    let Some(legacy_path) = legacy_config_json_path() else {
+        return Ok(());
+    };
+    if legacy_path == target_path
+        || !legacy_path
+            .try_exists()
+            .with_context(|| format!("failed to access {}", legacy_path.display()))?
+    {
+        return Ok(());
+    }
+
+    let legacy_cfg = config::load(&legacy_path)?;
+    config::write_config(target_path, &legacy_cfg)?;
+    tracing::info!(
+        from = %legacy_path.display(),
+        to = %target_path.display(),
+        "migrated executable-side config to home directory"
+    );
+    Ok(())
 }
 
 fn overwrite_device_name(slot: &Arc<std::sync::Mutex<String>>, next_name: &str) {
@@ -731,6 +815,61 @@ fn apply_runtime_config(
     // Sync the backend first; only set the UI flag to match what actually succeeded.
     let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
     tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
+}
+
+fn normalize_optional_field(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn build_config_from_editor(
+    editor: &tui::ConfigEditorState,
+    current_config: &config::AppConfig,
+) -> config::AppConfig {
+    let mut next_cfg = current_config.clone();
+    next_cfg.source_language = editor.source_language.trim().to_string();
+    next_cfg.target_language = editor.target_language.trim().to_string();
+    next_cfg.google_api_key = normalize_optional_field(&editor.google_api_key);
+    next_cfg.audio_source = editor.audio_source.trim().to_string();
+    next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
+    next_cfg
+}
+
+fn save_config_editor(
+    state: &AppState,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    restart_required: &Arc<AtomicBool>,
+    playback_service: &SharedPlaybackService,
+) -> Result<()> {
+    let editor = state
+        .config_editor_snapshot()
+        .context("config editor save requested with no active editor")?;
+    let next_cfg = {
+        let current = current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        build_config_from_editor(&editor, &current)
+    };
+
+    config::write_config(cfg_path, &next_cfg)?;
+    apply_runtime_config(
+        current_config,
+        &state.target_language,
+        &state.source_language,
+        &state.tts_enabled,
+        restart_required,
+        playback_service,
+        next_cfg,
+    );
+    state.close_config_editor();
+    tracing::info!(path = %cfg_path.display(), mode = ?editor.mode, "config saved from UI");
+    Ok(())
 }
 
 fn sync_playback_service_state(
@@ -927,9 +1066,32 @@ fn event_loop(
 
 /// Translate a raw crossterm [`KeyEvent`] into a [`UserAction`].
 ///
-/// `in_lang_prompt` routes character input to the language-change prompt rather
-/// than to the normal command set (issue #64).
-fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
+/// `in_lang_prompt` and `in_config_editor` route character input to the active
+/// overlay instead of the normal command set.
+fn key_to_action(
+    key: &KeyEvent,
+    in_lang_prompt: bool,
+    in_config_editor: bool,
+) -> Option<UserAction> {
+    if in_config_editor {
+        return match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::Quit)
+            }
+            KeyCode::Enter => Some(UserAction::ConfigSave),
+            KeyCode::Esc => Some(UserAction::DismissOverlay),
+            KeyCode::Backspace => Some(UserAction::ConfigBackspace),
+            KeyCode::Tab | KeyCode::Down => Some(UserAction::ConfigNextField),
+            KeyCode::BackTab | KeyCode::Up => Some(UserAction::ConfigPrevField),
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigSave)
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigChar(c))
+            }
+            _ => Some(UserAction::AnyKey),
+        };
+    }
     if in_lang_prompt {
         return match key.code {
             KeyCode::Enter => Some(UserAction::LangApply),
@@ -954,6 +1116,7 @@ fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
         KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::ToggleTts),
         KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::ToggleMetrics),
         KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::PromptLanguage),
+        KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
         KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
         KeyCode::Char('?') => Some(UserAction::ToggleHelp),
         // Scrolling
@@ -974,6 +1137,7 @@ fn key_to_action(key: &KeyEvent, in_lang_prompt: bool) -> Option<UserAction> {
 fn keyboard_task(
     key_tx: mpsc::Sender<UserAction>,
     lang_prompt_active: Arc<AtomicBool>,
+    config_editor_active: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
 ) {
     while !shutdown.load(Ordering::Relaxed) {
@@ -985,8 +1149,12 @@ fn keyboard_task(
 
         match event::read() {
             Ok(Event::Key(key)) => {
-                let in_prompt = lang_prompt_active.load(Ordering::Relaxed);
-                if let Some(action) = key_to_action(&key, in_prompt) {
+                if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                    continue;
+                }
+                let in_lang_prompt = lang_prompt_active.load(Ordering::Relaxed);
+                let in_config_editor = config_editor_active.load(Ordering::Relaxed);
+                if let Some(action) = key_to_action(&key, in_lang_prompt, in_config_editor) {
                     if key_tx.send(action).is_err() {
                         // Receiver dropped; app is shutting down.
                         break;
@@ -1125,12 +1293,29 @@ fn handle_action(
                 state.reset_help_scroll();
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                state.close_config_editor();
             }
         }
 
         // Escape — dismiss open overlay (issue #64)
         UserAction::DismissOverlay => {
-            if state.lang_prompt_active.load(Ordering::Relaxed) {
+            if state.config_editor_active.load(Ordering::Relaxed) {
+                let onboarding = state
+                    .with_config_editor_mut(|editor| {
+                        if editor.mode == ConfigEditorMode::Onboarding {
+                            editor.set_status_message(
+                                " Setup is still required. Fill the fields and press Enter to save.",
+                            );
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
+                if !onboarding {
+                    state.close_config_editor();
+                }
+            } else if state.lang_prompt_active.load(Ordering::Relaxed) {
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
             } else if state.show_help.load(Ordering::Relaxed) {
@@ -1141,11 +1326,21 @@ fn handle_action(
 
         // L — open language prompt (issue #64)
         UserAction::PromptLanguage => {
-            if !state.lang_prompt_active.load(Ordering::Relaxed) {
+            if !state.lang_prompt_active.load(Ordering::Relaxed)
+                && !state.config_editor_active.load(Ordering::Relaxed)
+            {
                 state.show_help.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
                 state.lang_prompt_active.store(true, Ordering::Relaxed);
             }
+        }
+
+        UserAction::OpenSettings => {
+            let current = current_config
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            state.open_config_editor(ConfigEditorMode::Settings, &current, cfg_path);
         }
 
         // Language prompt input (issue #64)
@@ -1184,6 +1379,33 @@ fn handle_action(
         UserAction::LangCancel => {
             state.lang_prompt_active.store(false, Ordering::Relaxed);
             *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        }
+
+        UserAction::ConfigChar(c) => {
+            let _ = state.with_config_editor_mut(|editor| editor.push_char(*c));
+        }
+        UserAction::ConfigBackspace => {
+            let _ = state.with_config_editor_mut(|editor| editor.backspace());
+        }
+        UserAction::ConfigNextField => {
+            let _ = state.with_config_editor_mut(|editor| editor.next_field());
+        }
+        UserAction::ConfigPrevField => {
+            let _ = state.with_config_editor_mut(|editor| editor.prev_field());
+        }
+        UserAction::ConfigSave => {
+            if let Err(err) = save_config_editor(
+                state,
+                cfg_path,
+                current_config,
+                restart_required,
+                playback_service,
+            ) {
+                tracing::warn!("config save requested from UI failed: {err:#}");
+                let _ = state.with_config_editor_mut(|editor| {
+                    editor.set_status_message(format!(" Save failed: {err}"))
+                });
+            }
         }
 
         UserAction::AnyKey => {}
@@ -1306,7 +1528,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Rect;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     /// Serialises any test that reads or writes `TUI_TRANSLATOR_CONFIG` so
     /// parallel test threads cannot observe each other's mutations.
@@ -1444,7 +1666,7 @@ mod tests {
     fn unmapped_key_wakes_any_key_waits() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
 
-        assert_eq!(key_to_action(&key, false), Some(UserAction::AnyKey));
+        assert_eq!(key_to_action(&key, false, false), Some(UserAction::AnyKey));
     }
 
     #[test]
@@ -1491,6 +1713,87 @@ mod tests {
         assert!(state.show_help.load(Ordering::Relaxed));
         assert!(!state.lang_prompt_active.load(Ordering::Relaxed));
         assert!(state.lang_input.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn config_editor_keys_route_when_settings_are_open() {
+        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        assert_eq!(
+            key_to_action(&key, false, true),
+            Some(UserAction::ConfigChar('x'))
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                false,
+                true
+            ),
+            Some(UserAction::Quit)
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+                false,
+                true
+            ),
+            Some(UserAction::ConfigNextField)
+        );
+    }
+
+    #[test]
+    fn open_settings_activates_config_editor() {
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::OpenSettings,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(state.config_editor_active.load(Ordering::Relaxed));
+        let editor = state.config_editor_snapshot().expect("editor snapshot");
+        assert_eq!(editor.mode, ConfigEditorMode::Settings);
+    }
+
+    #[test]
+    fn config_save_persists_home_style_config() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Onboarding,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.source_language = "ja-JP".to_string();
+            editor.target_language = "vi".to_string();
+            editor.google_api_key = "saved-key".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(persisted.google_api_key.as_deref(), Some("saved-key"));
+        assert!(!state.config_editor_active.load(Ordering::Relaxed));
     }
 
     #[test]
@@ -1782,18 +2085,23 @@ mod tests {
         );
     }
 
-    /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` falls back to the
-    /// executable-relative path, which must end with `config.json`.
+    /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` prefers the user's
+    /// home config location.
     #[test]
-    fn config_json_path_fallback_ends_with_config_json() {
+    fn config_json_path_fallback_uses_home_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let home = TempDir::new().unwrap();
         // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
-        unsafe { std::env::remove_var("TUI_TRANSLATOR_CONFIG") };
+        unsafe {
+            std::env::remove_var("TUI_TRANSLATOR_CONFIG");
+            std::env::set_var("USERPROFILE", home.path());
+        };
         let path = config_json_path();
+        unsafe { std::env::remove_var("USERPROFILE") };
         assert_eq!(
-            path.file_name().and_then(|n| n.to_str()),
-            Some("config.json"),
-            "fallback path must end with config.json; got {path:?}"
+            path,
+            home.path().join(".tui-translator").join("config.json"),
+            "fallback path must use the home config location; got {path:?}"
         );
     }
 }

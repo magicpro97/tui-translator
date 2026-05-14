@@ -36,3 +36,6 @@ mod monochrome_test;
 
 #[path = "pty/log_routing_test.rs"]
 mod log_routing_test;
+
+#[path = "pty/onboarding_test.rs"]
+mod onboarding_test;

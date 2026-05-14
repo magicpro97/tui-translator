@@ -24,35 +24,22 @@ It takes about ten minutes from start to finish.
 
 ## Step 1 — Download the application
 
-Download the latest Windows pre-release from the
-[Releases page](https://github.com/magicpro97/tui-translator/releases)
-(for example `tui-translator-vX.Y.Z-setup.exe` or
-`tui-translator-vX.Y.Z-x86_64-pc-windows-msvc.zip`).
+Download the latest package from the
+[Releases page](https://github.com/magicpro97/tui-translator/releases) and
+extract it anywhere you like — for example, `C:\Tools\tui-translator\`.
 
-**Recommended:** run the `-setup.exe` installer.
-It installs the app to your user profile by default, adds a Start Menu shortcut,
-and creates an initial `config.json` from the example file if you do not already
-have one.
-
-If you prefer a portable copy, extract the zip to any folder — for example,
-`C:\Tools\tui-translator\`. The archive contains `tui-translator.exe`,
-`config.example.json`, and `USAGE.md`.
-No Visual C++ Redistributable is required; the runtime is statically linked.
+The archive contains `tui-translator.exe`, `config.example.json`, and
+`USAGE.md`. No Visual C++ Redistributable is required; the runtime is
+self-contained.
 
 ---
 
-## Step 2 — Create your configuration file
+## Step 2 — Complete first-run setup
 
-1. If you used the installer, open the install folder (by default
-   `%LOCALAPPDATA%\Programs\TUI Translator\`) and edit the `config.json`
-   created there.
-2. If you used the zip, take the included `config.example.json`,
-   place it in the same folder as `tui-translator.exe`, and rename it to
-   `config.json`.
-3. If your packaged folder does not include `config.example.json`, download it
-   directly from the repository root:
-   <https://github.com/magicpro97/tui-translator/blob/main/config.example.json>.
-4. Open `config.json` in Notepad and fill in these four values:
+1. Start the app once (see Step 4 below).
+2. The **First-Run Setup** screen appears automatically if you do not already
+   have a saved config.
+3. Fill in at least these values:
 
    | Setting | What to put | Example |
    |---------|-------------|---------|
@@ -64,9 +51,18 @@ No Visual C++ Redistributable is required; the runtime is statically linked.
    Common language codes: `en-US` (English), `ja-JP` (Japanese), `zh-CN` (Mandarin),
    `ko` (Korean), `vi` (Vietnamese), `es` (Spanish), `fr` (French), `de` (German).
 
-5. Save the file. Do not rename it — the application looks for exactly `config.json`.
+4. Press **Enter** to save.
 
-> **Security reminder:** `config.json` contains your API key.
+The app writes your settings to:
+
+```text
+%USERPROFILE%\.tui-translator\config.json
+```
+
+If you prefer to edit JSON manually, you can still copy `config.example.json`
+and create that file yourself in the same folder.
+
+> **Security reminder:** `%USERPROFILE%\.tui-translator\config.json` contains your API key.
 > Do not share it, do not upload it, and do not email it.
 
 ---
@@ -86,7 +82,7 @@ Follow these steps in the [Google Cloud Console](https://console.cloud.google.co
 7. If you have not created an API key yet:
    - Go to **APIs & Services → Credentials**.
    - Click **Create Credentials → API key**.
-   - Copy the key and paste it into `config.json` as described in Step 2.
+   - Copy the key and paste it into the first-run setup screen as described in Step 2.
    - Optionally, click **Restrict key** and limit it to the three APIs above.
 
 ---
@@ -109,8 +105,8 @@ Follow these steps in the [Google Cloud Console](https://console.cloud.google.co
 A terminal window opens showing the subtitle area and a status bar at the bottom.
 
 > The application can be placed in any folder and run from there.
-> It always looks for `config.json` in the same folder as the `.exe` file,
-> not in the folder where you opened the terminal.
+> Normal interactive runs look for `%USERPROFILE%\.tui-translator\config.json`,
+> not for a config file beside the `.exe`.
 
 ---
 
@@ -131,9 +127,10 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 |-----|-------------|
 | Space | Pause or resume translation |
 | L | Change the target language for this session |
+| S | Open the settings editor |
 | T | Toggle translated audio on or off |
 | M | Show or hide the detailed cost and latency panel |
-| R | Reload `config.json` without restarting |
+| R | Reload the saved config without restarting |
 | ? | Show the help screen |
 | Q or Ctrl+C | Quit and display a session summary |
 
@@ -143,7 +140,7 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 
 **"API key not valid" or no subtitles appear**
 
-- Open `config.json` in Notepad and check the `google_api_key` value.
+- Open `%USERPROFILE%\.tui-translator\config.json` in Notepad and check the `google_api_key` value.
   Make sure there are no extra spaces, quotation marks, or line breaks inside the key.
 - Confirm all three APIs are enabled in the Google Cloud Console (Step 3).
 - Check that your Google Cloud project has a billing account attached.
@@ -162,7 +159,7 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 - Press Space to pause translation whenever the meeting goes quiet or you do not need subtitles.
   Billing only accumulates while the application is actively sending audio to Google.
 - Press M to open the cost panel and see the live estimate for the current session.
-- Set a lower `cost_warning_usd` value in `config.json` to get an earlier on-screen warning.
+- Set a lower `cost_warning_usd` value in `%USERPROFILE%\.tui-translator\config.json` to get an earlier on-screen warning.
 
 ---
 
