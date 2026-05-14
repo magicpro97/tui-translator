@@ -83,6 +83,8 @@ are added in Phase 6 without changing the audio, TUI, or metrics modules.
 | L | Change target language |
 | T | Toggle translated audio |
 | M | Toggle detailed metrics |
+| S | Open settings editor |
+| F2 / Ctrl+D in settings | Cycle detected capture devices while editing `capture_device` |
 | R | Reload config.json |
 | ? | Show / hide help panel |
 | Q / Ctrl+C | Quit and show session summary |

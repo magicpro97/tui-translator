@@ -33,7 +33,8 @@ speakers.
 > acceptance (issues #115–#122) is completed by named reviewers.
 > First-run setup, per-user config storage under `~\.tui-translator`, and the
 > in-app settings entry point are now included in the pre-release builds.
-> Per-device WASAPI selection is still pending.
+> WASAPI capture can use the Windows default playback device or a selected
+> playback endpoint from the settings screen.
 
 ---
 
@@ -112,6 +113,7 @@ If you want to try the current build from source:
 | T | Toggle translated audio on or off |
 | M | Show or hide the detailed metrics panel |
 | S | Open the in-app settings editor |
+| F2 / Ctrl+D in settings | Cycle detected capture devices while editing `capture_device` |
 | R | Reload your saved config without restarting |
 | ? | Show the help screen |
 | Q or Ctrl+C | Quit and see a session summary |

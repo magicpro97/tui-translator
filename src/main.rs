@@ -37,7 +37,7 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
-    io,
+    io::{self, Write as IoWrite},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -208,10 +208,60 @@ fn init_tracing() {
     }
 }
 
+fn should_list_audio_devices() -> bool {
+    std::env::args().skip(1).any(|arg| {
+        arg == "--list-audio-devices"
+            || arg == "--list-capture-devices"
+            || arg == "list-audio-devices"
+    })
+}
+
+fn print_audio_devices_to_stdout() -> Result<()> {
+    let devices = audio::list_capture_devices().context("failed to list audio capture devices")?;
+    let mut stdout = io::stdout();
+    write_audio_devices(&mut stdout, &devices).context("failed to write audio device list")?;
+    Ok(())
+}
+
+fn write_audio_devices(
+    writer: &mut impl IoWrite,
+    devices: &[audio::CaptureDeviceInfo],
+) -> io::Result<()> {
+    writeln!(
+        writer,
+        "Audio capture devices for WASAPI loopback (Windows playback endpoints):"
+    )?;
+    writeln!(
+        writer,
+        "  [default] Windows default playback device (leave capture_device blank)"
+    )?;
+    if devices.is_empty() {
+        writeln!(
+            writer,
+            "  No active playback devices were reported by Windows."
+        )?;
+    } else {
+        for device in devices {
+            let marker = if device.is_default {
+                " (current Windows default)"
+            } else {
+                ""
+            };
+            writeln!(writer, "  - {}{}", device.name, marker)?;
+        }
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     init_tracing();
 
     tracing::info!("tui-translator starting");
+
+    if should_list_audio_devices() {
+        print_audio_devices_to_stdout()?;
+        return Ok(());
+    }
 
     // Issue #88 — install the Windows console control handler before the TUI
     // enters alternate-screen mode so a forced close triggers our cleanup.
@@ -221,10 +271,11 @@ fn main() -> Result<()> {
     // explicitly overrides it through TUI_TRANSLATOR_CONFIG.
     let cfg_path = config_json_path();
     bootstrap_legacy_config_if_needed(&cfg_path)?;
-    let (cfg, load_state) = config::load_with_state(&cfg_path)?;
+    let (cfg, load_state, load_error) = config::load_for_startup(&cfg_path)?;
     let onboarding_required = load_state == config::LoadState::Missing
         && !has_explicit_config_override()
         && !skip_onboarding();
+    let config_recovery_required = load_state == config::LoadState::Invalid && !skip_onboarding();
     let current_config = Arc::new(Mutex::new(cfg.clone()));
     let restart_required = Arc::new(AtomicBool::new(false));
 
@@ -262,7 +313,7 @@ fn main() -> Result<()> {
             .tts_enabled,
     );
     let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
-    {
+    if !onboarding_required && !config_recovery_required {
         let current_cfg = current_config
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -271,10 +322,38 @@ fn main() -> Result<()> {
     }
     if onboarding_required {
         state.open_config_editor(ConfigEditorMode::Onboarding, &cfg, &cfg_path);
+        populate_capture_device_options(&state);
         overwrite_device_name(&state.device_name, "first-run setup required");
         tracing::info!(
             path = %cfg_path.display(),
             "home config missing; opening first-run setup"
+        );
+    }
+    if config_recovery_required {
+        state.open_config_editor(ConfigEditorMode::Settings, &cfg, &cfg_path);
+        populate_capture_device_options(&state);
+        let _ = state.with_config_editor_mut(|editor| {
+            let detail = if load_error
+                .as_deref()
+                .is_some_and(|message| message.contains("source_language"))
+            {
+                "source_language is invalid"
+            } else if load_error
+                .as_deref()
+                .is_some_and(|message| message.contains("target_language"))
+            {
+                "target_language is invalid"
+            } else {
+                "config is invalid"
+            };
+            editor.set_status_message(format!(
+                " Config needs repair: {detail}. Fix fields and press Enter."
+            ));
+        });
+        overwrite_device_name(&state.device_name, "config needs repair");
+        tracing::warn!(
+            path = %cfg_path.display(),
+            "config invalid; opening settings repair mode"
         );
     }
 
@@ -330,7 +409,7 @@ fn main() -> Result<()> {
     let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
     spawn_process_metrics_task(process_tx, rt.handle());
 
-    if onboarding_required {
+    if onboarding_required || config_recovery_required {
         let orchestrator_join = None;
         return finish_main(
             rt,
@@ -351,18 +430,25 @@ fn main() -> Result<()> {
     }
 
     // ── Audio source selection (issue #110) ──────────────────────────────────
-    // Read the audio_source / audio_file_path from the loaded config and start
-    // the appropriate capture backend.  WASAPI is the production path;
-    // "file" is used exclusively for soak tests and local replay runs.
-    let (audio_source_kind, audio_file_path) = {
+    // Read the audio_source / audio_file_path / capture_device from the loaded
+    // config and start the appropriate capture backend. WASAPI is the
+    // production path; "file" is used for soak tests and local replay runs.
+    let (audio_source_kind, audio_file_path, capture_device) = {
         let cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
-        (cfg.audio_source.clone(), cfg.audio_file_path.clone())
+        (
+            cfg.audio_source.clone(),
+            cfg.audio_file_path.clone(),
+            cfg.capture_device.clone(),
+        )
     };
     let capture_result = if audio_source_kind == "file" {
         let path = audio_file_path.as_deref().unwrap_or("");
         rt.block_on(audio::start_file_capture(path, DEFAULT_SILENCE_THRESHOLD))
     } else {
-        rt.block_on(audio::start_capture(DEFAULT_SILENCE_THRESHOLD))
+        rt.block_on(audio::start_capture_with_device(
+            capture_device.as_deref(),
+            DEFAULT_SILENCE_THRESHOLD,
+        ))
     };
 
     match capture_result {
@@ -764,6 +850,20 @@ fn overwrite_device_name(slot: &Arc<std::sync::Mutex<String>>, next_name: &str) 
     }
 }
 
+fn populate_capture_device_options(state: &AppState) {
+    match audio::list_capture_devices() {
+        Ok(devices) => {
+            let names = devices.into_iter().map(|device| device.name).collect();
+            let _ = state.with_config_editor_mut(|editor| {
+                editor.set_capture_device_options(names);
+            });
+        }
+        Err(err) => {
+            tracing::warn!("failed to list WASAPI capture devices for settings picker: {err:#}");
+        }
+    }
+}
+
 fn overwrite_target_language(slot: &Arc<std::sync::Mutex<String>>, next_language: &str) {
     match slot.lock() {
         Ok(mut guard) => {
@@ -835,6 +935,7 @@ fn build_config_from_editor(
     next_cfg.target_language = editor.target_language.trim().to_string();
     next_cfg.google_api_key = normalize_optional_field(&editor.google_api_key);
     next_cfg.audio_source = editor.audio_source.trim().to_string();
+    next_cfg.capture_device = normalize_optional_field(&editor.capture_device);
     next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
     next_cfg
 }
@@ -854,7 +955,9 @@ fn save_config_editor(
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
-        build_config_from_editor(&editor, &current)
+        let mut next = build_config_from_editor(&editor, &current);
+        config::apply_editor_defaults(cfg_path, &mut next)?;
+        next
     };
 
     config::write_config(cfg_path, &next_cfg)?;
@@ -1083,6 +1186,10 @@ fn key_to_action(
             KeyCode::Backspace => Some(UserAction::ConfigBackspace),
             KeyCode::Tab | KeyCode::Down => Some(UserAction::ConfigNextField),
             KeyCode::BackTab | KeyCode::Up => Some(UserAction::ConfigPrevField),
+            KeyCode::F(2) => Some(UserAction::ConfigCycleCaptureDevice),
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigCycleCaptureDevice)
+            }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::ConfigSave)
             }
@@ -1341,6 +1448,7 @@ fn handle_action(
                 .unwrap_or_else(|p| p.into_inner())
                 .clone();
             state.open_config_editor(ConfigEditorMode::Settings, &current, cfg_path);
+            populate_capture_device_options(state);
         }
 
         // Language prompt input (issue #64)
@@ -1366,15 +1474,23 @@ fn handle_action(
                 .clone();
             let next_language = input.trim();
             if !next_language.is_empty() {
-                state.set_target_language(next_language.to_string());
-                {
-                    let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
-                    current.target_language = next_language.to_string();
+                match config::validate_language_code(next_language) {
+                    Ok(()) => {
+                        state.set_target_language(next_language.to_string());
+                        {
+                            let mut current =
+                                current_config.lock().unwrap_or_else(|p| p.into_inner());
+                            current.target_language = next_language.to_string();
+                        }
+                        tracing::info!("target language changed to {next_language}");
+                        state.lang_prompt_active.store(false, Ordering::Relaxed);
+                        *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                    }
+                    Err(err) => {
+                        tracing::warn!("invalid target language entered from prompt: {err}");
+                    }
                 }
-                tracing::info!("target language changed to {next_language}");
             }
-            state.lang_prompt_active.store(false, Ordering::Relaxed);
-            *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
         }
         UserAction::LangCancel => {
             state.lang_prompt_active.store(false, Ordering::Relaxed);
@@ -1392,6 +1508,9 @@ fn handle_action(
         }
         UserAction::ConfigPrevField => {
             let _ = state.with_config_editor_mut(|editor| editor.prev_field());
+        }
+        UserAction::ConfigCycleCaptureDevice => {
+            let _ = state.with_config_editor_mut(|editor| editor.cycle_capture_device());
         }
         UserAction::ConfigSave => {
             if let Err(err) = save_config_editor(
@@ -1535,6 +1654,38 @@ mod tests {
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
+    fn write_audio_devices_shows_default_and_detected_devices() {
+        let devices = vec![
+            audio::CaptureDeviceInfo {
+                name: "Speakers (Realtek Audio)".to_string(),
+                is_default: true,
+            },
+            audio::CaptureDeviceInfo {
+                name: "Headphones (USB Audio)".to_string(),
+                is_default: false,
+            },
+        ];
+        let mut output = Vec::new();
+
+        write_audio_devices(&mut output, &devices).unwrap();
+        let rendered = String::from_utf8(output).unwrap();
+
+        assert!(rendered.contains("leave capture_device blank"));
+        assert!(rendered.contains("Speakers (Realtek Audio) (current Windows default)"));
+        assert!(rendered.contains("Headphones (USB Audio)"));
+    }
+
+    #[test]
+    fn f2_cycles_capture_device_in_config_editor() {
+        let key = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
+
+        assert_eq!(
+            key_to_action(&key, false, true),
+            Some(UserAction::ConfigCycleCaptureDevice)
+        );
+    }
+
+    #[test]
     fn lang_apply_updates_runtime_target_language() {
         let state = AppState::new();
         state.set_target_language("vi");
@@ -1558,6 +1709,32 @@ mod tests {
         assert_eq!(current_config.lock().unwrap().target_language, "en-US");
         assert!(!state.lang_prompt_active.load(Ordering::Relaxed));
         assert!(state.lang_input.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lang_apply_rejects_invalid_target_language() {
+        let state = AppState::new();
+        state.set_target_language("vi");
+        state.lang_prompt_active.store(true, Ordering::Relaxed);
+        *state.lang_input.lock().unwrap() = "ja-JPdas".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::LangApply,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        assert_eq!(state.target_language(), "vi");
+        assert_eq!(current_config.lock().unwrap().target_language, "vi");
+        assert!(state.lang_prompt_active.load(Ordering::Relaxed));
+        assert_eq!(state.lang_input.lock().unwrap().as_str(), "ja-JPdas");
     }
 
     #[test]
@@ -1794,6 +1971,152 @@ mod tests {
         let persisted = config::load(&cfg_path).unwrap();
         assert_eq!(persisted.google_api_key.as_deref(), Some("saved-key"));
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn config_save_defaults_blank_file_audio_path_to_config_dir() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let mut starting_config = config::AppConfig::default();
+        starting_config.audio_source = "file".to_string();
+        starting_config.audio_file_path = Some(r"C:\old\fixture.wav".to_string());
+        let current_config = Arc::new(Mutex::new(starting_config));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &current_config.lock().unwrap().clone(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.audio_source = "file".to_string();
+            editor.audio_file_path.clear();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        let expected_path = cfg_path
+            .parent()
+            .unwrap()
+            .join("audio-input.wav")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            persisted.audio_file_path.as_deref(),
+            Some(expected_path.as_str())
+        );
+        assert!(restart_required.load(Ordering::Relaxed));
+        assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn config_save_persists_capture_device_selection() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.capture_device = "Headphones (USB Audio)".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(
+            persisted.capture_device.as_deref(),
+            Some("Headphones (USB Audio)")
+        );
+        assert!(restart_required.load(Ordering::Relaxed));
+        assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn config_save_rejects_invalid_language_and_keeps_editor_open() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.source_language = "ja-JPdas".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(state.config_editor_active.load(Ordering::Relaxed));
+        let editor = state.config_editor_snapshot().expect("editor snapshot");
+        let status = editor.status_message.expect("save failure message");
+        assert!(
+            status.contains("Save failed") && status.contains("validation"),
+            "status should mention validation failure: {status}"
+        );
+        assert!(!cfg_path.exists(), "invalid config must not be written");
+    }
+
+    #[test]
+    fn startup_invalid_config_opens_repair_editor_state() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let mut cfg = config::AppConfig::default();
+        cfg.source_language = "ja-JPdas".to_string();
+        let state = AppState::new();
+
+        state.open_config_editor(ConfigEditorMode::Settings, &cfg, &cfg_path);
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.set_status_message(
+                " Config needs repair: `source_language` must look like a simple BCP-47 tag",
+            );
+        });
+
+        assert!(state.config_editor_active.load(Ordering::Relaxed));
+        let editor = state.config_editor_snapshot().expect("editor snapshot");
+        assert_eq!(editor.source_language, "ja-JPdas");
+        assert!(editor
+            .status_message
+            .expect("repair message")
+            .contains("Config needs repair"));
     }
 
     #[test]

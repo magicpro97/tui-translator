@@ -101,6 +101,15 @@ pub struct CaptureInfo {
     pub native_sample_rate: u32,
 }
 
+/// A Windows playback endpoint that can be captured through WASAPI loopback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptureDeviceInfo {
+    /// Human-readable Windows device name. Use this value in `capture_device`.
+    pub name: String,
+    /// Whether Windows currently reports this device as the default playback endpoint.
+    pub is_default: bool,
+}
+
 /// Capture session handle returned by [`start_capture`].
 pub struct CaptureStream {
     /// Immutable metadata about the underlying capture source.
@@ -226,10 +235,26 @@ const CHANNEL_CAPACITY: usize = 64;
 /// silence chunks at real-time pace.  This is enough for integration-test
 /// smoke runs without audio hardware.
 pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
+    start_capture_with_device(None, silence_threshold).await
+}
+
+/// Spawn the audio capture task using an optional Windows playback endpoint name.
+///
+/// `capture_device = None` or a blank string uses the Windows default playback
+/// endpoint. Supplying a device name opens that exact active render endpoint for
+/// WASAPI loopback capture; startup fails with a clear error if it is not found.
+pub async fn start_capture_with_device(
+    capture_device: Option<&str>,
+    silence_threshold: f32,
+) -> Result<CaptureStream> {
     let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
+    let capture_device = capture_device
+        .map(str::trim)
+        .filter(|device| !device.is_empty())
+        .map(ToOwned::to_owned);
 
     #[cfg(windows)]
-    let info = wasapi_capture::spawn(tx, silence_threshold)?;
+    let info = wasapi_capture::spawn(tx, capture_device, silence_threshold)?;
 
     #[cfg(not(windows))]
     let info = {
@@ -246,13 +271,35 @@ pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
         });
 
         let info = CaptureInfo {
-            device_name: "silent (stub)".to_string(),
+            device_name: capture_device
+                .map(|device| format!("silent (stub: {device})"))
+                .unwrap_or_else(|| "silent (stub)".to_string()),
             native_sample_rate: 16_000,
         };
         info
     };
 
     Ok(CaptureStream { info, receiver: rx })
+}
+
+/// List active playback endpoints available for WASAPI loopback capture.
+///
+/// On Windows this returns active render devices as reported by Core Audio. On
+/// non-Windows platforms it returns the silent test stub so callers can render a
+/// deterministic settings UI in CI.
+pub fn list_capture_devices() -> Result<Vec<CaptureDeviceInfo>> {
+    #[cfg(windows)]
+    {
+        wasapi_capture::list_loopback_devices()
+    }
+
+    #[cfg(not(windows))]
+    {
+        Ok(vec![CaptureDeviceInfo {
+            name: "silent (stub)".to_string(),
+            is_default: true,
+        }])
+    }
 }
 
 /// Start a file-based capture stream from a WAV fixture (issue #110 / WP-18.02).

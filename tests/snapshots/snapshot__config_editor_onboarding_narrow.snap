@@ -2,7 +2,6 @@
 source: tests/snapshot.rs
 expression: "render_config_editor(&editor, 60, 16)"
 ---
-                                                            
 ┌ First-Run Setup ─────────────────────────────────────────┐
 │ Save your initial config to the home folder, then restart│
 │if prompted.                                              │
@@ -12,7 +11,9 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  Target language : vi                                    │
 │  Google API key  : —                                     │
 │  Audio source    : wasapi                                │
+│  Capture device  : Windows default playback              │
 │  Audio file path : —                                     │
 │                                                          │
+│ Ready to save.                                           │
 │ Tab/Down: next   Shift+Tab/Up: previous   Enter: save    │
 └──────────────────────────────────────────────────────────┘

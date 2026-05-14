@@ -25,6 +25,8 @@ pub enum LoadState {
     Found,
     /// `config.json` was missing, so built-in defaults were returned.
     Missing,
+    /// `config.json` exists but cannot be used without operator repair.
+    Invalid,
 }
 
 /// Top-level application configuration, parsed from `config.json`.
@@ -33,7 +35,7 @@ pub enum LoadState {
 /// values they want to change.  Missing fields fall back to built-in defaults;
 /// fields that are present but semantically invalid are rejected with a clear
 /// error message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AppConfig {
     /// BCP-47 language code for the language spoken in the meeting.
@@ -62,6 +64,16 @@ pub struct AppConfig {
     /// device.  The application must be restarted when this value changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_output_device: Option<String>,
+
+    /// Name of the Windows playback endpoint to capture through WASAPI
+    /// loopback.
+    ///
+    /// `None` means "use the system default playback device". Set this to one
+    /// of the active playback device names shown by the settings picker or
+    /// `--list-audio-devices`. The application must be restarted when this
+    /// value changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_device: Option<String>,
 
     /// Audio input source.  Accepted values:
     /// - `"wasapi"` *(default)* — Windows WASAPI loopback capture.
@@ -102,6 +114,7 @@ impl Default for AppConfig {
             google_api_key: None,
             tts_enabled: false,
             tts_output_device: None,
+            capture_device: None,
             audio_source: default_audio_source(),
             audio_file_path: None,
             cost_warning_usd: 0.0,
@@ -125,6 +138,8 @@ fn default_audio_source() -> String {
     "wasapi".to_string()
 }
 
+const DEFAULT_AUDIO_FILE_NAME: &str = "audio-input.wav";
+
 impl AppConfig {
     /// Validate semantic constraints that serde alone cannot enforce.
     ///
@@ -132,18 +147,8 @@ impl AppConfig {
     /// constraint.  An absent `google_api_key` (`None`) is acceptable at
     /// startup; an empty-string value is not.
     pub fn validate(&self) -> Result<()> {
-        if self.source_language.trim().is_empty() {
-            bail!(
-                "`source_language` must not be empty — \
-                 expected a BCP-47 code such as \"ja-JP\""
-            );
-        }
-        if self.target_language.trim().is_empty() {
-            bail!(
-                "`target_language` must not be empty — \
-                 expected a BCP-47 code such as \"vi\""
-            );
-        }
+        validate_language_tag("source_language", &self.source_language)?;
+        validate_language_tag("target_language", &self.target_language)?;
         if matches!(&self.google_api_key, Some(k) if k.trim().is_empty()) {
             bail!(
                 "`google_api_key` was provided but is an empty string — \
@@ -154,6 +159,12 @@ impl AppConfig {
             bail!(
                 "`tts_output_device` must not be empty — \
                  supply a device name or omit the field entirely"
+            );
+        }
+        if matches!(&self.capture_device, Some(device) if device.trim().is_empty()) {
+            bail!(
+                "`capture_device` must not be empty — \
+                 supply a playback device name or omit the field entirely"
             );
         }
         match self.audio_source.as_str() {
@@ -180,9 +191,49 @@ impl AppConfig {
     pub fn requires_restart(&self, next: &AppConfig) -> bool {
         self.google_api_key != next.google_api_key
             || self.tts_output_device != next.tts_output_device
+            || self.capture_device != next.capture_device
             || self.audio_source != next.audio_source
             || self.audio_file_path != next.audio_file_path
     }
+}
+
+/// Validate a simple provider-facing BCP-47 language tag.
+///
+/// The app and its providers only rely on common `language`, `language-region`,
+/// and `language-script-region` tags such as `vi`, `ja-JP`, or `zh-Hant-TW`.
+/// Reject longer variant/extension forms so obvious typos like `ja-JPdas` do
+/// not silently persist.
+#[allow(dead_code)]
+pub fn validate_language_code(value: &str) -> Result<()> {
+    validate_language_tag("language code", value)
+}
+
+/// Resolve the default WAV path used when the config editor leaves
+/// `audio_file_path` blank while `audio_source` is `file`.
+pub fn default_audio_file_path_for(config_path: &Path) -> Result<PathBuf> {
+    let parent = config_path
+        .parent()
+        .context("config path must have a parent directory")?;
+    Ok(parent.join(DEFAULT_AUDIO_FILE_NAME))
+}
+
+/// Fill UI-only defaults before persisting a config.
+pub fn apply_editor_defaults(config_path: &Path, cfg: &mut AppConfig) -> Result<()> {
+    if cfg.audio_source == "file"
+        && cfg
+            .audio_file_path
+            .as_deref()
+            .map(str::trim)
+            .map(str::is_empty)
+            .unwrap_or(true)
+    {
+        cfg.audio_file_path = Some(
+            default_audio_file_path_for(config_path)?
+                .display()
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// Return the user's home directory.
@@ -241,6 +292,57 @@ pub fn load_with_state(path: &Path) -> Result<(AppConfig, LoadState)> {
     );
 
     Ok((cfg, LoadState::Found))
+}
+
+/// Load startup config without preventing the TUI from opening a repair screen.
+///
+/// Runtime hot-reload and save paths stay strict via [`load`] and
+/// [`write_config`]. Startup is different: an editable-but-invalid config should
+/// open the settings UI so the operator can fix it instead of exiting before the
+/// terminal UI appears.
+pub fn load_for_startup(path: &Path) -> Result<(AppConfig, LoadState, Option<String>)> {
+    if !path
+        .try_exists()
+        .with_context(|| format!("failed to access {}", path.display()))?
+    {
+        tracing::warn!(
+            path = %path.display(),
+            "config.json not found — using built-in defaults. \
+             Copy config.example.json to config.json to customise."
+        );
+        return Ok((AppConfig::default(), LoadState::Missing, None));
+    }
+
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+
+    let cfg: AppConfig = match serde_json::from_str(&raw) {
+        Ok(cfg) => cfg,
+        Err(err) => {
+            let message = format!("config.json at {} is not valid JSON: {err}", path.display());
+            tracing::warn!("{message}");
+            return Ok((AppConfig::default(), LoadState::Invalid, Some(message)));
+        }
+    };
+
+    if let Err(err) = cfg.validate() {
+        let message = format!(
+            "config.json at {} failed validation: {err:#}",
+            path.display()
+        );
+        tracing::warn!("{message}");
+        return Ok((cfg, LoadState::Invalid, Some(message)));
+    }
+
+    tracing::info!(
+        path = %path.display(),
+        source = %cfg.source_language,
+        target = %cfg.target_language,
+        tts = cfg.tts_enabled,
+        "configuration loaded"
+    );
+
+    Ok((cfg, LoadState::Found, None))
 }
 
 /// Load configuration from `path`.  Returns built-in defaults if the file
@@ -389,9 +491,14 @@ fn handle_watch_event(
     match load(config_path) {
         Ok(new_cfg) => {
             let old_cfg = tx.borrow().clone();
+            if old_cfg == new_cfg {
+                return;
+            }
             if old_cfg.requires_restart(&new_cfg) {
                 restart_required.store(true, Ordering::Relaxed);
-                tracing::warn!("⚠ Restart required for some settings (google_api_key changed)");
+                tracing::warn!(
+                    "⚠ Restart required for provider or audio-device settings to take effect"
+                );
             }
             if tx.send(new_cfg).is_err() {
                 tracing::info!("config watcher: channel closed");
@@ -403,6 +510,54 @@ fn handle_watch_event(
             tracing::warn!("config hot-reload failed, keeping last known-good config: {e:#}");
         }
     }
+}
+
+fn validate_language_tag(field_name: &str, value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("`{field_name}` must not be empty — expected a BCP-47 code such as \"ja-JP\"");
+    }
+    if !trimmed.is_ascii() {
+        bail!("`{field_name}` must be ASCII — expected a BCP-47 code such as \"ja-JP\"");
+    }
+
+    let parts: Vec<&str> = trimmed.split('-').collect();
+    if parts.is_empty() || parts.iter().any(|part| part.is_empty()) {
+        bail!("`{field_name}` must use hyphen-separated subtags such as \"ja-JP\" or \"vi\"");
+    }
+
+    let language = parts[0];
+    if !(language.len() == 2 || language.len() == 3)
+        || !language.chars().all(|ch| ch.is_ascii_alphabetic())
+    {
+        bail!(
+            "`{field_name}` must start with a 2-3 letter language subtag such as \"ja\" or \"vi\""
+        );
+    }
+
+    let mut index = 1usize;
+    if let Some(script) = parts.get(index) {
+        if script.len() == 4 && script.chars().all(|ch| ch.is_ascii_alphabetic()) {
+            index += 1;
+        }
+    }
+
+    if let Some(region) = parts.get(index) {
+        let is_alpha_region =
+            region.len() == 2 && region.chars().all(|ch| ch.is_ascii_alphabetic());
+        let is_numeric_region = region.len() == 3 && region.chars().all(|ch| ch.is_ascii_digit());
+        if is_alpha_region || is_numeric_region {
+            index += 1;
+        }
+    }
+
+    if index != parts.len() {
+        bail!(
+            "`{field_name}` must look like a simple BCP-47 tag such as \"vi\", \"ja-JP\", or \"zh-Hant-TW\""
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -439,6 +594,36 @@ mod tests {
             load_with_state(&missing_path).expect("should return default, not error");
         assert_eq!(cfg.source_language, "ja-JP");
         assert_eq!(state, LoadState::Missing);
+    }
+
+    #[test]
+    fn startup_load_recovers_invalid_language_for_ui_repair() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"{{"source_language":"ja-JPdas","target_language":"vi"}}"#
+        )
+        .unwrap();
+
+        let (cfg, state, message) = load_for_startup(f.path()).unwrap();
+
+        assert_eq!(state, LoadState::Invalid);
+        assert_eq!(cfg.source_language, "ja-JPdas");
+        assert!(message
+            .expect("validation message")
+            .contains("source_language"));
+    }
+
+    #[test]
+    fn startup_load_recovers_invalid_json_with_defaults_for_ui_repair() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, "{{not json").unwrap();
+
+        let (cfg, state, message) = load_for_startup(f.path()).unwrap();
+
+        assert_eq!(state, LoadState::Invalid);
+        assert_eq!(cfg, AppConfig::default());
+        assert!(message.expect("parse message").contains("not valid JSON"));
     }
 
     #[test]
@@ -518,6 +703,32 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_empty_capture_device() {
+        let cfg = AppConfig {
+            capture_device: Some("   ".to_string()),
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+
+        assert!(
+            err.to_string().contains("capture_device"),
+            "error should mention capture_device; got: {err}"
+        );
+    }
+
+    #[test]
+    fn capture_device_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            capture_device: Some("Speakers (Loopback Test)".to_string()),
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
+    }
+
+    #[test]
     fn default_config_path_uses_home_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let home = TempDir::new().unwrap();
@@ -556,6 +767,23 @@ mod tests {
     }
 
     #[test]
+    fn editor_defaults_file_audio_path_next_to_config() {
+        let path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut cfg = AppConfig {
+            audio_source: "file".to_string(),
+            audio_file_path: None,
+            ..AppConfig::default()
+        };
+
+        apply_editor_defaults(path, &mut cfg).unwrap();
+
+        assert_eq!(
+            cfg.audio_file_path.as_deref(),
+            Some(r"C:\Users\demo\.tui-translator\audio-input.wav")
+        );
+    }
+
+    #[test]
     fn load_rejects_empty_source_language_in_file() {
         let mut f = NamedTempFile::new().unwrap();
         write!(f, r#"{{"source_language":"","target_language":"vi"}}"#).unwrap();
@@ -580,6 +808,19 @@ mod tests {
         assert!(
             msg.contains("google_api_key") || msg.to_lowercase().contains("validation"),
             "error should reference google_api_key or validation: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_malformed_source_language_tag() {
+        let cfg = AppConfig {
+            source_language: "ja-JPdas".to_string(),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("source_language"),
+            "error should mention source_language; got: {err}"
         );
     }
 
@@ -686,6 +927,39 @@ mod tests {
         panic!("restart_required flag was not set after google_api_key changed");
     }
 
+    #[tokio::test]
+    async fn duplicate_watch_events_do_not_rebroadcast_identical_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"source_language":"ja-JP","target_language":"en"}"#,
+        )
+        .unwrap();
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = watch::channel(AppConfig::default());
+        let event = notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![path.clone()],
+            attrs: Default::default(),
+        };
+
+        handle_watch_event(event.clone(), &path, &restart_required, &tx);
+        rx.changed().await.unwrap();
+        assert_eq!(rx.borrow().target_language, "en");
+        let _ = rx.borrow_and_update();
+        assert!(!rx.has_changed().unwrap());
+
+        handle_watch_event(event, &path, &restart_required, &tx);
+        assert!(
+            !rx.has_changed().unwrap(),
+            "duplicate file-system events for the same config should be ignored"
+        );
+    }
+
     // ── audio_source / audio_file_path tests ───────────────────────────────
 
     #[test]
@@ -693,6 +967,7 @@ mod tests {
         let cfg = AppConfig::default();
         assert_eq!(cfg.audio_source, "wasapi");
         assert!(cfg.audio_file_path.is_none());
+        assert!(cfg.capture_device.is_none());
     }
 
     #[test]

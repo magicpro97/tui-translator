@@ -47,6 +47,7 @@ self-contained.
    | `target_language` | The language you want to read subtitles in (BCP-47 code) | `"vi"` for Vietnamese |
    | `google_api_key` | Your Google Cloud API key (see Step 3) | `"AIzaSy…"` |
    | `tts_enabled` | `false` to show text subtitles only; `true` to also hear translation | `false` |
+   | `capture_device` | Leave blank for the Windows default playback device, or choose a playback device in settings | blank |
 
    Common language codes: `en-US` (English), `ja-JP` (Japanese), `zh-CN` (Mandarin),
    `ko` (Korean), `vi` (Vietnamese), `es` (Spanish), `fr` (French), `de` (German).
@@ -108,6 +109,17 @@ A terminal window opens showing the subtitle area and a status bar at the bottom
 > Normal interactive runs look for `%USERPROFILE%\.tui-translator\config.json`,
 > not for a config file beside the `.exe`.
 
+To see the exact playback device names Windows exposes for capture, run:
+
+```text
+.\tui-translator.exe --list-audio-devices
+```
+
+In the settings editor, move to `capture_device` and press **F2** (or
+**Ctrl+D**) to cycle through detected playback devices. Leave it blank to keep
+capturing the Windows default playback device. Save and restart after changing
+the capture device.
+
 ---
 
 ## Step 5 — Join your Zoom meeting
@@ -128,6 +140,7 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 | Space | Pause or resume translation |
 | L | Change the target language for this session |
 | S | Open the settings editor |
+| F2 / Ctrl+D in settings | Cycle detected capture devices while editing `capture_device` |
 | T | Toggle translated audio on or off |
 | M | Show or hide the detailed cost and latency panel |
 | R | Reload the saved config without restarting |
@@ -151,6 +164,8 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 - Make sure the Zoom meeting audio is playing through your Windows default output device
   (speakers or headphones). TUI Translator listens to the system audio output, not a microphone.
 - In Windows Settings → System → Sound, confirm the correct playback device is set as the default.
+- Or open the settings editor, move to `capture_device`, and press F2 to choose
+  the exact playback device Zoom is using.
 - Try playing any sound through the same output device (a YouTube video, for example) to confirm
   it works; TUI Translator will capture whatever Windows plays through that device.
 

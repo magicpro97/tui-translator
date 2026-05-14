@@ -95,6 +95,8 @@ pub enum UserAction {
     ConfigPrevField,
     /// Save the current config-editor contents.
     ConfigSave,
+    /// F2 / Ctrl+D while editing settings — cycle detected capture devices.
+    ConfigCycleCaptureDevice,
     /// T — toggle translated audio on or off.
     ToggleTts,
     /// M — expand or collapse the detailed metrics view.
@@ -134,15 +136,17 @@ enum ConfigEditorField {
     TargetLanguage,
     GoogleApiKey,
     AudioSource,
+    CaptureDevice,
     AudioFilePath,
 }
 
 impl ConfigEditorField {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::SourceLanguage,
         Self::TargetLanguage,
         Self::GoogleApiKey,
         Self::AudioSource,
+        Self::CaptureDevice,
         Self::AudioFilePath,
     ];
 
@@ -152,6 +156,7 @@ impl ConfigEditorField {
             Self::TargetLanguage => "Target language",
             Self::GoogleApiKey => "Google API key",
             Self::AudioSource => "Audio source",
+            Self::CaptureDevice => "Capture device",
             Self::AudioFilePath => "Audio file path",
         }
     }
@@ -166,9 +171,11 @@ pub struct ConfigEditorState {
     pub target_language: String,
     pub google_api_key: String,
     pub audio_source: String,
+    pub capture_device: String,
     pub audio_file_path: String,
     pub config_path: String,
     pub status_message: Option<String>,
+    pub capture_device_options: Vec<String>,
 }
 
 impl ConfigEditorState {
@@ -180,9 +187,11 @@ impl ConfigEditorState {
             target_language: config.target_language.clone(),
             google_api_key: config.google_api_key.clone().unwrap_or_default(),
             audio_source: config.audio_source.clone(),
+            capture_device: config.capture_device.clone().unwrap_or_default(),
             audio_file_path: config.audio_file_path.clone().unwrap_or_default(),
             config_path: config_path.display().to_string(),
             status_message: None,
+            capture_device_options: Vec::new(),
         }
     }
 
@@ -196,6 +205,7 @@ impl ConfigEditorState {
             ConfigEditorField::TargetLanguage => &mut self.target_language,
             ConfigEditorField::GoogleApiKey => &mut self.google_api_key,
             ConfigEditorField::AudioSource => &mut self.audio_source,
+            ConfigEditorField::CaptureDevice => &mut self.capture_device,
             ConfigEditorField::AudioFilePath => &mut self.audio_file_path,
         }
     }
@@ -226,6 +236,43 @@ impl ConfigEditorState {
 
     pub fn set_status_message(&mut self, message: impl Into<String>) {
         self.status_message = Some(message.into());
+    }
+
+    pub fn set_capture_device_options(&mut self, options: Vec<String>) {
+        self.capture_device_options = options
+            .into_iter()
+            .map(|device| device.trim().to_string())
+            .filter(|device| !device.is_empty())
+            .collect();
+    }
+
+    pub fn cycle_capture_device(&mut self) {
+        if self.capture_device_options.is_empty() {
+            self.set_status_message(
+                " No capture devices detected. Leave blank for Windows default or type a name.",
+            );
+            return;
+        }
+
+        let mut choices = Vec::with_capacity(self.capture_device_options.len() + 1);
+        choices.push("");
+        choices.extend(self.capture_device_options.iter().map(String::as_str));
+
+        let current = self.capture_device.trim();
+        let current_index = choices
+            .iter()
+            .position(|candidate| *candidate == current)
+            .unwrap_or(0);
+        let next = choices[(current_index + 1) % choices.len()];
+        self.capture_device = next.to_string();
+
+        if next.is_empty() {
+            self.set_status_message(" Capture device: Windows default playback device.");
+        } else {
+            self.set_status_message(format!(
+                " Capture device selected: {next}. Save and restart to use it."
+            ));
+        }
     }
 }
 
@@ -442,6 +489,8 @@ impl Widget for &SubtitlePane {
         if inner.width < 2 || inner.height < 1 {
             return;
         }
+
+        Clear.render(inner, buf);
 
         if self.pairs.is_empty() {
             render_empty_message(inner, buf);
@@ -693,7 +742,7 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
 const HELP_OVERLAY_IDEAL_H: u16 = 16;
 const HELP_OVERLAY_MIN_H: u16 = 4;
-const HELP_OVERLAY_CONTENT_LINES: u16 = 13;
+const HELP_OVERLAY_CONTENT_LINES: u16 = 14;
 
 /// Return the maximum valid scroll offset for the help overlay at `area`.
 pub fn help_overlay_max_scroll(area: Rect) -> u16 {
@@ -1506,7 +1555,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from("  T          Toggle TTS audio output"),
         Line::from("  M          Toggle metrics panel (compact/expanded)"),
         Line::from("  L          Change target language"),
-        Line::from("  S          Open settings editor"),
+        Line::from("  S          Settings (F2/Ctrl+D cycles devices)"),
         Line::from("  R          Reload config from disk"),
         Line::from("  ?          Show / hide this help"),
         Line::from("  Esc        Dismiss this overlay"),
@@ -1589,7 +1638,7 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 /// Render the shared first-run / settings editor overlay.
 pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &ConfigEditorState) {
     let panel_w = 76u16.min(area.width);
-    let panel_h = 13u16.min(area.height);
+    let panel_h = 15u16.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -1640,25 +1689,30 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             editor.active_field(),
         ),
         config_editor_field_line(
+            ConfigEditorField::CaptureDevice,
+            &editor.capture_device,
+            editor.active_field(),
+        ),
+        config_editor_field_line(
             ConfigEditorField::AudioFilePath,
             &editor.audio_file_path,
             editor.active_field(),
         ),
         Line::from(""),
         Line::from(Span::styled(
-            " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            " Use audio_source=wasapi for live system audio or file for a WAV replay path.",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
             editor
                 .status_message
                 .clone()
                 .unwrap_or_else(|| " Ready to save.".to_string()),
             Style::default().fg(Color::Yellow),
+        )),
+        Line::from(Span::styled(
+            " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            " audio_source: wasapi live, file WAV. capture_device blank=default; F2 cycles.",
+            Style::default().fg(Color::DarkGray),
         )),
     ];
 
@@ -1680,7 +1734,14 @@ fn config_editor_field_line(
 ) -> Line<'static> {
     let is_active = field == active_field;
     let prefix = if is_active { "> " } else { "  " };
-    let display_value = if value.is_empty() { "—" } else { value };
+    let display_value = if value.is_empty() {
+        match field {
+            ConfigEditorField::CaptureDevice => "Windows default playback",
+            _ => "—",
+        }
+    } else {
+        value
+    };
     let style = if is_active {
         Style::default()
             .fg(Color::Cyan)
@@ -1905,6 +1966,26 @@ mod tests {
         })
         .join();
         assert_eq!(state.device_name_str(), "WASAPI Speakers");
+    }
+
+    #[test]
+    fn config_editor_cycles_capture_device_options() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.set_capture_device_options(vec![
+            "Speakers (Realtek Audio)".to_string(),
+            "Headphones (USB Audio)".to_string(),
+        ]);
+
+        editor.cycle_capture_device();
+        assert_eq!(editor.capture_device, "Speakers (Realtek Audio)");
+        editor.cycle_capture_device();
+        assert_eq!(editor.capture_device, "Headphones (USB Audio)");
+        editor.cycle_capture_device();
+        assert_eq!(editor.capture_device, "");
     }
 
     // ── SubtitlePair ────────────────────────────────────────────────────────

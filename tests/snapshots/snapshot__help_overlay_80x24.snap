@@ -16,7 +16,7 @@ expression: "render_help(80, 24, 0)"
             │  T          Toggle TTS audio output                  │            
             │  M          Toggle metrics panel (compact/expanded)  │            
             │  L          Change target language                   │            
-            │  S          Open settings editor                     │            
+            │  S          Settings (F2/Ctrl+D cycles devices)      │            
             │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            

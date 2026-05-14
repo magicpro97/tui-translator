@@ -25,8 +25,8 @@ use metrics::SttState;
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
-    render_language_prompt, truncate_device_name, AppState, ConfigEditorMode,
-    ConfigEditorState, ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane,
+    render_language_prompt, truncate_device_name, AppState, ConfigEditorMode, ConfigEditorState,
+    ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,6 +129,39 @@ fn render_config_editor(editor: &ConfigEditorState, width: u16, height: u16) -> 
     terminal
         .draw(|frame| {
             tui::render_config_editor(frame, frame.size(), editor);
+        })
+        .unwrap();
+    buffer_to_string(terminal.backend().buffer())
+}
+
+fn render_overlay_then_ui(width: u16, height: u16) -> String {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let state = AppState::new();
+    {
+        let mut pane = state.subtitle_pane.lock().unwrap();
+        pane.push(SubtitlePair::new(
+            "Overlay clear regression",
+            "Overlay cleared",
+        ));
+    }
+    let mut config_for_overlay = config::AppConfig::default();
+    config_for_overlay.audio_source = "file".to_string();
+    config_for_overlay.audio_file_path = Some(r"C:\capture\meeting.wav".to_string());
+    state.open_config_editor(
+        ConfigEditorMode::Settings,
+        &config_for_overlay,
+        std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+    );
+    terminal
+        .draw(|frame| {
+            draw_ui(frame, &state, "Test Device", 0.0, false, 0.0);
+        })
+        .unwrap();
+    state.close_config_editor();
+    terminal
+        .draw(|frame| {
+            draw_ui(frame, &state, "Test Device", 0.0, false, 0.0);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -608,6 +641,23 @@ fn snapshot_config_editor_settings_narrow() {
     insta::assert_snapshot!(
         "config_editor_settings_narrow",
         render_config_editor(&editor, 60, 16)
+    );
+}
+
+#[test]
+fn closing_config_editor_redraw_clears_overlay_pixels() {
+    let rendered = render_overlay_then_ui(90, 20);
+    assert!(
+        !rendered.contains("Audio file path"),
+        "closed settings overlay should not leave stale field labels on screen:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Edit the saved config"),
+        "closed settings overlay should not leave stale intro text on screen:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("[SRC] Overlay clear regression"),
+        "base subtitle content should redraw after closing the overlay:\n{rendered}"
     );
 }
 

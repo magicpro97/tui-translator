@@ -2,7 +2,7 @@
 source: tests/snapshot.rs
 expression: rendered
 ---
-┌ Help — press ? or Esc to close ──────┐
+┌ Help [0/1] — ↑↓ scroll · Esc close ──┐
 │ Keyboard Shortcuts                   │
 │                                      │
 │  ↑ / ↓     Scroll subtitles/help     │
@@ -12,7 +12,7 @@ expression: rendered
 │  T          Toggle TTS audio output  │
 │  M          Toggle metrics panel (com│
 │  L          Change target language   │
-│  S          Open settings editor     │
+│  S          Settings (F2/Ctrl+D cycle│
 │  R          Reload config from disk  │
 │  ?          Show / hide this help    │
 │  Esc        Dismiss this overlay     │

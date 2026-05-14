@@ -44,9 +44,9 @@ use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use tokio::sync::mpsc;
-use wasapi::{get_default_device, initialize_mta, Direction, ShareMode};
+use wasapi::{get_default_device, initialize_mta, Device, DeviceCollection, Direction, ShareMode};
 
-use super::{AudioChunk, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
+use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
 
 /// Target output sample rate (required by Google Speech-to-Text).
 const TARGET_RATE: u32 = 16_000;
@@ -60,14 +60,18 @@ const EVENT_TIMEOUT_MS: u32 = 1_000;
 /// Spawn the WASAPI loopback capture thread.
 ///
 /// Returns immediately; the thread runs until the channel receiver is dropped.
-pub(super) fn spawn(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Result<CaptureInfo> {
+pub(super) fn spawn(
+    tx: mpsc::Sender<AudioChunk>,
+    capture_device: Option<String>,
+    silence_threshold: f32,
+) -> Result<CaptureInfo> {
     let (init_tx, init_rx) = sync_channel(1);
     let error_tx = init_tx.clone();
 
     std::thread::Builder::new()
         .name("wasapi-loopback".into())
         .spawn(move || {
-            if let Err(e) = capture_loop(tx, silence_threshold, init_tx) {
+            if let Err(e) = capture_loop(tx, capture_device, silence_threshold, init_tx) {
                 let _ = error_tx.send(Err(format!("{e:#}")));
                 tracing::error!("WASAPI capture thread failed: {e:#}");
             }
@@ -90,19 +94,16 @@ pub(super) fn spawn(tx: mpsc::Sender<AudioChunk>, silence_threshold: f32) -> Res
 /// OS thread.
 fn capture_loop(
     tx: mpsc::Sender<AudioChunk>,
+    capture_device: Option<String>,
     silence_threshold: f32,
     init_tx: SyncSender<std::result::Result<CaptureInfo, String>>,
 ) -> Result<()> {
     // COM must be initialized on every thread that uses WASAPI.
     initialize_mta().map_err(|e| anyhow!("initialize COM MTA: {e}"))?;
 
-    // Get the default *render* (speakers) endpoint.  WASAPI loopback capture
-    // reads from a render endpoint with Direction::Capture + loopback=true.
-    let device = get_default_device(&Direction::Render)
-        .map_err(|e| anyhow!("get default render device: {e}"))?;
-    let device_name = device
-        .get_friendlyname()
-        .unwrap_or_else(|_| "unknown".into());
+    // WASAPI loopback reads from a render endpoint with Direction::Capture +
+    // loopback=true. Blank selection means Windows default playback endpoint.
+    let (device, device_name) = select_render_device(capture_device.as_deref())?;
     tracing::info!(device = %device_name, "WASAPI loopback opened");
 
     let mut audio_client = device
@@ -227,6 +228,94 @@ fn capture_loop(
     }
 }
 
+pub(super) fn list_loopback_devices() -> Result<Vec<CaptureDeviceInfo>> {
+    initialize_mta().map_err(|e| anyhow!("initialize COM MTA: {e}"))?;
+    let default_name = get_default_device(&Direction::Render)
+        .ok()
+        .and_then(|device| device.get_friendlyname().ok());
+    let names = active_render_device_names()?;
+
+    Ok(names
+        .into_iter()
+        .map(|name| CaptureDeviceInfo {
+            is_default: default_name.as_deref() == Some(name.as_str()),
+            name,
+        })
+        .collect())
+}
+
+fn select_render_device(requested: Option<&str>) -> Result<(Device, String)> {
+    match requested.map(str::trim).filter(|device| !device.is_empty()) {
+        Some(name) => find_render_device_by_name(name),
+        None => {
+            let device = get_default_device(&Direction::Render)
+                .map_err(|e| anyhow!("get default render device: {e}"))?;
+            let device_name = device
+                .get_friendlyname()
+                .unwrap_or_else(|_| "unknown".into());
+            Ok((device, device_name))
+        }
+    }
+}
+
+fn find_render_device_by_name(name: &str) -> Result<(Device, String)> {
+    let collection = DeviceCollection::new(&Direction::Render)
+        .map_err(|e| anyhow!("enumerate active render devices: {e}"))?;
+    let count = collection
+        .get_nbr_devices()
+        .map_err(|e| anyhow!("count active render devices: {e}"))?;
+    let mut names = Vec::with_capacity(count as usize);
+
+    for index in 0..count {
+        let device = collection
+            .get_device_at_index(index)
+            .map_err(|e| anyhow!("read render device {index}: {e}"))?;
+        let device_name = device
+            .get_friendlyname()
+            .map_err(|e| anyhow!("read render device {index} name: {e}"))?;
+        if device_name == name {
+            return Ok((device, device_name));
+        }
+        names.push(device_name);
+    }
+
+    Err(anyhow!(
+        "render device {name:?} was not found. Open Settings and press F2 on \
+         Capture device to choose one of: {}",
+        format_device_names(&names)
+    ))
+}
+
+fn active_render_device_names() -> Result<Vec<String>> {
+    let collection = DeviceCollection::new(&Direction::Render)
+        .map_err(|e| anyhow!("enumerate active render devices: {e}"))?;
+    let count = collection
+        .get_nbr_devices()
+        .map_err(|e| anyhow!("count active render devices: {e}"))?;
+    let mut names = Vec::with_capacity(count as usize);
+
+    for index in 0..count {
+        let device = collection
+            .get_device_at_index(index)
+            .map_err(|e| anyhow!("read render device {index}: {e}"))?;
+        names.push(
+            device
+                .get_friendlyname()
+                .map_err(|e| anyhow!("read render device {index} name: {e}"))?,
+        );
+    }
+
+    Ok(names)
+}
+
+fn format_device_names(names: &[String]) -> String {
+    if names.is_empty() {
+        "no active playback devices reported by Windows".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
 /// Convert a raw byte deque of interleaved PCM into a mono `Vec<f32>`.
 ///
 /// Mixes down all channels by averaging. Supports 16-bit integer and
@@ -284,5 +373,13 @@ mod tests {
         let mono = raw_bytes_to_mono_f32(&data, 2, 24);
 
         assert_eq!(mono, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn format_device_names_reports_empty_device_list() {
+        assert_eq!(
+            format_device_names(&[]),
+            "no active playback devices reported by Windows"
+        );
     }
 }
