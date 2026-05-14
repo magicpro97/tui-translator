@@ -1342,13 +1342,11 @@ impl Widget for &ControlHintsBar {
 /// status/metrics strip, the always-visible control hints bar (issue #65),
 /// and any active overlays (help, language prompt, auth-error banner, quit summary).
 ///
-/// The `_device_name` parameter is retained for call-site compatibility but is
-/// no longer used for rendering; the audio gauge title is now derived from
-/// [`AppState::capture_device_label`] (issue #197).
+/// The audio gauge title is derived from [`AppState::capture_device_label`] so
+/// operators see the configured capture source at a glance (issue #197).
 pub fn draw_ui(
     frame: &mut ratatui::Frame,
     state: &AppState,
-    _device_name: &str,
     audio_level: f64,
     show_restart_notice: bool,
     cost_warning_usd: f64,
@@ -2046,7 +2044,7 @@ mod tests {
         *state.source_language.lock().unwrap() = "en-US".to_string();
         *state.target_language.lock().unwrap() = "fr".to_string();
         terminal
-            .draw(|frame| draw_ui(frame, &state, "dummy", 0.0, false, 0.0))
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
             .unwrap();
         let rendered: String = terminal
             .backend()
@@ -2077,7 +2075,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let state = AppState::new(); // capture_device_label defaults to "Default device"
         terminal
-            .draw(|frame| draw_ui(frame, &state, "dummy", 0.0, false, 0.0))
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
             .unwrap();
         let rendered: String = terminal
             .backend()
@@ -2100,7 +2098,7 @@ mod tests {
         let state = AppState::new();
         *state.capture_device_label.lock().unwrap() = "Speakers (Realtek Audio)".to_string();
         terminal
-            .draw(|frame| draw_ui(frame, &state, "dummy", 0.0, false, 0.0))
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
             .unwrap();
         let rendered: String = terminal
             .backend()

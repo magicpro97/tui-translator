@@ -289,38 +289,17 @@ fn main() -> Result<()> {
     };
 
     let state = AppState::new();
-    state.set_target_language(
-        current_config
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .target_language
-            .clone(),
-    );
+    let loaded_config = current_config
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    state.set_target_language(loaded_config.target_language.clone());
     // Initialise source_language from the loaded config so AppState and the
     // orchestrator start with the same value.
-    overwrite_source_language(
-        &state.source_language,
-        &current_config
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .source_language
-            .clone(),
-    );
+    overwrite_source_language(&state.source_language, &loaded_config.source_language);
     // Initialise the operator-facing capture device label from config (issue #197).
-    overwrite_capture_device_label(
-        &state.capture_device_label,
-        &current_config
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .capture_device
-            .clone(),
-    );
-    state.set_tts_enabled(
-        current_config
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .tts_enabled,
-    );
+    overwrite_capture_device_label(&state.capture_device_label, &loaded_config.capture_device);
+    state.set_tts_enabled(loaded_config.tts_enabled);
     let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
     if !onboarding_required && !config_recovery_required {
         let current_cfg = current_config
@@ -863,13 +842,13 @@ fn overwrite_device_name(slot: &Arc<std::sync::Mutex<String>>, next_name: &str) 
 
 /// Derive the operator-facing capture device label from the config field.
 ///
-/// Returns `"Default device"` when no explicit device is configured, or the
-/// configured device name when one has been selected.  This label is shown in
-/// the audio gauge title (issue #197).
+/// Returns `"Default device"` when no explicit non-whitespace device is
+/// configured, or the trimmed device name when one has been selected. This
+/// label is shown in the audio gauge title (issue #197).
 fn capture_device_label_from_config(capture_device: &Option<String>) -> String {
-    match capture_device.as_deref() {
-        None | Some("") => "Default device".to_string(),
-        Some(name) => name.to_string(),
+    match capture_device.as_deref().map(str::trim) {
+        Some(name) if !name.is_empty() => name.to_string(),
+        _ => "Default device".to_string(),
     }
 }
 
@@ -1153,16 +1132,8 @@ fn event_loop(
         }
 
         let level = state.level_ratio();
-        let dev_name = state.device_name_str();
         terminal.draw(|frame| {
-            draw_ui(
-                frame,
-                state,
-                &dev_name,
-                level,
-                show_restart,
-                cost_warning_usd,
-            );
+            draw_ui(frame, state, level, show_restart, cost_warning_usd);
         })?;
 
         // Drain all pending key actions without blocking.
@@ -2105,6 +2076,19 @@ mod tests {
         );
         assert!(restart_required.load(Ordering::Relaxed));
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn capture_device_label_defaults_for_blank_and_trims_configured_name() {
+        assert_eq!(capture_device_label_from_config(&None), "Default device");
+        assert_eq!(
+            capture_device_label_from_config(&Some("   ".to_string())),
+            "Default device"
+        );
+        assert_eq!(
+            capture_device_label_from_config(&Some("  Headphones (USB Audio)  ".to_string())),
+            "Headphones (USB Audio)"
+        );
     }
 
     #[test]
