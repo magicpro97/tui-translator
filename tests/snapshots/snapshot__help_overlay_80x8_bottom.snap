@@ -5,8 +5,8 @@ expression: "render_help(80, 8, 9999)"
             ┌ Help [7/7] — ↑↓ scroll · Esc close ──────────────────┐            
             │  M          Toggle metrics panel (compact/expanded)  │            
             │  L          Change target language                   │            
+            │  S          Open settings editor                     │            
             │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            
-            │  q / Ctrl+C Quit — shows session summary             │            
             └──────────────────────────────────────────────────────┘

@@ -12,8 +12,8 @@ expression: rendered
 │  T          Toggle TTS audio output  │
 │  M          Toggle metrics panel (com│
 │  L          Change target language   │
+│  S          Open settings editor     │
 │  R          Reload config from disk  │
 │  ?          Show / hide this help    │
 │  Esc        Dismiss this overlay     │
-│  q / Ctrl+C Quit — shows session summ│
 └──────────────────────────────────────┘

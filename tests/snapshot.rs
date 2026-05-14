@@ -1200,8 +1200,8 @@ fn help_overlay_constrained_scroll_clamped() {
     );
     // The last shortcut entry must be visible after scrolling to the bottom.
     assert!(
-        rendered_far.contains("Ctrl+C"),
-        "constrained 80×8 scrolled to bottom: 'Ctrl+C' must be visible; got:\n{rendered_far}"
+        rendered_far.contains("Esc"),
+        "constrained 80×8 scrolled to bottom: the final shortcut entry must be visible; got:\n{rendered_far}"
     );
 }
 

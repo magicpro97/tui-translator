@@ -29,9 +29,11 @@
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +57,9 @@ pub const EXIT_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// A running `tui-translator` session managed inside a PTY.
 pub struct PtySession {
+    /// Per-session sandbox that holds the fixture-backed config.json used by
+    /// most PTY tests so they never touch real WASAPI devices on the host.
+    _sandbox: TempDir,
     /// PTY master handle used only for `resize()`.
     master: Box<dyn MasterPty + Send>,
     /// Write end of the PTY (shared with the DSR-responder background thread).
@@ -95,12 +100,18 @@ impl PtySession {
             })
             .map_err(|e| format!("openpty({cols}×{rows}): {e}"))?;
 
+        let sandbox = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
         let mut cmd = CommandBuilder::new(BINARY);
         // Most PTY tests assert the steady-state UI and intentionally bypass
         // the first-run setup flow unless they override this flag explicitly.
         cmd.env("TUI_TRANSLATOR_SKIP_ONBOARDING", "1");
-        // Neutral working directory to avoid picking up a real config.json.
-        cmd.cwd(std::env::temp_dir());
+        // Neutral working directory inside the sandbox so the child never
+        // discovers a user or repo-local config.json by accident.
+        cmd.cwd(sandbox.path());
+        if should_inject_fixture_config(extra_env) {
+            let cfg_path = write_fixture_backed_config(sandbox.path())?;
+            cmd.env("TUI_TRANSLATOR_CONFIG", cfg_path.as_os_str());
+        }
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
@@ -184,6 +195,7 @@ impl PtySession {
         }
 
         Ok(Self {
+            _sandbox: sandbox,
             master: pair.master,
             writer,
             child,
@@ -374,6 +386,42 @@ impl PtySession {
     pub fn kill(&mut self) {
         let _ = self.child.kill();
     }
+}
+
+fn write_fixture_backed_config(dir: &std::path::Path) -> Result<PathBuf, String> {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("soak")
+        .join("soak_audio.wav");
+    let fixture = fixture
+        .canonicalize()
+        .map_err(|e| format!("canonicalize soak fixture: {e}"))?;
+    let cfg_path = dir.join("config.json");
+    let payload = format!(
+        concat!(
+            "{{\n",
+            "  \"google_api_key\": \"pty-test-key\",\n",
+            "  \"source_language\": \"ja-JP\",\n",
+            "  \"target_language\": \"vi\",\n",
+            "  \"tts_enabled\": false,\n",
+            "  \"audio_source\": \"file\",\n",
+            "  \"audio_file_path\": \"{}\"\n",
+            "}}\n"
+        ),
+        fixture.display().to_string().replace('\\', "\\\\")
+    );
+    std::fs::write(&cfg_path, payload).map_err(|e| format!("write PTY config: {e}"))?;
+    Ok(cfg_path)
+}
+
+fn should_inject_fixture_config(extra_env: &[(&str, &str)]) -> bool {
+    let has_explicit_config = extra_env
+        .iter()
+        .any(|(key, _)| *key == "TUI_TRANSLATOR_CONFIG");
+    let disables_onboarding = extra_env
+        .iter()
+        .any(|(key, value)| *key == "TUI_TRANSLATOR_SKIP_ONBOARDING" && *value == "0");
+    !has_explicit_config && !disables_onboarding
 }
 
 impl Drop for PtySession {
