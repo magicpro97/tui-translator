@@ -768,19 +768,24 @@ mod tests {
 
     #[test]
     fn editor_defaults_file_audio_path_next_to_config() {
-        let path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join(".tui-translator").join("config.json");
         let mut cfg = AppConfig {
             audio_source: "file".to_string(),
             audio_file_path: None,
             ..AppConfig::default()
         };
 
-        apply_editor_defaults(path, &mut cfg).unwrap();
+        apply_editor_defaults(&path, &mut cfg).unwrap();
 
-        assert_eq!(
-            cfg.audio_file_path.as_deref(),
-            Some(r"C:\Users\demo\.tui-translator\audio-input.wav")
-        );
+        let expected = path
+            .parent()
+            .unwrap()
+            .join("audio-input.wav")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(cfg.audio_file_path.as_deref(), Some(expected.as_str()));
     }
 
     #[test]
