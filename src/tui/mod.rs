@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 use std::{
+    collections::VecDeque,
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -25,7 +26,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, Paragraph, Widget, Wrap},
 };
 use tracing::warn;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::AppConfig;
 
@@ -45,6 +46,8 @@ const UNREAD_COLOR: Color = Color::Yellow;
 
 const SRC_PREFIX: &str = "[SRC] ";
 const TGT_PREFIX: &str = "[TGT] ";
+const SUBTITLE_MAX_PAIRS: usize = 2_000;
+const SUBTITLE_MAX_TEXT_CHARS: usize = 4_000;
 
 /// Minimum terminal width (columns) for the full UI to render meaningfully.
 ///
@@ -117,8 +120,49 @@ pub enum UserAction {
     ScrollTop,
     /// End — jump to the newest subtitle and re-enable auto-follow.
     ScrollBottom,
+    /// Tab — move keyboard focus to the next scrollable panel.
+    FocusNext,
+    /// Shift+Tab — move keyboard focus to the previous scrollable panel.
+    FocusPrev,
     /// Any other key that should wake generic "press any key" waits.
     AnyKey,
+}
+
+/// Scrollable panel that currently receives keyboard focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusPanel {
+    /// Main bilingual subtitle pane.
+    Subtitles,
+    /// Persistent authentication-error banner.
+    AuthError,
+    /// Keyboard-shortcut help overlay.
+    Help,
+}
+
+impl FocusPanel {
+    fn from_u32(value: u32) -> Self {
+        match value {
+            1 => Self::AuthError,
+            2 => Self::Help,
+            _ => Self::Subtitles,
+        }
+    }
+
+    fn as_u32(self) -> u32 {
+        match self {
+            Self::Subtitles => 0,
+            Self::AuthError => 1,
+            Self::Help => 2,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Subtitles => "Subtitles",
+            Self::AuthError => "API error",
+            Self::Help => "Help",
+        }
+    }
 }
 
 /// Mode for the shared config editor overlay.
@@ -293,11 +337,21 @@ impl SubtitlePair {
     /// Create a new pair stamped with the current wall-clock time.
     pub fn new(source: impl Into<String>, target: impl Into<String>) -> Self {
         Self {
-            source: source.into(),
-            target: target.into(),
+            source: truncate_long_display_text(source.into(), SUBTITLE_MAX_TEXT_CHARS),
+            target: truncate_long_display_text(target.into(), SUBTITLE_MAX_TEXT_CHARS),
             timestamp: SystemTime::now(),
         }
     }
+}
+
+fn truncate_long_display_text(text: String, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text;
+    }
+
+    let mut truncated: String = text.chars().take(max_chars).collect();
+    truncated.push_str(" ... [truncated]");
+    truncated
 }
 
 // ── SubtitlePane ─────────────────────────────────────────────────────────────
@@ -309,7 +363,7 @@ impl SubtitlePair {
 /// (pinned to the bottom) until the user manually scrolls up, at which point
 /// an unread-count badge appears so new arrivals are never silently lost.
 pub struct SubtitlePane {
-    pairs: Vec<SubtitlePair>,
+    pairs: VecDeque<SubtitlePair>,
     /// Visual lines scrolled upward from the bottom (0 = auto-follow / pinned).
     scroll: u16,
     /// Pairs added while the pane is not pinned to the bottom.
@@ -318,24 +372,17 @@ pub struct SubtitlePane {
     last_inner_width: u16,
     /// Most recent inner pane height used for scroll anchoring.
     last_inner_height: u16,
-    /// Cached wrapped lines for the last rendered width.
-    cached_lines: Vec<Line<'static>>,
-    cached_width: u16,
-    cache_dirty: bool,
 }
 
 impl SubtitlePane {
     /// Create an empty pane pinned to the bottom.
     pub fn new() -> Self {
         Self {
-            pairs: Vec::new(),
+            pairs: VecDeque::new(),
             scroll: 0,
             unread: 0,
             last_inner_width: 0,
             last_inner_height: 0,
-            cached_lines: Vec::new(),
-            cached_width: 0,
-            cache_dirty: true,
         }
     }
 
@@ -356,8 +403,8 @@ impl SubtitlePane {
             }
             self.unread += 1;
         }
-        self.pairs.push(pair);
-        self.cache_dirty = true;
+        self.pairs.push_back(pair);
+        self.trim_retained_pairs();
     }
 
     fn max_scroll(&mut self, width: u16, height: u16) -> u16 {
@@ -365,8 +412,7 @@ impl SubtitlePane {
             return 0;
         }
 
-        self.ensure_cached_lines(width);
-        let total = self.cached_lines.len();
+        let total = self.total_visual_lines(width as usize);
         total
             .saturating_sub(self.visible_line_count(height))
             .min(u16::MAX as usize) as u16
@@ -375,7 +421,6 @@ impl SubtitlePane {
     pub fn clamp_scroll(&mut self, width: u16, height: u16) {
         self.last_inner_width = width;
         self.last_inner_height = height;
-        self.ensure_cached_lines(width);
         self.scroll = self.scroll.min(self.max_scroll(width, height));
         if self.scroll == 0 {
             self.unread = 0;
@@ -424,36 +469,81 @@ impl SubtitlePane {
         height.saturating_sub(u16::from(self.unread > 0 && height > 0)) as usize
     }
 
-    fn ensure_cached_lines(&mut self, width: u16) {
-        if width == 0 {
-            self.cached_width = 0;
-            self.cached_lines.clear();
-            self.cache_dirty = false;
-            return;
+    fn trim_retained_pairs(&mut self) {
+        while self.pairs.len() > SUBTITLE_MAX_PAIRS {
+            let Some(removed) = self.pairs.pop_front() else {
+                break;
+            };
+
+            if self.last_inner_width > 0 {
+                let removed_lines = self.visual_lines_for_pair(
+                    &removed,
+                    self.last_inner_width as usize,
+                    !self.pairs.is_empty(),
+                );
+                self.scroll = self
+                    .scroll
+                    .saturating_sub(removed_lines.min(u16::MAX as usize) as u16);
+            }
         }
 
-        if self.cache_dirty || self.cached_width != width {
-            self.cached_lines = self.build_all_lines(width as usize);
-            self.cached_width = width;
-            self.cache_dirty = false;
-        }
+        self.unread = self.unread.min(self.pairs.len());
     }
 
-    /// Build the complete list of visual [`Line`]s for all pairs at `width`.
-    fn build_all_lines(&self, width: usize) -> Vec<Line<'static>> {
-        let mut lines: Vec<Line<'static>> = Vec::new();
+    fn total_visual_lines(&self, width: usize) -> usize {
+        let pair_count = self.pairs.len();
+        self.pairs
+            .iter()
+            .enumerate()
+            .map(|(i, pair)| self.visual_lines_for_pair(pair, width, i + 1 < pair_count))
+            .sum()
+    }
+
+    fn build_visible_lines(&self, width: usize, start: usize, end: usize) -> Vec<Line<'static>> {
+        let mut visible_lines = Vec::with_capacity(end.saturating_sub(start));
+        let mut cursor = 0usize;
         let pair_count = self.pairs.len();
         for (i, pair) in self.pairs.iter().enumerate() {
-            lines.extend(wrap_to_lines(SRC_PREFIX, &pair.source, width, SRC_COLOR));
-            lines.extend(wrap_to_lines(TGT_PREFIX, &pair.target, width, TGT_COLOR));
-            if i + 1 < pair_count {
-                // "─" (U+2500) repeated to fill the pane width
-                let sep = "\u{2500}".repeat(width);
-                lines.push(Line::from(Span::styled(
-                    sep,
-                    Style::default().fg(SEP_COLOR),
-                )));
+            let include_separator = i + 1 < pair_count;
+            let pair_line_count = self.visual_lines_for_pair(pair, width, include_separator);
+            let next_cursor = cursor.saturating_add(pair_line_count);
+
+            if next_cursor <= start {
+                cursor = next_cursor;
+                continue;
             }
+            if cursor >= end {
+                break;
+            }
+
+            let pair_lines = self.build_pair_lines(pair, width, include_separator);
+            let skip = start.saturating_sub(cursor);
+            let take = end.saturating_sub(cursor.saturating_add(skip));
+            visible_lines.extend(pair_lines.into_iter().skip(skip).take(take));
+
+            cursor = next_cursor;
+            if visible_lines.len() >= end.saturating_sub(start) {
+                break;
+            }
+        }
+        visible_lines
+    }
+
+    fn build_pair_lines(
+        &self,
+        pair: &SubtitlePair,
+        width: usize,
+        include_separator: bool,
+    ) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        lines.extend(wrap_to_lines(SRC_PREFIX, &pair.source, width, SRC_COLOR));
+        lines.extend(wrap_to_lines(TGT_PREFIX, &pair.target, width, TGT_COLOR));
+        if include_separator {
+            let sep = "\u{2500}".repeat(width);
+            lines.push(Line::from(Span::styled(
+                sep,
+                Style::default().fg(SEP_COLOR),
+            )));
         }
         lines
     }
@@ -464,8 +554,8 @@ impl SubtitlePane {
         width: usize,
         include_separator: bool,
     ) -> usize {
-        wrap_to_lines(SRC_PREFIX, &pair.source, width, SRC_COLOR).len()
-            + wrap_to_lines(TGT_PREFIX, &pair.target, width, TGT_COLOR).len()
+        wrapped_line_count(SRC_PREFIX, &pair.source, width)
+            + wrapped_line_count(TGT_PREFIX, &pair.target, width)
             + usize::from(include_separator)
     }
 }
@@ -497,23 +587,17 @@ impl Widget for &SubtitlePane {
             return;
         }
 
-        let owned_lines;
-        let all_lines = if !self.cache_dirty && self.cached_width == inner.width {
-            &self.cached_lines
-        } else {
-            owned_lines = self.build_all_lines(inner.width as usize);
-            &owned_lines
-        };
         let visible = self.visible_line_count(inner.height);
-        let total = all_lines.len();
+        let total = self.total_visual_lines(inner.width as usize);
 
         // bottom_start: first line index when pinned to bottom
         let bottom_start = total.saturating_sub(visible);
         // scroll up from there (clamped so we never go past line 0)
         let start = bottom_start.saturating_sub(self.scroll as usize);
         let end = (start + visible).min(total);
+        let visible_lines = self.build_visible_lines(inner.width as usize, start, end);
 
-        for (row, line) in all_lines[start..end].iter().enumerate() {
+        for (row, line) in visible_lines.iter().enumerate() {
             let y = inner.y + row as u16;
             if y >= inner.y + inner.height {
                 break;
@@ -557,6 +641,39 @@ fn render_empty_message(area: Rect, buf: &mut Buffer) {
         area.width as usize,
         Style::default().fg(Color::DarkGray),
     );
+}
+
+fn wrapped_line_count(prefix: &str, text: &str, width: usize) -> usize {
+    let prefix_cols = display_width(prefix);
+    let chars: Vec<char> = text.chars().collect();
+    if chars.is_empty() {
+        return 1;
+    }
+
+    let mut lines = 0usize;
+    let mut offset = 0usize;
+    let available = width.saturating_sub(prefix_cols).max(1);
+
+    while offset < chars.len() {
+        let mut cols = 0usize;
+        let mut end = offset;
+        while end < chars.len() {
+            let w = char_width(chars[end]);
+            if cols + w > available {
+                break;
+            }
+            cols += w;
+            end += 1;
+        }
+        if end == offset {
+            end = offset + 1;
+        }
+
+        lines += 1;
+        offset = end;
+    }
+
+    lines
 }
 
 /// Wrap `text` to `width` terminal columns, returning styled [`Line`]s.
@@ -720,7 +837,7 @@ pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> 
     }
 }
 
-pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
+pub fn subtitle_pane_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
     // Expanded mode: 2 border rows + 4 standard content rows (STT/TTS, metrics,
     // elapsed, runtime CPU/RAM/Net/E2E/Loss) + optional cost-warning row = 6 or 7
     // total.  Compact mode keeps 3 rows.
@@ -736,7 +853,11 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
         ])
         .split(area);
 
-    subtitle_block().inner(chunks[2])
+    chunks[2]
+}
+
+pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
+    subtitle_block().inner(subtitle_pane_area(area, metrics_expanded, over_threshold))
 }
 
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
@@ -751,6 +872,55 @@ pub fn help_overlay_max_scroll(area: Rect) -> u16 {
         .max(HELP_OVERLAY_MIN_H.min(area.height));
     let inner_h = panel_h.saturating_sub(2);
     HELP_OVERLAY_CONTENT_LINES.saturating_sub(inner_h)
+}
+
+/// Return the maximum valid scroll offset for the auth-error banner.
+pub fn auth_error_banner_max_scroll(area: Rect, message: &str, subtitle_y_offset: u16) -> u16 {
+    let layout = auth_error_banner_layout(area, message, false, subtitle_y_offset);
+    layout
+        .content_lines
+        .saturating_sub(layout.panel.height.saturating_sub(2))
+}
+
+struct AuthErrorBannerLayout {
+    panel: Rect,
+    content_lines: u16,
+}
+
+fn auth_error_banner_layout(
+    area: Rect,
+    message: &str,
+    restart_required: bool,
+    subtitle_y_offset: u16,
+) -> AuthErrorBannerLayout {
+    let panel_w = area.width;
+    let inner_w = panel_w.saturating_sub(2).max(1);
+    let message_text = format!(" {message}");
+    let instruction = auth_error_instruction(restart_required);
+    let content_lines = 2u16
+        .saturating_add(estimated_wrapped_lines(&message_text, inner_w))
+        .saturating_add(estimated_wrapped_lines(instruction, inner_w));
+    let panel_h = content_lines.saturating_add(2).min(area.height).max(1);
+    let preferred_y = area.y.saturating_add(subtitle_y_offset).saturating_add(1);
+    let y = preferred_y.min(area.y + area.height.saturating_sub(panel_h));
+
+    AuthErrorBannerLayout {
+        panel: Rect {
+            x: area.x,
+            y,
+            width: panel_w,
+            height: panel_h,
+        },
+        content_lines,
+    }
+}
+
+fn auth_error_instruction(restart_required: bool) -> &'static str {
+    if restart_required {
+        " Config saved — restart the application to apply the new API key. Tab changes focus; ↑/↓ scroll."
+    } else {
+        " Fix the key in config.json, then restart the application to recover. Tab changes focus; ↑/↓ scroll."
+    }
 }
 
 // ── AppState ─────────────────────────────────────────────────────────────────
@@ -786,6 +956,10 @@ pub struct AppState {
     /// by ↑/↓ arrow keys while the overlay is visible.  The renderer clamps
     /// this to `max_scroll` so callers never need to worry about overshooting.
     pub help_scroll: AtomicU32,
+    /// Which scrollable panel receives Tab-directed keyboard focus.
+    pub focused_panel: AtomicU32,
+    /// Vertical scroll offset of the auth-error banner (lines from the top).
+    pub auth_error_scroll: AtomicU32,
     /// Whether translation is paused (Space key, issue #64).
     pub paused: Arc<AtomicBool>,
     /// Whether the language-change prompt is currently open (L key, issue #64).
@@ -855,6 +1029,8 @@ impl AppState {
             metrics_expanded: AtomicBool::new(false),
             show_help: AtomicBool::new(false),
             help_scroll: AtomicU32::new(0),
+            focused_panel: AtomicU32::new(FocusPanel::Subtitles.as_u32()),
+            auth_error_scroll: AtomicU32::new(0),
             paused: Arc::new(AtomicBool::new(false)),
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
@@ -947,6 +1123,89 @@ impl AppState {
         self.help_scroll.store(0, Ordering::Relaxed);
     }
 
+    /// Return the currently focused scrollable panel.
+    pub fn focused_panel(&self) -> FocusPanel {
+        FocusPanel::from_u32(self.focused_panel.load(Ordering::Relaxed))
+    }
+
+    /// Move focus to a specific scrollable panel.
+    pub fn set_focused_panel(&self, panel: FocusPanel) {
+        self.focused_panel.store(panel.as_u32(), Ordering::Relaxed);
+    }
+
+    /// Return the focused panel, falling back to an actually visible panel.
+    pub fn effective_focused_panel(&self, has_auth_error: bool) -> FocusPanel {
+        let current = self.focused_panel();
+        if self.panel_is_available(current, has_auth_error) {
+            current
+        } else if self.show_help.load(Ordering::Relaxed) {
+            FocusPanel::Help
+        } else if has_auth_error {
+            FocusPanel::AuthError
+        } else {
+            FocusPanel::Subtitles
+        }
+    }
+
+    /// Cycle focus through the visible scrollable panels.
+    pub fn cycle_focus(&self, has_auth_error: bool, reverse: bool) {
+        let panels = self.available_focus_panels(has_auth_error);
+        let current = self.effective_focused_panel(has_auth_error);
+        let current_index = panels
+            .iter()
+            .position(|panel| *panel == current)
+            .unwrap_or(0);
+        let next_index = if reverse {
+            current_index.checked_sub(1).unwrap_or(panels.len() - 1)
+        } else {
+            (current_index + 1) % panels.len()
+        };
+        self.set_focused_panel(panels[next_index]);
+    }
+
+    fn available_focus_panels(&self, has_auth_error: bool) -> Vec<FocusPanel> {
+        let mut panels = vec![FocusPanel::Subtitles];
+        if has_auth_error {
+            panels.push(FocusPanel::AuthError);
+        }
+        if self.show_help.load(Ordering::Relaxed) {
+            panels.push(FocusPanel::Help);
+        }
+        panels
+    }
+
+    fn panel_is_available(&self, panel: FocusPanel, has_auth_error: bool) -> bool {
+        match panel {
+            FocusPanel::Subtitles => true,
+            FocusPanel::AuthError => has_auth_error,
+            FocusPanel::Help => self.show_help.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Scroll the auth-error banner up by one line, clamped to `max_scroll`.
+    pub fn scroll_auth_error_up(&self, max_scroll: u32) {
+        let v = self.auth_error_scroll.load(Ordering::Relaxed);
+        self.auth_error_scroll
+            .store(v.min(max_scroll).saturating_sub(1), Ordering::Relaxed);
+    }
+
+    /// Scroll the auth-error banner down by one line, clamped to `max_scroll`.
+    pub fn scroll_auth_error_down(&self, max_scroll: u32) {
+        let v = self.auth_error_scroll.load(Ordering::Relaxed);
+        self.auth_error_scroll
+            .store(v.saturating_add(1).min(max_scroll), Ordering::Relaxed);
+    }
+
+    /// Jump the auth-error banner to the first line.
+    pub fn scroll_auth_error_to_top(&self) {
+        self.auth_error_scroll.store(0, Ordering::Relaxed);
+    }
+
+    /// Jump the auth-error banner to the last line.
+    pub fn scroll_auth_error_to_bottom(&self, max_scroll: u32) {
+        self.auth_error_scroll.store(max_scroll, Ordering::Relaxed);
+    }
+
     /// Current target language code used for translation output.
     pub fn target_language(&self) -> String {
         match self.target_language.lock() {
@@ -996,6 +1255,9 @@ impl AppState {
         config_path: &Path,
     ) {
         self.show_help.store(false, Ordering::Relaxed);
+        if self.focused_panel() == FocusPanel::Help {
+            self.set_focused_panel(FocusPanel::Subtitles);
+        }
         self.lang_prompt_active.store(false, Ordering::Relaxed);
         *self.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
         *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) =
@@ -1277,6 +1539,8 @@ impl StatusMetricsStrip<'_> {
 /// metrics strip (which now shows only metrics).
 pub struct ControlHintsBar {
     pub tts_on: bool,
+    /// Scrollable panel currently receiving ↑/↓/Home/End.
+    pub focused_panel: FocusPanel,
 }
 
 impl Widget for &ControlHintsBar {
@@ -1285,11 +1549,16 @@ impl Widget for &ControlHintsBar {
         //   < 80  cols → abbreviated
         //  ≥ 80  cols → standard hints including all required controls (issue #64/#65)
         let text = if area.width < 80 {
-            " ?  Spc  T  L  S  M  R  Q ".to_string()
+            " Tab  \u{2191}\u{2193}  ?  Spc  T  L  S  M  R  Q ".to_string()
+        } else if area.width < 120 {
+            " Tab focus \u{2191}/\u{2193} scroll ? help Space pause T L S settings M R reload Q quit "
+                .to_string()
         } else {
             let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit "
-                .to_string()
+            format!(
+                " Tab focus:{}  \u{2191}/\u{2193} scroll  ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit ",
+                self.focused_panel.label()
+            )
         };
 
         buf.set_stringn(
@@ -1358,6 +1627,7 @@ pub fn draw_ui(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
+    let focused_panel = state.effective_focused_panel(auth_banner.is_some());
 
     // Issue #65: the control hints bar is ALWAYS shown (1 row, no scroll).
     // Build layout — bottom section grows when the metrics panel is expanded.
@@ -1473,19 +1743,30 @@ pub fn draw_ui(
     frame.render_widget(&strip, chunks[3]);
 
     // ── Control hints bar — always rendered (issue #65) ──────────────────────
-    frame.render_widget(&ControlHintsBar { tts_on }, chunks[4]);
+    frame.render_widget(
+        &ControlHintsBar {
+            tts_on,
+            focused_panel,
+        },
+        chunks[4],
+    );
 
     // ── Auth-error persistent banner (#86) ───────────────────────────────────
     // Rendered as a floating overlay so the layout does not shift.
     // Anchor uses chunks[2].y (top of subtitle pane) rather than a magic constant (#185).
     if let Some(ref banner_msg) = auth_banner {
         let subtitle_y_offset = chunks[2].y.saturating_sub(area.y);
+        let max_scroll = auth_error_banner_max_scroll(area, banner_msg, subtitle_y_offset);
+        let auth_error_scroll =
+            (state.auth_error_scroll.load(Ordering::Relaxed) as u16).min(max_scroll);
         render_auth_error_banner(
             frame,
             area,
             banner_msg,
             show_restart_notice,
             subtitle_y_offset,
+            auth_error_scroll,
+            focused_panel == FocusPanel::AuthError,
         );
     }
 
@@ -1548,9 +1829,9 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  \u{2191} / \u{2193}     Scroll subtitles/help"),
-        Line::from("  Home       Scroll to top"),
-        Line::from("  End        Scroll to bottom / auto-follow"),
+        Line::from("  Tab        Move focus between scrollable boxes"),
+        Line::from("  \u{2191} / \u{2193}     Scroll the focused box"),
+        Line::from("  Home/End   Scroll top / bottom"),
         Line::from("  Space      Pause / resume translation"),
         Line::from("  T          Toggle TTS audio output"),
         Line::from("  M          Toggle metrics panel (compact/expanded)"),
@@ -1777,27 +2058,20 @@ pub fn render_auth_error_banner(
     message: &str,
     restart_required: bool,
     subtitle_y_offset: u16,
+    scroll_offset: u16,
+    focused: bool,
 ) {
-    let panel_w = area.width;
-    let panel_h = 5u16.min(area.height);
-    let x = area.x;
-    // Place the banner at the top of the subtitle pane, clamped so it never
-    // overflows the screen.
-    let y = (area.y + subtitle_y_offset).min(area.y + area.height.saturating_sub(panel_h));
-    let panel = Rect {
-        x,
-        y,
-        width: panel_w,
-        height: panel_h,
-    };
+    let layout = auth_error_banner_layout(area, message, restart_required, subtitle_y_offset);
+    let panel = layout.panel;
+    let message_text = format!(" {message}");
+    let instruction = auth_error_instruction(restart_required);
+    let max_scroll = layout
+        .content_lines
+        .saturating_sub(panel.height.saturating_sub(2));
+    let clamped_scroll = scroll_offset.min(max_scroll);
 
     frame.render_widget(Clear, panel);
 
-    let instruction = if restart_required {
-        " Config saved — restart the application to apply the new API key."
-    } else {
-        " Fix the key in config.json, then restart the application to recover."
-    };
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             " \u{26a0}  API Key Error",
@@ -1805,7 +2079,7 @@ pub fn render_auth_error_banner(
         )),
         Line::from(""),
         Line::from(Span::styled(
-            format!(" {message}"),
+            message_text,
             Style::default().fg(Color::Yellow),
         )),
         Line::from(Span::styled(
@@ -1814,15 +2088,39 @@ pub fn render_auth_error_banner(
         )),
     ];
 
+    let focus_marker = if focused { ">" } else { " " };
+    let title = if max_scroll > 0 {
+        format!(
+            "{focus_marker} \u{26a0} Authentication Error \u{2014} API calls halted [{}/{}] ",
+            clamped_scroll, max_scroll
+        )
+    } else {
+        format!("{focus_marker} \u{26a0} Authentication Error \u{2014} API calls halted ")
+    };
+
     frame.render_widget(
-        Paragraph::new(lines).block(
-            Block::default()
-                .title(" \u{26a0} Authentication Error — API calls halted ")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Red)),
-        ),
+        Paragraph::new(lines)
+            .scroll((clamped_scroll, 0))
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(Color::Red)),
+            ),
         panel,
     );
+}
+
+fn estimated_wrapped_lines(text: &str, width: u16) -> u16 {
+    let width = width.max(1) as usize;
+    text.lines()
+        .map(|line| {
+            let line_width = UnicodeWidthStr::width(line);
+            line_width.max(1).div_ceil(width) as u16
+        })
+        .sum::<u16>()
+        .max(1)
 }
 
 /// Draw the session-summary overlay that appears when the user presses quit.
@@ -2016,6 +2314,36 @@ mod tests {
     }
 
     #[test]
+    fn subtitle_history_is_bounded_for_long_meetings() {
+        let mut pane = SubtitlePane::new();
+        for idx in 0..(SUBTITLE_MAX_PAIRS + 25) {
+            pane.push(SubtitlePair::new(
+                format!("source {idx}"),
+                format!("target {idx}"),
+            ));
+        }
+
+        assert_eq!(pane.pair_count(), SUBTITLE_MAX_PAIRS);
+        assert_eq!(
+            pane.pairs.front().map(|pair| pair.source.as_str()),
+            Some("source 25")
+        );
+        let expected_last = format!("source {}", SUBTITLE_MAX_PAIRS + 24);
+        assert_eq!(
+            pane.pairs.back().map(|pair| pair.source.as_str()),
+            Some(expected_last.as_str())
+        );
+    }
+
+    #[test]
+    fn oversized_subtitle_text_is_truncated_for_display_safety() {
+        let pair = SubtitlePair::new("a".repeat(SUBTITLE_MAX_TEXT_CHARS + 50), "b");
+
+        assert!(pair.source.chars().count() < SUBTITLE_MAX_TEXT_CHARS + 50);
+        assert!(pair.source.ends_with(" ... [truncated]"));
+    }
+
+    #[test]
     fn push_while_scrolled_increments_unread() {
         let mut pane = overflowing_pane();
         pane.clamp_scroll(30, 6);
@@ -2100,6 +2428,14 @@ mod tests {
         // width=20, prefix="[SRC] " (6 chars) → content_width=14
         let lines = wrap_to_lines("[SRC] ", &text, 20, Color::Cyan);
         assert!(lines.len() > 1, "100 chars should not fit in 14 columns");
+    }
+
+    #[test]
+    fn wrapped_line_count_matches_actual_wrapped_lines() {
+        let text = "長いテキスト mixed with English words".repeat(3);
+        let actual = wrap_to_lines(SRC_PREFIX, &text, 24, SRC_COLOR);
+
+        assert_eq!(wrapped_line_count(SRC_PREFIX, &text, 24), actual.len());
     }
 
     #[test]

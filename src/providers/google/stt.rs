@@ -23,6 +23,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+use super::{format_google_http_error, looks_like_google_auth_error};
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
 // ── Google Speech REST API URL ────────────────────────────────────────────────
@@ -123,28 +124,12 @@ impl GoogleSttProvider {
 }
 
 fn looks_like_auth_error(status: StatusCode, body: &str) -> bool {
-    if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
-        return true;
-    }
-
-    if status != StatusCode::BAD_REQUEST {
-        return false;
-    }
-
-    let normalized = body.to_ascii_lowercase();
-    normalized.contains("api key not valid")
-        || normalized.contains("api_key_invalid")
-        || normalized.contains("authentication")
-        || normalized.contains("credential")
+    looks_like_google_auth_error(status, body)
 }
 
 fn classify_http_error(status: StatusCode, body: &str) -> ProviderError {
     if looks_like_auth_error(status, body) {
-        return ProviderError::AuthError(format!(
-            "Google STT authentication failed (HTTP {}): {}",
-            status.as_u16(),
-            body
-        ));
+        return ProviderError::AuthError(format_google_http_error("STT", status, body));
     }
 
     if status == StatusCode::TOO_MANY_REQUESTS {
@@ -255,6 +240,33 @@ mod tests {
         );
 
         assert!(matches!(err, ProviderError::AuthError(_)));
+    }
+
+    #[test]
+    fn classify_http_error_summarizes_expired_key_json() {
+        let body = r#"{
+          "error": {
+            "code": 400,
+            "message": "API key expired. Please renew the API key.",
+            "status": "INVALID_ARGUMENT",
+            "details": [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": "API_KEY_EXPIRED"
+              }
+            ]
+          }
+        }"#;
+        let err = classify_http_error(StatusCode::BAD_REQUEST, body);
+
+        let ProviderError::AuthError(message) = err else {
+            panic!("expected expired API key JSON to be an auth error");
+        };
+        assert_eq!(
+            message,
+            "Google STT authentication failed (HTTP 400): API key expired. Please renew the API key. (INVALID_ARGUMENT; reason: API_KEY_EXPIRED)"
+        );
+        assert!(!message.contains("\"error\""));
     }
 
     #[test]

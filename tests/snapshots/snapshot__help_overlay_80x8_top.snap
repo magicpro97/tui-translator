@@ -5,8 +5,8 @@ expression: "render_help(80, 8, 0)"
             ┌ Help [0/8] — ↑↓ scroll · Esc close ──────────────────┐            
             │ Keyboard Shortcuts                                   │            
             │                                                      │            
-            │  ↑ / ↓     Scroll subtitles/help                     │            
-            │  Home       Scroll to top                            │            
-            │  End        Scroll to bottom / auto-follow           │            
+            │  Tab        Move focus between scrollable boxes      │            
+            │  ↑ / ↓     Scroll the focused box                    │            
+            │  Home/End   Scroll top / bottom                      │            
             │  Space      Pause / resume translation               │            
             └──────────────────────────────────────────────────────┘

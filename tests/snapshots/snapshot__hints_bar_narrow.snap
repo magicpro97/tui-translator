@@ -2,4 +2,4 @@
 source: tests/snapshot.rs
 expression: "render_hints(&bar, 60, 1)"
 ---
- ?  Spc  T  L  S  M  R  Q
+ Tab  ↑↓  ?  Spc  T  L  S  M  R  Q

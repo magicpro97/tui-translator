@@ -50,6 +50,9 @@ use crate::{
 #[allow(unused_imports)]
 pub use crate::providers::{is_transient, with_retry, MAX_RETRY_ATTEMPTS};
 
+const STT_BATCH_TARGET_MS: u32 = 1_000;
+const EMPTY_STT_WARNING_THRESHOLD: u32 = 3;
+
 // ── Pipeline state ────────────────────────────────────────────────────────────
 
 /// Runtime state of the pipeline.  Shown in the status bar.
@@ -199,6 +202,8 @@ pub async fn run_orchestrator<S, M, T>(
 {
     tracing::info!("orchestrator started");
     let mut seq: u64 = 0;
+    let mut consecutive_empty_stt: u32 = 0;
+    let mut pending_audio = PendingAudioBatch::default();
 
     loop {
         if ctx.shutdown.load(Ordering::Relaxed) {
@@ -210,6 +215,11 @@ pub async fn run_orchestrator<S, M, T>(
             maybe_chunk = audio_rx.recv() => maybe_chunk,
             _ = tokio::time::sleep(Duration::from_millis(50)) => continue,
         }) else {
+            if let Some(batch) = pending_audio.take_pcm(seq) {
+                let outcome =
+                    process_chunk(batch.pcm, batch.duration_ms, &stt, &mt, &tts, &ctx).await;
+                handle_chunk_outcome(outcome, &mut consecutive_empty_stt, &ctx);
+            }
             break;
         };
 
@@ -218,10 +228,12 @@ pub async fn run_orchestrator<S, M, T>(
 
         if ctx.paused.load(Ordering::Relaxed) {
             ctx.audio_level.store(0, Ordering::Relaxed);
+            pending_audio.clear();
             continue;
         }
         if ctx.pipeline_halted.load(Ordering::Relaxed) {
             // AuthError in effect — skip API calls until the application restarts.
+            pending_audio.clear();
             continue;
         }
 
@@ -229,9 +241,17 @@ pub async fn run_orchestrator<S, M, T>(
         ctx.loss_metrics.record_chunk();
 
         update_audio_sent_metrics(&chunk, &ctx);
-        let pcm = AudioChunk::into_pcm(chunk, seq);
+        pending_audio.push(chunk);
+        if !pending_audio.is_ready() {
+            continue;
+        }
+
+        let Some(batch) = pending_audio.take_pcm(seq) else {
+            continue;
+        };
         seq += 1;
-        process_chunk(pcm, &stt, &mt, &tts, &ctx).await;
+        let outcome = process_chunk(batch.pcm, batch.duration_ms, &stt, &mt, &tts, &ctx).await;
+        handle_chunk_outcome(outcome, &mut consecutive_empty_stt, &ctx);
     }
 
     tracing::info!("orchestrator stopped");
@@ -239,12 +259,98 @@ pub async fn run_orchestrator<S, M, T>(
 
 // ── Per-chunk helpers ─────────────────────────────────────────────────────────
 
+#[derive(Debug, Default)]
+struct PendingAudioBatch {
+    samples: Vec<i16>,
+    duration_ms: u32,
+}
+
+impl PendingAudioBatch {
+    fn push(&mut self, chunk: AudioChunk) {
+        self.duration_ms = self.duration_ms.saturating_add(chunk.duration_ms);
+        self.samples.extend(chunk.samples);
+    }
+
+    fn is_ready(&self) -> bool {
+        self.duration_ms >= STT_BATCH_TARGET_MS
+    }
+
+    fn clear(&mut self) {
+        self.samples.clear();
+        self.duration_ms = 0;
+    }
+
+    fn take_pcm(&mut self, sequence_number: u64) -> Option<PcmBatch> {
+        if self.samples.is_empty() {
+            return None;
+        }
+
+        let samples = std::mem::take(&mut self.samples);
+        let duration_ms = self.duration_ms;
+        self.duration_ms = 0;
+        Some(PcmBatch {
+            pcm: PcmChunk {
+                samples,
+                sequence_number,
+            },
+            duration_ms,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct PcmBatch {
+    pcm: PcmChunk,
+    duration_ms: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChunkOutcome {
+    EmptyStt,
+    SubtitleProduced,
+    SttDropped,
+    RecognizedButDropped,
+}
+
+fn handle_chunk_outcome(
+    outcome: ChunkOutcome,
+    consecutive_empty_stt: &mut u32,
+    ctx: &OrchestratorContext,
+) {
+    match outcome {
+        ChunkOutcome::EmptyStt => {
+            *consecutive_empty_stt = consecutive_empty_stt.saturating_add(1);
+            if *consecutive_empty_stt >= EMPTY_STT_WARNING_THRESHOLD {
+                let empty_count = *consecutive_empty_stt;
+                let source_lang = lock_clone_str(&ctx.source_language);
+                let approx_audio_secs = empty_count.saturating_mul(STT_BATCH_TARGET_MS) / 1_000;
+                let message = format!(
+                    "⚠ No speech recognized after {empty_count} STT requests (~{approx_audio_secs}s audio). Check capture device and source language ({source_lang})."
+                );
+                tracing::warn!(source_lang = %source_lang, approx_audio_secs, "{message}");
+                set_pipeline_error(&ctx.pipeline_error_msg, message);
+            }
+        }
+        ChunkOutcome::SttDropped => {}
+        ChunkOutcome::SubtitleProduced | ChunkOutcome::RecognizedButDropped => {
+            *consecutive_empty_stt = 0;
+        }
+    }
+}
+
 /// Drive one [`PcmChunk`] through STT → MT → (optional) TTS.
 ///
 /// Records the end-to-end subtitle latency (issue #83): the elapsed time
 /// from STT submission until the translated text is pushed to the subtitle
 /// pane.  STT errors cause the chunk to be dropped and counted as a loss.
-async fn process_chunk<S, M, T>(pcm: PcmChunk, stt: &S, mt: &M, tts: &T, ctx: &OrchestratorContext)
+async fn process_chunk<S, M, T>(
+    pcm: PcmChunk,
+    batch_duration_ms: u32,
+    stt: &S,
+    mt: &M,
+    tts: &T,
+    ctx: &OrchestratorContext,
+) -> ChunkOutcome
 where
     S: SttProvider,
     M: MtProvider,
@@ -266,8 +372,14 @@ where
     let transcript = match with_retry(|| stt.transcribe(&pcm, &source_lang)).await {
         Ok(r) if r.text.trim().is_empty() => {
             // Silent / empty result — nothing to translate.
+            tracing::debug!(
+                seq = pcm.sequence_number,
+                batch_duration_ms,
+                samples = pcm.samples.len(),
+                "STT returned an empty transcript"
+            );
             set_stt_state(&ctx.stt_state, SttState::Listening);
-            return;
+            return ChunkOutcome::EmptyStt;
         }
         Ok(r) => {
             // Issue #80: approximate STT bytes received = transcript length.
@@ -277,7 +389,7 @@ where
         }
         Err(ProviderError::AuthError(msg)) => {
             handle_auth_error(ctx, &format!("STT: {msg}"));
-            return;
+            return ChunkOutcome::SttDropped;
         }
         Err(err) => {
             let warn_msg = format!("⚠ STT error: {err}");
@@ -285,7 +397,7 @@ where
             set_stt_state(&ctx.stt_state, SttState::Error(warn_msg));
             // Issue #81: STT failure counts as a dropped chunk.
             ctx.loss_metrics.record_drop();
-            return; // discard chunk, continue outer loop
+            return ChunkOutcome::SttDropped; // discard chunk, continue outer loop
         }
     };
 
@@ -314,7 +426,7 @@ where
             Err(ProviderError::AuthError(msg)) => {
                 set_stt_state(&ctx.stt_state, SttState::Listening);
                 handle_auth_error(ctx, &format!("MT: {msg}"));
-                return;
+                return ChunkOutcome::RecognizedButDropped;
             }
             Err(err) => {
                 let warn_msg = format!("⚠ Translation error: {err}");
@@ -323,7 +435,7 @@ where
                 set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
                 // Issue #81: MT failure counts as a dropped chunk.
                 ctx.loss_metrics.record_drop();
-                return; // discard chunk, continue outer loop
+                return ChunkOutcome::RecognizedButDropped; // discard chunk, continue outer loop
             }
         };
 
@@ -374,6 +486,7 @@ where
             }
         }
     }
+    ChunkOutcome::SubtitleProduced
 }
 
 // ── Audio / metrics helpers ───────────────────────────────────────────────────
@@ -554,6 +667,29 @@ mod tests {
         }
     }
 
+    struct RecordingStt {
+        text: &'static str,
+        sample_counts: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl SttProvider for RecordingStt {
+        async fn transcribe(
+            &self,
+            chunk: &PcmChunk,
+            _lang: &str,
+        ) -> Result<SttResult, ProviderError> {
+            self.sample_counts
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push(chunk.samples.len());
+            Ok(SttResult {
+                text: self.text.to_string(),
+                confidence: Some(0.99),
+                is_final: true,
+            })
+        }
+    }
+
     /// Mock MT that returns a prefixed translation.
     struct OkMt;
     impl MtProvider for OkMt {
@@ -645,6 +781,11 @@ mod tests {
         AudioChunk::new(vec![i16::MAX / 2; 8_000])
     }
 
+    fn short_speech_chunk() -> AudioChunk {
+        // 10 ms, matching the order of WASAPI chunks after 48 kHz -> 16 kHz resampling.
+        AudioChunk::new(vec![i16::MAX / 2; 160])
+    }
+
     // ── Orchestrator integration tests ─────────────────────────────────────────
 
     /// Happy path: one chunk → one subtitle pair.
@@ -665,6 +806,129 @@ mod tests {
             pane.lock().unwrap().pair_count(),
             1,
             "one chunk should produce one subtitle pair"
+        );
+    }
+
+    #[tokio::test]
+    async fn short_audio_chunks_are_batched_before_stt_request() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(128);
+        for _ in 0..100 {
+            inner_tx.send(short_speech_chunk()).await.unwrap();
+        }
+        drop(inner_tx);
+
+        run_orchestrator(
+            inner_rx,
+            RecordingStt {
+                text: "hello world",
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            sample_counts.lock().unwrap().as_slice(),
+            &[16_000],
+            "100 ten-millisecond chunks should be sent to STT as one one-second request"
+        );
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            1,
+            "batched audio should still produce one subtitle pair"
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_empty_stt_results_surface_actionable_warning() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let err_msg = Arc::clone(&ctx.pipeline_error_msg);
+
+        let (inner_tx, inner_rx) =
+            mpsc::channel::<AudioChunk>((EMPTY_STT_WARNING_THRESHOLD * 2) as usize);
+        for _ in 0..(EMPTY_STT_WARNING_THRESHOLD * 2) {
+            inner_tx.send(speech_chunk()).await.unwrap();
+        }
+        drop(inner_tx);
+
+        run_orchestrator(inner_rx, OkStt(""), OkMt, OkTts, ctx).await;
+
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            0,
+            "empty STT results must not create subtitle pairs"
+        );
+        let msg = err_msg.lock().unwrap().clone().unwrap_or_default();
+        assert!(
+            msg.contains("No speech recognized"),
+            "empty-STT warning should explain the visible symptom: {msg}"
+        );
+        assert!(
+            msg.contains("STT requests")
+                && msg.contains("audio")
+                && msg.contains("capture device")
+                && msg.contains("source language")
+                && msg.contains("ja-JP"),
+            "empty-STT warning should tell the operator what to check: {msg}"
+        );
+    }
+
+    #[test]
+    fn stt_drops_do_not_reset_empty_stt_warning_counter() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(shutdown);
+        let mut consecutive_empty_stt = 0;
+
+        for expected in 1..EMPTY_STT_WARNING_THRESHOLD {
+            handle_chunk_outcome(ChunkOutcome::EmptyStt, &mut consecutive_empty_stt, &ctx);
+            assert_eq!(consecutive_empty_stt, expected);
+            handle_chunk_outcome(ChunkOutcome::SttDropped, &mut consecutive_empty_stt, &ctx);
+            assert_eq!(
+                consecutive_empty_stt, expected,
+                "STT transport/auth drops should not erase prior empty-recognition evidence"
+            );
+        }
+
+        handle_chunk_outcome(ChunkOutcome::EmptyStt, &mut consecutive_empty_stt, &ctx);
+
+        assert_eq!(consecutive_empty_stt, EMPTY_STT_WARNING_THRESHOLD);
+        let msg = ctx
+            .pipeline_error_msg
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+            .unwrap_or_default();
+        assert!(
+            msg.contains("No speech recognized"),
+            "warning should still fire across interleaved STT drops: {msg}"
+        );
+    }
+
+    #[test]
+    fn recognized_drop_resets_empty_stt_warning_counter() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(shutdown);
+        let mut consecutive_empty_stt = 0;
+
+        handle_chunk_outcome(ChunkOutcome::EmptyStt, &mut consecutive_empty_stt, &ctx);
+        handle_chunk_outcome(
+            ChunkOutcome::RecognizedButDropped,
+            &mut consecutive_empty_stt,
+            &ctx,
+        );
+
+        assert_eq!(
+            consecutive_empty_stt, 0,
+            "a non-empty STT transcript proves speech was recognized even if MT later drops it"
         );
     }
 

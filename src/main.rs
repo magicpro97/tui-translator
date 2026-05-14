@@ -59,8 +59,9 @@ use metrics::{
     ProcessSnapshot,
 };
 use tui::{
-    draw_session_summary, draw_ui, help_overlay_max_scroll, subtitle_inner_area, AppState,
-    ConfigEditorMode, UserAction, AUDIO_LEVEL_SCALE,
+    auth_error_banner_max_scroll, draw_session_summary, draw_ui, help_overlay_max_scroll,
+    subtitle_inner_area, subtitle_pane_area, AppState, ConfigEditorMode, FocusPanel, UserAction,
+    AUDIO_LEVEL_SCALE,
 };
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
@@ -1226,6 +1227,8 @@ fn key_to_action(
         KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
         KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
         KeyCode::Char('?') => Some(UserAction::ToggleHelp),
+        KeyCode::Tab => Some(UserAction::FocusNext),
+        KeyCode::BackTab => Some(UserAction::FocusPrev),
         // Scrolling
         KeyCode::Up => Some(UserAction::ScrollUp),
         KeyCode::Down => Some(UserAction::ScrollDown),
@@ -1276,6 +1279,65 @@ fn keyboard_task(
 
 // ── Issue #64: action handler ─────────────────────────────────────────────────
 
+fn scroll_layout_state(
+    state: &AppState,
+    terminal_area: ratatui::layout::Rect,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+) -> (ratatui::layout::Rect, ratatui::layout::Rect) {
+    let expanded = state.metrics_expanded.load(Ordering::Relaxed);
+    let cost_warning_usd = current_config
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .cost_warning_usd;
+    let metrics_snap = state.metrics_snapshot();
+    let over_threshold =
+        expanded && cost_warning_usd > 0.0 && metrics_snap.estimated_cost_usd > cost_warning_usd;
+    (
+        subtitle_pane_area(terminal_area, expanded, over_threshold),
+        subtitle_inner_area(terminal_area, expanded, over_threshold),
+    )
+}
+
+fn auth_error_scroll_max(
+    state: &AppState,
+    terminal_area: ratatui::layout::Rect,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+) -> Option<u32> {
+    let banner = state
+        .auth_error_banner
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()?;
+    let (pane_area, _) = scroll_layout_state(state, terminal_area, current_config);
+    let subtitle_y_offset = pane_area.y.saturating_sub(terminal_area.y);
+    Some(u32::from(auth_error_banner_max_scroll(
+        terminal_area,
+        &banner,
+        subtitle_y_offset,
+    )))
+}
+
+fn scroll_subtitles(
+    state: &AppState,
+    terminal_area: ratatui::layout::Rect,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    action: &UserAction,
+) {
+    let (_, pane_area) = scroll_layout_state(state, terminal_area, current_config);
+    let mut pane = state
+        .subtitle_pane
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+
+    match action {
+        UserAction::ScrollUp => pane.scroll_up(pane_area.width, pane_area.height),
+        UserAction::ScrollDown => pane.scroll_down(pane_area.width, pane_area.height),
+        UserAction::ScrollTop => pane.scroll_to_top(pane_area.width, pane_area.height),
+        UserAction::ScrollBottom => pane.scroll_to_bottom(),
+        _ => {}
+    }
+}
+
 /// Execute a [`UserAction`] against the shared application state.
 fn handle_action(
     action: &UserAction,
@@ -1287,80 +1349,98 @@ fn handle_action(
     playback_service: &SharedPlaybackService,
 ) {
     match action {
-        // Scrolling — when the help overlay is open, ↑/↓/Home/End scroll the
-        // help panel instead of the subtitle pane (issue #191).
+        UserAction::FocusNext | UserAction::FocusPrev => {
+            let has_auth_error = state
+                .auth_error_banner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            state.cycle_focus(has_auth_error, matches!(action, UserAction::FocusPrev));
+        }
+
+        // Scrolling — ↑/↓/Home/End now target the focused scrollable panel.
         UserAction::ScrollUp => {
-            if state.show_help.load(Ordering::Relaxed) {
-                state.scroll_help_up(u32::from(help_overlay_max_scroll(terminal_area)));
-            } else {
-                let expanded = state.metrics_expanded.load(Ordering::Relaxed);
-                let cost_warning_usd = current_config
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .cost_warning_usd;
-                let metrics_snap = state.metrics_snapshot();
-                let over_threshold = expanded
-                    && cost_warning_usd > 0.0
-                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
-                let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
-                state
-                    .subtitle_pane
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .scroll_up(pane_area.width, pane_area.height);
+            let has_auth_error = state
+                .auth_error_banner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            match state.effective_focused_panel(has_auth_error) {
+                FocusPanel::Help => {
+                    state.scroll_help_up(u32::from(help_overlay_max_scroll(terminal_area)));
+                }
+                FocusPanel::AuthError => {
+                    if let Some(max_scroll) =
+                        auth_error_scroll_max(state, terminal_area, current_config)
+                    {
+                        state.scroll_auth_error_up(max_scroll);
+                    }
+                }
+                FocusPanel::Subtitles => {
+                    scroll_subtitles(state, terminal_area, current_config, action);
+                }
             }
         }
         UserAction::ScrollDown => {
-            if state.show_help.load(Ordering::Relaxed) {
-                state.scroll_help_down(u32::from(help_overlay_max_scroll(terminal_area)));
-            } else {
-                let expanded = state.metrics_expanded.load(Ordering::Relaxed);
-                let cost_warning_usd = current_config
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .cost_warning_usd;
-                let metrics_snap = state.metrics_snapshot();
-                let over_threshold = expanded
-                    && cost_warning_usd > 0.0
-                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
-                let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
-                state
-                    .subtitle_pane
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .scroll_down(pane_area.width, pane_area.height);
+            let has_auth_error = state
+                .auth_error_banner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            match state.effective_focused_panel(has_auth_error) {
+                FocusPanel::Help => {
+                    state.scroll_help_down(u32::from(help_overlay_max_scroll(terminal_area)));
+                }
+                FocusPanel::AuthError => {
+                    if let Some(max_scroll) =
+                        auth_error_scroll_max(state, terminal_area, current_config)
+                    {
+                        state.scroll_auth_error_down(max_scroll);
+                    }
+                }
+                FocusPanel::Subtitles => {
+                    scroll_subtitles(state, terminal_area, current_config, action);
+                }
             }
         }
         UserAction::ScrollTop => {
-            if state.show_help.load(Ordering::Relaxed) {
-                state.scroll_help_to_top();
-            } else {
-                let expanded = state.metrics_expanded.load(Ordering::Relaxed);
-                let cost_warning_usd = current_config
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .cost_warning_usd;
-                let metrics_snap = state.metrics_snapshot();
-                let over_threshold = expanded
-                    && cost_warning_usd > 0.0
-                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
-                let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
-                state
-                    .subtitle_pane
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .scroll_to_top(pane_area.width, pane_area.height);
+            let has_auth_error = state
+                .auth_error_banner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            match state.effective_focused_panel(has_auth_error) {
+                FocusPanel::Help => {
+                    state.scroll_help_to_top();
+                }
+                FocusPanel::AuthError => {
+                    state.scroll_auth_error_to_top();
+                }
+                FocusPanel::Subtitles => {
+                    scroll_subtitles(state, terminal_area, current_config, action);
+                }
             }
         }
         UserAction::ScrollBottom => {
-            if state.show_help.load(Ordering::Relaxed) {
-                state.scroll_help_to_bottom(u32::from(help_overlay_max_scroll(terminal_area)));
-            } else {
-                state
-                    .subtitle_pane
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .scroll_to_bottom();
+            let has_auth_error = state
+                .auth_error_banner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            match state.effective_focused_panel(has_auth_error) {
+                FocusPanel::Help => {
+                    state.scroll_help_to_bottom(u32::from(help_overlay_max_scroll(terminal_area)));
+                }
+                FocusPanel::AuthError => {
+                    if let Some(max_scroll) =
+                        auth_error_scroll_max(state, terminal_area, current_config)
+                    {
+                        state.scroll_auth_error_to_bottom(max_scroll);
+                    }
+                }
+                FocusPanel::Subtitles => {
+                    scroll_subtitles(state, terminal_area, current_config, action);
+                }
             }
         }
 
@@ -1398,9 +1478,12 @@ fn handle_action(
             if show_help {
                 // Reset scroll so the overlay always opens at the top.
                 state.reset_help_scroll();
+                state.set_focused_panel(FocusPanel::Help);
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
                 state.close_config_editor();
+            } else if state.focused_panel() == FocusPanel::Help {
+                state.set_focused_panel(FocusPanel::Subtitles);
             }
         }
 
@@ -1428,6 +1511,9 @@ fn handle_action(
             } else if state.show_help.load(Ordering::Relaxed) {
                 state.show_help.store(false, Ordering::Relaxed);
                 state.reset_help_scroll();
+                if state.focused_panel() == FocusPanel::Help {
+                    state.set_focused_panel(FocusPanel::Subtitles);
+                }
             }
         }
 
@@ -1437,6 +1523,9 @@ fn handle_action(
                 && !state.config_editor_active.load(Ordering::Relaxed)
             {
                 state.show_help.store(false, Ordering::Relaxed);
+                if state.focused_panel() == FocusPanel::Help {
+                    state.set_focused_panel(FocusPanel::Subtitles);
+                }
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
                 state.lang_prompt_active.store(true, Ordering::Relaxed);
             }
@@ -1850,6 +1939,7 @@ mod tests {
     fn prompt_language_hides_help_overlay() {
         let state = AppState::new();
         state.show_help.store(true, Ordering::Relaxed);
+        state.set_focused_panel(FocusPanel::Help);
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
         let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
@@ -1914,6 +2004,26 @@ mod tests {
                 true
             ),
             Some(UserAction::ConfigNextField)
+        );
+    }
+
+    #[test]
+    fn tab_keys_route_to_panel_focus_outside_settings() {
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+                false,
+                false
+            ),
+            Some(UserAction::FocusNext)
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
+                false,
+                false
+            ),
+            Some(UserAction::FocusPrev)
         );
     }
 
@@ -2271,6 +2381,7 @@ mod tests {
     fn help_scroll_bottom_then_up_moves_immediately() {
         let state = AppState::new();
         state.show_help.store(true, Ordering::Relaxed);
+        state.set_focused_panel(FocusPanel::Help);
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
         let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
@@ -2309,6 +2420,7 @@ mod tests {
     fn help_scroll_down_clamps_so_up_recovers_immediately() {
         let state = AppState::new();
         state.show_help.store(true, Ordering::Relaxed);
+        state.set_focused_panel(FocusPanel::Help);
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
         let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
@@ -2353,6 +2465,7 @@ mod tests {
     fn help_scroll_up_clamps_stale_offset_after_resize() {
         let state = AppState::new();
         state.show_help.store(true, Ordering::Relaxed);
+        state.set_focused_panel(FocusPanel::Help);
         let restart_required = Arc::new(AtomicBool::new(false));
         let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
         let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
@@ -2386,6 +2499,45 @@ mod tests {
             0,
             "ScrollUp should clamp stale help_scroll to the resized max before decrementing"
         );
+    }
+
+    #[test]
+    fn tab_focus_can_scroll_auth_error_banner() {
+        let state = AppState::new();
+        *state.auth_error_banner.lock().unwrap() = Some(
+            "STT: Google STT authentication failed (HTTP 400): API key expired. Please renew the API key. INVALID_ARGUMENT API_KEY_EXPIRED. Open Google Cloud Console, renew the key, save settings, and restart the application."
+                .to_string(),
+        );
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let terminal_area = Rect::new(0, 0, 40, 8);
+
+        handle_action(
+            &UserAction::FocusNext,
+            &state,
+            terminal_area,
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+        assert_eq!(state.focused_panel(), FocusPanel::AuthError);
+
+        handle_action(
+            &UserAction::ScrollBottom,
+            &state,
+            terminal_area,
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        let max_scroll =
+            auth_error_scroll_max(&state, terminal_area, &current_config).expect("auth max scroll");
+        assert!(max_scroll > 0, "test message should require scrolling");
+        assert_eq!(state.auth_error_scroll.load(Ordering::Relaxed), max_scroll);
     }
 
     // ── config_json_path — TUI_TRANSLATOR_CONFIG env-var override (issue #110) ──

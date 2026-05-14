@@ -631,8 +631,8 @@ async fn orchestrator_mt_exhaustion_sets_pipeline_error_and_drops_chunk() {
 /// **Issue #102 — discard-and-continue at the real pipeline boundary**
 ///
 /// Proves the full discard-and-continue cycle through `run_orchestrator`:
-/// the first chunk exhausts MT retries and is dropped; the second chunk is
-/// processed successfully and produces a subtitle pair.  Both chunks travel
+/// the first STT batch exhausts MT retries and is dropped; the second batch is
+/// processed successfully and produces a subtitle pair.  Both batches travel
 /// through a single orchestrator invocation — the loop did not stop.
 ///
 /// # Real boundary exercised
@@ -641,9 +641,9 @@ async fn orchestrator_mt_exhaustion_sets_pipeline_error_and_drops_chunk() {
 /// inside one loop iteration, via a real channel and real context.
 ///
 /// # Assertions
-/// * `loss_metrics.total_chunks() == 2` (both chunks were offered)
-/// * `loss_metrics.dropped_chunks() == 1` (first chunk dropped)
-/// * `subtitle_pane.pair_count() == 1` (second chunk produced a subtitle)
+/// * `loss_metrics.total_chunks() == 4` (four input chunks form two STT batches)
+/// * `loss_metrics.dropped_chunks() == 1` (first batch dropped)
+/// * `subtitle_pane.pair_count() == 1` (second batch produced a subtitle)
 /// * `mt.call_count() == MAX_RETRY_ATTEMPTS + 1` (5 exhausted + 1 success)
 /// * `stt_state == SttState::Listening`
 /// * no panic
@@ -652,8 +652,8 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     let tc = make_orch_context();
 
     // Queue: exactly MAX_RETRY_ATTEMPTS network errors followed by one success.
-    // Chunk 1: with_retry calls translate MAX_RETRY_ATTEMPTS times → all Err → exhausted.
-    // Chunk 2: with_retry calls translate once → Ok("good translation") → success.
+    // Batch 1: with_retry calls translate MAX_RETRY_ATTEMPTS times → all Err → exhausted.
+    // Batch 2: with_retry calls translate once → Ok("good translation") → success.
     let mt = SequenceMt::new(
         (0..MAX_RETRY_ATTEMPTS as usize)
             .map(|_| ProviderError::NetworkError("simulated MT failure".to_owned()))
@@ -663,8 +663,10 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     let mt_call_count = Arc::clone(&mt.call_count);
 
     let (tx, rx) = tokio::sync::mpsc::channel::<crate::audio::AudioChunk>(4);
-    tx.send(loud_audio_chunk()).await.unwrap(); // chunk 1 — will be dropped
-    tx.send(loud_audio_chunk()).await.unwrap(); // chunk 2 — will succeed
+    tx.send(loud_audio_chunk()).await.unwrap(); // batch 1, half 1 — will be dropped
+    tx.send(loud_audio_chunk()).await.unwrap(); // batch 1, half 2 — will be dropped
+    tx.send(loud_audio_chunk()).await.unwrap(); // batch 2, half 1 — will succeed
+    tx.send(loud_audio_chunk()).await.unwrap(); // batch 2, half 2 — will succeed
     drop(tx);
 
     crate::pipeline::run_orchestrator(rx, SttPassthrough("hello world"), mt, TtsNoop, tc.ctx).await;
@@ -673,21 +675,21 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     assert_eq!(
         mt_call_count.load(std::sync::atomic::Ordering::Relaxed),
         MAX_RETRY_ATTEMPTS as usize + 1,
-        "MT must be called MAX_RETRY_ATTEMPTS times for chunk 1 and once for chunk 2"
+        "MT must be called MAX_RETRY_ATTEMPTS times for batch 1 and once for batch 2"
     );
 
     // ── Drop counter: only the first chunk was dropped ────────────────────────
     assert_eq!(
         tc.loss_metrics.dropped_chunks(),
         1,
-        "exactly one chunk must be counted as dropped"
+        "exactly one STT batch must be counted as dropped"
     );
 
-    // ── Total chunks: both chunks were offered to the pipeline ─────────────────
+    // ── Total chunks: all four input chunks were offered to the pipeline ───────
     assert_eq!(
         tc.loss_metrics.total_chunks(),
-        2,
-        "both chunks must be counted as offered"
+        4,
+        "all input chunks must be counted as offered"
     );
 
     // ── Subtitle pair: only the second (successful) chunk produced one ─────────

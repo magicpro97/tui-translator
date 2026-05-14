@@ -5,9 +5,9 @@ expression: rendered
 ┌ Help [0/1] — ↑↓ scroll · Esc close ──┐
 │ Keyboard Shortcuts                   │
 │                                      │
-│  ↑ / ↓     Scroll subtitles/help     │
-│  Home       Scroll to top            │
-│  End        Scroll to bottom / auto-f│
+│  Tab        Move focus between scroll│
+│  ↑ / ↓     Scroll the focused box    │
+│  Home/End   Scroll top / bottom      │
 │  Space      Pause / resume translatio│
 │  T          Toggle TTS audio output  │
 │  M          Toggle metrics panel (com│

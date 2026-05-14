@@ -26,7 +26,7 @@ use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
     render_language_prompt, truncate_device_name, AppState, ConfigEditorMode, ConfigEditorState,
-    ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane,
+    ControlHintsBar, FocusPanel, StatusMetricsStrip, SubtitlePair, SubtitlePane,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ fn render_auth_banner(message: &str, restart: bool, width: u16, height: u16) -> 
             let area = frame.size();
             // Simulate the y_offset as if this were anchored below a 6-row header.
             let subtitle_y_offset = 6u16.min(area.height.saturating_sub(5));
-            render_auth_error_banner(frame, area, message, restart, subtitle_y_offset);
+            render_auth_error_banner(frame, area, message, restart, subtitle_y_offset, 0, true);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -569,20 +569,29 @@ fn snapshot_status_strip_wide_full_labels() {
 
 #[test]
 fn snapshot_hints_bar_tts_off() {
-    let bar = ControlHintsBar { tts_on: false };
+    let bar = ControlHintsBar {
+        tts_on: false,
+        focused_panel: FocusPanel::Subtitles,
+    };
     insta::assert_snapshot!("hints_bar_tts_off", render_hints(&bar, 80, 1));
 }
 
 #[test]
 fn snapshot_hints_bar_tts_on() {
-    let bar = ControlHintsBar { tts_on: true };
+    let bar = ControlHintsBar {
+        tts_on: true,
+        focused_panel: FocusPanel::Subtitles,
+    };
     insta::assert_snapshot!("hints_bar_tts_on", render_hints(&bar, 80, 1));
 }
 
 /// Narrow terminal: abbreviated hints bar.
 #[test]
 fn snapshot_hints_bar_narrow() {
-    let bar = ControlHintsBar { tts_on: false };
+    let bar = ControlHintsBar {
+        tts_on: false,
+        focused_panel: FocusPanel::Subtitles,
+    };
     insta::assert_snapshot!("hints_bar_narrow", render_hints(&bar, 60, 1));
 }
 
@@ -671,7 +680,13 @@ fn hints_bar_contains_required_controls() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(&ControlHintsBar { tts_on: false }, frame.size());
+            frame.render_widget(
+                &ControlHintsBar {
+                    tts_on: false,
+                    focused_panel: FocusPanel::Subtitles,
+                },
+                frame.size(),
+            );
         })
         .unwrap();
     let rendered = buffer_to_string(terminal.backend().buffer());

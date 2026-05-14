@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::{format_google_http_error, looks_like_google_auth_error};
 use crate::providers::{CostReporter, ProviderError, TtsProvider, TtsResult};
 
 // ── Google TTS REST API URL ───────────────────────────────────────────────────
@@ -120,28 +121,12 @@ impl GoogleTtsProvider {
 }
 
 fn looks_like_auth_error(status: StatusCode, body: &str) -> bool {
-    if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
-        return true;
-    }
-
-    if status != StatusCode::BAD_REQUEST {
-        return false;
-    }
-
-    let normalized = body.to_ascii_lowercase();
-    normalized.contains("api key not valid")
-        || normalized.contains("api_key_invalid")
-        || normalized.contains("authentication")
-        || normalized.contains("credential")
+    looks_like_google_auth_error(status, body)
 }
 
 fn classify_http_error(status: StatusCode, body: &str) -> ProviderError {
     if looks_like_auth_error(status, body) {
-        return ProviderError::AuthError(format!(
-            "Google TTS authentication failed (HTTP {}): {}",
-            status.as_u16(),
-            body
-        ));
+        return ProviderError::AuthError(format_google_http_error("TTS", status, body));
     }
 
     if status == StatusCode::TOO_MANY_REQUESTS {

@@ -5,10 +5,10 @@ expression: rendered
                                                             
                                                             
                                                             
-                                                            
-                                                            
-┌ ⚠ Authentication Error — API calls halted ───────────────┐
+┌> ⚠ Authentication Error — API calls halted ──────────────┐
 │ ⚠  API Key Error                                         │
 │                                                          │
 │ invalid API key                                          │
+│ Fix the key in config.json, then restart the application │
+│to recover. Tab changes focus; ↑/↓ scroll.                │
 └──────────────────────────────────────────────────────────┘

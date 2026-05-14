@@ -9,9 +9,9 @@ expression: "render_help(80, 24, 0)"
             ┌ Help — press ? or Esc to close ──────────────────────┐            
             │ Keyboard Shortcuts                                   │            
             │                                                      │            
-            │  ↑ / ↓     Scroll subtitles/help                     │            
-            │  Home       Scroll to top                            │            
-            │  End        Scroll to bottom / auto-follow           │            
+            │  Tab        Move focus between scrollable boxes      │            
+            │  ↑ / ↓     Scroll the focused box                    │            
+            │  Home/End   Scroll top / bottom                      │            
             │  Space      Pause / resume translation               │            
             │  T          Toggle TTS audio output                  │            
             │  M          Toggle metrics panel (compact/expanded)  │            
