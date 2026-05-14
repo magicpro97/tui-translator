@@ -51,6 +51,8 @@ struct RecognitionConfig<'a> {
     language_code: &'a str,
     /// Ask the model to insert punctuation in the transcript.
     enable_automatic_punctuation: bool,
+    /// Google STT model variant optimised for long-form meeting audio.
+    model: &'static str,
 }
 
 #[derive(Serialize)]
@@ -199,6 +201,7 @@ impl SttProvider for GoogleSttProvider {
                 sample_rate_hertz: 16_000,
                 language_code,
                 enable_automatic_punctuation: true,
+                model: "latest_long",
             },
             audio: RecognitionAudio {
                 content: audio_content,
@@ -290,6 +293,43 @@ mod tests {
         let err = classify_http_error(StatusCode::SERVICE_UNAVAILABLE, "backend overload");
 
         assert!(matches!(err, ProviderError::ServiceUnavailable(_)));
+    }
+
+    #[test]
+    fn recognition_config_serializes_model_as_latest_long() {
+        let config = RecognitionConfig {
+            encoding: "LINEAR16",
+            sample_rate_hertz: 16_000,
+            language_code: "en-US",
+            enable_automatic_punctuation: true,
+            model: "latest_long",
+        };
+        let json = serde_json::to_string(&config).expect("serialization must not fail");
+        assert!(
+            json.contains(r#""model":"latest_long""#),
+            "serialized config must include model=latest_long, got: {json}"
+        );
+    }
+
+    #[test]
+    fn recognize_request_serializes_model_field() {
+        let request = RecognizeRequest {
+            config: RecognitionConfig {
+                encoding: "LINEAR16",
+                sample_rate_hertz: 16_000,
+                language_code: "ja-JP",
+                enable_automatic_punctuation: true,
+                model: "latest_long",
+            },
+            audio: RecognitionAudio {
+                content: "dGVzdA==".to_string(),
+            },
+        };
+        let json = serde_json::to_string(&request).expect("serialization must not fail");
+        assert!(
+            json.contains(r#""model":"latest_long""#),
+            "full request payload must include model=latest_long, got: {json}"
+        );
     }
 
     #[test]
