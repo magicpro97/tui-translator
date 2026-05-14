@@ -25,7 +25,7 @@
 //! the first `q` triggers the quit path, the second `q` dismisses the summary.
 
 use super::harness::{PtySession, EXIT_TIMEOUT, STARTUP_TIMEOUT};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -93,6 +93,31 @@ fn check_layout(session: &PtySession, cols: u16, rows: u16) {
         !has_pair_text,
         "unexpected subtitle pair content on empty startup at {cols}×{rows}",
     );
+}
+
+fn wait_for_layout(session: &PtySession, cols: u16, rows: u16, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        let last_row = session.row_text(rows - 1);
+        let title_area: String = (0..3)
+            .map(|r| session.row_text(r))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let all_rows = session.all_rows();
+        if last_row.contains("Q quit")
+            && last_row.contains("Space")
+            && title_area.contains("TUI Translator")
+            && all_rows.iter().any(|r| r.contains("Subtitles"))
+        {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    eprintln!("timed out waiting for complete {cols}×{rows} layout after resize");
+    for (i, row) in session.all_rows().iter().enumerate() {
+        eprintln!("  row {i:02}: {row:?}");
+    }
+    false
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -163,11 +188,11 @@ fn layout_resize_no_crash() {
         .resize(80, 24)
         .expect("PTY resize 120×40 → 80×24 failed");
 
-    // Wait for the app to redraw at the new size.  The app emits a full-screen
-    // redraw in response to the ConPTY resize event; waiting for the hints bar
-    // confirms the new frame is present and the parser has the correct size.
+    // Wait for the app to redraw at the new size. The pre-resize frame also
+    // contains "Q quit", so wait for the full structural contract instead of
+    // a single sentinel that can still be present while ConPTY is repainting.
     assert!(
-        session.wait_for_text("Q quit", Duration::from_secs(5)),
+        wait_for_layout(&session, 80, 24, Duration::from_secs(5)),
         "tui-translator did not redraw after PTY resize from 120×40 to 80×24",
     );
 
