@@ -306,6 +306,15 @@ fn main() -> Result<()> {
             .source_language
             .clone(),
     );
+    // Initialise the operator-facing capture device label from config (issue #197).
+    overwrite_capture_device_label(
+        &state.capture_device_label,
+        &current_config
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .capture_device
+            .clone(),
+    );
     state.set_tts_enabled(
         current_config
             .lock()
@@ -366,6 +375,7 @@ fn main() -> Result<()> {
         let current_config = Arc::clone(&current_config);
         let target_language = Arc::clone(&state.target_language);
         let source_language = Arc::clone(&state.source_language);
+        let capture_device_label = Arc::clone(&state.capture_device_label);
         let tts_enabled = Arc::clone(&state.tts_enabled);
         let restart_required = Arc::clone(&restart_required);
         let playback_service = Arc::clone(&playback_service);
@@ -377,11 +387,12 @@ fn main() -> Result<()> {
                 let cc = Arc::clone(&current_config);
                 let tl = Arc::clone(&target_language);
                 let sl = Arc::clone(&source_language);
+                let cdl = Arc::clone(&capture_device_label);
                 let te = Arc::clone(&tts_enabled);
                 let rr = Arc::clone(&restart_required);
                 let ps = Arc::clone(&playback_service);
                 tokio::task::spawn_blocking(move || {
-                    apply_runtime_config(&cc, &tl, &sl, &te, &rr, &ps, next_cfg);
+                    apply_runtime_config(&cc, &tl, &sl, &cdl, &te, &rr, &ps, next_cfg);
                 })
                 .await
                 .ok();
@@ -850,6 +861,35 @@ fn overwrite_device_name(slot: &Arc<std::sync::Mutex<String>>, next_name: &str) 
     }
 }
 
+/// Derive the operator-facing capture device label from the config field.
+///
+/// Returns `"Default device"` when no explicit device is configured, or the
+/// configured device name when one has been selected.  This label is shown in
+/// the audio gauge title (issue #197).
+fn capture_device_label_from_config(capture_device: &Option<String>) -> String {
+    match capture_device.as_deref() {
+        None | Some("") => "Default device".to_string(),
+        Some(name) => name.to_string(),
+    }
+}
+
+fn overwrite_capture_device_label(
+    slot: &Arc<std::sync::Mutex<String>>,
+    capture_device: &Option<String>,
+) {
+    let label = capture_device_label_from_config(capture_device);
+    match slot.lock() {
+        Ok(mut guard) => {
+            *guard = label;
+        }
+        Err(poisoned) => {
+            tracing::warn!("capture_device_label mutex was poisoned; recovering last known state");
+            let mut guard = poisoned.into_inner();
+            *guard = label;
+        }
+    }
+}
+
 fn populate_capture_device_options(state: &AppState) {
     match audio::list_capture_devices() {
         Ok(devices) => {
@@ -890,10 +930,17 @@ fn overwrite_source_language(slot: &Arc<std::sync::Mutex<String>>, next_language
     }
 }
 
+/// Update `current_config`, language strings, capture-device label, TTS state, and the
+/// restart-required flag from `next_cfg`.
+///
+/// Called on live config hot-reload (R key), after saving the settings overlay,
+/// and from the file-watcher task.
+#[allow(clippy::too_many_arguments)]
 fn apply_runtime_config(
     current_config: &Arc<Mutex<config::AppConfig>>,
     target_language: &Arc<std::sync::Mutex<String>>,
     source_language: &Arc<std::sync::Mutex<String>>,
+    capture_device_label: &Arc<std::sync::Mutex<String>>,
     tts_enabled: &Arc<AtomicBool>,
     restart_required: &Arc<AtomicBool>,
     playback_service: &SharedPlaybackService,
@@ -912,6 +959,7 @@ fn apply_runtime_config(
 
     overwrite_target_language(target_language, &next_cfg.target_language);
     overwrite_source_language(source_language, &next_cfg.source_language);
+    overwrite_capture_device_label(capture_device_label, &next_cfg.capture_device);
     // Sync the backend first; only set the UI flag to match what actually succeeded.
     let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
     tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
@@ -965,6 +1013,7 @@ fn save_config_editor(
         current_config,
         &state.target_language,
         &state.source_language,
+        &state.capture_device_label,
         &state.tts_enabled,
         restart_required,
         playback_service,
@@ -1536,6 +1585,7 @@ fn handle_action(
                     current_config,
                     &state.target_language,
                     &state.source_language,
+                    &state.capture_device_label,
                     &state.tts_enabled,
                     restart_required,
                     playback_service,
