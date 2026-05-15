@@ -77,7 +77,7 @@ pub struct AppConfig {
 
     /// Speech-to-text provider backend.  Accepted values:
     /// - `"google"` *(default)* — Google Cloud Speech-to-Text.
-    /// - `"local"` — CPU-local STT (reserved for Phase 6+; not yet implemented).
+    /// - `"local"` — CPU-local Whisper STT when built with `local-stt`.
     #[serde(default = "default_stt_provider")]
     pub stt_provider: String,
 
