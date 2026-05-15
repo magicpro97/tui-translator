@@ -230,8 +230,6 @@ impl AppConfig {
             || self.capture_device != next.capture_device
             || self.audio_source != next.audio_source
             || self.audio_file_path != next.audio_file_path
-            || self.stt_provider != next.stt_provider
-            || self.mt_provider != next.mt_provider
     }
 }
 
@@ -715,16 +713,45 @@ mod tests {
     }
 
     #[test]
-    fn provider_fields_reject_whitespace_padded_values() {
-        let cfg = AppConfig {
-            stt_provider: " google ".to_string(),
-            ..AppConfig::default()
-        };
-        let err = cfg.validate().unwrap_err();
-        assert!(
-            err.to_string().contains("stt_provider"),
-            "error should mention stt_provider, got: {err}"
-        );
+    fn provider_fields_reject_invalid_values() {
+        let cases = vec![
+            (
+                "stt_provider",
+                AppConfig {
+                    stt_provider: " google ".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+            (
+                "mt_provider",
+                AppConfig {
+                    mt_provider: " local ".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+            (
+                "stt_provider",
+                AppConfig {
+                    stt_provider: "azure".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+            (
+                "mt_provider",
+                AppConfig {
+                    mt_provider: "deepl".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+        ];
+
+        for (field, cfg) in cases {
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                err.to_string().contains(field),
+                "error should mention {field}, got: {err}"
+            );
+        }
     }
 
     #[test]
