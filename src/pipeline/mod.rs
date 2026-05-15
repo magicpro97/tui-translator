@@ -191,6 +191,13 @@ pub struct OrchestratorContext {
     /// if Google STT falls back to local Whisper. Google/cloud-only paths are
     /// never throttled.
     pub provider_is_local: Arc<AtomicBool>,
+
+    /// `true` when a local-provider setup failure must halt the pipeline.
+    ///
+    /// This is enabled for Google->local fallback so a missing/corrupt/stub
+    /// fallback does not spin on every audio window. Direct `stt_provider =
+    /// "local"` keeps the pre-existing warn-and-continue error path.
+    pub local_unavailable_is_fatal: bool,
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
@@ -208,6 +215,7 @@ pub struct OrchestratorContext {
 /// |--------------------------------|---------------------------------------------------------|
 /// | `AuthError` (any stage)        | Set `auth_error_banner`, halt pipeline (#86)            |
 /// | Transient exhausted (STT)      | Show `⚠ STT error: …`, discard chunk, continue (#85)   |
+/// | Fallback local unavailable     | Set `auth_error_banner`, halt pipeline (#214)           |
 /// | Transient exhausted (MT)       | Show `⚠ Translation error: …`, discard chunk (#85)     |
 /// | Transient exhausted (TTS)      | Show `⚠ TTS error: …`, subtitle already shown (#85)    |
 /// | `InvalidInput` / `Unimplemented` | Same as exhausted transient for the relevant stage    |
@@ -436,7 +444,7 @@ where
             handle_auth_error(ctx, &format!("STT: {msg}"));
             return;
         }
-        Err(err) if fallback::is_local_unavailable(&err) => {
+        Err(err) if ctx.local_unavailable_is_fatal && fallback::is_local_unavailable(&err) => {
             // Permanent local STT failure (model missing, checksum wrong, or
             // feature not compiled in).  Halt the pipeline with the actionable
             // error message rather than repeating it on every audio chunk (AC2
@@ -816,6 +824,7 @@ mod tests {
             // CPU throttle disabled in unit tests so existing behaviour is unchanged.
             cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
             provider_is_local: Arc::new(AtomicBool::new(false)),
+            local_unavailable_is_fatal: false,
         };
         (ctx, tx)
     }
@@ -1148,6 +1157,71 @@ mod tests {
             0,
             "CPU-throttled fallback audio must not count as a provider failure"
         );
+    }
+
+    #[tokio::test]
+    async fn direct_local_unavailable_keeps_existing_nonfatal_error_path() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.provider_is_local.store(true, Ordering::Relaxed);
+        let mut pending = SpeechWindow::default();
+        let mut seq = 0;
+
+        pending.push(speech_chunk());
+
+        flush_speech_window(
+            &mut pending,
+            &mut seq,
+            &ErrStt(|| ProviderError::Unimplemented("local-stt feature disabled".to_string())),
+            &OkMt,
+            &OkTts,
+            &ctx,
+        )
+        .await;
+
+        assert!(
+            !ctx.pipeline_halted.load(Ordering::Relaxed),
+            "direct local STT keeps the pre-existing warn-and-continue behavior"
+        );
+        assert!(
+            ctx.auth_error_banner.lock().unwrap().is_none(),
+            "non-fatal direct local errors must not use the restart-only banner"
+        );
+        assert_eq!(ctx.loss_metrics.total_chunks(), 1);
+        assert_eq!(ctx.loss_metrics.dropped_chunks(), 1);
+    }
+
+    #[tokio::test]
+    async fn fallback_local_unavailable_halts_pipeline() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.local_unavailable_is_fatal = true;
+        let mut pending = SpeechWindow::default();
+        let mut seq = 0;
+
+        pending.push(speech_chunk());
+
+        flush_speech_window(
+            &mut pending,
+            &mut seq,
+            &ErrStt(|| ProviderError::ModelNotFound("missing tiny model".to_string())),
+            &OkMt,
+            &OkTts,
+            &ctx,
+        )
+        .await;
+
+        assert!(
+            ctx.pipeline_halted.load(Ordering::Relaxed),
+            "fallback local setup failures must halt instead of spinning each chunk"
+        );
+        let banner = ctx.auth_error_banner.lock().unwrap().clone().unwrap();
+        assert!(
+            banner.contains("STT local unavailable"),
+            "fatal fallback banner should be actionable: {banner}"
+        );
+        assert_eq!(ctx.loss_metrics.total_chunks(), 1);
+        assert_eq!(ctx.loss_metrics.dropped_chunks(), 1);
     }
 
     /// STT NetworkError exhausted → SttState::Error set, pipeline continues.

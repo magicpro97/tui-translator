@@ -183,6 +183,8 @@ enum RuntimeSttProvider {
     /// Active when `stt_provider = "google"` and `stt_fallback_policy =
     /// "local"`.  On the first `AuthError` from Google the provider switches
     /// permanently to local Whisper and writes a visible status message.
+    /// This variant is compiled in stub builds too so users receive the same
+    /// actionable local-STT setup error path as `stt_provider = "local"`.
     GoogleWithLocalFallback(
         pipeline::fallback::FallbackSttProvider<
             providers::google::stt::GoogleSttProvider,
@@ -239,10 +241,10 @@ fn build_runtime_stt_provider(
                 // not fatal at startup: the error is stored so it surfaces
                 // with an actionable message when the fallback is first needed.
                 let (fallback, fallback_err) = match providers::local::LocalWhisperSttProvider::new(
-                    providers::local::ModelId::Base,
+                    providers::local::ModelId::Tiny,
                 ) {
                     Ok(p) => {
-                        tracing::info!("local Whisper (base) ready for STT fallback (issue #214)");
+                        tracing::info!("local Whisper (tiny) ready for STT fallback (issue #214)");
                         (Some(p), None)
                     }
                     Err(e) => {
@@ -601,6 +603,8 @@ fn main() -> Result<()> {
                 // falls back to local Whisper at runtime.
                 let provider_is_local =
                     Arc::new(AtomicBool::new(cfg_snapshot.stt_provider == "local"));
+                let local_unavailable_is_fatal = cfg_snapshot.stt_provider == "google"
+                    && cfg_snapshot.stt_fallback_policy == "local";
 
                 let stt_provider = match build_runtime_stt_provider(
                     &cfg_snapshot,
@@ -713,6 +717,7 @@ fn main() -> Result<()> {
                     loss_metrics: Arc::clone(&loss_metrics),
                     cpu_gate: Arc::clone(&cpu_gate),
                     provider_is_local: Arc::clone(&provider_is_local),
+                    local_unavailable_is_fatal,
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(

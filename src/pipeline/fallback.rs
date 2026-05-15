@@ -95,9 +95,9 @@ pub fn should_activate_fallback(policy: SttFallbackPolicy, err: &ProviderError) 
 ///
 /// `using_fallback` is a single-writer atomic that is only ever flipped once
 /// from `false` to `true`.  Concurrent `transcribe` calls on different Tokio
-/// tasks are safe, though both might observe the primary's `AuthError` before
-/// the flag is set and race to call `call_fallback`; both will succeed because
-/// the fallback call itself is idempotent.
+/// tasks are safe.  Concurrent in-flight requests may each observe the
+/// primary's `AuthError` before the flag is set; after any caller stores the
+/// flag, later requests bypass the primary and call the local fallback.
 pub struct FallbackSttProvider<P, F> {
     primary: P,
     /// `Some` when the local provider initialised successfully at startup,
@@ -168,9 +168,9 @@ where
         chunk: &PcmChunk,
         language_code: &str,
     ) -> Result<SttResult, ProviderError> {
-        self.local_provider_active.store(true, Ordering::Relaxed);
         match &self.fallback {
             Some(fb) => {
+                self.local_provider_active.store(true, Ordering::Relaxed);
                 let result = fb.transcribe(chunk, language_code).await;
                 if let Err(ref err) = result {
                     if is_local_unavailable(err) {
