@@ -86,7 +86,9 @@ tui-translator/
 │   ├── 06-github-delivery-backlog.md
 │   ├── 07-packaging-verification.md
 │   ├── 08-audio-stability-proof.md
-│   └── 09-cpu-model-benchmark.md     CPU-only Whisper benchmark plan; docs 06-08 remain listed above
+│   ├── 09-cpu-model-benchmark.md     Measured Whisper tiny/base/small CPU INT8 latency and RAM
+│   ├── 10-local-mt-backend-decision.md  OPUS-MT vs Bergamot vs LibreTranslate decision (issue #216)
+│   └── 10-offline-model-selection.md    CPU-only model selection matrix for 8 GB / 16 GB machines (issue #207)
 │
 ├── Cargo.toml                  Rust package manifest
 └── config.example.json         Example configuration file
@@ -336,34 +338,64 @@ Phase 0 through Phase 7, with Phase 6 still required before Phase 7
 implementation work begins.
 
 **Goal:** Enable fully offline, CPU-only speech-to-text transcription using
-local Whisper models (tiny / base / small) as an alternative to the Google STT
-provider.  This allows the tool to be used without an internet connection and
-with zero per-minute API cost, subject to the RTF and RAM constraints described
-in `docs/09-cpu-model-benchmark.md`.
+local Whisper models (tiny / base / small), expose a local Whisper STT
+provider, and provide an offline machine-translation alternative using OPUS-MT
+via ONNX Runtime.  This allows the tool to be used without an internet
+connection and with zero per-minute API cost, subject to the RTF and RAM
+constraints described in `docs/09-cpu-model-benchmark.md` and the MT benchmark
+gates described in `docs/10-local-mt-backend-decision.md`.
+
+Before choosing or changing a model, consult
+[`docs/10-offline-model-selection.md`](10-offline-model-selection.md) for:
+
+- The full STT and MT model matrix with license columns.
+- Explicit defaults for 8 GB and 16 GB CPU-only machines.
+- Non-commercial caveats for NLLB-200.
+- Required benchmark gates that must pass before local MT is enabled by default.
 
 **Entry criteria:** Phase 6 exit criteria met for implementation work. Benchmark and planning evidence may be collected earlier because it does not change runtime behavior.
 
 **Work in this phase (not ordered against each other):**
 
-*EP-A.1 — Benchmark (issue #206):*
+*EP-A.1 — STT Benchmark (issue #206):*
 - Run the reproducible benchmark defined in `docs/09-cpu-model-benchmark.md`
   for Whisper tiny, base, and small on a Windows 10/11 CPU-only machine.
 - Fill in the benchmark results table for the measured host.
-- Publish the recommended maximum model for 8 GB and 16 GB RAM machines.
+- Publish the recommended maximum model for 8 GB and 16 GB RAM machines
+  (see `docs/10-offline-model-selection.md` §5 for the tier defaults).
 - Evidence: inline raw CSV in `docs/09-cpu-model-benchmark.md`, filled results
   table, host configuration, and confirmation that no GPU was used.
 
-*EP-A.2 — Provider implementation (future issue):*
+*EP-A.2 — CPU-only model selection matrix (issue #207):*
+- Maintain `docs/10-offline-model-selection.md` as the decision matrix that
+  connects STT benchmark evidence, OPUS-MT backend selection, 8 GB / 16 GB
+  defaults, and license caveats.
+- Evidence: every recommended model tier must cite either measured local
+  benchmark data or a documented fallback policy.
+
+*EP-A.3 — Whisper provider implementation (future issue):*
 - Implement a `WhisperSttProvider` that satisfies the existing `SttProvider`
   trait in `src/providers/mod.rs`.
 - The provider loads a local model directory on startup; the model directory and
   variant are configurable in `config.json`.
 - The provider must respect the measured CPU-only path (`device="cpu"` and
   `compute_type="int8"`).
+- Default model: `faster-whisper-base` for both 8 GB and 16 GB machines until
+  a local co-run benchmark confirms `small` is viable.
 
-*EP-A.3 — Configuration and UX (future issue):*
+*EP-A.4 — Configuration and UX (future issue):*
 - Add a provider selector to `config.json` (for example, `"stt_provider": "local"`).
 - Display the active STT backend in the TUI status bar.
+
+*EP-D.1 — Local MT backend (issues #217–#218):*
+- Implement `LocalOpusMtProvider` using ONNX Runtime (`ort` crate) with the
+  `Helsinki-NLP/opus-mt-ja-vi` model for direct translation.
+- Run the benchmark gates in `docs/10-local-mt-backend-decision.md` §6 and
+  `docs/10-offline-model-selection.md` §4 before enabling local MT by default.
+- Default strategy: direct `ja→vi`.  Model download, checksum, and version
+  management work is tracked in issue #218.
+- Do **not** include CC-BY-NC models (NLLB-200) in any distributable bundle
+  unless the release is confirmed personal / non-commercial.
 
 **Exit criteria — all must be true:**
 1. Benchmark results are filled in and committed as verification evidence.
@@ -372,9 +404,13 @@ in `docs/09-cpu-model-benchmark.md`.
    the applicable RAM gate (see `docs/09-cpu-model-benchmark.md` §8).
 4. Running with the Whisper backend does not require any GPU driver or CUDA
    installation.
+5. All MT benchmark gates in `docs/10-offline-model-selection.md` §4 pass before
+   `LocalOpusMtProvider` is exposed as a user-facing default.
 
 **Dependencies:** Phase 6 completed for implementation work; issue #206 evidence
-collected. See `docs/09-cpu-model-benchmark.md` for full benchmark methodology.
+collected. See `docs/09-cpu-model-benchmark.md` for STT benchmark methodology,
+`docs/10-local-mt-backend-decision.md` for MT backend rationale, and
+`docs/10-offline-model-selection.md` for model-tier defaults.
 
 ---
 
