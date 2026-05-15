@@ -718,6 +718,17 @@ fn main() -> Result<()> {
                     cpu_gate: Arc::clone(&cpu_gate),
                     provider_is_local: Arc::clone(&provider_is_local),
                     local_unavailable_is_fatal,
+                    // Pass VAD config when enabled; None preserves existing behaviour.
+                    vad_config: if cfg_snapshot.vad.enabled {
+                        Some(audio::VadConfig {
+                            threshold: cfg_snapshot.vad.threshold,
+                            min_speech_ms: cfg_snapshot.vad.min_speech_ms,
+                            speech_pad_ms: cfg_snapshot.vad.speech_pad_ms,
+                            min_silence_ms: cfg_snapshot.vad.min_silence_ms,
+                        })
+                    } else {
+                        None
+                    },
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
