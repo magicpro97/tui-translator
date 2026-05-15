@@ -209,6 +209,7 @@ pub async fn run_orchestrator<S, M, T>(
     loop {
         if ctx.shutdown.load(Ordering::Relaxed) {
             tracing::info!("orchestrator: shutdown requested — exiting loop");
+            flush_speech_window(&mut pending_speech, &mut seq, &stt, &mt, &tts, &ctx).await;
             break;
         }
 
@@ -1114,6 +1115,35 @@ mod tests {
         )
         .await
         .expect("orchestrator should exit within 2s when shutdown flag is set");
+    }
+
+    #[tokio::test]
+    async fn shutdown_flushes_pending_speech_window() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+
+        let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(4);
+        inner_tx.send(speech_chunk()).await.unwrap();
+        let _keep_sender_alive = inner_tx;
+        let shutdown_task = Arc::clone(&shutdown);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            shutdown_task.store(true, Ordering::Relaxed);
+        });
+
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            run_orchestrator(inner_rx, OkStt("final phrase"), OkMt, OkTts, ctx),
+        )
+        .await
+        .expect("orchestrator should flush pending audio before shutdown");
+
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            1,
+            "shutdown should flush pending speech instead of silently dropping it"
+        );
     }
 
     // ── E2E latency (#83) ─────────────────────────────────────────────────────

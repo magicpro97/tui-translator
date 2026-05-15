@@ -631,9 +631,9 @@ async fn orchestrator_mt_exhaustion_sets_pipeline_error_and_drops_chunk() {
 /// **Issue #102 — discard-and-continue at the real pipeline boundary**
 ///
 /// Proves the full discard-and-continue cycle through `run_orchestrator`:
-/// the first chunk exhausts MT retries and is dropped; the second chunk is
-/// processed successfully and produces a subtitle pair.  Both chunks travel
-/// through a single orchestrator invocation — the loop did not stop.
+/// the first STT window exhausts MT retries and is dropped; the second STT
+/// window is processed successfully and produces a subtitle pair.  Both windows
+/// travel through a single orchestrator invocation — the loop did not stop.
 ///
 /// # Real boundary exercised
 /// Same as above: `pipeline::run_orchestrator` drives both the
@@ -641,9 +641,9 @@ async fn orchestrator_mt_exhaustion_sets_pipeline_error_and_drops_chunk() {
 /// inside one loop iteration, via a real channel and real context.
 ///
 /// # Assertions
-/// * `loss_metrics.total_chunks() == 2` (both chunks were offered)
-/// * `loss_metrics.dropped_chunks() == 1` (first chunk dropped)
-/// * `subtitle_pane.pair_count() == 1` (second chunk produced a subtitle)
+/// * `loss_metrics.total_chunks() == 6` (six 500 ms chunks form two STT windows)
+/// * `loss_metrics.dropped_chunks() == 1` (first STT window dropped)
+/// * `subtitle_pane.pair_count() == 1` (second STT window produced a subtitle)
 /// * `mt.call_count() == MAX_RETRY_ATTEMPTS + 1` (5 exhausted + 1 success)
 /// * `stt_state == SttState::Listening`
 /// * no panic
@@ -652,8 +652,8 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     let tc = make_orch_context();
 
     // Queue: exactly MAX_RETRY_ATTEMPTS network errors followed by one success.
-    // Chunk 1: with_retry calls translate MAX_RETRY_ATTEMPTS times → all Err → exhausted.
-    // Chunk 2: with_retry calls translate once → Ok("good translation") → success.
+    // Window 1: with_retry calls translate MAX_RETRY_ATTEMPTS times → all Err → exhausted.
+    // Window 2: with_retry calls translate once → Ok("good translation") → success.
     let mt = SequenceMt::new(
         (0..MAX_RETRY_ATTEMPTS as usize)
             .map(|_| ProviderError::NetworkError("simulated MT failure".to_owned()))
@@ -662,9 +662,13 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     );
     let mt_call_count = Arc::clone(&mt.call_count);
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<crate::audio::AudioChunk>(4);
-    tx.send(loud_audio_chunk()).await.unwrap(); // chunk 1 — will be dropped
-    tx.send(loud_audio_chunk()).await.unwrap(); // chunk 2 — will succeed
+    let (tx, rx) = tokio::sync::mpsc::channel::<crate::audio::AudioChunk>(8);
+    for _ in 0..3 {
+        tx.send(loud_audio_chunk()).await.unwrap(); // STT window 1 — will be dropped
+    }
+    for _ in 0..3 {
+        tx.send(loud_audio_chunk()).await.unwrap(); // STT window 2 — will succeed
+    }
     drop(tx);
 
     crate::pipeline::run_orchestrator(rx, SttPassthrough("hello world"), mt, TtsNoop, tc.ctx).await;
@@ -673,7 +677,7 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     assert_eq!(
         mt_call_count.load(std::sync::atomic::Ordering::Relaxed),
         MAX_RETRY_ATTEMPTS as usize + 1,
-        "MT must be called MAX_RETRY_ATTEMPTS times for chunk 1 and once for chunk 2"
+        "MT must be called MAX_RETRY_ATTEMPTS times for window 1 and once for window 2"
     );
 
     // ── Drop counter: only the first chunk was dropped ────────────────────────
@@ -683,11 +687,11 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
         "exactly one chunk must be counted as dropped"
     );
 
-    // ── Total chunks: both chunks were offered to the pipeline ─────────────────
+    // ── Total chunks: all input chunks were offered to the pipeline ────────────
     assert_eq!(
         tc.loss_metrics.total_chunks(),
-        2,
-        "both chunks must be counted as offered"
+        6,
+        "all six input chunks must be counted as offered"
     );
 
     // ── Subtitle pair: only the second (successful) chunk produced one ─────────
