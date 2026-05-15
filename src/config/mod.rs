@@ -18,9 +18,10 @@ use std::sync::{
 use std::time::Duration;
 use tokio::sync::watch;
 
-use crate::audio::vad::{
-    DEFAULT_MIN_SILENCE_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_SPEECH_PAD_MS, DEFAULT_VAD_THRESHOLD,
-};
+const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
+const DEFAULT_MIN_SPEECH_MS: u32 = 100;
+const DEFAULT_SPEECH_PAD_MS: u32 = 300;
+const DEFAULT_MIN_SILENCE_MS: u32 = 500;
 
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +39,7 @@ pub enum LoadState {
 /// VAD gate settings, serialisable from `config.json`.
 ///
 /// All fields are optional in the JSON; absent fields fall back to the
-/// defaults defined in [`crate::audio::vad`].
+/// defaults used by the runtime VAD gate.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VadConfigJson {
     /// Enable VAD gating before STT.  Default: `false` (disabled).
@@ -77,18 +78,6 @@ impl Default for VadConfigJson {
             min_speech_ms: DEFAULT_MIN_SPEECH_MS,
             speech_pad_ms: DEFAULT_SPEECH_PAD_MS,
             min_silence_ms: DEFAULT_MIN_SILENCE_MS,
-        }
-    }
-}
-
-impl VadConfigJson {
-    /// Convert to the runtime [`crate::audio::vad::VadConfig`].
-    pub fn to_vad_config(&self) -> crate::audio::VadConfig {
-        crate::audio::VadConfig {
-            threshold: self.threshold,
-            min_speech_ms: self.min_speech_ms,
-            speech_pad_ms: self.speech_pad_ms,
-            min_silence_ms: self.min_silence_ms,
         }
     }
 }
