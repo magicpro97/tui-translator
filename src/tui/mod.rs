@@ -179,7 +179,9 @@ pub struct ConfigEditorState {
     pub audio_source: String,
     pub capture_device: String,
     pub audio_file_path: String,
+    /// STT backend name saved in config (`google` now, `local` for offline mode).
     pub stt_provider: String,
+    /// MT backend name saved in config (`google` now, `local` for offline mode).
     pub mt_provider: String,
     pub config_path: String,
     pub status_message: Option<String>,
@@ -1724,13 +1726,19 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     } else {
         " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close"
     };
+    let config_path_display = if is_compact_editor {
+        let path_budget = panel.width.saturating_sub(9) as usize;
+        truncate_device_name(&editor.config_path, path_budget)
+    } else {
+        editor.config_path.clone()
+    };
     let show_status_separator =
         !(is_compact_editor && matches!(editor.mode, ConfigEditorMode::Onboarding));
 
     let mut lines = vec![
         Line::from(Span::styled(intro, Style::default().fg(Color::DarkGray))),
         Line::from(Span::styled(
-            format!(" Path: {}", editor.config_path),
+            format!(" Path: {config_path_display}"),
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
@@ -1793,7 +1801,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     if !is_compact_editor {
         lines.push(Line::from(Span::styled(
-            " Providers: google/local; restart required. F2 cycles capture_device.",
+            " Providers: google now; local is saved for offline mode. Restart required.",
             Style::default().fg(Color::DarkGray),
         )));
     }

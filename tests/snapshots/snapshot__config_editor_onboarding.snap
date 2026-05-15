@@ -19,5 +19,5 @@ expression: "render_config_editor(&editor, 90, 20)"
        │                                                                          │
        │ Ready to save.                                                           │
        │ Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close       │
-       │ Providers: google/local; restart required. F2 cycles capture_device.     │
+       │ Providers: google now; local is saved for offline mode. Restart required.│
        └──────────────────────────────────────────────────────────────────────────┘
