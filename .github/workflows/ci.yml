@@ -38,6 +38,28 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Configure libclang for whisper-rs bindgen
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:ProgramFiles\LLVM\bin",
+            "${env:ProgramFiles(x86)}\LLVM\bin"
+          )
+          $clangBin = $candidates |
+            Where-Object { Test-Path (Join-Path $_ "libclang.dll") } |
+            Select-Object -First 1
+
+          if (-not $clangBin) {
+            choco install llvm -y --no-progress
+            $clangBin = "$env:ProgramFiles\LLVM\bin"
+          }
+
+          if (-not (Test-Path (Join-Path $clangBin "libclang.dll"))) {
+            throw "libclang.dll not found after LLVM setup"
+          }
+
+          "LIBCLANG_PATH=$clangBin" >> $env:GITHUB_ENV
+          "$clangBin" >> $env:GITHUB_PATH
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 

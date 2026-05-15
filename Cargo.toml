@@ -61,6 +61,22 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Base64 encoding — audio payload for Google Speech REST API
 base64 = "0.22"
 
+# SHA-256 checksum verification for downloaded local model files (#212)
+sha2 = "0.10"
+# Hex encoding/decoding — convert SHA-256 digest bytes to/from hex strings (#212)
+hex = "0.4"
+
+# whisper-rs — Rust bindings to whisper.cpp for local on-device STT (#213).
+# Optional: only compiled when the `local-stt` feature is enabled so the
+# default build does not require a C++ toolchain or whisper.cpp binaries.
+whisper-rs = { version = "0.12", optional = true }
+
+[features]
+# Enable the local Whisper STT backend (requires whisper.cpp build toolchain).
+# This feature gate is reserved for issue #213; issue #212 only adds the
+# model-cache infrastructure that #213 will depend on.
+local-stt = ["whisper-rs"]
+
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)
 rubato = "0.15"
