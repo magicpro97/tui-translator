@@ -1,7 +1,7 @@
 //! Local on-device provider infrastructure.
 //!
-//! This module contains the **model-cache layer** (issue #212) that underpins
-//! all local inference backends.  Full inference is deferred to issue #213.
+//! This module contains the **model-cache layer** (issue #212) and local
+//! Whisper STT backend (issue #213).
 //!
 //! # Responsibilities (issue #212)
 //!
@@ -20,22 +20,21 @@
 //!   if it does not match the manifest.
 //! * [`check_model_present`] — quick existence check; returns
 //!   [`ModelCacheError::MissingModel`] when the file is absent.
-//! * [`LocalWhisperSttProvider`] — Phase-gate stub that implements
-//!   [`SttProvider`] and returns [`ProviderError::Unimplemented`] until
-//!   issue #213 adds inference support.
+//! * [`LocalWhisperSttProvider`] — on-device Whisper STT implementation when
+//!   compiled with `local-stt`; otherwise a phase-gate stub.
 //!
-//! # Non-goals for this issue
+//! # Non-goals
 //!
 //! * **No model downloading** — the cache layer only manages and verifies
 //!   files already present on disk.  A dedicated download command (outside
 //!   this module) will call the download URL from [`ModelSpec`].
-//! * **No inference** — `LocalWhisperSttProvider::transcribe` is a stub.
-//!   Full implementation is tracked in issue #213.
 //! * **No model binaries** — model `.bin` files are never committed to the
 //!   repository.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "local-stt")]
+use std::sync::Arc;
 
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
@@ -463,7 +462,7 @@ pub struct LocalWhisperSttProvider {
     /// Only present when the `local-stt` feature is enabled; in stub mode the
     /// field does not exist and no whisper.cpp code is linked.
     #[cfg(feature = "local-stt")]
-    ctx: whisper_rs::WhisperContext,
+    ctx: Arc<whisper_rs::WhisperContext>,
 }
 
 impl std::fmt::Debug for LocalWhisperSttProvider {
@@ -535,7 +534,7 @@ impl LocalWhisperSttProvider {
             model_id,
             model_path: path,
             #[cfg(feature = "local-stt")]
-            ctx,
+            ctx: Arc::new(ctx),
         })
     }
 }
@@ -597,9 +596,23 @@ impl SttProvider for LocalWhisperSttProvider {
         #[cfg(feature = "local-stt")]
         {
             let language_owned = whisper_language_code(language_code).to_owned();
+            let samples = chunk.samples.clone();
+            let ctx = Arc::clone(&self.ctx);
+            let model_id = self.model_id;
+
             // Offload the synchronous whisper.cpp call to the blocking thread
-            // pool so the Tokio async runtime is not stalled.
-            tokio::task::block_in_place(|| self.run_inference_blocking(chunk, &language_owned))
+            // pool so this works on both multi-thread and current-thread Tokio
+            // runtimes without stalling or panicking.
+            tokio::task::spawn_blocking(move || {
+                Self::run_inference_blocking(model_id, &ctx, &samples, &language_owned)
+            })
+            .await
+            .map_err(|e| {
+                ProviderError::ServiceUnavailable(format!(
+                    "local Whisper inference task failed for model '{}': {e}",
+                    self.model_id
+                ))
+            })?
         }
     }
 }
@@ -619,27 +632,24 @@ impl LocalWhisperSttProvider {
     /// Run CPU inference synchronously on the calling thread.
     ///
     /// Must be called from a context where blocking is acceptable, e.g. inside
-    /// `tokio::task::block_in_place`.
+    /// `tokio::task::spawn_blocking`.
     ///
     /// # Errors
     ///
     /// Returns [`ProviderError::ServiceUnavailable`] for any whisper.cpp error.
     fn run_inference_blocking(
-        &self,
-        chunk: &PcmChunk,
+        model_id: ModelId,
+        ctx: &whisper_rs::WhisperContext,
+        samples: &[i16],
         language_code: &str,
     ) -> Result<SttResult, ProviderError> {
         // Convert signed 16-bit PCM → normalised f32 in [-1.0, 1.0].
-        let samples_f32: Vec<f32> = chunk
-            .samples
-            .iter()
-            .map(|&s| f32::from(s) / f32::from(i16::MAX))
-            .collect();
+        let samples_f32: Vec<f32> = samples.iter().copied().map(pcm_i16_to_f32).collect();
 
-        let mut state = self.ctx.create_state().map_err(|e| {
+        let mut state = ctx.create_state().map_err(|e| {
             ProviderError::ServiceUnavailable(format!(
                 "failed to create whisper state for model '{}': {e}",
-                self.model_id
+                model_id
             ))
         })?;
 
@@ -655,14 +665,14 @@ impl LocalWhisperSttProvider {
         state.full(params, &samples_f32).map_err(|e| {
             ProviderError::ServiceUnavailable(format!(
                 "whisper inference failed for model '{}': {e}",
-                self.model_id
+                model_id
             ))
         })?;
 
         let num_segments = state.full_n_segments().map_err(|e| {
             ProviderError::ServiceUnavailable(format!(
                 "failed to read segment count from model '{}': {e}",
-                self.model_id
+                model_id
             ))
         })?;
 
@@ -671,7 +681,7 @@ impl LocalWhisperSttProvider {
             let text = state.full_get_segment_text(i).map_err(|e| {
                 ProviderError::ServiceUnavailable(format!(
                     "failed to read segment {i} from model '{}': {e}",
-                    self.model_id
+                    model_id
                 ))
             })?;
             parts.push(text);
@@ -680,7 +690,7 @@ impl LocalWhisperSttProvider {
         let text = parts.join(" ").trim().to_string();
 
         tracing::debug!(
-            model = %self.model_id,
+            model = %model_id,
             segments = num_segments,
             output_chars = text.len(),
             "whisper inference complete"
@@ -694,6 +704,10 @@ impl LocalWhisperSttProvider {
             is_final: true,
         })
     }
+}
+
+fn pcm_i16_to_f32(sample: i16) -> f32 {
+    f32::from(sample) / 32_768.0
 }
 
 // ── Test-only helpers ─────────────────────────────────────────────────────────
@@ -764,6 +778,16 @@ mod tests {
             digest,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn pcm_i16_to_f32_maps_full_scale_negative_to_minus_one() {
+        assert_eq!(pcm_i16_to_f32(i16::MIN), -1.0);
+    }
+
+    #[test]
+    fn pcm_i16_to_f32_keeps_positive_full_scale_below_one() {
+        assert!(pcm_i16_to_f32(i16::MAX) < 1.0);
     }
 
     // ── model_id display ─────────────────────────────────────────────────────
@@ -1185,9 +1209,8 @@ mod tests {
 
             let provider = LocalWhisperSttProvider::new(ModelId::Tiny)
                 .expect("ggml-tiny.bin must be present in the model cache");
-            let rt = tokio::runtime::Builder::new_multi_thread()
+            let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
-                .worker_threads(2)
                 .build()
                 .unwrap();
             let result = rt

@@ -9,7 +9,7 @@
     "cost_warning_usd": "Rolling cost-estimate threshold in USD. A warning appears in the status bar when estimated API spend exceeds this value. Set to 0 (or omit) to disable the warning.",
     "audio_source": "Audio capture backend. 'wasapi' (default) captures the Windows system loopback (what you hear). 'file' reads a WAV fixture from audio_file_path and loops it indefinitely — useful for soak testing without a live meeting.",
     "audio_file_path": "Path to the WAV file used when audio_source is 'file'. The file must be 16 kHz mono 16-bit PCM. Ignored (and may be omitted) when audio_source is 'wasapi'.",
-    "stt_provider": "Speech-to-text provider. 'google' (default) uses Google Cloud Speech-to-Text. 'local' is reserved for future CPU-local providers (Phase 6+).",
+    "stt_provider": "Speech-to-text provider. 'google' (default) uses Google Cloud Speech-to-Text. 'local' uses CPU-local Whisper STT when the executable is built with the local-stt feature. Google Translation still requires google_api_key.",
     "mt_provider": "Machine-translation provider. 'google' (default) uses Google Cloud Translation. 'local' is reserved for future CPU-local providers (Phase 6+)."
   },
   "source_language": "ja-JP",

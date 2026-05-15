@@ -169,6 +169,56 @@ impl providers::CostReporter for metrics::CostCounter {
         metrics::CostCounter::record_synthesized_characters(self, count);
     }
 }
+
+enum RuntimeSttProvider {
+    Google(providers::google::stt::GoogleSttProvider),
+    #[cfg(feature = "local-stt")]
+    Local(providers::local::LocalWhisperSttProvider),
+}
+
+impl providers::SttProvider for RuntimeSttProvider {
+    async fn transcribe(
+        &self,
+        chunk: &providers::PcmChunk,
+        language_code: &str,
+    ) -> std::result::Result<providers::SttResult, providers::ProviderError> {
+        match self {
+            Self::Google(provider) => {
+                providers::SttProvider::transcribe(provider, chunk, language_code).await
+            }
+            #[cfg(feature = "local-stt")]
+            Self::Local(provider) => {
+                providers::SttProvider::transcribe(provider, chunk, language_code).await
+            }
+        }
+    }
+}
+
+fn build_runtime_stt_provider(
+    cfg: &config::AppConfig,
+    google_api_key: Option<&str>,
+) -> std::result::Result<RuntimeSttProvider, providers::ProviderError> {
+    match cfg.stt_provider.as_str() {
+        "google" => {
+            let key = google_api_key.ok_or_else(|| {
+                providers::ProviderError::InvalidInput(
+                    "Google STT requires google_api_key".to_string(),
+                )
+            })?;
+            providers::google::stt::GoogleSttProvider::new(key).map(RuntimeSttProvider::Google)
+        }
+        #[cfg(feature = "local-stt")]
+        "local" => providers::local::LocalWhisperSttProvider::new(providers::local::ModelId::Tiny)
+            .map(RuntimeSttProvider::Local),
+        #[cfg(not(feature = "local-stt"))]
+        "local" => Err(providers::ProviderError::Unimplemented(
+            "local Whisper STT requires a build compiled with `--features local-stt`".to_string(),
+        )),
+        other => Err(providers::ProviderError::InvalidInput(format!(
+            "unsupported STT provider {other:?}"
+        ))),
+    }
+}
 /// Initialise the tracing subscriber, routing output to a log file so that
 /// diagnostic lines never reach the ConPTY terminal stream (issue #183).
 ///
@@ -463,14 +513,24 @@ fn main() -> Result<()> {
                     .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
                 spawn_metrics_only_audio_task(&rt, stream, &state);
                 orchestrator_join = None;
-            } else if let Some(key) = cfg_snapshot.google_api_key {
-                // Build Google providers and start the orchestrator.
+            } else if let Some(provider_msg) = missing_google_api_key_error(&cfg_snapshot) {
+                tracing::warn!("{provider_msg}");
+                *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                    metrics::SttState::Error(provider_msg.clone());
+                *state
+                    .pipeline_error_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
+                spawn_metrics_only_audio_task(&rt, stream, &state);
+                orchestrator_join = None;
+            } else if let Some(ref key) = cfg_snapshot.google_api_key {
+                // Build the selected STT provider plus Google MT/TTS, then
+                // start the orchestrator.
                 // Reuse the Arc already held in AppState so hot-reload writes
                 // are visible to the running orchestrator.
                 let source_language = Arc::clone(&state.source_language);
 
-                let stt_provider = match providers::google::stt::GoogleSttProvider::new(key.clone())
-                {
+                let stt_provider = match build_runtime_stt_provider(&cfg_snapshot, Some(key)) {
                     Ok(p) => p,
                     Err(err) => {
                         tracing::error!("failed to create STT provider: {err}");
@@ -525,7 +585,8 @@ fn main() -> Result<()> {
                 };
                 // Issue #71–#76: wire cost reporter so TTS API usage is billed
                 // against the shared CostCounter.
-                let tts_provider = match providers::google::tts::GoogleTtsProvider::new(key) {
+                let tts_provider = match providers::google::tts::GoogleTtsProvider::new(key.clone())
+                {
                     Ok(p) => p.with_cost_reporter(
                         Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>
                     ),
@@ -980,8 +1041,15 @@ fn build_config_from_editor(
 
 fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
     let mut unsupported = Vec::new();
-    if cfg.stt_provider != "google" {
-        unsupported.push(format!("stt_provider={:?}", cfg.stt_provider));
+    match cfg.stt_provider.as_str() {
+        "google" => {}
+        #[cfg(feature = "local-stt")]
+        "local" => {}
+        #[cfg(not(feature = "local-stt"))]
+        "local" => {
+            unsupported.push("stt_provider=\"local\" (requires a local-stt build)".to_string())
+        }
+        _ => unsupported.push(format!("stt_provider={:?}", cfg.stt_provider)),
     }
     if cfg.mt_provider != "google" {
         unsupported.push(format!("mt_provider={:?}", cfg.mt_provider));
@@ -991,10 +1059,21 @@ fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
         None
     } else {
         Some(format!(
-            "Local provider mode is saved but not available yet ({}). Set stt_provider and mt_provider to \"google\", save, and restart.",
+            "Some saved provider settings are not available in this build ({}). Set unsupported providers to \"google\", save, and restart.",
             unsupported.join(", ")
         ))
     }
+}
+
+fn missing_google_api_key_error(cfg: &config::AppConfig) -> Option<String> {
+    if cfg.google_api_key.is_some() || cfg.stt_provider != "local" {
+        return None;
+    }
+
+    Some(
+        "Local speech-to-text is enabled, but this build still uses Google for translation and translated audio. Add google_api_key, save, and restart."
+            .to_string(),
+    )
 }
 
 fn save_config_editor(
@@ -2019,16 +2098,70 @@ mod tests {
     }
 
     #[test]
-    fn runtime_provider_error_rejects_unimplemented_local_mode() {
-        let mut cfg = config::AppConfig::default();
+    fn runtime_provider_error_allows_default_google_mode() {
+        let cfg = config::AppConfig::default();
         assert!(runtime_provider_error(&cfg).is_none());
+    }
 
+    #[test]
+    fn missing_google_api_key_error_preserves_default_metrics_only_without_key() {
+        let cfg = config::AppConfig::default();
+
+        assert!(missing_google_api_key_error(&cfg).is_none());
+    }
+
+    #[test]
+    fn missing_google_api_key_error_explains_local_stt_still_needs_google_mt() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+
+        let msg = missing_google_api_key_error(&cfg)
+            .expect("local STT with Google MT/TTS should require google_api_key");
+
+        assert!(msg.contains("Local speech-to-text"));
+        assert!(msg.contains("Google"));
+        assert!(msg.contains("google_api_key"));
+    }
+
+    #[test]
+    fn missing_google_api_key_error_allows_local_stt_when_key_is_present() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.google_api_key = Some("demo-key".to_string());
+
+        assert!(missing_google_api_key_error(&cfg).is_none());
+    }
+
+    #[cfg(not(feature = "local-stt"))]
+    #[test]
+    fn runtime_provider_error_rejects_local_stt_without_feature() {
+        let mut cfg = config::AppConfig::default();
         cfg.stt_provider = "local".to_string();
         let msg =
-            runtime_provider_error(&cfg).expect("local provider should be rejected at runtime");
+            runtime_provider_error(&cfg).expect("local STT should require the local-stt feature");
 
         assert!(msg.contains("stt_provider=\"local\""));
-        assert!(msg.contains("not available yet"));
+        assert!(msg.contains("local-stt"));
+        assert!(msg.contains("google"));
+    }
+
+    #[cfg(feature = "local-stt")]
+    #[test]
+    fn runtime_provider_error_allows_local_stt_with_feature() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+
+        assert!(runtime_provider_error(&cfg).is_none());
+    }
+
+    #[test]
+    fn runtime_provider_error_rejects_local_mt_mode() {
+        let mut cfg = config::AppConfig::default();
+        cfg.mt_provider = "local".to_string();
+        let msg =
+            runtime_provider_error(&cfg).expect("local MT should still be rejected at runtime");
+
+        assert!(msg.contains("mt_provider=\"local\""));
         assert!(msg.contains("google"));
     }
 
