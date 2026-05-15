@@ -10,7 +10,8 @@
     "audio_source": "Audio capture backend. 'wasapi' (default) captures the Windows system loopback (what you hear). 'file' reads a WAV fixture from audio_file_path and loops it indefinitely — useful for soak testing without a live meeting.",
     "audio_file_path": "Path to the WAV file used when audio_source is 'file'. The file must be 16 kHz mono 16-bit PCM. Ignored (and may be omitted) when audio_source is 'wasapi'.",
     "stt_provider": "Speech-to-text provider. 'google' (default) uses Google Cloud Speech-to-Text. 'local' uses CPU-local Whisper STT when the executable is built with the local-stt feature. Google Translation still requires google_api_key.",
-    "mt_provider": "Machine-translation provider. 'google' (default) uses Google Cloud Translation. 'local' is reserved for future CPU-local providers (Phase 6+)."
+    "mt_provider": "Machine-translation provider. 'google' (default) uses Google Cloud Translation. 'local' is reserved for future CPU-local providers (Phase 6+).",
+    "cpu_budget_pct": "CPU-usage ceiling (percent) above which local Whisper inference is skipped to protect co-running apps such as Zoom or Microsoft Teams. Only active when stt_provider is 'local'. 0.0 (default) disables throttling. On multi-core hosts sysinfo reports per-core percentages (e.g. 400.0 = 4 full cores); set this value accordingly. Example: 80.0 to suppress inference when the process exceeds 80% of one core."
   },
   "source_language": "ja-JP",
   "target_language": "vi",
@@ -21,5 +22,6 @@
   "audio_source": "wasapi",
   "audio_file_path": null,
   "stt_provider": "google",
-  "mt_provider": "google"
+  "mt_provider": "google",
+  "cpu_budget_pct": 0.0
 }

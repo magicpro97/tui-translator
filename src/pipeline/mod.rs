@@ -24,6 +24,7 @@
 
 #![allow(dead_code)]
 
+pub mod cpu_gate;
 pub mod playback;
 
 use std::{
@@ -41,6 +42,7 @@ use crate::{
     metrics::{
         CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttState,
     },
+    pipeline::cpu_gate::CpuGate,
     providers::{MtProvider, PcmChunk, ProviderError, SttProvider, TtsProvider},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
@@ -170,6 +172,24 @@ pub struct OrchestratorContext {
     /// offered to the pipeline and `dropped_chunks` when all retries are
     /// exhausted for an STT window.
     pub loss_metrics: Arc<LossMetrics>,
+
+    // ── CPU throttle (issue #230) ──────────────────────────────────────────
+    /// CPU budget guard for local-inference providers.
+    ///
+    /// Shared with the metrics-publisher task, which calls
+    /// [`CpuGate::update_cpu_pct`] once per second.  The orchestrator
+    /// consults [`CpuGate::is_throttled`] before each STT submission.
+    ///
+    /// [`CpuGate::update_cpu_pct`]: cpu_gate::CpuGate::update_cpu_pct
+    /// [`CpuGate::is_throttled`]: cpu_gate::CpuGate::is_throttled
+    pub cpu_gate: Arc<CpuGate>,
+
+    /// `true` when the configured STT provider runs locally on this CPU
+    /// (i.e., `stt_provider = "local"`).
+    ///
+    /// The CPU throttle check fires **only** when this flag is `true`.
+    /// Google and other cloud providers are never throttled.
+    pub provider_is_local: bool,
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
@@ -315,6 +335,19 @@ async fn flush_speech_window<S, M, T>(
 {
     if ctx.paused.load(Ordering::Relaxed) || ctx.pipeline_halted.load(Ordering::Relaxed) {
         ctx.audio_level.store(0, Ordering::Relaxed);
+        pending.clear();
+        return;
+    }
+
+    // Issue #230: skip the chunk when CPU pressure would degrade the meeting
+    // app.  Cloud/Google paths are never throttled (`provider_is_local = false`).
+    if ctx.provider_is_local && ctx.cpu_gate.is_throttled() {
+        tracing::warn!(
+            "CPU budget exceeded — skipping local inference chunk \
+             (local_inferences_skipped={})",
+            ctx.cpu_gate.skipped_count() + 1,
+        );
+        ctx.cpu_gate.record_skip();
         pending.clear();
         return;
     }
@@ -765,6 +798,9 @@ mod tests {
             e2e_latency: Arc::new(crate::metrics::LatencyHistogram::new()),
             network_metrics: Arc::new(crate::metrics::NetworkMetrics::new()),
             loss_metrics: Arc::new(crate::metrics::LossMetrics::new()),
+            // CPU throttle disabled in unit tests so existing behaviour is unchanged.
+            cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
+            provider_is_local: false,
         };
         (ctx, tx)
     }
@@ -948,6 +984,106 @@ mod tests {
                 "pending audio should be discarded after {state}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn local_cpu_throttle_skips_pending_audio_without_stt_call() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+        let cpu_gate = Arc::new(crate::pipeline::cpu_gate::CpuGate::new(70.0));
+        cpu_gate.update_cpu_pct(80.0);
+        ctx.cpu_gate = Arc::clone(&cpu_gate);
+        ctx.provider_is_local = true;
+        let metrics = Arc::clone(&ctx.session_metrics);
+        let mut pending = SpeechWindow::default();
+        let mut seq = 0;
+
+        pending.push(speech_chunk());
+
+        flush_speech_window(
+            &mut pending,
+            &mut seq,
+            &RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            &OkMt,
+            &OkTts,
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "local over-budget audio must not reach STT"
+        );
+        assert_eq!(
+            cpu_gate.skipped_count(),
+            1,
+            "local over-budget audio should increment skip metric"
+        );
+        assert_eq!(
+            ctx.loss_metrics.total_chunks(),
+            0,
+            "CPU-throttled audio must not count as a provider failure"
+        );
+        assert_eq!(
+            metrics.lock().unwrap().audio_seconds_sent,
+            0.0,
+            "CPU-throttled audio must not be counted as billable STT audio"
+        );
+        assert!(
+            pending.take_chunk().is_none(),
+            "CPU-throttled pending audio should be discarded intentionally"
+        );
+    }
+
+    #[tokio::test]
+    async fn google_path_ignores_cpu_throttle_and_calls_stt() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+        let cpu_gate = Arc::new(crate::pipeline::cpu_gate::CpuGate::new(70.0));
+        cpu_gate.update_cpu_pct(99.0);
+        ctx.cpu_gate = Arc::clone(&cpu_gate);
+        ctx.provider_is_local = false;
+        let mut pending = SpeechWindow::default();
+        let mut seq = 0;
+
+        pending.push(speech_chunk());
+
+        flush_speech_window(
+            &mut pending,
+            &mut seq,
+            &RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            &OkMt,
+            &OkTts,
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "Google/cloud path must still call STT even when CPU exceeds budget"
+        );
+        assert_eq!(
+            cpu_gate.skipped_count(),
+            0,
+            "Google/cloud path must not increment local skip metric"
+        );
+        assert_eq!(
+            ctx.loss_metrics.total_chunks(),
+            1,
+            "Google/cloud path should preserve normal STT-window accounting"
+        );
     }
 
     /// STT NetworkError exhausted → SttState::Error set, pipeline continues.

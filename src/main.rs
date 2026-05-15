@@ -82,6 +82,10 @@ struct FinishMainArgs<'a> {
     network_metrics: Arc<NetworkMetrics>,
     /// Shared audio-chunk loss counters populated by the orchestrator (issue #81).
     loss_metrics: Arc<LossMetrics>,
+    // ── CPU throttle (issue #230) ──────────────────────────────────────────
+    /// CPU gate shared with the orchestrator; the metrics publisher updates
+    /// its CPU reading and reads the skip counter for the snapshot.
+    cpu_gate: Arc<pipeline::cpu_gate::CpuGate>,
 }
 
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
@@ -442,6 +446,14 @@ fn main() -> Result<()> {
     let network_metrics = Arc::new(NetworkMetrics::new());
     let loss_metrics = Arc::new(LossMetrics::new());
 
+    // Issue #230: create the CPU gate from the loaded config.
+    // `cpu_budget_pct = 0.0` (default) disables throttling, preserving
+    // existing behaviour for all users who have not set the field.
+    let cpu_gate = {
+        let cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        Arc::new(pipeline::cpu_gate::CpuGate::new(cfg.cpu_budget_pct))
+    };
+
     // Issue #79: start the process-metrics polling task and get its receiver.
     // Pass the runtime handle explicitly so spawn_blocking works before the
     // first block_on call (tokio::task::spawn_blocking requires a current
@@ -465,6 +477,7 @@ fn main() -> Result<()> {
                 e2e_latency,
                 network_metrics,
                 loss_metrics,
+                cpu_gate,
             },
         );
     }
@@ -551,6 +564,7 @@ fn main() -> Result<()> {
                                 e2e_latency: Arc::clone(&e2e_latency),
                                 network_metrics: Arc::clone(&network_metrics),
                                 loss_metrics: Arc::clone(&loss_metrics),
+                                cpu_gate: Arc::clone(&cpu_gate),
                             },
                         );
                     }
@@ -579,6 +593,7 @@ fn main() -> Result<()> {
                                 e2e_latency: Arc::clone(&e2e_latency),
                                 network_metrics: Arc::clone(&network_metrics),
                                 loss_metrics: Arc::clone(&loss_metrics),
+                                cpu_gate: Arc::clone(&cpu_gate),
                             },
                         );
                     }
@@ -608,10 +623,15 @@ fn main() -> Result<()> {
                                 e2e_latency: Arc::clone(&e2e_latency),
                                 network_metrics: Arc::clone(&network_metrics),
                                 loss_metrics: Arc::clone(&loss_metrics),
+                                cpu_gate: Arc::clone(&cpu_gate),
                             },
                         );
                     }
                 };
+
+                // Issue #230: set provider_is_local from config so the CPU
+                // gate fires only for local Whisper inference.
+                let provider_is_local = cfg_snapshot.stt_provider == "local";
 
                 let ctx = pipeline::OrchestratorContext {
                     audio_level: Arc::clone(&state.audio_level),
@@ -631,6 +651,8 @@ fn main() -> Result<()> {
                     e2e_latency: Arc::clone(&e2e_latency),
                     network_metrics: Arc::clone(&network_metrics),
                     loss_metrics: Arc::clone(&loss_metrics),
+                    cpu_gate: Arc::clone(&cpu_gate),
+                    provider_is_local,
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
@@ -671,6 +693,7 @@ fn main() -> Result<()> {
             e2e_latency,
             network_metrics,
             loss_metrics,
+            cpu_gate,
         },
     )
 }
@@ -721,6 +744,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         e2e_latency,
         network_metrics,
         loss_metrics,
+        cpu_gate,
     } = args;
 
     // ── Issues #61, #82: metrics observability background task ───────────────
@@ -731,6 +755,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let metrics_tx = Arc::clone(&state.metrics_tx);
         let subtitle_pane = Arc::clone(&state.subtitle_pane);
         let cost_counter = Arc::clone(&state.cost_counter);
+        let cpu_gate = Arc::clone(&cpu_gate);
         let mut process_rx = process_rx;
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -746,6 +771,10 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     .pair_count() as u64;
                 let net_snap = network_metrics.drain_window(1.0);
                 let proc_snap = process_rx.borrow_and_update().clone();
+
+                // Issue #230: keep the CPU gate's reading in sync with the
+                // process snapshot so throttle decisions are up to date.
+                cpu_gate.update_cpu_pct(proc_snap.cpu_pct);
 
                 let mut snapshot = MetricsSnapshot {
                     audio_seconds_sent: session.audio_seconds_sent,
@@ -770,6 +799,9 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                 snapshot.loss_pct = loss_metrics.loss_pct();
                 snapshot.total_chunks = loss_metrics.total_chunks();
                 snapshot.dropped_chunks = loss_metrics.dropped_chunks();
+                // Issue #230: publish how many local-inference chunks were
+                // intentionally skipped due to CPU pressure.
+                snapshot.local_inferences_skipped = cpu_gate.skipped_count();
 
                 let _ = metrics_tx.send(snapshot);
             }
