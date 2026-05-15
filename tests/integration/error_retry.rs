@@ -638,7 +638,7 @@ async fn orchestrator_mt_exhaustion_sets_pipeline_error_and_drops_chunk() {
 /// # Real boundary exercised
 /// Same as above: `pipeline::run_orchestrator` drives both the
 /// discard path (MT exhaustion) **and** the continue path (next STT window success)
-/// inside one loop iteration, via a real channel and real context.
+/// inside one orchestrator invocation, via a real channel and real context.
 ///
 /// # Assertions
 /// * `loss_metrics.total_chunks() == 2` (six 500 ms chunks form two STT windows)

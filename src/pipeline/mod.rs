@@ -166,8 +166,9 @@ pub struct OrchestratorContext {
 
     /// Audio-chunk loss counters (issue #81).
     ///
-    /// The orchestrator increments `total_chunks` when a chunk is offered to
-    /// the pipeline and `dropped_chunks` when all retries are exhausted.
+    /// The orchestrator increments `total_chunks` when an STT audio window is
+    /// offered to the pipeline and `dropped_chunks` when all retries are
+    /// exhausted for an STT window.
     pub loss_metrics: Arc<LossMetrics>,
 }
 
@@ -299,6 +300,7 @@ impl SpeechWindow {
     }
 }
 
+#[tracing::instrument(skip_all, name = "speech_window_flush")]
 async fn flush_speech_window<S, M, T>(
     pending: &mut SpeechWindow,
     seq: &mut u64,
@@ -311,6 +313,12 @@ async fn flush_speech_window<S, M, T>(
     M: MtProvider,
     T: TtsProvider,
 {
+    if ctx.paused.load(Ordering::Relaxed) || ctx.pipeline_halted.load(Ordering::Relaxed) {
+        ctx.audio_level.store(0, Ordering::Relaxed);
+        pending.clear();
+        return;
+    }
+
     let Some(chunk) = pending.take_chunk() else {
         return;
     };
@@ -355,10 +363,26 @@ where
     let transcript = match with_retry(|| stt.transcribe(&pcm, &source_lang)).await {
         Ok(r) if r.text.trim().is_empty() => {
             // Silent / empty result — nothing to translate.
-            tracing::info!(
+            let audio_ms = pcm.samples.len().saturating_mul(1_000) / 16_000;
+            let rms_energy = if pcm.samples.is_empty() {
+                0.0
+            } else {
+                let sum_sq: f64 = pcm
+                    .samples
+                    .iter()
+                    .map(|&s| {
+                        let norm = s as f64 / i16::MAX as f64;
+                        norm * norm
+                    })
+                    .sum();
+                (sum_sq / pcm.samples.len() as f64).sqrt()
+            };
+            tracing::warn!(
                 sequence_number = pcm.sequence_number,
-                audio_ms = pcm.samples.len().saturating_mul(1_000) / 16_000,
-                "STT returned empty transcript; dropping audio window"
+                audio_ms,
+                source_language = %source_lang,
+                rms_energy,
+                "STT returned empty transcript; dropping audio window. Check source language, capture device/source, and whether the captured audio is speech or silence."
             );
             set_stt_state(&ctx.stt_state, SttState::Listening);
             return;
@@ -846,6 +870,84 @@ mod tests {
             (audio_sent - 1.5).abs() < f64::EPSILON,
             "batched STT billing should use combined audio duration, got {audio_sent}"
         );
+    }
+
+    #[test]
+    fn speech_window_idle_flush_obeys_minimum_duration_and_timeout() {
+        let mut window = SpeechWindow::default();
+        assert!(
+            !window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS)),
+            "empty windows must not flush"
+        );
+
+        window.push(AudioChunk {
+            samples: vec![1; 7_999],
+            duration_ms: STT_IDLE_MIN_MS - 1,
+        });
+        assert!(
+            !window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS)),
+            "audio below the idle minimum must wait for more speech"
+        );
+
+        window.push(AudioChunk {
+            samples: vec![1; 1],
+            duration_ms: 1,
+        });
+        assert!(
+            !window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS - 1)),
+            "idle flush must wait for the full timeout"
+        );
+        assert!(
+            window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS)),
+            "idle flush should submit enough audio at the timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_speech_window_skips_pending_audio_after_pause_or_halt() {
+        for state in ["paused", "halted"] {
+            let shutdown = Arc::new(AtomicBool::new(false));
+            let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+            let calls = Arc::new(AtomicU32::new(0));
+            let sample_counts = Arc::new(Mutex::new(Vec::new()));
+            let mut pending = SpeechWindow::default();
+            let mut seq = 0;
+
+            pending.push(speech_chunk());
+            match state {
+                "paused" => ctx.paused.store(true, Ordering::Relaxed),
+                "halted" => ctx.pipeline_halted.store(true, Ordering::Relaxed),
+                _ => unreachable!(),
+            }
+
+            flush_speech_window(
+                &mut pending,
+                &mut seq,
+                &RecordingStt {
+                    calls: Arc::clone(&calls),
+                    sample_counts: Arc::clone(&sample_counts),
+                },
+                &OkMt,
+                &OkTts,
+                &ctx,
+            )
+            .await;
+
+            assert_eq!(
+                calls.load(Ordering::Relaxed),
+                0,
+                "pending audio must not reach STT after {state}"
+            );
+            assert_eq!(
+                ctx.loss_metrics.total_chunks(),
+                0,
+                "skipped pending audio must not affect loss totals after {state}"
+            );
+            assert!(
+                pending.take_chunk().is_none(),
+                "pending audio should be discarded after {state}"
+            );
+        }
     }
 
     /// STT NetworkError exhausted → SttState::Error set, pipeline continues.
