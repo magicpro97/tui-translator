@@ -178,6 +178,17 @@ enum RuntimeSttProvider {
     Google(providers::google::stt::GoogleSttProvider),
     #[cfg(feature = "local-stt")]
     Local(providers::local::LocalWhisperSttProvider),
+    /// Google STT with a local Whisper fallback (issue #214).
+    ///
+    /// Active when `stt_provider = "google"` and `stt_fallback_policy =
+    /// "local"`.  On the first `AuthError` from Google the provider switches
+    /// permanently to local Whisper and writes a visible status message.
+    GoogleWithLocalFallback(
+        pipeline::fallback::FallbackSttProvider<
+            providers::google::stt::GoogleSttProvider,
+            providers::local::LocalWhisperSttProvider,
+        >,
+    ),
 }
 
 impl providers::SttProvider for RuntimeSttProvider {
@@ -194,6 +205,9 @@ impl providers::SttProvider for RuntimeSttProvider {
             Self::Local(provider) => {
                 providers::SttProvider::transcribe(provider, chunk, language_code).await
             }
+            Self::GoogleWithLocalFallback(provider) => {
+                providers::SttProvider::transcribe(provider, chunk, language_code).await
+            }
         }
     }
 }
@@ -201,6 +215,8 @@ impl providers::SttProvider for RuntimeSttProvider {
 fn build_runtime_stt_provider(
     cfg: &config::AppConfig,
     google_api_key: Option<&str>,
+    status_msg: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    local_provider_active: Arc<AtomicBool>,
 ) -> std::result::Result<RuntimeSttProvider, providers::ProviderError> {
     match cfg.stt_provider.as_str() {
         "google" => {
@@ -209,7 +225,44 @@ fn build_runtime_stt_provider(
                     "Google STT requires google_api_key".to_string(),
                 )
             })?;
-            providers::google::stt::GoogleSttProvider::new(key).map(RuntimeSttProvider::Google)
+            let google = providers::google::stt::GoogleSttProvider::new(key)?;
+
+            // Issue #214: if the fallback policy is "local", wrap Google in a
+            // FallbackSttProvider so it automatically switches to local Whisper
+            // on the first AuthError.
+            let policy =
+                pipeline::fallback::SttFallbackPolicy::from_config(&cfg.stt_fallback_policy)
+                    .unwrap_or(pipeline::fallback::SttFallbackPolicy::None);
+
+            if policy == pipeline::fallback::SttFallbackPolicy::Local {
+                // Attempt to pre-build the local provider.  Failures here are
+                // not fatal at startup: the error is stored so it surfaces
+                // with an actionable message when the fallback is first needed.
+                let (fallback, fallback_err) = match providers::local::LocalWhisperSttProvider::new(
+                    providers::local::ModelId::Base,
+                ) {
+                    Ok(p) => {
+                        tracing::info!("local Whisper (base) ready for STT fallback (issue #214)");
+                        (Some(p), None)
+                    }
+                    Err(e) => {
+                        tracing::warn!("local STT not available for fallback (issue #214): {e}");
+                        (None, Some(e.to_string()))
+                    }
+                };
+                Ok(RuntimeSttProvider::GoogleWithLocalFallback(
+                    pipeline::fallback::FallbackSttProvider::new(
+                        google,
+                        fallback,
+                        fallback_err,
+                        policy,
+                        status_msg,
+                        local_provider_active,
+                    ),
+                ))
+            } else {
+                Ok(RuntimeSttProvider::Google(google))
+            }
         }
         #[cfg(feature = "local-stt")]
         "local" => providers::local::LocalWhisperSttProvider::new(providers::local::ModelId::Tiny)
@@ -543,7 +596,18 @@ fn main() -> Result<()> {
                 // are visible to the running orchestrator.
                 let source_language = Arc::clone(&state.source_language);
 
-                let stt_provider = match build_runtime_stt_provider(&cfg_snapshot, Some(key)) {
+                // Issue #230 + #214: shared flag read by the CPU gate. It starts
+                // true only for configured local STT, then flips true if Google
+                // falls back to local Whisper at runtime.
+                let provider_is_local =
+                    Arc::new(AtomicBool::new(cfg_snapshot.stt_provider == "local"));
+
+                let stt_provider = match build_runtime_stt_provider(
+                    &cfg_snapshot,
+                    Some(key),
+                    Arc::clone(&state.pipeline_error_msg),
+                    Arc::clone(&provider_is_local),
+                ) {
                     Ok(p) => p,
                     Err(err) => {
                         tracing::error!("failed to create STT provider: {err}");
@@ -629,10 +693,6 @@ fn main() -> Result<()> {
                     }
                 };
 
-                // Issue #230: set provider_is_local from config so the CPU
-                // gate fires only for local Whisper inference.
-                let provider_is_local = cfg_snapshot.stt_provider == "local";
-
                 let ctx = pipeline::OrchestratorContext {
                     audio_level: Arc::clone(&state.audio_level),
                     stt_state: Arc::clone(&state.stt_state),
@@ -652,7 +712,7 @@ fn main() -> Result<()> {
                     network_metrics: Arc::clone(&network_metrics),
                     loss_metrics: Arc::clone(&loss_metrics),
                     cpu_gate: Arc::clone(&cpu_gate),
-                    provider_is_local,
+                    provider_is_local: Arc::clone(&provider_is_local),
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(

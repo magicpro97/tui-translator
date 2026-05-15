@@ -25,6 +25,7 @@
 #![allow(dead_code)]
 
 pub mod cpu_gate;
+pub mod fallback;
 pub mod playback;
 
 use std::{
@@ -184,12 +185,12 @@ pub struct OrchestratorContext {
     /// [`CpuGate::is_throttled`]: cpu_gate::CpuGate::is_throttled
     pub cpu_gate: Arc<CpuGate>,
 
-    /// `true` when the configured STT provider runs locally on this CPU
-    /// (i.e., `stt_provider = "local"`).
+    /// `true` when the active STT provider runs locally on this CPU.
     ///
-    /// The CPU throttle check fires **only** when this flag is `true`.
-    /// Google and other cloud providers are never throttled.
-    pub provider_is_local: bool,
+    /// Starts as `true` for `stt_provider = "local"` and is flipped at runtime
+    /// if Google STT falls back to local Whisper. Google/cloud-only paths are
+    /// never throttled.
+    pub provider_is_local: Arc<AtomicBool>,
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
@@ -341,7 +342,7 @@ async fn flush_speech_window<S, M, T>(
 
     // Issue #230: skip the chunk when CPU pressure would degrade the meeting
     // app.  Cloud/Google paths are never throttled (`provider_is_local = false`).
-    if ctx.provider_is_local && ctx.cpu_gate.is_throttled() {
+    if ctx.provider_is_local.load(Ordering::Relaxed) && ctx.cpu_gate.is_throttled() {
         tracing::warn!(
             "CPU budget exceeded — skipping local inference chunk \
              (local_inferences_skipped={})",
@@ -433,6 +434,20 @@ where
         }
         Err(ProviderError::AuthError(msg)) => {
             handle_auth_error(ctx, &format!("STT: {msg}"));
+            return;
+        }
+        Err(err) if fallback::is_local_unavailable(&err) => {
+            // Permanent local STT failure (model missing, checksum wrong, or
+            // feature not compiled in).  Halt the pipeline with the actionable
+            // error message rather than repeating it on every audio chunk (AC2
+            // of issue #214).
+            let halt_msg = format!("STT local unavailable: {err}");
+            tracing::error!("local STT permanently unavailable — halting pipeline: {halt_msg}");
+            *ctx.auth_error_banner
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some(halt_msg);
+            ctx.pipeline_halted.store(true, Ordering::Relaxed);
+            ctx.loss_metrics.record_drop();
             return;
         }
         Err(err) => {
@@ -800,7 +815,7 @@ mod tests {
             loss_metrics: Arc::new(crate::metrics::LossMetrics::new()),
             // CPU throttle disabled in unit tests so existing behaviour is unchanged.
             cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
-            provider_is_local: false,
+            provider_is_local: Arc::new(AtomicBool::new(false)),
         };
         (ctx, tx)
     }
@@ -995,7 +1010,7 @@ mod tests {
         let cpu_gate = Arc::new(crate::pipeline::cpu_gate::CpuGate::new(70.0));
         cpu_gate.update_cpu_pct(80.0);
         ctx.cpu_gate = Arc::clone(&cpu_gate);
-        ctx.provider_is_local = true;
+        ctx.provider_is_local.store(true, Ordering::Relaxed);
         let metrics = Arc::clone(&ctx.session_metrics);
         let mut pending = SpeechWindow::default();
         let mut seq = 0;
@@ -1050,7 +1065,7 @@ mod tests {
         let cpu_gate = Arc::new(crate::pipeline::cpu_gate::CpuGate::new(70.0));
         cpu_gate.update_cpu_pct(99.0);
         ctx.cpu_gate = Arc::clone(&cpu_gate);
-        ctx.provider_is_local = false;
+        ctx.provider_is_local.store(false, Ordering::Relaxed);
         let mut pending = SpeechWindow::default();
         let mut seq = 0;
 
@@ -1083,6 +1098,55 @@ mod tests {
             ctx.loss_metrics.total_chunks(),
             1,
             "Google/cloud path should preserve normal STT-window accounting"
+        );
+    }
+
+    #[tokio::test]
+    async fn local_fallback_activation_enables_cpu_throttle() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+        let cpu_gate = Arc::new(crate::pipeline::cpu_gate::CpuGate::new(70.0));
+        cpu_gate.update_cpu_pct(99.0);
+        ctx.cpu_gate = Arc::clone(&cpu_gate);
+        assert!(
+            !ctx.provider_is_local.load(Ordering::Relaxed),
+            "test starts on the Google path before fallback activates"
+        );
+        ctx.provider_is_local.store(true, Ordering::Relaxed);
+        let mut pending = SpeechWindow::default();
+        let mut seq = 0;
+
+        pending.push(speech_chunk());
+
+        flush_speech_window(
+            &mut pending,
+            &mut seq,
+            &RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            &OkMt,
+            &OkTts,
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "after fallback marks the provider local, over-budget audio must not reach STT"
+        );
+        assert_eq!(
+            cpu_gate.skipped_count(),
+            1,
+            "local fallback throttling should increment the same skip metric as configured local STT"
+        );
+        assert_eq!(
+            ctx.loss_metrics.total_chunks(),
+            0,
+            "CPU-throttled fallback audio must not count as a provider failure"
         );
     }
 
