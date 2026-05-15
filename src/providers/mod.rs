@@ -91,7 +91,7 @@ pub enum ProviderError {
     /// A required local model file is absent from the on-disk cache.
     ///
     /// The inner string contains an actionable message that tells the user
-    /// which model is missing and how to obtain it (e.g. the CLI flag to run).
+    /// which model is missing and where to download it.
     #[error("{0}")]
     ModelNotFound(String),
 

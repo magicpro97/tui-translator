@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
+use crate::config::home_dir;
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
 // ── Model identifier ─────────────────────────────────────────────────────────
@@ -237,16 +238,6 @@ pub fn model_cache_dir() -> anyhow::Result<PathBuf> {
     Ok(home_dir()?.join(".tui-translator").join("models"))
 }
 
-fn home_dir() -> anyhow::Result<PathBuf> {
-    if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-    if let Some(path) = std::env::var_os("HOME").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-    anyhow::bail!("could not resolve a home directory from USERPROFILE or HOME");
-}
-
 /// Return the absolute path for `spec`'s file inside the model cache directory.
 ///
 /// The file may or may not exist; this function only computes the path.
@@ -274,7 +265,7 @@ pub enum ModelCacheError {
     /// users can resolve it without reading documentation.
     #[error(
         "model '{name}' not found at {path}; \
-         run `tui-translator --download-model {name}` to fetch it \
+         download {download_url} and place it at that path \
          (approx. {size_hint})"
     )]
     MissingModel {
@@ -282,6 +273,8 @@ pub enum ModelCacheError {
         name: String,
         /// Path where the file was expected.
         path: PathBuf,
+        /// Canonical HTTPS URL for the expected model file.
+        download_url: &'static str,
         /// Human-readable download size hint, e.g. `"74 MB"`.
         size_hint: String,
     },
@@ -293,7 +286,7 @@ pub enum ModelCacheError {
     #[error(
         "checksum mismatch for '{name}' at {path}: \
          expected {expected}, got {actual}; \
-         delete the file and run `tui-translator --download-model {name}` to re-fetch it"
+         delete the file and download a fresh copy from the model manifest URL"
     )]
     ChecksumMismatch {
         /// Human-readable model name.
@@ -345,6 +338,7 @@ pub fn verify_model_checksum(spec: &ModelSpec, path: &Path) -> Result<(), ModelC
             ModelCacheError::MissingModel {
                 name: spec.id.display_name().to_string(),
                 path: path.to_owned(),
+                download_url: spec.download_url,
                 size_hint: human_readable_size(spec.size_bytes),
             }
         } else {
@@ -388,6 +382,7 @@ pub fn check_model_present(spec: &ModelSpec, path: &Path) -> Result<(), ModelCac
         Ok(false) => Err(ModelCacheError::MissingModel {
             name: spec.id.display_name().to_string(),
             path: path.to_owned(),
+            download_url: spec.download_url,
             size_hint: human_readable_size(spec.size_bytes),
         }),
         Err(e) => Err(ModelCacheError::Io {
@@ -723,6 +718,7 @@ mod tests {
         let cache_err = ModelCacheError::MissingModel {
             name: "tiny.en".to_string(),
             path: PathBuf::from(r"C:\cache\ggml-tiny.en.bin"),
+            download_url: "https://example.com/ggml-tiny.en.bin",
             size_hint: "74 MB".to_string(),
         };
         let provider_err = ProviderError::from(cache_err);
@@ -748,16 +744,20 @@ mod tests {
         let err = ModelCacheError::MissingModel {
             name: "tiny.en".to_string(),
             path: PathBuf::from(r"C:\Users\user\.tui-translator\models\ggml-tiny.en.bin"),
+            download_url: "https://example.com/ggml-tiny.en.bin",
             size_hint: "74 MB".to_string(),
         };
         let msg = err.to_string();
-        assert!(msg.contains("--download-model"), "hint missing: {msg}");
+        assert!(
+            msg.contains("https://example.com/ggml-tiny.en.bin"),
+            "download URL missing: {msg}"
+        );
         assert!(msg.contains("tiny.en"), "name missing: {msg}");
         assert!(msg.contains("74 MB"), "size missing: {msg}");
     }
 
     #[test]
-    fn checksum_mismatch_error_message_contains_redelete_hint() {
+    fn checksum_mismatch_error_message_contains_refetch_hint() {
         let err = ModelCacheError::ChecksumMismatch {
             name: "base.en".to_string(),
             path: PathBuf::from(r"C:\Users\user\.tui-translator\models\ggml-base.en.bin"),
@@ -766,7 +766,7 @@ mod tests {
         };
         let msg = err.to_string();
         assert!(
-            msg.contains("--download-model"),
+            msg.contains("download a fresh copy"),
             "re-fetch hint missing: {msg}"
         );
         assert!(msg.contains("delete"), "delete hint missing: {msg}");

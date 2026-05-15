@@ -16,6 +16,9 @@
 #[path = "../src/providers/mod.rs"]
 mod providers;
 
+#[path = "../src/config/mod.rs"]
+mod config;
+
 #[path = "contract/google_stt.rs"]
 mod google_stt;
 
