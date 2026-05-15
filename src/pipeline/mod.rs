@@ -39,7 +39,7 @@ use std::{
 use tokio::sync::mpsc;
 
 use crate::{
-    audio::AudioChunk,
+    audio::{AudioChunk, VadConfig, VadDecision, VadGate},
     metrics::{
         CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttState,
     },
@@ -198,6 +198,13 @@ pub struct OrchestratorContext {
     /// fallback does not spin on every audio window. Direct `stt_provider =
     /// "local"` keeps the pre-existing warn-and-continue error path.
     pub local_unavailable_is_fatal: bool,
+
+    // ── VAD gate (issue #220 / EP-E.1) ────────────────────────────────────
+    /// Optional VAD configuration.  When `Some` and `enabled = true`, each
+    /// audio chunk is classified by [`VadGate::process`] before entering the
+    /// speech accumulation window.  `None` disables VAD entirely, preserving
+    /// existing behaviour.
+    pub vad_config: Option<VadConfig>,
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
@@ -236,6 +243,14 @@ pub async fn run_orchestrator<S, M, T>(
     let mut pending_speech = SpeechWindow::default();
     let mut last_pending_at: Option<Instant> = None;
 
+    // Initialise the VAD gate if the caller enabled it.
+    let mut vad_gate: Option<VadGate> =
+        ctx.vad_config.as_ref().map(|cfg| VadGate::new(cfg.clone()));
+
+    if vad_gate.is_some() {
+        tracing::info!("VAD gate enabled (issue #220)");
+    }
+
     loop {
         if ctx.shutdown.load(Ordering::Relaxed) {
             tracing::info!("orchestrator: shutdown requested — exiting loop");
@@ -256,14 +271,35 @@ pub async fn run_orchestrator<S, M, T>(
                 if ctx.paused.load(Ordering::Relaxed) {
                     ctx.audio_level.store(0, Ordering::Relaxed);
                     pending_speech.clear();
+                    if let Some(g) = vad_gate.as_mut() {
+                        g.reset();
+                    }
                     last_pending_at = None;
                     continue;
                 }
                 if ctx.pipeline_halted.load(Ordering::Relaxed) {
                     // AuthError in effect — skip API calls until the application restarts.
                     pending_speech.clear();
+                    if let Some(g) = vad_gate.as_mut() {
+                        g.reset();
+                    }
                     last_pending_at = None;
                     continue;
+                }
+
+                // ── VAD gate ────────────────────────────────────────────────
+                // When VAD is enabled, drop chunks classified as silence.
+                // The gate tracks state across chunks so padding and transient
+                // suppression are applied correctly.
+                if let Some(gate) = vad_gate.as_mut() {
+                    if gate.process(&chunk) == VadDecision::Silence {
+                        tracing::trace!(
+                            duration_ms = chunk.duration_ms,
+                            vad_state = gate.state_label(),
+                            "VAD: chunk suppressed"
+                        );
+                        continue;
+                    }
                 }
 
                 pending_speech.push(chunk);
@@ -825,6 +861,7 @@ mod tests {
             cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
             provider_is_local: Arc::new(AtomicBool::new(false)),
             local_unavailable_is_fatal: false,
+            vad_config: None,
         };
         (ctx, tx)
     }
@@ -930,6 +967,80 @@ mod tests {
             (audio_sent - 1.5).abs() < f64::EPSILON,
             "batched STT billing should use combined audio duration, got {audio_sent}"
         );
+    }
+
+    #[tokio::test]
+    async fn vad_enabled_suppresses_silence_before_stt() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig::default());
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        for _ in 0..3 {
+            tx2.send(AudioChunk::new(vec![0; 8_000])).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            0,
+            "VAD-suppressed silence must not reach STT"
+        );
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            0,
+            "suppressed silence should not produce subtitles"
+        );
+    }
+
+    #[tokio::test]
+    async fn vad_enabled_allows_sustained_speech_to_stt() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig::default());
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        for _ in 0..3 {
+            tx2.send(speech_chunk()).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "sustained VAD speech should reach the normal STT batching path"
+        );
+        assert_eq!(pane.lock().unwrap().pair_count(), 1);
     }
 
     #[test]

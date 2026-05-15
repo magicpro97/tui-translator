@@ -40,6 +40,11 @@ mod wasapi_capture;
 pub mod file_source;
 pub use file_source::WavFileSource;
 
+// VAD gate — EP-E.1 (issue #220)
+pub mod vad;
+#[allow(unused_imports)]
+pub use vad::{VadConfig, VadDecision, VadGate};
+
 /// Soak-proof evidence types and Issue #32 pass-fail thresholds.
 pub mod probe;
 

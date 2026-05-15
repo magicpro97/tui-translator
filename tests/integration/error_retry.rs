@@ -529,6 +529,7 @@ fn make_orch_context() -> TestCtx {
         cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
         provider_is_local: Arc::new(AtomicBool::new(false)),
         local_unavailable_is_fatal: false,
+        vad_config: None,
     };
 
     TestCtx {

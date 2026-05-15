@@ -18,6 +18,10 @@ use std::sync::{
 use std::time::Duration;
 use tokio::sync::watch;
 
+use crate::audio::vad::{
+    DEFAULT_MIN_SILENCE_MS, DEFAULT_MIN_SPEECH_MS, DEFAULT_SPEECH_PAD_MS, DEFAULT_VAD_THRESHOLD,
+};
+
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadState {
@@ -27,6 +31,66 @@ pub enum LoadState {
     Missing,
     /// `config.json` exists but cannot be used without operator repair.
     Invalid,
+}
+
+// ─── VAD configuration (issue #220) ──────────────────────────────────────────
+
+/// VAD gate settings, serialisable from `config.json`.
+///
+/// All fields are optional in the JSON; absent fields fall back to the
+/// defaults defined in [`crate::audio::vad`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VadConfigJson {
+    /// Enable VAD gating before STT.  Default: `false` (disabled).
+    ///
+    /// When `false` the existing [`crate::audio::SilenceDetector`] continues
+    /// to operate as before, preserving current cloud-provider behaviour.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// RMS energy threshold (0.0–1.0).  Values below this are considered
+    /// silence.  Default: `0.01` (≈ −40 dBFS).
+    #[serde(default = "default_vad_threshold")]
+    pub threshold: f32,
+
+    /// Minimum consecutive speech milliseconds before the gate opens.
+    /// Default: `100` ms.  Used for transient suppression.
+    #[serde(default = "default_min_speech_ms")]
+    pub min_speech_ms: u32,
+
+    /// Milliseconds the gate stays open after the last speech frame.
+    /// Default: `300` ms.  Provides trailing context for the STT window.
+    #[serde(default = "default_speech_pad_ms")]
+    pub speech_pad_ms: u32,
+
+    /// Minimum silence milliseconds after `speech_pad_ms` to confirm end of
+    /// speech.  Default: `500` ms.  Bridges short intra-utterance pauses.
+    #[serde(default = "default_min_silence_ms")]
+    pub min_silence_ms: u32,
+}
+
+impl Default for VadConfigJson {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: DEFAULT_MIN_SPEECH_MS,
+            speech_pad_ms: DEFAULT_SPEECH_PAD_MS,
+            min_silence_ms: DEFAULT_MIN_SILENCE_MS,
+        }
+    }
+}
+
+impl VadConfigJson {
+    /// Convert to the runtime [`crate::audio::vad::VadConfig`].
+    pub fn to_vad_config(&self) -> crate::audio::VadConfig {
+        crate::audio::VadConfig {
+            threshold: self.threshold,
+            min_speech_ms: self.min_speech_ms,
+            speech_pad_ms: self.speech_pad_ms,
+            min_silence_ms: self.min_silence_ms,
+        }
+    }
 }
 
 /// Top-level application configuration, parsed from `config.json`.
@@ -121,6 +185,18 @@ pub struct AppConfig {
     #[serde(default)]
     pub cost_warning_usd: f64,
 
+    /// Voice Activity Detection gate configuration (issue #220 / EP-E.1).
+    ///
+    /// When `vad.enabled` is `true`, each audio chunk is scored by the VAD
+    /// gate before being pushed into the STT accumulation window.  Chunks
+    /// classified as silence are dropped, reducing unnecessary STT calls
+    /// during silent periods.
+    ///
+    /// Defaults to `{ enabled: false }` so existing behaviour is preserved
+    /// until the user explicitly opts in.
+    #[serde(default, skip_serializing_if = "vad_config_is_default")]
+    pub vad: VadConfigJson,
+
     /// Documentation comment accepted from `config.example.json`.
     /// Ignored by the application at runtime.  Present here so
     /// `deny_unknown_fields` does not reject the example file when a
@@ -132,8 +208,9 @@ pub struct AppConfig {
     /// Upper CPU-usage bound (percent) above which local Whisper inference is
     /// suppressed to protect co-running apps such as Zoom or Microsoft Teams.
     ///
-    /// The guard activates **only** when `stt_provider` is `"local"`.  Google
-    /// and other cloud providers are never throttled.
+    /// The guard activates when `stt_provider` is `"local"` and after Google
+    /// STT falls back to local Whisper. Google/cloud-only paths are never
+    /// throttled.
     ///
     /// * `0.0` (default) — disabled; no throttling applied.
     /// * Any positive value — drop incoming audio chunks while
@@ -162,6 +239,7 @@ impl Default for AppConfig {
             audio_source: default_audio_source(),
             audio_file_path: None,
             cost_warning_usd: 0.0,
+            vad: VadConfigJson::default(),
             comment: None,
             cpu_budget_pct: 0.0,
         }
@@ -196,6 +274,34 @@ fn default_mt_provider() -> String {
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_stt_fallback_policy() -> String {
     "none".to_string()
+}
+
+// VAD default helpers — referenced via #[serde(default = "...")] attributes on VadConfigJson.
+#[allow(dead_code)]
+fn default_vad_threshold() -> f32 {
+    DEFAULT_VAD_THRESHOLD
+}
+#[allow(dead_code)]
+fn default_min_speech_ms() -> u32 {
+    DEFAULT_MIN_SPEECH_MS
+}
+#[allow(dead_code)]
+fn default_speech_pad_ms() -> u32 {
+    DEFAULT_SPEECH_PAD_MS
+}
+#[allow(dead_code)]
+fn default_min_silence_ms() -> u32 {
+    DEFAULT_MIN_SILENCE_MS
+}
+
+/// `skip_serializing_if` predicate: omit `vad` from the JSON output when it
+/// holds the default (disabled) value to keep the config file tidy.
+fn vad_config_is_default(v: &VadConfigJson) -> bool {
+    !v.enabled
+        && (v.threshold - DEFAULT_VAD_THRESHOLD).abs() < f32::EPSILON
+        && v.min_speech_ms == DEFAULT_MIN_SPEECH_MS
+        && v.speech_pad_ms == DEFAULT_SPEECH_PAD_MS
+        && v.min_silence_ms == DEFAULT_MIN_SILENCE_MS
 }
 
 const DEFAULT_AUDIO_FILE_NAME: &str = "audio-input.wav";
@@ -259,6 +365,21 @@ impl AppConfig {
                 self.cpu_budget_pct
             );
         }
+        if !(0.0..=1.0).contains(&self.vad.threshold) {
+            bail!(
+                "`vad.threshold` must be between 0.0 and 1.0, got {}",
+                self.vad.threshold
+            );
+        }
+        if self.vad.enabled
+            && (self.vad.min_speech_ms == 0
+                || self.vad.speech_pad_ms == 0
+                || self.vad.min_silence_ms == 0)
+        {
+            bail!(
+                "`vad.min_speech_ms`, `vad.speech_pad_ms`, and `vad.min_silence_ms` must be > 0 when VAD is enabled"
+            );
+        }
         match self.stt_fallback_policy.as_str() {
             "none" | "local" => {}
             other => {
@@ -282,6 +403,7 @@ impl AppConfig {
             || self.mt_provider != next.mt_provider
             || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
             || self.stt_fallback_policy != next.stt_fallback_policy
+            || self.vad != next.vad
     }
 }
 
@@ -933,6 +1055,57 @@ mod tests {
         };
 
         assert!(current.requires_restart(&next));
+    }
+
+    #[test]
+    fn vad_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            vad: VadConfigJson {
+                enabled: true,
+                ..VadConfigJson::default()
+            },
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
+    }
+
+    #[test]
+    fn validate_rejects_vad_threshold_outside_normalized_range() {
+        for threshold in [-0.1, 1.1] {
+            let cfg = AppConfig {
+                vad: VadConfigJson {
+                    enabled: true,
+                    threshold,
+                    ..VadConfigJson::default()
+                },
+                ..AppConfig::default()
+            };
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                err.to_string().contains("vad.threshold"),
+                "error should mention vad.threshold; got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_zero_vad_timing_when_enabled() {
+        let cfg = AppConfig {
+            vad: VadConfigJson {
+                enabled: true,
+                min_speech_ms: 0,
+                ..VadConfigJson::default()
+            },
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("vad.min_speech_ms"),
+            "error should mention VAD timing fields; got: {err}"
+        );
     }
 
     #[test]
