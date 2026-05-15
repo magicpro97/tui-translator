@@ -30,7 +30,7 @@ Windows 10/11 laptop.
 
 | Constraint | Value |
 |---|---|
-| GPU | None (CPU INT8 inference only) |
+| GPU | None (CPU-only inference; Whisper STT uses INT8, MT quantization is still TBD) |
 | Minimum RAM | 8 GB total system RAM |
 | Co-run workload | Zoom or Teams running simultaneously |
 | Admin rights | Not required |
@@ -45,7 +45,8 @@ All STT candidates use the `faster-whisper` (CTranslate2 INT8) runtime, which
 is the same runtime used in the benchmark from `docs/09-cpu-model-benchmark.md`.
 Numbers in this table come directly from that benchmark run on an
 **i5-12400 / 32 GB RAM Windows 11 host**.  Do **not** treat these numbers as
-guarantees on weaker 8 GB or 16 GB laptops — they establish an upper bound only.
+guarantees on weaker 8 GB or 16 GB laptops — they are an optimistic baseline
+that each target machine must re-check.
 
 | Model | `model.bin` (MiB) | Peak RSS — 30 s clip (MiB) | RTF infer — 30 s clip | CER (ja) | License | Bundling |
 |---|---:|---:|---:|---:|---|---|
@@ -121,7 +122,7 @@ MT can be turned on by default or published with specific numbers.  See
 | Measurement | Acceptance gate |
 |---|---|
 | ONNX export file size for `opus-mt-ja-vi` | < 300 MB total disk |
-| Per-sentence inference latency (ja→vi, batch=1, CPU INT8) | p95 < 500 ms on ≥ i5 8th-gen equivalent |
+| Per-sentence inference latency (ja→vi, batch=1, CPU) | p95 < 500 ms on ≥ i5 8th-gen equivalent |
 | RAM delta when OPUS-MT model is loaded | < 500 MB additional RSS |
 | Quality spot-check (direct vs pivot, 20 sentences) | Reviewer prefers direct ≥ 50% of sentences |
 | Co-run CPU impact with Zoom running | `tui-translator` CPU median ≤ 20% |
@@ -139,14 +140,16 @@ adds another ~300–500 MB.  Enabling both at once may push the system into swap
 | Component | **Default** | Maximum | Rationale |
 |---|---|---|---|
 | STT model | `faster-whisper-base` | `faster-whisper-small` | `base` passed all gates on the benchmark host; `small` is only safe if the local benchmark confirms RTF < 1.0 and Zoom co-run headroom exists |
-| MT backend | Google Cloud (cloud) | OPUS-MT direct `ja→vi` (offline, once measured) | Local MT latency is unmeasured; enable only after §4 gates pass |
+| MT backend | No offline MT default yet | OPUS-MT direct `ja→vi` (offline, once measured) | Local MT latency is unmeasured; enable only after §4 gates pass |
 | MT strategy (if local) | direct `ja→vi` | — | Pivot doubles inference time; not recommended on 8 GB |
 | Both local simultaneously | **Not recommended** | — | Combined RSS may exceed free RAM with Zoom active |
 
 **Explicit default for 8 GB machines:**
 > Use `faster-whisper-base` for STT and **Google Cloud Translation** for MT
-> until local MT latency is measured and the §4 gates pass.  Do not enable
-> local MT and Whisper `small` simultaneously on 8 GB without a co-run RAM check.
+> only if a Google API key is available.  For no-cloud-key offline use, do not
+> enable MT until OPUS-MT latency is measured and the §4 gates pass.  Do not
+> enable local MT and Whisper `small` simultaneously on 8 GB without a co-run
+> RAM check.
 
 ### 5.2 — 16 GB Total RAM (CPU-only, no dGPU)
 
@@ -157,23 +160,26 @@ are confirmed.
 | Component | **Default** | Quality option | Rationale |
 |---|---|---|---|
 | STT model | `faster-whisper-base` | `faster-whisper-small` | `base` is the conservative default; `small` is acceptable when the local benchmark confirms CPU/thermal headroom |
-| MT backend | Google Cloud (cloud) | OPUS-MT direct `ja→vi` (offline, once measured) | Same: enable local MT only after §4 gates pass |
+| MT backend | No offline MT default yet | OPUS-MT direct `ja→vi` (offline, once measured) | Same: enable local MT only after §4 gates pass |
 | MT strategy (if local) | direct `ja→vi` | pivot `ja→en→vi` | Direct is preferred until quality measurements favour pivot |
 
 **Explicit default for 16 GB machines:**
 > Use `faster-whisper-base` for STT and **Google Cloud Translation** for MT as
-> the conservative starting point.  Once the §4 OPUS-MT benchmark passes, local
-> MT via `opus-mt-ja-vi` direct is the recommended offline upgrade.
+> the conservative starting point only if a Google API key is available.  For
+> no-cloud-key offline use, wait for the §4 OPUS-MT benchmark; once it passes,
+> local MT via `opus-mt-ja-vi` direct is the recommended offline upgrade.
 > `faster-whisper-small` is the quality STT upgrade if the CPU benchmark
 > confirms RTF < 1.0 with Zoom running.
 
 ---
 
-## 6. Personal Use and Non-Commercial Caveats
+## 6. Personal-Use Context and License Caveats
 
-The entire v2-cpu-offline milestone is designed for **personal, non-commercial
-use** — a single user running the tool on their own machine to caption meetings
-they attend as a guest.
+The v2-cpu-offline milestone is motivated by **personal use** — a single user
+running the tool on their own machine to caption meetings they attend as a
+guest.  That product context does not make the entire milestone
+non-commercial-only; the actual redistribution rules come from each model or
+library license below.
 
 The following license restrictions apply:
 
@@ -202,14 +208,16 @@ For a user starting from scratch:
    as the model name.  On 16 GB machines with confirmed CPU headroom, substitute
    `small`.
 
-2. **Start with cloud MT:**
-   Keep `mt_provider = "google"` in `config.json` (default).  Local MT requires
-   additional model download and has not been measured yet.
+2. **Do not enable offline MT until measured:**
+   If you have a Google API key, `mt_provider = "google"` remains the current
+   runtime fallback.  For no-cloud-key offline use, leave local MT disabled
+   until OPUS-MT is implemented and the §4 gates pass.
 
 3. **Enable local MT only after the gates in §4 pass:**
-   When issue #217 ships the `LocalOpusMtProvider`, the first-run experience
-   will offer a model download prompt.  Do not manually drop ONNX files into
-   the model directory until the integration is implemented.
+   When issue #218 ships model download/checksum/version management for the
+   `LocalOpusMtProvider`, the first-run experience will offer a model download
+   prompt.  Do not manually drop ONNX files into the model directory until the
+   integration is implemented.
 
 4. **On 8 GB machines — watch Task Manager:**
    If system RAM drops below ~1 GB free while Zoom is running, switch back to
