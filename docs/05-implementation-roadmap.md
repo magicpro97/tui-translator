@@ -86,7 +86,7 @@ tui-translator/
 │   ├── 06-github-delivery-backlog.md
 │   ├── 07-packaging-verification.md
 │   ├── 08-audio-stability-proof.md
-│   └── 09-cpu-model-benchmark.md     CPU-only Whisper benchmark plan (Phase 7 / v2-cpu-offline)
+│   └── 09-cpu-model-benchmark.md     CPU-only Whisper benchmark plan; docs 06-08 remain listed above
 │
 ├── Cargo.toml                  Rust package manifest
 └── config.example.json         Example configuration file
@@ -330,6 +330,10 @@ The project currently delivers in eight phases (Phase 0 through Phase 7). Each p
 ---
 
 ### Phase 7 — CPU Offline Provider (v2-cpu-offline milestone)
+
+Phase 7 extends the original six-phase roadmap. The delivery order above is now
+Phase 0 through Phase 7, with Phase 6 still required before Phase 7
+implementation work begins.
 
 **Goal:** Enable fully offline, CPU-only speech-to-text transcription using
 local Whisper models (tiny / base / small) as an alternative to the Google STT
