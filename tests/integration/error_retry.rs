@@ -637,11 +637,11 @@ async fn orchestrator_mt_exhaustion_sets_pipeline_error_and_drops_chunk() {
 ///
 /// # Real boundary exercised
 /// Same as above: `pipeline::run_orchestrator` drives both the
-/// discard path (MT exhaustion) **and** the continue path (next chunk success)
+/// discard path (MT exhaustion) **and** the continue path (next STT window success)
 /// inside one loop iteration, via a real channel and real context.
 ///
 /// # Assertions
-/// * `loss_metrics.total_chunks() == 6` (six 500 ms chunks form two STT windows)
+/// * `loss_metrics.total_chunks() == 2` (six 500 ms chunks form two STT windows)
 /// * `loss_metrics.dropped_chunks() == 1` (first STT window dropped)
 /// * `subtitle_pane.pair_count() == 1` (second STT window produced a subtitle)
 /// * `mt.call_count() == MAX_RETRY_ATTEMPTS + 1` (5 exhausted + 1 success)
@@ -687,11 +687,11 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
         "exactly one chunk must be counted as dropped"
     );
 
-    // ── Total chunks: all input chunks were offered to the pipeline ────────────
+    // ── Total chunks: both STT windows were offered to the pipeline ────────────
     assert_eq!(
         tc.loss_metrics.total_chunks(),
-        6,
-        "all six input chunks must be counted as offered"
+        2,
+        "both STT windows must be counted as offered"
     );
 
     // ── Subtitle pair: only the second (successful) chunk produced one ─────────

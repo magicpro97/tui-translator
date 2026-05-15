@@ -236,9 +236,6 @@ pub async fn run_orchestrator<S, M, T>(
                     continue;
                 }
 
-                // Count every non-paused, non-halted chunk offered to the pipeline.
-                ctx.loss_metrics.record_chunk();
-
                 pending_speech.push(chunk);
                 last_pending_at = Some(Instant::now());
                 if pending_speech.ready_for_stt() {
@@ -324,6 +321,7 @@ async fn flush_speech_window<S, M, T>(
         samples = chunk.samples.len(),
         "submitting audio window to STT"
     );
+    ctx.loss_metrics.record_chunk();
     update_audio_sent_metrics(&chunk, ctx);
     let pcm = AudioChunk::into_pcm(chunk, *seq);
     *seq += 1;
@@ -805,6 +803,7 @@ mod tests {
         let (ctx, _tx) = make_context(Arc::clone(&shutdown));
         let pane = Arc::clone(&ctx.subtitle_pane);
         let metrics = Arc::clone(&ctx.session_metrics);
+        let loss = Arc::clone(&ctx.loss_metrics);
         let calls = Arc::new(AtomicU32::new(0));
         let sample_counts = Arc::new(Mutex::new(Vec::new()));
 
@@ -837,6 +836,11 @@ mod tests {
             "batched request should contain 1.5 s of 16 kHz PCM"
         );
         assert_eq!(pane.lock().unwrap().pair_count(), 1);
+        assert_eq!(
+            loss.total_chunks(),
+            1,
+            "batched audio should count one STT work unit"
+        );
         let audio_sent = metrics.lock().unwrap().audio_seconds_sent;
         assert!(
             (audio_sent - 1.5).abs() < f64::EPSILON,
