@@ -341,7 +341,7 @@ in `docs/09-cpu-model-benchmark.md`.
 *EP-A.1 — Benchmark (issue #206):*
 - Run the reproducible benchmark defined in `docs/09-cpu-model-benchmark.md`
   for Whisper tiny, base, and small on a Windows 10/11 CPU-only machine.
-- Fill in all TBD values in the benchmark results table.
+- Fill in the benchmark results table for the measured host.
 - Publish the recommended maximum model for 8 GB and 16 GB RAM machines.
 - Evidence: `bench/results.csv`, filled results table, host configuration, and
   confirmation that no GPU was used.
@@ -361,7 +361,7 @@ in `docs/09-cpu-model-benchmark.md`.
 1. Benchmark results are filled in and committed as verification evidence.
 2. `WhisperSttProvider` passes the same contract tests as `GoogleSttProvider`.
 3. The recommended model for the target machine achieves RTF < 1.0 and passes
-   the applicable RAM gate (see `docs/09-cpu-model-benchmark.md` §7).
+   the applicable RAM gate (see `docs/09-cpu-model-benchmark.md` §8).
 4. Running with the Whisper backend does not require any GPU driver or CUDA
    installation.
 
