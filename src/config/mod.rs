@@ -87,6 +87,18 @@ pub struct AppConfig {
     #[serde(default = "default_mt_provider")]
     pub mt_provider: String,
 
+    /// Fallback policy when the primary STT provider encounters a permanent
+    /// authentication error.  Accepted values:
+    /// - `"none"` *(default)* — no fallback; authentication errors halt the
+    ///   pipeline until the application is restarted with a valid key.
+    /// - `"local"` — switch to CPU-local Whisper STT on the first
+    ///   `AuthError` from the primary (Google) provider.  Requires the
+    ///   executable to be built with the `local-stt` Cargo feature and a
+    ///   Whisper model file in `~/.tui-translator/models/`.  Only meaningful
+    ///   when `stt_provider` is `"google"`.
+    #[serde(default = "default_stt_fallback_policy")]
+    pub stt_fallback_policy: String,
+
     /// Audio input source.  Accepted values:
     /// - `"wasapi"` *(default)* — Windows WASAPI loopback capture.
     /// - `"file"` — read from `audio_file_path`; loops indefinitely.
@@ -146,6 +158,7 @@ impl Default for AppConfig {
             capture_device: None,
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
+            stt_fallback_policy: default_stt_fallback_policy(),
             audio_source: default_audio_source(),
             audio_file_path: None,
             cost_warning_usd: 0.0,
@@ -178,6 +191,11 @@ fn default_stt_provider() -> String {
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_mt_provider() -> String {
     "google".to_string()
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+fn default_stt_fallback_policy() -> String {
+    "none".to_string()
 }
 
 const DEFAULT_AUDIO_FILE_NAME: &str = "audio-input.wav";
@@ -241,6 +259,12 @@ impl AppConfig {
                 self.cpu_budget_pct
             );
         }
+        match self.stt_fallback_policy.as_str() {
+            "none" | "local" => {}
+            other => {
+                bail!("`stt_fallback_policy` must be \"none\" or \"local\", got {other:?}");
+            }
+        }
         Ok(())
     }
 
@@ -257,6 +281,7 @@ impl AppConfig {
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
             || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
+            || self.stt_fallback_policy != next.stt_fallback_policy
     }
 }
 
