@@ -75,6 +75,18 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capture_device: Option<String>,
 
+    /// Speech-to-text provider backend.  Accepted values:
+    /// - `"google"` *(default)* — Google Cloud Speech-to-Text.
+    /// - `"local"` — CPU-local STT (reserved for Phase 6+; not yet implemented).
+    #[serde(default = "default_stt_provider")]
+    pub stt_provider: String,
+
+    /// Machine-translation provider backend.  Accepted values:
+    /// - `"google"` *(default)* — Google Cloud Translation.
+    /// - `"local"` — CPU-local MT (reserved for Phase 6+; not yet implemented).
+    #[serde(default = "default_mt_provider")]
+    pub mt_provider: String,
+
     /// Audio input source.  Accepted values:
     /// - `"wasapi"` *(default)* — Windows WASAPI loopback capture.
     /// - `"file"` — read from `audio_file_path`; loops indefinitely.
@@ -115,6 +127,8 @@ impl Default for AppConfig {
             tts_enabled: false,
             tts_output_device: None,
             capture_device: None,
+            stt_provider: default_stt_provider(),
+            mt_provider: default_mt_provider(),
             audio_source: default_audio_source(),
             audio_file_path: None,
             cost_warning_usd: 0.0,
@@ -136,6 +150,16 @@ fn default_target_lang() -> String {
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_audio_source() -> String {
     "wasapi".to_string()
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+fn default_stt_provider() -> String {
+    "google".to_string()
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+fn default_mt_provider() -> String {
+    "google".to_string()
 }
 
 const DEFAULT_AUDIO_FILE_NAME: &str = "audio-input.wav";
@@ -179,6 +203,18 @@ impl AppConfig {
             }
             other => {
                 bail!("`audio_source` must be \"wasapi\" or \"file\", got {other:?}");
+            }
+        }
+        match self.stt_provider.as_str() {
+            "google" | "local" => {}
+            other => {
+                bail!("`stt_provider` must be \"google\" or \"local\", got {other:?}");
+            }
+        }
+        match self.mt_provider.as_str() {
+            "google" | "local" => {}
+            other => {
+                bail!("`mt_provider` must be \"google\" or \"local\", got {other:?}");
             }
         }
         Ok(())
@@ -578,6 +614,9 @@ mod tests {
         assert_eq!(cfg.source_language, "ja-JP");
         assert_eq!(cfg.target_language, "vi");
         assert!(!cfg.tts_enabled);
+        // T1: provider fields must default to "google"
+        assert_eq!(cfg.stt_provider, "google");
+        assert_eq!(cfg.mt_provider, "google");
         cfg.validate()
             .expect("default config should pass validation");
     }
@@ -638,6 +677,81 @@ mod tests {
         assert_eq!(cfg.source_language, "zh-CN");
         assert_eq!(cfg.target_language, "en");
         assert_eq!(cfg.google_api_key.as_deref(), Some("TEST"));
+    }
+
+    // T1: empty config JSON — stt_provider and mt_provider default to "google"
+    #[test]
+    fn provider_fields_default_to_google_when_absent() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(
+            cfg.stt_provider, "google",
+            "stt_provider should default to google"
+        );
+        assert_eq!(
+            cfg.mt_provider, "google",
+            "mt_provider should default to google"
+        );
+    }
+
+    // T2: explicit "local" provider values serialize and deserialize correctly
+    #[test]
+    fn provider_fields_roundtrip_local_value() {
+        let original = AppConfig {
+            stt_provider: "local".to_string(),
+            mt_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.stt_provider, "local");
+        assert_eq!(restored.mt_provider, "local");
+        restored
+            .validate()
+            .expect("local provider config must be valid");
+    }
+
+    #[test]
+    fn provider_fields_reject_invalid_values() {
+        let cases = vec![
+            (
+                "stt_provider",
+                AppConfig {
+                    stt_provider: " google ".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+            (
+                "mt_provider",
+                AppConfig {
+                    mt_provider: " local ".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+            (
+                "stt_provider",
+                AppConfig {
+                    stt_provider: "azure".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+            (
+                "mt_provider",
+                AppConfig {
+                    mt_provider: "deepl".to_string(),
+                    ..AppConfig::default()
+                },
+            ),
+        ];
+
+        for (field, cfg) in cases {
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                err.to_string().contains(field),
+                "error should mention {field}, got: {err}"
+            );
+        }
     }
 
     #[test]
