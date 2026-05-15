@@ -1255,6 +1255,11 @@ pub struct StatusMetricsStrip<'a> {
     pub e2e_latency_ms: Option<u64>,
     /// Audio chunk loss rate in percent (issue #81).
     pub loss_pct: f64,
+    /// `true` when process RAM exceeds the configured budget (issue #231).
+    ///
+    /// When `true`, both compact and expanded modes surface a yellow warning
+    /// so the operator knows to investigate before the OS starts paging.
+    pub ram_warning: bool,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -1272,8 +1277,9 @@ impl StatusMetricsStrip<'_> {
     ///
     /// Call this to determine the layout constraint before rendering.
     pub fn expanded_height(&self) -> u16 {
-        let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
-        expanded_metrics_height(true, over_threshold)
+        let cost_over = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
+        let has_warning = cost_over || self.ram_warning;
+        expanded_metrics_height(true, has_warning)
     }
 
     /// Abbreviated STT label for narrow terminals (< 80 columns, issue #60).
@@ -1344,6 +1350,16 @@ impl StatusMetricsStrip<'_> {
         if over_threshold {
             spans.push(Span::styled(
                 format!(" \u{26a0} Cost warning: ${:.2}", self.cost_usd),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        if self.ram_warning {
+            let ram_mb = self.ram_bytes / (1024 * 1024);
+            spans.push(Span::styled(
+                format!(" \u{2502} \u{26a0} RAM:{ram_mb}MB"),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -1424,24 +1440,43 @@ impl StatusMetricsStrip<'_> {
             Some(ms) => format!("{ms}ms"),
             None => "—".to_string(),
         };
-        lines.push(Line::from(Span::styled(
-            format!(
-                "CPU:{:.0}%  RAM:{}MB  Net:↑{:.0}/↓{:.0} kbps  E2E:{}  Loss:{:.1}%",
-                self.cpu_pct,
-                ram_mb,
-                self.net_kbps_tx,
-                self.net_kbps_rx,
-                latency_str,
-                self.loss_pct,
+        let ram_style = if self.ram_warning {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("CPU:{:.0}%  ", self.cpu_pct),
+                Style::default().fg(Color::DarkGray),
             ),
-            Style::default().fg(Color::DarkGray),
-        )));
+            Span::styled(format!("RAM:{ram_mb}MB"), ram_style),
+            Span::styled(
+                format!(
+                    "  Net:\u{2191}{:.0}/\u{2193}{:.0} kbps  E2E:{}  Loss:{:.1}%",
+                    self.net_kbps_tx, self.net_kbps_rx, latency_str, self.loss_pct,
+                ),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
 
-        // Issue #74: show warning line when estimate exceeds config threshold.
-        let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
-        if over_threshold {
+        // Issue #74/#231: show one warning line when cost or RAM exceeds threshold.
+        let cost_over = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
+        if cost_over || self.ram_warning {
+            let mut warnings = Vec::new();
+            if cost_over {
+                warnings.push(format!("\u{26a0} Cost warning: ${:.2}", self.cost_usd));
+            }
+            if self.ram_warning {
+                let ram_mb = self.ram_bytes / (1024 * 1024);
+                warnings.push(format!(
+                    "\u{26a0} RAM warning: {ram_mb}MB over budget; optional recording disabled"
+                ));
+            }
             lines.push(Line::from(Span::styled(
-                format!("\u{26a0} Cost warning: ${:.2}", self.cost_usd),
+                warnings.join("   "),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -1555,9 +1590,10 @@ pub fn draw_ui(
 
     // Issue #65: the control hints bar is ALWAYS shown (1 row, no scroll).
     // Build layout — bottom section grows when the metrics panel is expanded.
-    // When expanded and the cost warning is active, an extra row is needed (#74).
-    let over_threshold =
-        expanded && cost_warning_usd > 0.0 && metrics.estimated_cost_usd > cost_warning_usd;
+    // When expanded and a cost/RAM warning is active, an extra row is needed (#74/#231).
+    let over_threshold = expanded
+        && ((cost_warning_usd > 0.0 && metrics.estimated_cost_usd > cost_warning_usd)
+            || metrics.ram_warning);
     let metrics_h = expanded_metrics_height(expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1674,6 +1710,7 @@ pub fn draw_ui(
         net_kbps_rx: metrics.net_kbps_rx,
         e2e_latency_ms: metrics.e2e_latency_ms,
         loss_pct: metrics.loss_pct,
+        ram_warning: metrics.ram_warning,
     };
     frame.render_widget(&strip, chunks[3]);
 

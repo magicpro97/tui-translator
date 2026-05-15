@@ -55,8 +55,8 @@ mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
 use metrics::{
-    spawn_process_metrics_task, LatencyHistogram, LossMetrics, MetricsSnapshot, NetworkMetrics,
-    ProcessSnapshot,
+    spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
+    NetworkMetrics, ProcessSnapshot,
 };
 use tui::{
     draw_session_summary, draw_ui, help_overlay_max_scroll, subtitle_inner_area, AppState,
@@ -86,6 +86,8 @@ struct FinishMainArgs<'a> {
     /// CPU gate shared with the orchestrator; the metrics publisher updates
     /// its CPU reading and reads the skip counter for the snapshot.
     cpu_gate: Arc<pipeline::cpu_gate::CpuGate>,
+    /// RAM budget guard shared with the metrics publisher.
+    memory_guard: Arc<MemoryGuard>,
 }
 
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
@@ -508,6 +510,12 @@ fn main() -> Result<()> {
         let cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
         Arc::new(pipeline::cpu_gate::CpuGate::new(cfg.cpu_budget_pct))
     };
+    let memory_guard = {
+        let cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        Arc::new(MemoryGuard::new(
+            cfg.ram_budget_mb.saturating_mul(1024 * 1024),
+        ))
+    };
 
     // Issue #79: start the process-metrics polling task and get its receiver.
     // Pass the runtime handle explicitly so spawn_blocking works before the
@@ -533,6 +541,7 @@ fn main() -> Result<()> {
                 network_metrics,
                 loss_metrics,
                 cpu_gate,
+                memory_guard,
             },
         );
     }
@@ -633,6 +642,7 @@ fn main() -> Result<()> {
                                 network_metrics: Arc::clone(&network_metrics),
                                 loss_metrics: Arc::clone(&loss_metrics),
                                 cpu_gate: Arc::clone(&cpu_gate),
+                                memory_guard: Arc::clone(&memory_guard),
                             },
                         );
                     }
@@ -662,6 +672,7 @@ fn main() -> Result<()> {
                                 network_metrics: Arc::clone(&network_metrics),
                                 loss_metrics: Arc::clone(&loss_metrics),
                                 cpu_gate: Arc::clone(&cpu_gate),
+                                memory_guard: Arc::clone(&memory_guard),
                             },
                         );
                     }
@@ -692,6 +703,7 @@ fn main() -> Result<()> {
                                 network_metrics: Arc::clone(&network_metrics),
                                 loss_metrics: Arc::clone(&loss_metrics),
                                 cpu_gate: Arc::clone(&cpu_gate),
+                                memory_guard: Arc::clone(&memory_guard),
                             },
                         );
                     }
@@ -770,6 +782,7 @@ fn main() -> Result<()> {
             network_metrics,
             loss_metrics,
             cpu_gate,
+            memory_guard,
         },
     )
 }
@@ -821,6 +834,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         network_metrics,
         loss_metrics,
         cpu_gate,
+        memory_guard,
     } = args;
 
     // ── Issues #61, #82: metrics observability background task ───────────────
@@ -832,9 +846,12 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let subtitle_pane = Arc::clone(&state.subtitle_pane);
         let cost_counter = Arc::clone(&state.cost_counter);
         let cpu_gate = Arc::clone(&cpu_gate);
+        let memory_guard = Arc::clone(&memory_guard);
+        let current_config = Arc::clone(current_config);
         let mut process_rx = process_rx;
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
+            let mut last_ram_budget_bytes = u64::MAX;
             loop {
                 interval.tick().await;
                 let session = metrics_src
@@ -865,6 +882,17 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 
                 // Issue #79: apply CPU/RAM from the process-metrics task.
                 snapshot.apply_process(&proc_snap);
+                let ram_budget_bytes = current_config
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .ram_budget_mb
+                    .saturating_mul(1024 * 1024);
+                if ram_budget_bytes != last_ram_budget_bytes {
+                    memory_guard.update_budget_bytes(ram_budget_bytes);
+                    last_ram_budget_bytes = ram_budget_bytes;
+                }
+                memory_guard.update_ram_bytes(snapshot.ram_bytes);
+                snapshot.apply_memory_guard(&memory_guard);
                 // Issue #80: apply window network kbps.
                 snapshot.apply_network(&net_snap);
                 // Issue #83: apply E2E latency percentiles.
@@ -1282,6 +1310,16 @@ fn mark_audio_capture_stopped(
         metrics::SttState::Error("audio capture stopped".to_string());
 }
 
+fn metrics_warning_row_active(
+    expanded: bool,
+    cost_warning_usd: f64,
+    metrics: &MetricsSnapshot,
+) -> bool {
+    expanded
+        && ((cost_warning_usd > 0.0 && metrics.estimated_cost_usd > cost_warning_usd)
+            || metrics.ram_warning)
+}
+
 /// Run the terminal interface.  Enters the alternate screen, runs the event
 /// loop, then returns.  The [`TerminalGuard`] restores the terminal on drop.
 fn run_tui(
@@ -1335,9 +1373,7 @@ fn event_loop(
             .unwrap_or_else(|p| p.into_inner())
             .cost_warning_usd;
         let metrics_snap = state.metrics_snapshot();
-        let over_threshold = expanded
-            && cost_warning_usd > 0.0
-            && metrics_snap.estimated_cost_usd > cost_warning_usd;
+        let over_threshold = metrics_warning_row_active(expanded, cost_warning_usd, &metrics_snap);
         let pane_area = subtitle_inner_area(terminal.size()?, expanded, over_threshold);
 
         {
@@ -1536,9 +1572,8 @@ fn handle_action(
                     .unwrap_or_else(|p| p.into_inner())
                     .cost_warning_usd;
                 let metrics_snap = state.metrics_snapshot();
-                let over_threshold = expanded
-                    && cost_warning_usd > 0.0
-                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
+                let over_threshold =
+                    metrics_warning_row_active(expanded, cost_warning_usd, &metrics_snap);
                 let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
                 state
                     .subtitle_pane
@@ -1557,9 +1592,8 @@ fn handle_action(
                     .unwrap_or_else(|p| p.into_inner())
                     .cost_warning_usd;
                 let metrics_snap = state.metrics_snapshot();
-                let over_threshold = expanded
-                    && cost_warning_usd > 0.0
-                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
+                let over_threshold =
+                    metrics_warning_row_active(expanded, cost_warning_usd, &metrics_snap);
                 let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
                 state
                     .subtitle_pane
@@ -1578,9 +1612,8 @@ fn handle_action(
                     .unwrap_or_else(|p| p.into_inner())
                     .cost_warning_usd;
                 let metrics_snap = state.metrics_snapshot();
-                let over_threshold = expanded
-                    && cost_warning_usd > 0.0
-                    && metrics_snap.estimated_cost_usd > cost_warning_usd;
+                let over_threshold =
+                    metrics_warning_row_active(expanded, cost_warning_usd, &metrics_snap);
                 let pane_area = subtitle_inner_area(terminal_area, expanded, over_threshold);
                 state
                     .subtitle_pane
@@ -1890,6 +1923,22 @@ mod tests {
     /// Serialises any test that reads or writes `TUI_TRANSLATOR_CONFIG` so
     /// parallel test threads cannot observe each other's mutations.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn metrics_warning_row_active_for_ram_warning() {
+        let metrics = MetricsSnapshot {
+            ram_warning: true,
+            ..MetricsSnapshot::default()
+        };
+        assert!(
+            metrics_warning_row_active(true, 0.0, &metrics),
+            "expanded layout must reserve the warning row for RAM pressure"
+        );
+        assert!(
+            !metrics_warning_row_active(false, 0.0, &metrics),
+            "compact layout height must stay fixed even when RAM warning is active"
+        );
+    }
 
     #[test]
     fn write_audio_devices_shows_default_and_detected_devices() {

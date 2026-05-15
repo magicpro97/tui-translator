@@ -211,6 +211,25 @@ pub struct AppConfig {
     /// [`MetricsSnapshot::cpu_pct`]: crate::metrics::MetricsSnapshot::cpu_pct
     #[serde(default)]
     pub cpu_budget_pct: f32,
+
+    /// Upper process RAM bound in mebibytes (MiB, 1 MiB = 1 048 576 bytes).
+    ///
+    /// A warning appears in the status strip when resident-set size exceeds
+    /// this threshold.  The warning clears only after RAM drops to
+    /// `ram_budget_mb × 0.95` (5 % hysteresis) to prevent flapping near the
+    /// boundary.
+    ///
+    /// * `0` (default) — disabled; no warning is ever shown.
+    /// * Any positive value — show a `⚠ RAM` warning while
+    ///   [`MetricsSnapshot::ram_bytes`] / (1 MiB) exceeds this value.
+    ///
+    /// This is a **soft warning** for STT/MT/TTS: translation continues
+    /// running, while optional session/audio recording is marked disabled
+    /// under pressure.
+    ///
+    /// [`MetricsSnapshot::ram_bytes`]: crate::metrics::MetricsSnapshot::ram_bytes
+    #[serde(default)]
+    pub ram_budget_mb: u64,
 }
 
 impl Default for AppConfig {
@@ -231,6 +250,7 @@ impl Default for AppConfig {
             vad: VadConfigJson::default(),
             comment: None,
             cpu_budget_pct: 0.0,
+            ram_budget_mb: 0,
         }
     }
 }
@@ -1406,5 +1426,73 @@ mod tests {
         write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
         let cfg = load(f.path()).unwrap();
         assert_eq!(cfg.audio_source, "wasapi");
+    }
+
+    // ── ram_budget_mb (issue #231) ──────────────────────────────────────────
+
+    #[test]
+    fn ram_budget_mb_defaults_to_zero() {
+        let cfg = AppConfig::default();
+        assert_eq!(
+            cfg.ram_budget_mb, 0,
+            "ram_budget_mb must default to 0 (disabled)"
+        );
+    }
+
+    #[test]
+    fn ram_budget_mb_zero_validates() {
+        let cfg = AppConfig {
+            ram_budget_mb: 0,
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("ram_budget_mb = 0 must pass validation");
+    }
+
+    #[test]
+    fn ram_budget_mb_positive_validates() {
+        let cfg = AppConfig {
+            ram_budget_mb: 512,
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("ram_budget_mb = 512 must pass validation");
+    }
+
+    #[test]
+    fn ram_budget_mb_parses_from_json() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"{{"source_language":"ja-JP","target_language":"vi","ram_budget_mb":256}}"#
+        )
+        .unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.ram_budget_mb, 256);
+    }
+
+    #[test]
+    fn missing_ram_budget_mb_in_old_config_defaults_to_zero() {
+        // Configs written before issue #231 do not have ram_budget_mb.
+        // They must continue to load and validate without error.
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.ram_budget_mb, 0);
+    }
+
+    #[test]
+    fn ram_budget_mb_change_does_not_require_restart() {
+        // Changing the memory budget warning threshold is a live-reload parameter;
+        // it does not require restarting audio or provider connections.
+        let current = AppConfig::default();
+        let next = AppConfig {
+            ram_budget_mb: 512,
+            ..AppConfig::default()
+        };
+        assert!(
+            !current.requires_restart(&next),
+            "changing ram_budget_mb must not require a restart"
+        );
     }
 }
