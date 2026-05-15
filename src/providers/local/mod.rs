@@ -425,37 +425,73 @@ fn human_readable_size(bytes: u64) -> String {
     }
 }
 
-// ── Local Whisper STT provider stub ──────────────────────────────────────────
+// ── Local Whisper STT provider ────────────────────────────────────────────────
 
-/// Phase-gate stub for the local on-device Whisper STT backend.
+/// Minimum number of 16 kHz PCM samples required for a valid Whisper input.
 ///
-/// This type satisfies the [`SttProvider`] trait and compiles in all
-/// configurations, but always returns [`ProviderError::Unimplemented`] until
-/// issue #213 adds the whisper-rs inference wiring.
+/// 100 ms × 16 000 Hz = 1 600 samples.  Shorter chunks are rejected with
+/// [`ProviderError::InvalidInput`] before any inference is attempted.
+const MIN_PCM_SAMPLES: usize = 1_600;
+
+/// Local on-device Whisper STT provider.
 ///
-/// The model cache infrastructure in this module (`#212`) is the foundation
-/// that `#213` will build on: it verifies that the required model file is
-/// present and intact before attempting to load it into whisper.cpp.
-#[derive(Debug)]
+/// When compiled with the `local-stt` Cargo feature this provider runs real
+/// CPU inference through the `whisper-rs` bindings to whisper.cpp.
+/// Without the feature it behaves as a stub: model-cache checks are still
+/// performed at construction time, but [`SttProvider::transcribe`] returns
+/// [`ProviderError::Unimplemented`] for any valid input.
+///
+/// # Construction
+///
+/// Use [`LocalWhisperSttProvider::new`], which verifies the model file exists
+/// and its SHA-256 matches the built-in manifest before returning `Ok`.
+/// When `local-stt` is enabled the model is also loaded into memory, so
+/// construction may be slow for large models (e.g. ~770 MB for `medium`).
+///
+/// # Input validation
+///
+/// [`SttProvider::transcribe`] rejects empty and too-short chunks with
+/// [`ProviderError::InvalidInput`] regardless of the feature flag, so callers
+/// always receive a typed error rather than a panic.
 pub struct LocalWhisperSttProvider {
     /// The Whisper model this instance is configured to use.
     model_id: ModelId,
     /// Absolute path to the model file (validated at construction time).
     model_path: PathBuf,
+    /// Loaded whisper.cpp context.
+    ///
+    /// Only present when the `local-stt` feature is enabled; in stub mode the
+    /// field does not exist and no whisper.cpp code is linked.
+    #[cfg(feature = "local-stt")]
+    ctx: whisper_rs::WhisperContext,
+}
+
+impl std::fmt::Debug for LocalWhisperSttProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalWhisperSttProvider")
+            .field("model_id", &self.model_id)
+            .field("model_path", &self.model_path)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LocalWhisperSttProvider {
-    /// Create a new stub provider for `model_id`.
+    /// Create a new provider for `model_id`.
     ///
-    /// Validates that the model file exists *and* that its SHA-256 matches the
-    /// built-in manifest before returning `Ok`.  Returns a typed
-    /// [`ProviderError`] with an actionable message when either check fails.
+    /// Steps performed:
+    /// 1. Look up `model_id` in the built-in manifest.
+    /// 2. Resolve the expected path inside the per-user model cache.
+    /// 3. Confirm the file exists ([`check_model_present`]).
+    /// 4. Verify its SHA-256 checksum ([`verify_model_checksum`]).
+    /// 5. *(Only with `local-stt` feature)* Load the model into a
+    ///    [`whisper_rs::WhisperContext`].
     ///
     /// # Errors
     ///
     /// * [`ProviderError::ModelNotFound`] — model file absent from the cache.
     /// * [`ProviderError::ChecksumMismatch`] — file present but digest wrong.
-    /// * [`ProviderError::Unknown`] — I/O error querying the cache directory.
+    /// * [`ProviderError::Unknown`] — I/O error querying the cache directory or
+    ///   (`local-stt` only) a fatal whisper.cpp load failure.
     pub fn new(model_id: ModelId) -> Result<Self, ProviderError> {
         let manifest = ModelManifest::builtin();
         let spec = manifest.find(model_id).ok_or_else(|| {
@@ -471,28 +507,211 @@ impl LocalWhisperSttProvider {
         check_model_present(spec, &path).map_err(ProviderError::from)?;
         verify_model_checksum(spec, &path).map_err(ProviderError::from)?;
 
+        // When the `local-stt` feature is enabled, load the model file into a
+        // whisper.cpp context.  This happens after checksum verification so the
+        // engine never sees a corrupted or partial file.
+        #[cfg(feature = "local-stt")]
+        let ctx = {
+            tracing::info!(
+                model = %model_id,
+                path = %path.display(),
+                "loading local Whisper model"
+            );
+            let path_str = path.to_string_lossy();
+            whisper_rs::WhisperContext::new_with_params(
+                &path_str,
+                whisper_rs::WhisperContextParameters::default(),
+            )
+            .map_err(|e| {
+                ProviderError::Unknown(format!(
+                    "failed to load model '{}' from {}: {e}",
+                    spec.id.display_name(),
+                    path.display()
+                ))
+            })?
+        };
+
         Ok(Self {
             model_id,
             model_path: path,
+            #[cfg(feature = "local-stt")]
+            ctx,
         })
     }
 }
 
 impl SttProvider for LocalWhisperSttProvider {
-    /// Not yet implemented — returns [`ProviderError::Unimplemented`].
+    /// Transcribe `chunk` with the loaded Whisper model.
     ///
-    /// Full local inference will be wired in issue #213 using the
-    /// [`whisper-rs`](https://crates.io/crates/whisper-rs) crate.
+    /// # Input validation
+    ///
+    /// Returns [`ProviderError::InvalidInput`] (without panicking) when:
+    /// * `chunk.samples` is empty.
+    /// * `chunk.samples` has fewer than [`MIN_PCM_SAMPLES`] samples
+    ///   (< 100 ms at 16 kHz).
+    ///
+    /// # Feature gate
+    ///
+    /// Without the `local-stt` Cargo feature, valid inputs are accepted but
+    /// [`ProviderError::Unimplemented`] is returned; no inference is run.
+    ///
+    /// # Errors
+    ///
+    /// * [`ProviderError::InvalidInput`] — empty or too-short audio chunk.
+    /// * [`ProviderError::Unimplemented`] — `local-stt` feature not enabled.
+    /// * [`ProviderError::ServiceUnavailable`] — whisper.cpp inference error
+    ///   (only possible when `local-stt` is enabled).
     async fn transcribe(
         &self,
-        _chunk: &PcmChunk,
-        _language_code: &str,
+        chunk: &PcmChunk,
+        language_code: &str,
     ) -> Result<SttResult, ProviderError> {
-        Err(ProviderError::Unimplemented(format!(
-            "local Whisper STT is not yet implemented (model: {}); \
-             track issue #213 for the full implementation",
-            self.model_id
-        )))
+        // ── Input validation (always, regardless of feature flag) ────────────
+        if chunk.samples.is_empty() {
+            return Err(ProviderError::InvalidInput(
+                "audio chunk is empty".to_string(),
+            ));
+        }
+        if chunk.samples.len() < MIN_PCM_SAMPLES {
+            return Err(ProviderError::InvalidInput(format!(
+                "audio chunk too short: {} samples (minimum {} ≈ 100 ms at 16 kHz)",
+                chunk.samples.len(),
+                MIN_PCM_SAMPLES,
+            )));
+        }
+
+        // ── Stub path (no `local-stt` feature) ───────────────────────────────
+        #[cfg(not(feature = "local-stt"))]
+        {
+            // `language_code` is only consumed by the inference path below;
+            // silence the unused-variable lint for stub builds.
+            let _ = language_code;
+            Err(ProviderError::Unimplemented(format!(
+                "local Whisper STT requires the `local-stt` Cargo feature \
+                 (model: {}); re-compile with `--features local-stt`",
+                self.model_id
+            )))
+        }
+
+        // ── Real inference path (only compiled with `local-stt` feature) ─────
+        #[cfg(feature = "local-stt")]
+        {
+            let language_owned = whisper_language_code(language_code).to_owned();
+            // Offload the synchronous whisper.cpp call to the blocking thread
+            // pool so the Tokio async runtime is not stalled.
+            tokio::task::block_in_place(|| self.run_inference_blocking(chunk, &language_owned))
+        }
+    }
+}
+
+// ── whisper-rs inference (compiled only with `local-stt` feature) ────────────
+
+fn whisper_language_code(language_code: &str) -> &str {
+    language_code
+        .split(['-', '_'])
+        .next()
+        .unwrap_or(language_code)
+        .trim()
+}
+
+#[cfg(feature = "local-stt")]
+impl LocalWhisperSttProvider {
+    /// Run CPU inference synchronously on the calling thread.
+    ///
+    /// Must be called from a context where blocking is acceptable, e.g. inside
+    /// `tokio::task::block_in_place`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderError::ServiceUnavailable`] for any whisper.cpp error.
+    fn run_inference_blocking(
+        &self,
+        chunk: &PcmChunk,
+        language_code: &str,
+    ) -> Result<SttResult, ProviderError> {
+        // Convert signed 16-bit PCM → normalised f32 in [-1.0, 1.0].
+        let samples_f32: Vec<f32> = chunk
+            .samples
+            .iter()
+            .map(|&s| f32::from(s) / f32::from(i16::MAX))
+            .collect();
+
+        let mut state = self.ctx.create_state().map_err(|e| {
+            ProviderError::ServiceUnavailable(format!(
+                "failed to create whisper state for model '{}': {e}",
+                self.model_id
+            ))
+        })?;
+
+        let mut params =
+            whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+        params.set_language(Some(language_code));
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+        params.set_suppress_blank(true);
+
+        state.full(params, &samples_f32).map_err(|e| {
+            ProviderError::ServiceUnavailable(format!(
+                "whisper inference failed for model '{}': {e}",
+                self.model_id
+            ))
+        })?;
+
+        let num_segments = state.full_n_segments().map_err(|e| {
+            ProviderError::ServiceUnavailable(format!(
+                "failed to read segment count from model '{}': {e}",
+                self.model_id
+            ))
+        })?;
+
+        let mut parts: Vec<String> = Vec::with_capacity(num_segments as usize);
+        for i in 0..num_segments {
+            let text = state.full_get_segment_text(i).map_err(|e| {
+                ProviderError::ServiceUnavailable(format!(
+                    "failed to read segment {i} from model '{}': {e}",
+                    self.model_id
+                ))
+            })?;
+            parts.push(text);
+        }
+
+        let text = parts.join(" ").trim().to_string();
+
+        tracing::debug!(
+            model = %self.model_id,
+            segments = num_segments,
+            output_chars = text.len(),
+            "whisper inference complete"
+        );
+
+        Ok(SttResult {
+            text,
+            // whisper.cpp's greedy decoder does not expose per-segment
+            // confidence scores via the whisper-rs API.
+            confidence: None,
+            is_final: true,
+        })
+    }
+}
+
+// ── Test-only helpers ─────────────────────────────────────────────────────────
+
+/// Stub constructor for unit tests — bypasses model-cache checks.
+///
+/// Only available when the `local-stt` feature is **not** enabled, because in
+/// stub mode the struct contains no whisper context and can be safely
+/// constructed with a dummy path.  This lets tests exercise the
+/// input-validation logic in [`SttProvider::transcribe`] without requiring a
+/// real model file on disk.
+#[cfg(all(test, not(feature = "local-stt")))]
+impl LocalWhisperSttProvider {
+    fn new_stub_for_test(model_id: ModelId) -> Self {
+        Self {
+            model_id,
+            model_path: PathBuf::from("stub-model-for-test.bin"),
+        }
     }
 }
 
@@ -554,6 +773,13 @@ mod tests {
         assert_eq!(ModelId::TinyEn.display_name(), "tiny.en");
         assert_eq!(ModelId::Base.display_name(), "base");
         assert_eq!(ModelId::MediumEn.display_name(), "medium.en");
+    }
+
+    #[test]
+    fn whisper_language_code_strips_bcp47_region() {
+        assert_eq!(whisper_language_code("ja-JP"), "ja");
+        assert_eq!(whisper_language_code("en_US"), "en");
+        assert_eq!(whisper_language_code("vi"), "vi");
     }
 
     #[test]
@@ -771,5 +997,110 @@ mod tests {
         );
         assert!(msg.contains("delete"), "delete hint missing: {msg}");
         assert!(msg.contains("base.en"), "name missing: {msg}");
+    }
+
+    // ── LocalWhisperSttProvider input validation ──────────────────────────────
+    //
+    // These tests exercise the validation layer that runs regardless of whether
+    // the `local-stt` feature is enabled.  They use `new_stub_for_test` (only
+    // available without `local-stt`) so no real model file is required.
+
+    #[cfg(not(feature = "local-stt"))]
+    mod stt_input_validation {
+        use super::*;
+        use tokio::runtime::Runtime;
+
+        fn stub() -> LocalWhisperSttProvider {
+            LocalWhisperSttProvider::new_stub_for_test(ModelId::Tiny)
+        }
+
+        fn rt() -> Runtime {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+        }
+
+        #[test]
+        fn empty_chunk_returns_invalid_input_not_panic() {
+            let provider = stub();
+            let chunk = PcmChunk {
+                samples: vec![],
+                sequence_number: 1,
+            };
+            let result = rt().block_on(provider.transcribe(&chunk, "ja"));
+            assert!(
+                matches!(result, Err(ProviderError::InvalidInput(_))),
+                "expected InvalidInput for empty chunk, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn too_short_chunk_returns_invalid_input_not_panic() {
+            let provider = stub();
+            // 1 599 samples is one below the 100 ms / 1 600-sample threshold.
+            let chunk = PcmChunk {
+                samples: vec![0i16; MIN_PCM_SAMPLES - 1],
+                sequence_number: 2,
+            };
+            let result = rt().block_on(provider.transcribe(&chunk, "ja"));
+            assert!(
+                matches!(result, Err(ProviderError::InvalidInput(_))),
+                "expected InvalidInput for too-short chunk, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn invalid_input_error_message_mentions_sample_count() {
+            let provider = stub();
+            let n = 800usize;
+            let chunk = PcmChunk {
+                samples: vec![0i16; n],
+                sequence_number: 3,
+            };
+            let err = rt()
+                .block_on(provider.transcribe(&chunk, "en"))
+                .unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains(&n.to_string()),
+                "error message should mention sample count {n}: {msg}"
+            );
+            assert!(
+                msg.contains("100 ms") || msg.contains("1600") || msg.contains("1 600"),
+                "error message should mention minimum: {msg}"
+            );
+        }
+
+        #[test]
+        fn valid_length_chunk_returns_unimplemented_not_panic() {
+            let provider = stub();
+            // Exactly at the minimum threshold — should pass validation and
+            // return Unimplemented (not InvalidInput, not panic).
+            let chunk = PcmChunk {
+                samples: vec![0i16; MIN_PCM_SAMPLES],
+                sequence_number: 4,
+            };
+            let result = rt().block_on(provider.transcribe(&chunk, "ja"));
+            assert!(
+                matches!(result, Err(ProviderError::Unimplemented(_))),
+                "expected Unimplemented for valid chunk in stub mode, got: {result:?}"
+            );
+        }
+
+        #[test]
+        fn stub_new_without_model_file_returns_model_not_found() {
+            // Confirm that `new()` (not the test helper) returns a proper
+            // ProviderError when the model is absent from the cache.
+            let result = LocalWhisperSttProvider::new(ModelId::TinyEn);
+            assert!(
+                matches!(
+                    result,
+                    Err(ProviderError::ModelNotFound(_))
+                        | Err(ProviderError::ChecksumMismatch(_))
+                        | Err(ProviderError::Unknown(_))
+                ),
+                "expected a ProviderError from new() with no model file, got: {result:?}"
+            );
+        }
     }
 }
