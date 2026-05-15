@@ -82,7 +82,8 @@ tui-translator/
 │   ├── 02-google-first-provider.md
 │   ├── 03-system-design.md
 │   ├── 04-verification-plan.md
-│   └── 05-implementation-roadmap.md  (this file)
+│   ├── 05-implementation-roadmap.md  (this file)
+│   └── 09-cpu-model-benchmark.md     CPU-only Whisper benchmark plan (Phase 7 / v2-cpu-offline)
 │
 ├── Cargo.toml                  Rust package manifest
 └── config.example.json         Example configuration file
@@ -325,6 +326,50 @@ The project delivers in six phases. Each phase has a single clear goal, a list o
 
 ---
 
+### Phase 7 — CPU Offline Provider (v2-cpu-offline milestone)
+
+**Goal:** Enable fully offline, CPU-only speech-to-text transcription using
+local Whisper models (tiny / base / small) as an alternative to the Google STT
+provider.  This allows the tool to be used without an internet connection and
+with zero per-minute API cost, subject to the RTF and RAM constraints described
+in `docs/09-cpu-model-benchmark.md`.
+
+**Entry criteria:** Phase 6 exit criteria met, or milestone override approved.
+
+**Work in this phase (not ordered against each other):**
+
+*EP-A.1 — Benchmark (issue #206):*
+- Run the reproducible benchmark defined in `docs/09-cpu-model-benchmark.md`
+  for Whisper tiny, base, and small on a Windows 10/11 CPU-only machine.
+- Fill in all TBD values in the benchmark results table.
+- Publish the recommended maximum model for 8 GB and 16 GB RAM machines.
+- Evidence: `bench/results.csv`, filled results table, host configuration, and
+  confirmation that no GPU was used.
+
+*EP-A.2 — Provider implementation (future issue):*
+- Implement a `WhisperSttProvider` that satisfies the existing `SttProvider`
+  trait in `src/providers/mod.rs`.
+- The provider loads a local model file on startup; the model path and variant
+  are configurable in `config.json`.
+- The provider must respect the `fp16=false` / CPU-only constraint.
+
+*EP-A.3 — Configuration and UX (future issue):*
+- Add a provider selector to `config.json` (`stt_provider = "google" | "local"`).
+- Display the active STT backend in the TUI status bar.
+
+**Exit criteria — all must be true:**
+1. Benchmark results are filled in and committed as verification evidence.
+2. `WhisperSttProvider` passes the same contract tests as `GoogleSttProvider`.
+3. The recommended model for the target machine achieves RTF < 1.0 and passes
+   the applicable RAM gate (see `docs/09-cpu-model-benchmark.md` §7).
+4. Running with the Whisper backend does not require any GPU driver or CUDA
+   installation.
+
+**Dependencies:** Phase 6 completed or milestone override; issue #206 evidence
+collected.  See `docs/09-cpu-model-benchmark.md` for full benchmark methodology.
+
+---
+
 ## Dependency Map Summary
 
 The following shows which phases depend on which. A phase cannot start until all phases it depends on are complete.
@@ -337,6 +382,7 @@ Phase 0 (Skeleton)
                             └── Phase 4 (Complete v1)
                                     └── Phase 5 (Latency + Capture Upgrades)
                                             └── Phase 6 (Multi-Provider)
+                                                    └── Phase 7 (CPU Offline / v2-cpu-offline)
 ```
 
 All phases are sequential. No phase may be started in parallel with the phase before it, because each one produces artifacts the next one depends on directly.
