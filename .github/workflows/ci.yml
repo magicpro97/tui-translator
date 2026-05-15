@@ -7,6 +7,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # whisper-rs-sys can generate bindings with libclang, but CI should use the
+  # crate's bundled bindings so all-features clippy is not coupled to LLVM setup.
+  WHISPER_DONT_GENERATE_BINDINGS: "1"
 
 jobs:
   # ── Format ──────────────────────────────────────────────────────────────────

@@ -52,6 +52,7 @@ pub trait CostReporter: Send + Sync + std::fmt::Debug {
 }
 
 pub mod google;
+pub mod local;
 
 // ── Error type ───────────────────────────────────────────────────────────────
 
@@ -86,6 +87,20 @@ pub enum ProviderError {
     /// The remote service is down or returned an unexpected response.
     #[error("service unavailable: {0}")]
     ServiceUnavailable(String),
+
+    /// A required local model file is absent from the on-disk cache.
+    ///
+    /// The inner string contains an actionable message that tells the user
+    /// which model is missing and how to obtain it (e.g. the CLI flag to run).
+    #[error("{0}")]
+    ModelNotFound(String),
+
+    /// The SHA-256 digest of a cached model file does not match the manifest.
+    ///
+    /// The inner string names the file and both the expected and actual digests
+    /// so the user knows exactly what to delete and re-download.
+    #[error("{0}")]
+    ChecksumMismatch(String),
 
     /// Catch-all for errors that do not fit the above categories.
     #[error("unknown provider error: {0}")]
