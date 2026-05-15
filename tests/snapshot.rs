@@ -132,6 +132,10 @@ fn render_config_editor(editor: &ConfigEditorState, width: u16, height: u16) -> 
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn render_overlay_then_ui(width: u16, height: u16) -> String {

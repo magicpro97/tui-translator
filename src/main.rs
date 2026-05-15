@@ -964,6 +964,8 @@ fn build_config_from_editor(
     next_cfg.audio_source = editor.audio_source.trim().to_string();
     next_cfg.capture_device = normalize_optional_field(&editor.capture_device);
     next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
+    next_cfg.stt_provider = editor.stt_provider.trim().to_string();
+    next_cfg.mt_provider = editor.mt_provider.trim().to_string();
     next_cfg
 }
 
@@ -1958,6 +1960,100 @@ mod tests {
         assert!(state.config_editor_active.load(Ordering::Relaxed));
         let editor = state.config_editor_snapshot().expect("editor snapshot");
         assert_eq!(editor.mode, ConfigEditorMode::Settings);
+    }
+
+    #[test]
+    fn editor_state_loads_provider_fields_from_config() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "local".to_string();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let editor =
+            tui::ConfigEditorState::from_config(&cfg, cfg_path, ConfigEditorMode::Settings);
+
+        assert_eq!(editor.stt_provider, "local");
+        assert_eq!(editor.mt_provider, "local");
+    }
+
+    #[test]
+    fn build_config_from_editor_persists_provider_fields() {
+        let current = config::AppConfig::default();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.stt_provider = "local".to_string();
+        editor.mt_provider = "local".to_string();
+
+        let next = build_config_from_editor(&editor, &current);
+
+        assert_eq!(next.stt_provider, "local");
+        assert_eq!(next.mt_provider, "local");
+    }
+
+    #[test]
+    fn config_save_persists_provider_fields() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.stt_provider = "local".to_string();
+            editor.mt_provider = "local".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(persisted.stt_provider, "local");
+        assert_eq!(persisted.mt_provider, "local");
+    }
+
+    #[test]
+    fn config_save_sets_restart_required_when_provider_changes() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.stt_provider = "local".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(
+            restart_required.load(Ordering::Relaxed),
+            "changing stt_provider must set restart_required"
+        );
     }
 
     #[test]

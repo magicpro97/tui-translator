@@ -230,6 +230,8 @@ impl AppConfig {
             || self.capture_device != next.capture_device
             || self.audio_source != next.audio_source
             || self.audio_file_path != next.audio_file_path
+            || self.stt_provider != next.stt_provider
+            || self.mt_provider != next.mt_provider
     }
 }
 
@@ -840,6 +842,36 @@ mod tests {
         };
 
         assert!(current.requires_restart(&next));
+    }
+
+    #[test]
+    fn stt_provider_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            stt_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
+    }
+
+    #[test]
+    fn mt_provider_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            mt_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
+    }
+
+    #[test]
+    fn same_providers_do_not_require_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig::default();
+
+        assert!(!current.requires_restart(&next));
     }
 
     #[test]
