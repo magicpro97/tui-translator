@@ -17,8 +17,8 @@ laptop with no discrete GPU. The MT backend must:
 - Require **no admin rights** to install or first-run.
 - Use a license that permits bundling with the application binary.
 
-Google Cloud Translation remains the cloud baseline. Local MT is an opt-in alternative, off by
-default, gated behind `mt_provider = "local"` in `config.json`.
+Google Cloud Translation remains the cloud baseline. Local MT should be an opt-in alternative,
+off by default, once the future provider-selection config and runtime wiring are implemented.
 
 ---
 
@@ -265,8 +265,9 @@ models/
 - Export step: one-time, pre-release, using Python + HuggingFace Optimum (not in CI).
 - Runtime: load model at startup via `ort::Session`; infer with beam search (greedy acceptable
   for first implementation); tokenize with `sentencepiece` crate.
-- Config: `mt_provider = "local"` defaults to direct strategy; `mt_pivot = true` switches to
-  `ja→en→vi` at the cost of double inference and extra disk.
+- Proposed config once runtime wiring exists: `mt_provider = "local"` defaults to direct
+  strategy; a future pivot option can switch to `ja→en→vi` at the cost of double inference
+  and extra disk.
 
 **Pivot strategy (deferred, issue #218 scope):**  
 Implement `ja→en→vi` pivot as a second-tier option. Evaluate only after direct strategy has
