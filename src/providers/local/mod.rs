@@ -1103,4 +1103,115 @@ mod tests {
             );
         }
     }
+
+    #[cfg(feature = "local-stt")]
+    mod local_stt_fixture {
+        use super::*;
+
+        const RUN_FIXTURE_ENV: &str = "TUI_TRANSLATOR_RUN_LOCAL_STT_FIXTURE";
+
+        fn wav_to_pcm_chunk(path: &Path) -> PcmChunk {
+            let wav = std::fs::read(path)
+                .unwrap_or_else(|e| panic!("cannot read fixture {}: {e}", path.display()));
+            assert!(
+                wav.starts_with(b"RIFF") && wav.get(8..12) == Some(b"WAVE"),
+                "{} is not a RIFF/WAVE file",
+                path.display()
+            );
+
+            let fmt = find_wav_chunk(&wav, b"fmt ")
+                .unwrap_or_else(|| panic!("{} missing fmt chunk", path.display()));
+            assert!(fmt.len() >= 16, "{} fmt chunk too short", path.display());
+            let audio_format = u16::from_le_bytes(fmt[0..2].try_into().unwrap());
+            let channels = u16::from_le_bytes(fmt[2..4].try_into().unwrap());
+            let sample_rate = u32::from_le_bytes(fmt[4..8].try_into().unwrap());
+            let bits_per_sample = u16::from_le_bytes(fmt[14..16].try_into().unwrap());
+            assert_eq!(audio_format, 1, "{} must be PCM", path.display());
+            assert_eq!(channels, 1, "{} must be mono", path.display());
+            assert_eq!(sample_rate, 16_000, "{} must be 16 kHz", path.display());
+            assert_eq!(bits_per_sample, 16, "{} must be 16-bit PCM", path.display());
+
+            let data = find_wav_chunk(&wav, b"data")
+                .unwrap_or_else(|| panic!("{} missing data chunk", path.display()));
+            assert_eq!(
+                data.len() % 2,
+                0,
+                "{} data chunk has odd length",
+                path.display()
+            );
+            let samples = data
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .collect();
+
+            PcmChunk {
+                samples,
+                sequence_number: 1,
+            }
+        }
+
+        fn find_wav_chunk<'a>(wav: &'a [u8], id: &[u8; 4]) -> Option<&'a [u8]> {
+            let mut offset = 12usize;
+            while offset + 8 <= wav.len() {
+                let chunk_id = &wav[offset..offset + 4];
+                let chunk_len =
+                    u32::from_le_bytes(wav[offset + 4..offset + 8].try_into().unwrap()) as usize;
+                let data_start = offset + 8;
+                let data_end = data_start.saturating_add(chunk_len);
+                if data_end > wav.len() {
+                    return None;
+                }
+                if chunk_id == id {
+                    return Some(&wav[data_start..data_end]);
+                }
+                offset = data_end + (chunk_len % 2);
+            }
+            None
+        }
+
+        #[test]
+        fn cached_tiny_model_transcribes_clear_japanese_fixture() {
+            if std::env::var(RUN_FIXTURE_ENV).as_deref() != Ok("1") {
+                eprintln!("skipping local Whisper fixture test; set {RUN_FIXTURE_ENV}=1");
+                return;
+            }
+
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("fixtures")
+                .join("ja_speech_3s.wav");
+            let chunk = wav_to_pcm_chunk(&fixture);
+            assert!(!chunk.samples.is_empty(), "fixture produced no PCM samples");
+
+            let provider = LocalWhisperSttProvider::new(ModelId::Tiny)
+                .expect("ggml-tiny.bin must be present in the model cache");
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .build()
+                .unwrap();
+            let result = rt
+                .block_on(provider.transcribe(&chunk, "ja-JP"))
+                .expect("local Whisper STT should transcribe the Japanese fixture");
+            eprintln!("local Whisper transcript: {}", result.text.trim());
+
+            assert!(
+                !result.text.trim().is_empty(),
+                "local Whisper returned an empty transcript for {}",
+                fixture.display()
+            );
+            let expected_terms = [
+                "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}",
+                "\u{5929}\u{6c17}",
+            ];
+            assert!(
+                expected_terms
+                    .iter()
+                    .all(|expected| result.text.contains(expected)),
+                "local Whisper transcript {:?} did not contain expected Japanese fixture terms",
+                result.text
+            );
+            assert!(result.is_final, "local Whisper result should be final");
+        }
+    }
 }
