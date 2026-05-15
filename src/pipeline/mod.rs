@@ -242,6 +242,8 @@ pub async fn run_orchestrator<S, M, T>(
     let mut seq: u64 = 0;
     let mut pending_speech = SpeechWindow::default();
     let mut last_pending_at: Option<Instant> = None;
+    // Above-threshold chunks held while VAD distinguishes speech from transients.
+    let mut vad_confirming_chunks: Vec<AudioChunk> = Vec::new();
 
     // Initialise the VAD gate if the caller enabled it.
     let mut vad_gate: Option<VadGate> =
@@ -271,6 +273,7 @@ pub async fn run_orchestrator<S, M, T>(
                 if ctx.paused.load(Ordering::Relaxed) {
                     ctx.audio_level.store(0, Ordering::Relaxed);
                     pending_speech.clear();
+                    vad_confirming_chunks.clear();
                     if let Some(g) = vad_gate.as_mut() {
                         g.reset();
                     }
@@ -280,6 +283,7 @@ pub async fn run_orchestrator<S, M, T>(
                 if ctx.pipeline_halted.load(Ordering::Relaxed) {
                     // AuthError in effect — skip API calls until the application restarts.
                     pending_speech.clear();
+                    vad_confirming_chunks.clear();
                     if let Some(g) = vad_gate.as_mut() {
                         g.reset();
                     }
@@ -293,12 +297,25 @@ pub async fn run_orchestrator<S, M, T>(
                 // suppression are applied correctly.
                 if let Some(gate) = vad_gate.as_mut() {
                     if gate.process(&chunk) == VadDecision::Silence {
+                        let duration_ms = chunk.duration_ms;
+                        let vad_state = gate.state_label();
+                        // Confirming chunks may become real speech; keep them
+                        // so the utterance onset is forwarded when the gate opens.
+                        if vad_state == "confirming" {
+                            vad_confirming_chunks.push(chunk);
+                        } else {
+                            vad_confirming_chunks.clear();
+                        }
                         tracing::trace!(
-                            duration_ms = chunk.duration_ms,
-                            vad_state = gate.state_label(),
+                            duration_ms,
+                            vad_state,
                             "VAD: chunk suppressed"
                         );
                         continue;
+                    }
+
+                    for buffered in vad_confirming_chunks.drain(..) {
+                        pending_speech.push(buffered);
                     }
                 }
 
@@ -868,7 +885,12 @@ mod tests {
 
     fn speech_chunk() -> AudioChunk {
         // 500 ms of near-full-scale audio so the silence detector passes it.
-        AudioChunk::new(vec![i16::MAX / 2; 8_000])
+        speech_chunk_ms(500)
+    }
+
+    fn speech_chunk_ms(duration_ms: u32) -> AudioChunk {
+        let samples = (duration_ms as usize * 16_000) / 1_000;
+        AudioChunk::new(vec![i16::MAX / 2; samples])
     }
 
     struct RecordingStt {
@@ -1041,6 +1063,47 @@ mod tests {
             "sustained VAD speech should reach the normal STT batching path"
         );
         assert_eq!(pane.lock().unwrap().pair_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn vad_enabled_preserves_confirming_chunks_when_gate_opens() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig {
+            min_speech_ms: 100,
+            ..VadConfig::default()
+        });
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        for _ in 0..3 {
+            tx2.send(speech_chunk_ms(50)).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "confirmed VAD speech should still reach STT"
+        );
+        assert_eq!(
+            sample_counts.lock().unwrap().as_slice(),
+            &[2_400],
+            "VAD must forward the confirming onset chunks instead of clipping the first 100 ms"
+        );
     }
 
     #[test]
