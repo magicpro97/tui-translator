@@ -116,6 +116,23 @@ pub struct AppConfig {
     #[doc(hidden)]
     #[serde(rename = "_comment", default, skip_serializing_if = "Option::is_none")]
     comment: Option<serde_json::Value>,
+
+    /// Upper CPU-usage bound (percent) above which local Whisper inference is
+    /// suppressed to protect co-running apps such as Zoom or Microsoft Teams.
+    ///
+    /// The guard activates **only** when `stt_provider` is `"local"`.  Google
+    /// and other cloud providers are never throttled.
+    ///
+    /// * `0.0` (default) — disabled; no throttling applied.
+    /// * Any positive value — drop incoming audio chunks while
+    ///   [`MetricsSnapshot::cpu_pct`] exceeds this threshold.
+    ///
+    /// On multi-core hosts `sysinfo` reports per-core percentages (e.g.
+    /// `400.0` means 4 full cores); set this value accordingly.
+    ///
+    /// [`MetricsSnapshot::cpu_pct`]: crate::metrics::MetricsSnapshot::cpu_pct
+    #[serde(default)]
+    pub cpu_budget_pct: f32,
 }
 
 impl Default for AppConfig {
@@ -133,6 +150,7 @@ impl Default for AppConfig {
             audio_file_path: None,
             cost_warning_usd: 0.0,
             comment: None,
+            cpu_budget_pct: 0.0,
         }
     }
 }
@@ -217,6 +235,12 @@ impl AppConfig {
                 bail!("`mt_provider` must be \"google\" or \"local\", got {other:?}");
             }
         }
+        if self.cpu_budget_pct < 0.0 {
+            bail!(
+                "`cpu_budget_pct` must be >= 0.0 (0.0 disables throttling), got {}",
+                self.cpu_budget_pct
+            );
+        }
         Ok(())
     }
 
@@ -232,6 +256,7 @@ impl AppConfig {
             || self.audio_file_path != next.audio_file_path
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
+            || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
     }
 }
 
@@ -872,6 +897,17 @@ mod tests {
         let next = AppConfig::default();
 
         assert!(!current.requires_restart(&next));
+    }
+
+    #[test]
+    fn cpu_budget_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            cpu_budget_pct: 80.0,
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
     }
 
     #[test]

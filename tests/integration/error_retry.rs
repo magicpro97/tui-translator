@@ -526,6 +526,8 @@ fn make_orch_context() -> TestCtx {
         e2e_latency: Arc::new(crate::metrics::LatencyHistogram::new()),
         network_metrics: Arc::new(crate::metrics::NetworkMetrics::new()),
         loss_metrics: Arc::clone(&loss_metrics),
+        cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
+        provider_is_local: false,
     };
 
     TestCtx {

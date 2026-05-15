@@ -119,6 +119,12 @@ pub struct MetricsSnapshot {
     /// Total audio chunks dropped (retry budget exhausted) since the session
     /// started.
     pub dropped_chunks: u64,
+
+    // ── CPU throttle (issue #230) ─────────────────────────────────────────────
+    /// Number of local-inference chunks intentionally skipped because
+    /// [`cpu_pct`](MetricsSnapshot::cpu_pct) exceeded the configured
+    /// `cpu_budget_pct`.  Always `0` when the STT provider is Google/cloud.
+    pub local_inferences_skipped: u64,
 }
 
 impl Default for MetricsSnapshot {
@@ -141,6 +147,7 @@ impl Default for MetricsSnapshot {
             loss_pct: 0.0,
             total_chunks: 0,
             dropped_chunks: 0,
+            local_inferences_skipped: 0,
         }
     }
 }
@@ -214,6 +221,7 @@ mod tests {
         assert_eq!(s.loss_pct, 0.0);
         assert_eq!(s.total_chunks, 0);
         assert_eq!(s.dropped_chunks, 0);
+        assert_eq!(s.local_inferences_skipped, 0);
     }
 
     #[test]
