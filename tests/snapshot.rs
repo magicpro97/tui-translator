@@ -292,6 +292,7 @@ fn snapshot_status_strip_compact_idle() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -316,6 +317,7 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -343,6 +345,7 @@ fn snapshot_status_strip_compact_restart_notice() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -372,6 +375,7 @@ fn snapshot_status_strip_compact_sending() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -396,6 +400,7 @@ fn snapshot_status_strip_compact_waiting() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -420,6 +425,7 @@ fn snapshot_status_strip_compact_error() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -446,6 +452,7 @@ fn snapshot_status_strip_expanded_idle() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 6));
 }
@@ -470,6 +477,7 @@ fn snapshot_status_strip_expanded_listening() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_expanded_listening",
@@ -499,6 +507,7 @@ fn snapshot_status_strip_expanded_with_warning() {
         net_kbps_rx: 32.0,
         e2e_latency_ms: Some(420),
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -534,6 +543,7 @@ fn snapshot_status_strip_narrow_abbreviated() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -562,6 +572,7 @@ fn snapshot_status_strip_wide_full_labels() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -719,6 +730,7 @@ fn stt_error_state_label_contains_message() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -748,6 +760,7 @@ fn narrow_strip_uses_abbreviated_labels() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
@@ -791,6 +804,7 @@ fn expanded_warning_renders_when_over_threshold() {
         net_kbps_rx: 16.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
 
     // Height accounting must be 7 when warning is active.
@@ -855,6 +869,7 @@ fn snapshot_status_strip_zero_state_narrow() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -883,6 +898,7 @@ fn snapshot_status_strip_zero_state_expanded() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_expanded",
@@ -956,6 +972,7 @@ fn narrow_compact_strip_uses_lang_label() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -989,6 +1006,7 @@ fn narrow_compact_strip_uses_tts_label() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1022,6 +1040,7 @@ fn compact_restart_notice_is_spelled_out() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1055,6 +1074,7 @@ fn snapshot_status_strip_very_narrow_30cols() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1189,6 +1209,7 @@ fn expanded_metrics_narrow_uses_lang_label() {
         net_kbps_rx: 0.0,
         e2e_latency_ms: None,
         loss_pct: 0.0,
+        ram_warning: false,
     };
     let rendered = render_strip(&strip, 60, 6);
     assert!(
@@ -1466,5 +1487,150 @@ fn final_promotion_produces_no_duplicate() {
     assert!(
         !rendered.contains("partial src"),
         "old partial text must not appear after final promotion; got:\n{rendered}"
+    );
+}
+
+// ── Memory warning — issue #231 ───────────────────────────────────────────────
+
+/// Compact strip: when `ram_warning` is true the strip shows a RAM warning
+/// inline (same row, no height change).
+#[test]
+fn snapshot_status_strip_compact_ram_warning() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 10,
+        audio_secs: 60.0,
+        cost_usd: 0.024,
+        elapsed: "1:00".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 45.0,
+        ram_bytes: 600 * 1024 * 1024, // 600 MiB — over a hypothetical 512 MiB budget
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+        ram_warning: true,
+    };
+    let rendered = render_strip(&strip, 120, 3);
+    assert!(
+        rendered.contains("RAM:") || rendered.contains("RAM"),
+        "compact strip with ram_warning=true must contain a RAM warning; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{26a0}'), // ⚠
+        "compact strip with ram_warning=true must show the warning symbol ⚠; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("\u{2502} \u{26a0} RAM:"),
+        "compact strip must separate RAM warning with the standard divider; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("status_strip_compact_ram_warning", rendered);
+}
+
+/// Expanded strip: when `ram_warning` is true the RAM field is highlighted
+/// and a warning row appears in the expanded block.
+#[test]
+fn snapshot_status_strip_expanded_ram_warning() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 10,
+        audio_secs: 60.0,
+        cost_usd: 0.024,
+        elapsed: "1:00".to_string(),
+        show_restart: false,
+        expanded: true,
+        cost_warning_usd: 0.0,
+        cpu_pct: 45.0,
+        ram_bytes: 600 * 1024 * 1024, // 600 MiB
+        net_kbps_tx: 8.0,
+        net_kbps_rx: 32.0,
+        e2e_latency_ms: Some(420),
+        loss_pct: 0.0,
+        ram_warning: true,
+    };
+    let height = strip.expanded_height();
+    assert_eq!(
+        height, 7,
+        "expanded_height() must be 7 when ram_warning is true; got {height}"
+    );
+    let rendered = render_strip(&strip, 80, height);
+    assert!(
+        rendered.contains("RAM") && rendered.contains('\u{26a0}'),
+        "expanded strip with ram_warning=true must show RAM warning row; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("optional recording disabled"),
+        "expanded RAM warning must state optional recording is disabled under pressure; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("status_strip_expanded_ram_warning", rendered);
+}
+
+/// Expanded strip: cost and RAM warnings share the warning row so neither is
+/// hidden and the layout height remains stable.
+#[test]
+fn expanded_metrics_combines_cost_and_ram_warnings() {
+    let stt = SttState::Listening;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 10,
+        audio_secs: 60.0,
+        cost_usd: 0.024,
+        elapsed: "1:00".to_string(),
+        show_restart: false,
+        expanded: true,
+        cost_warning_usd: 0.01,
+        cpu_pct: 45.0,
+        ram_bytes: 600 * 1024 * 1024,
+        net_kbps_tx: 8.0,
+        net_kbps_rx: 32.0,
+        e2e_latency_ms: Some(420),
+        loss_pct: 0.0,
+        ram_warning: true,
+    };
+    assert_eq!(strip.expanded_height(), 7);
+    let rendered = render_strip(&strip, 120, strip.expanded_height());
+    assert!(
+        rendered.contains("Cost warning") && rendered.contains("RAM warning"),
+        "expanded warning row must include both cost and RAM warnings; got:\n{rendered}"
+    );
+}
+
+/// Expanded strip: no extra row and no warning when `ram_warning` is false.
+#[test]
+fn expanded_metrics_height_is_6_without_any_warning() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        target_language: "vi".to_string(),
+        pairs: 0,
+        audio_secs: 0.0,
+        cost_usd: 0.0,
+        elapsed: "0:00".to_string(),
+        show_restart: false,
+        expanded: true,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+        ram_warning: false,
+    };
+    assert_eq!(
+        strip.expanded_height(),
+        6,
+        "no warnings → expanded_height() must be 6"
     );
 }

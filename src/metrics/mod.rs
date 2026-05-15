@@ -18,6 +18,7 @@
 pub mod cost;
 pub mod latency;
 pub mod loss;
+pub mod memory_guard;
 pub mod network;
 pub mod process;
 pub mod snapshot;
@@ -27,6 +28,8 @@ pub use cost::{format_cost_or_zero_state, CostCounter};
 pub use latency::LatencyHistogram;
 #[allow(unused_imports)]
 pub use loss::LossMetrics;
+#[allow(unused_imports)]
+pub use memory_guard::MemoryGuard;
 #[allow(unused_imports)]
 pub use network::NetworkMetrics;
 #[allow(unused_imports)]

@@ -56,3 +56,6 @@ mod translation_roundtrip;
 
 #[path = "integration/error_retry.rs"]
 mod error_retry;
+
+#[path = "integration/memory_guard.rs"]
+mod memory_guard;

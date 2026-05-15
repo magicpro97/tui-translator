@@ -125,6 +125,20 @@ pub struct MetricsSnapshot {
     /// [`cpu_pct`](MetricsSnapshot::cpu_pct) exceeded the configured
     /// `cpu_budget_pct`.  Always `0` when the STT provider is Google/cloud.
     pub local_inferences_skipped: u64,
+
+    // ── Memory guard (issue #231) ─────────────────────────────────────────────
+    /// `true` when process RAM exceeds the configured `ram_budget_mb` after
+    /// applying hysteresis.  Always `false` when `ram_budget_mb` is `0`
+    /// (disabled) or before the first metrics poll completes.
+    pub ram_warning: bool,
+
+    /// `true` when optional session/audio recording should stay disabled due
+    /// to RAM pressure.
+    ///
+    /// The current runtime does not persist meeting audio by default, but this
+    /// guard output gives the recording/export layer a single pressure signal
+    /// to honor when that optional feature is enabled.
+    pub recording_disabled_under_pressure: bool,
 }
 
 impl Default for MetricsSnapshot {
@@ -148,6 +162,8 @@ impl Default for MetricsSnapshot {
             total_chunks: 0,
             dropped_chunks: 0,
             local_inferences_skipped: 0,
+            ram_warning: false,
+            recording_disabled_under_pressure: false,
         }
     }
 }
@@ -196,6 +212,21 @@ impl MetricsSnapshot {
         self.net_total_bytes_sent = ns.total_bytes_sent;
         self.net_total_bytes_recv = ns.total_bytes_recv;
     }
+
+    /// Apply a [`MemoryGuard`](crate::metrics::memory_guard::MemoryGuard)
+    /// to update [`ram_warning`](MetricsSnapshot::ram_warning) in place.
+    ///
+    /// Call this once per second in the metrics-publisher task after
+    /// [`apply_process`](MetricsSnapshot::apply_process) so the guard sees
+    /// the current RAM reading.  The guard is a no-op (and `ram_warning`
+    /// stays `false`) when the budget is `0`.
+    pub fn apply_memory_guard(&mut self, guard: &crate::metrics::memory_guard::MemoryGuard) {
+        self.ram_warning = guard.is_warning();
+        self.recording_disabled_under_pressure = self.ram_warning;
+        if self.ram_warning && self.ram_bytes == 0 {
+            self.ram_bytes = guard.ram_bytes();
+        }
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -222,6 +253,8 @@ mod tests {
         assert_eq!(s.total_chunks, 0);
         assert_eq!(s.dropped_chunks, 0);
         assert_eq!(s.local_inferences_skipped, 0);
+        assert!(!s.ram_warning);
+        assert!(!s.recording_disabled_under_pressure);
     }
 
     #[test]
@@ -288,5 +321,70 @@ mod tests {
         let cloned = original.clone();
         assert_eq!(cloned.audio_seconds_sent, 120.0);
         assert_eq!(cloned.chars_translated, 5000);
+    }
+
+    #[test]
+    fn apply_memory_guard_sets_ram_warning_when_over_budget() {
+        let guard = crate::metrics::memory_guard::MemoryGuard::new(100_000);
+        guard.update_ram_bytes(200_000); // 2× budget → warning
+        let mut s = MetricsSnapshot::default();
+        s.apply_memory_guard(&guard);
+        assert!(
+            s.ram_warning,
+            "apply_memory_guard must set ram_warning when guard is in warning state"
+        );
+        assert!(
+            s.recording_disabled_under_pressure,
+            "RAM warning must disable optional session/audio recording"
+        );
+    }
+
+    #[test]
+    fn apply_memory_guard_clears_ram_warning_when_below_budget() {
+        let guard = crate::metrics::memory_guard::MemoryGuard::new(100_000);
+        guard.update_ram_bytes(50_000); // below budget → safe
+        let mut s = MetricsSnapshot {
+            ram_warning: true,
+            ..MetricsSnapshot::default()
+        };
+        s.apply_memory_guard(&guard);
+        assert!(
+            !s.ram_warning,
+            "apply_memory_guard must clear ram_warning when guard is in safe state"
+        );
+        assert!(
+            !s.recording_disabled_under_pressure,
+            "safe RAM state must allow optional recording again"
+        );
+    }
+
+    #[test]
+    fn apply_memory_guard_no_warning_when_disabled() {
+        let guard = crate::metrics::memory_guard::MemoryGuard::new(0); // disabled
+        guard.update_ram_bytes(u64::MAX);
+        let mut s = MetricsSnapshot::default();
+        s.apply_memory_guard(&guard);
+        assert!(
+            !s.ram_warning,
+            "apply_memory_guard must not warn when budget is 0 (disabled)"
+        );
+        assert!(
+            !s.recording_disabled_under_pressure,
+            "disabled guard must not disable optional recording"
+        );
+    }
+
+    #[test]
+    fn apply_memory_guard_preserves_last_ram_reading_when_metrics_are_unavailable() {
+        let guard = crate::metrics::memory_guard::MemoryGuard::new(100_000);
+        guard.update_ram_bytes(200_000);
+        guard.update_ram_bytes(0);
+        let mut s = MetricsSnapshot::default();
+        s.apply_memory_guard(&guard);
+        assert!(s.ram_warning);
+        assert_eq!(
+            s.ram_bytes, 200_000,
+            "latched warning should display the last non-zero RAM reading"
+        );
     }
 }
