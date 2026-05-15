@@ -448,13 +448,22 @@ fn main() -> Result<()> {
                 metrics::SttState::Listening;
 
             // ── Issue #84 — wire orchestrator or fall back to metrics-only ────
-            let api_key = current_config
+            let cfg_snapshot = current_config
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .google_api_key
                 .clone();
 
-            if let Some(key) = api_key {
+            if let Some(provider_msg) = runtime_provider_error(&cfg_snapshot) {
+                tracing::warn!("{provider_msg}");
+                *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                    metrics::SttState::Error(provider_msg.clone());
+                *state
+                    .pipeline_error_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
+                spawn_metrics_only_audio_task(&rt, stream, &state);
+                orchestrator_join = None;
+            } else if let Some(key) = cfg_snapshot.google_api_key {
                 // Build Google providers and start the orchestrator.
                 // Reuse the Arc already held in AppState so hot-reload writes
                 // are visible to the running orchestrator.
@@ -964,7 +973,28 @@ fn build_config_from_editor(
     next_cfg.audio_source = editor.audio_source.trim().to_string();
     next_cfg.capture_device = normalize_optional_field(&editor.capture_device);
     next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
+    next_cfg.stt_provider = editor.stt_provider.trim().to_string();
+    next_cfg.mt_provider = editor.mt_provider.trim().to_string();
     next_cfg
+}
+
+fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
+    let mut unsupported = Vec::new();
+    if cfg.stt_provider != "google" {
+        unsupported.push(format!("stt_provider={:?}", cfg.stt_provider));
+    }
+    if cfg.mt_provider != "google" {
+        unsupported.push(format!("mt_provider={:?}", cfg.mt_provider));
+    }
+
+    if unsupported.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "Local provider mode is saved but not available yet ({}). Set stt_provider and mt_provider to \"google\", save, and restart.",
+            unsupported.join(", ")
+        ))
+    }
 }
 
 fn save_config_editor(
@@ -1958,6 +1988,114 @@ mod tests {
         assert!(state.config_editor_active.load(Ordering::Relaxed));
         let editor = state.config_editor_snapshot().expect("editor snapshot");
         assert_eq!(editor.mode, ConfigEditorMode::Settings);
+    }
+
+    #[test]
+    fn editor_state_loads_provider_fields_from_config() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "local".to_string();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let editor =
+            tui::ConfigEditorState::from_config(&cfg, cfg_path, ConfigEditorMode::Settings);
+
+        assert_eq!(editor.stt_provider, "local");
+        assert_eq!(editor.mt_provider, "local");
+    }
+
+    #[test]
+    fn build_config_from_editor_persists_provider_fields() {
+        let current = config::AppConfig::default();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.stt_provider = "local".to_string();
+        editor.mt_provider = "local".to_string();
+
+        let next = build_config_from_editor(&editor, &current);
+
+        assert_eq!(next.stt_provider, "local");
+        assert_eq!(next.mt_provider, "local");
+    }
+
+    #[test]
+    fn runtime_provider_error_rejects_unimplemented_local_mode() {
+        let mut cfg = config::AppConfig::default();
+        assert!(runtime_provider_error(&cfg).is_none());
+
+        cfg.stt_provider = "local".to_string();
+        let msg =
+            runtime_provider_error(&cfg).expect("local provider should be rejected at runtime");
+
+        assert!(msg.contains("stt_provider=\"local\""));
+        assert!(msg.contains("not available yet"));
+        assert!(msg.contains("google"));
+    }
+
+    #[test]
+    fn config_save_persists_provider_fields() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.stt_provider = "local".to_string();
+            editor.mt_provider = "local".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(persisted.stt_provider, "local");
+        assert_eq!(persisted.mt_provider, "local");
+    }
+
+    #[test]
+    fn config_save_sets_restart_required_when_provider_changes() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.stt_provider = "local".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(
+            restart_required.load(Ordering::Relaxed),
+            "changing stt_provider must set restart_required"
+        );
     }
 
     #[test]

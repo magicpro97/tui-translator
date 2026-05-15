@@ -138,16 +138,20 @@ enum ConfigEditorField {
     AudioSource,
     CaptureDevice,
     AudioFilePath,
+    SttProvider,
+    MtProvider,
 }
 
 impl ConfigEditorField {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 8] = [
         Self::SourceLanguage,
         Self::TargetLanguage,
         Self::GoogleApiKey,
         Self::AudioSource,
         Self::CaptureDevice,
         Self::AudioFilePath,
+        Self::SttProvider,
+        Self::MtProvider,
     ];
 
     fn label(self) -> &'static str {
@@ -158,6 +162,8 @@ impl ConfigEditorField {
             Self::AudioSource => "Audio source",
             Self::CaptureDevice => "Capture device",
             Self::AudioFilePath => "Audio file path",
+            Self::SttProvider => "STT provider",
+            Self::MtProvider => "MT provider",
         }
     }
 }
@@ -173,6 +179,10 @@ pub struct ConfigEditorState {
     pub audio_source: String,
     pub capture_device: String,
     pub audio_file_path: String,
+    /// STT backend name saved in config (`google` now, `local` for offline mode).
+    pub stt_provider: String,
+    /// MT backend name saved in config (`google` now, `local` for offline mode).
+    pub mt_provider: String,
     pub config_path: String,
     pub status_message: Option<String>,
     pub capture_device_options: Vec<String>,
@@ -189,6 +199,8 @@ impl ConfigEditorState {
             audio_source: config.audio_source.clone(),
             capture_device: config.capture_device.clone().unwrap_or_default(),
             audio_file_path: config.audio_file_path.clone().unwrap_or_default(),
+            stt_provider: config.stt_provider.clone(),
+            mt_provider: config.mt_provider.clone(),
             config_path: config_path.display().to_string(),
             status_message: None,
             capture_device_options: Vec::new(),
@@ -207,6 +219,8 @@ impl ConfigEditorState {
             ConfigEditorField::AudioSource => &mut self.audio_source,
             ConfigEditorField::CaptureDevice => &mut self.capture_device,
             ConfigEditorField::AudioFilePath => &mut self.audio_file_path,
+            ConfigEditorField::SttProvider => &mut self.stt_provider,
+            ConfigEditorField::MtProvider => &mut self.mt_provider,
         }
     }
 
@@ -1683,7 +1697,7 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 /// Render the shared first-run / settings editor overlay.
 pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &ConfigEditorState) {
     let panel_w = 76u16.min(area.width);
-    let panel_h = 15u16.min(area.height);
+    let panel_h = 17u16.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -1706,10 +1720,25 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
         ConfigEditorMode::Settings => " Edit the saved config and press Enter to persist changes.",
     };
 
-    let lines = vec![
+    let is_compact_editor = panel.width < 76 || panel.height <= 16;
+    let key_hint = if is_compact_editor {
+        " Tab: next  Shift+Tab: prev  Enter: save  Esc: close"
+    } else {
+        " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close"
+    };
+    let config_path_display = if is_compact_editor {
+        let path_budget = panel.width.saturating_sub(9) as usize;
+        truncate_device_name(&editor.config_path, path_budget)
+    } else {
+        editor.config_path.clone()
+    };
+    let show_status_separator =
+        !(is_compact_editor && matches!(editor.mode, ConfigEditorMode::Onboarding));
+
+    let mut lines = vec![
         Line::from(Span::styled(intro, Style::default().fg(Color::DarkGray))),
         Line::from(Span::styled(
-            format!(" Path: {}", editor.config_path),
+            format!(" Path: {config_path_display}"),
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
@@ -1743,23 +1772,39 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             &editor.audio_file_path,
             editor.active_field(),
         ),
-        Line::from(""),
-        Line::from(Span::styled(
-            editor
-                .status_message
-                .clone()
-                .unwrap_or_else(|| " Ready to save.".to_string()),
-            Style::default().fg(Color::Yellow),
-        )),
-        Line::from(Span::styled(
-            " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            " audio_source: wasapi live, file WAV. capture_device blank=default; F2 cycles.",
-            Style::default().fg(Color::DarkGray),
-        )),
+        config_editor_field_line(
+            ConfigEditorField::SttProvider,
+            &editor.stt_provider,
+            editor.active_field(),
+        ),
+        config_editor_field_line(
+            ConfigEditorField::MtProvider,
+            &editor.mt_provider,
+            editor.active_field(),
+        ),
     ];
+
+    if show_status_separator {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        editor
+            .status_message
+            .clone()
+            .unwrap_or_else(|| " Ready to save.".to_string()),
+        Style::default().fg(Color::Yellow),
+    )));
+    lines.push(Line::from(Span::styled(
+        key_hint,
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    if !is_compact_editor {
+        lines.push(Line::from(Span::styled(
+            " Providers: google now; local is saved for offline mode. Restart required.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
 
     frame.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
@@ -2131,6 +2176,69 @@ mod tests {
         assert_eq!(editor.capture_device, "Headphones (USB Audio)");
         editor.cycle_capture_device();
         assert_eq!(editor.capture_device, "");
+    }
+
+    #[test]
+    fn config_editor_state_loads_provider_fields() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "local".to_string();
+        let editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        assert_eq!(editor.stt_provider, "local");
+        assert_eq!(editor.mt_provider, "local");
+    }
+
+    #[test]
+    fn config_editor_provider_fields_default_to_google() {
+        let editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        assert_eq!(editor.stt_provider, "google");
+        assert_eq!(editor.mt_provider, "google");
+    }
+
+    #[test]
+    fn render_config_editor_shows_provider_fields() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut cfg = AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "local".to_string();
+        let editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            rendered.contains("STT provider"),
+            "editor should render STT provider field; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("MT provider"),
+            "editor should render MT provider field; got: {rendered:?}"
+        );
     }
 
     // ── SubtitlePair ────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 645
 expression: "render_config_editor(&editor, 60, 16)"
 ---
 ┌ Settings ────────────────────────────────────────────────┐
@@ -12,8 +13,9 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  Audio source    : wasapi                                │
 │  Capture device  : Windows default playback              │
 │  Audio file path : —                                     │
+│  STT provider    : google                                │
+│  MT provider     : google                                │
 │                                                          │
 │ Ready to save.                                           │
-│ Tab/Down: next   Shift+Tab/Up: previous   Enter: save    │
-│Esc: close                                                │
+│ Tab: next  Shift+Tab: prev  Enter: save  Esc: close      │
 └──────────────────────────────────────────────────────────┘
