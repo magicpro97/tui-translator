@@ -46,6 +46,19 @@ const UNREAD_COLOR: Color = Color::Yellow;
 const SRC_PREFIX: &str = "[SRC] ";
 const TGT_PREFIX: &str = "[TGT] ";
 
+// ── Partial / interim caption constants (issue #221) ─────────────────────────
+
+/// Foreground colour for in-flight (non-final) source captions.
+const PARTIAL_SRC_COLOR: Color = Color::Yellow;
+/// Foreground colour for in-flight (non-final) target captions.
+const PARTIAL_TGT_COLOR: Color = Color::Yellow;
+/// Separator colour between committed history and the partial region.
+const PARTIAL_SEP_COLOR: Color = Color::DarkGray;
+/// Prefix for the in-flight source line, using U+2026 HORIZONTAL ELLIPSIS.
+const PARTIAL_SRC_PREFIX: &str = "[SRC\u{2026}] ";
+/// Prefix for the in-flight target line.
+const PARTIAL_TGT_PREFIX: &str = "[TGT\u{2026}] ";
+
 /// Minimum terminal width (columns) for the full UI to render meaningfully.
 ///
 /// Below this the whole-screen fallback message is shown instead.
@@ -322,8 +335,24 @@ impl SubtitlePair {
 /// by a faint horizontal rule.  The view auto-follows the newest pair
 /// (pinned to the bottom) until the user manually scrolls up, at which point
 /// an unread-count badge appears so new arrivals are never silently lost.
+///
+/// # Partial / interim captions (issue #221)
+///
+/// The pane maintains a separate *partial slot* for in-flight (non-final)
+/// speech-to-text results.  Partials are rendered below the committed history
+/// using a dim `[SRC…]`/`[TGT…]` prefix and are **never** stored in `pairs`,
+/// so they cannot shift committed scroll position.  When the final result
+/// arrives, the caller calls [`push`](Self::push) followed by
+/// [`clear_partial`](Self::clear_partial): the committed pair joins the
+/// history and the partial slot is erased without creating a duplicate line.
+///
+/// When the user has scrolled away from the bottom the partial caption is not
+/// rendered, so the committed view is undisturbed.
 pub struct SubtitlePane {
     pairs: Vec<SubtitlePair>,
+    /// In-flight partial (non-final) caption, rendered separately from
+    /// committed history.  `None` when no partial is active.
+    pending_partial: Option<SubtitlePair>,
     /// Visual lines scrolled upward from the bottom (0 = auto-follow / pinned).
     scroll: u16,
     /// Pairs added while the pane is not pinned to the bottom.
@@ -343,6 +372,7 @@ impl SubtitlePane {
     pub fn new() -> Self {
         Self {
             pairs: Vec::new(),
+            pending_partial: None,
             scroll: 0,
             unread: 0,
             last_inner_width: 0,
@@ -372,6 +402,50 @@ impl SubtitlePane {
         }
         self.pairs.push(pair);
         self.cache_dirty = true;
+    }
+
+    /// Stage an in-flight (non-final) partial caption.
+    ///
+    /// The pair is stored in the separate partial slot — it is **not** added to
+    /// [`pairs`](Self::pair_count) and therefore never shifts committed scroll
+    /// history.  A subsequent call overwrites the previous partial; the slot
+    /// is cleared by [`clear_partial`](Self::clear_partial).
+    ///
+    /// The committed-pair cache is not invalidated because the partial does not
+    /// participate in the scrollable history.
+    pub fn set_partial(&mut self, pair: SubtitlePair) {
+        self.pending_partial = Some(pair);
+    }
+
+    /// Remove the current partial caption.
+    ///
+    /// Called after a final result has been committed via [`push`](Self::push)
+    /// so the partial region is erased without leaving a duplicate line.
+    pub fn clear_partial(&mut self) {
+        self.pending_partial = None;
+    }
+
+    /// Read-only access to the current partial caption, if any.
+    pub fn pending_partial(&self) -> Option<&SubtitlePair> {
+        self.pending_partial.as_ref()
+    }
+
+    /// Return the raw scroll offset for unit tests.
+    ///
+    /// Exposed only under `#[cfg(test)]` so production code cannot bypass the
+    /// clamping semantics of [`clamp_scroll`](Self::clamp_scroll).
+    #[cfg(test)]
+    pub fn scroll_value_for_test(&self) -> u16 {
+        self.scroll
+    }
+
+    /// Return a reference to the committed pair at `index`, if it exists.
+    ///
+    /// Used by unit tests to inspect committed history without exposing
+    /// the private `pairs` field.
+    #[cfg(test)]
+    pub fn committed_pair_at(&self, index: usize) -> Option<&SubtitlePair> {
+        self.pairs.get(index)
     }
 
     fn max_scroll(&mut self, width: u16, height: u16) -> u16 {
@@ -506,7 +580,20 @@ impl Widget for &SubtitlePane {
 
         Clear.render(inner, buf);
 
-        if self.pairs.is_empty() {
+        // Build partial lines (always fresh — not cached).
+        // Partials are only shown when the pane is pinned (scroll == 0) so
+        // the committed scroll position is never disturbed by interim updates.
+        let partial_lines: Vec<Line<'static>> = if self.scroll == 0 {
+            match &self.pending_partial {
+                Some(p) => build_partial_lines(p, inner.width as usize, !self.pairs.is_empty()),
+                None => vec![],
+            }
+        } else {
+            vec![]
+        };
+        let partial_row_count = partial_lines.len();
+
+        if self.pairs.is_empty() && partial_lines.is_empty() {
             render_empty_message(inner, buf);
             return;
         }
@@ -518,7 +605,12 @@ impl Widget for &SubtitlePane {
             owned_lines = self.build_all_lines(inner.width as usize);
             &owned_lines
         };
-        let visible = self.visible_line_count(inner.height);
+
+        // Reserve bottom rows for the partial region; committed history uses
+        // the remaining rows.
+        let visible = self
+            .visible_line_count(inner.height)
+            .saturating_sub(partial_row_count);
         let total = all_lines.len();
 
         // bottom_start: first line index when pinned to bottom
@@ -529,6 +621,16 @@ impl Widget for &SubtitlePane {
 
         for (row, line) in all_lines[start..end].iter().enumerate() {
             let y = inner.y + row as u16;
+            if y >= inner.y + inner.height {
+                break;
+            }
+            render_line(line, inner.x, y, inner.width, buf);
+        }
+
+        // Render partial lines directly below the committed history rows.
+        let history_rows_rendered = end - start;
+        for (row, line) in partial_lines.iter().enumerate() {
+            let y = inner.y + (history_rows_rendered + row) as u16;
             if y >= inner.y + inner.height {
                 break;
             }
@@ -674,6 +776,50 @@ fn subtitle_block() -> Block<'static> {
         .title(" Subtitles ")
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
+}
+
+/// Build the visual lines for an in-flight partial caption (issue #221).
+///
+/// The partial region is rendered separately from the committed history:
+/// - If `include_sep` is `true` (committed history is non-empty), a faint
+///   horizontal rule is prepended to visually separate the partial from the
+///   last committed pair.
+/// - Source and target lines use the `[SRC…]`/`[TGT…]` prefixes and the
+///   dim [`PARTIAL_SRC_COLOR`] / [`PARTIAL_TGT_COLOR`] palette so they are
+///   clearly distinguishable from committed captions.
+/// - The target line is omitted when `partial.target` is empty (i.e. the
+///   translation has not arrived yet).
+fn build_partial_lines(
+    partial: &SubtitlePair,
+    width: usize,
+    include_sep: bool,
+) -> Vec<Line<'static>> {
+    if width == 0 {
+        return vec![];
+    }
+    let mut lines = Vec::new();
+    if include_sep {
+        let sep = "\u{2500}".repeat(width);
+        lines.push(Line::from(Span::styled(
+            sep,
+            Style::default().fg(PARTIAL_SEP_COLOR),
+        )));
+    }
+    lines.extend(wrap_to_lines(
+        PARTIAL_SRC_PREFIX,
+        &partial.source,
+        width,
+        PARTIAL_SRC_COLOR,
+    ));
+    if !partial.target.is_empty() {
+        lines.extend(wrap_to_lines(
+            PARTIAL_TGT_PREFIX,
+            &partial.target,
+            width,
+            PARTIAL_TGT_COLOR,
+        ));
+    }
+    lines
 }
 
 /// Truncate a device name to at most `max_cols` terminal columns,

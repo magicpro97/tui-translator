@@ -1285,3 +1285,186 @@ fn help_overlay_minimum_height_no_panic() {
     // height=4 → MIN_H=4, inner_h=2 → max_scroll=11 → must not panic.
     let _ = render_help(80, 4, 0);
 }
+
+// ── Partial / interim subtitle state machine (issue #221) ────────────────────
+
+/// Snapshot: partial caption renders at the bottom of a pane that already
+/// holds two committed pairs.  The partial uses `[SRC…]`/`[TGT…]` prefixes
+/// and appears below a faint separator that distinguishes it from history.
+#[test]
+fn snapshot_80x24_with_partial() {
+    let mut pane = SubtitlePane::new();
+    pane.push(SubtitlePair::new(
+        "Hello, how are you today?",
+        "Xin chào, bạn có khoẻ không?",
+    ));
+    pane.push(SubtitlePair::new(
+        "I am doing well, thank you.",
+        "Tôi đang ổn, cảm ơn bạn.",
+    ));
+    pane.set_partial(SubtitlePair::new(
+        "This is an interim partial result",
+        "Đây là kết quả tạm thời",
+    ));
+    insta::assert_snapshot!("80x24_with_partial", render_pane(&pane, 80, 24));
+}
+
+/// Snapshot: partial caption renders when there are no committed pairs yet —
+/// the pane must NOT show "No subtitles yet." when a partial is active.
+#[test]
+fn snapshot_80x24_partial_only() {
+    let mut pane = SubtitlePane::new();
+    pane.set_partial(SubtitlePair::new(
+        "First partial line only",
+        "Dòng tạm thời đầu tiên",
+    ));
+    insta::assert_snapshot!("80x24_partial_only", render_pane(&pane, 80, 24));
+}
+
+/// Snapshot: after final promotion the committed pair is shown and the partial
+/// slot is empty — no `[SRC…]` line must appear.
+#[test]
+fn snapshot_80x24_after_final_promotion() {
+    let mut pane = SubtitlePane::new();
+    pane.set_partial(SubtitlePair::new(
+        "Partial that will be replaced",
+        "Tạm thời sẽ được thay thế",
+    ));
+    // Promote: commit final result and clear partial.
+    pane.push(SubtitlePair::new(
+        "Final committed result",
+        "Kết quả cuối cùng đã xác nhận",
+    ));
+    pane.clear_partial();
+    insta::assert_snapshot!("80x24_after_final_promotion", render_pane(&pane, 80, 24));
+}
+
+// ── Behavioral (non-snapshot) assertions — issue #221 ────────────────────────
+
+/// Partial caption is visible when the pane is pinned (scroll == 0).
+#[test]
+fn partial_visible_when_pinned() {
+    let mut pane = SubtitlePane::new();
+    pane.push(SubtitlePair::new("committed src", "committed tgt"));
+    pane.set_partial(SubtitlePair::new("partial src", "partial tgt"));
+
+    let rendered = render_pane(&pane, 80, 24);
+    assert!(
+        rendered.contains("SRC\u{2026}"),
+        "partial must show [SRC…] prefix when pinned; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("partial src"),
+        "partial source text must be visible when pinned; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("partial tgt"),
+        "partial target text must be visible when pinned; got:\n{rendered}"
+    );
+}
+
+/// Partial caption is NOT shown when the user has scrolled away from the bottom.
+#[test]
+fn partial_not_shown_when_scrolled() {
+    let mut pane = SubtitlePane::new();
+    // Add enough pairs so the pane can be scrolled.
+    for i in 0..8 {
+        pane.push(SubtitlePair::new(
+            format!("source line {i}"),
+            format!("target line {i}"),
+        ));
+    }
+    pane.set_partial(SubtitlePair::new("interim partial", "tạm thời"));
+
+    // Simulate a rendered frame to initialise width/height tracking.
+    let inner_w = 78u16;
+    let inner_h = 10u16;
+    pane.clamp_scroll(inner_w, inner_h);
+    // Scroll up so scroll > 0.
+    pane.scroll_up(inner_w, inner_h);
+    assert!(
+        pane.scroll_value_for_test() > 0,
+        "must be scrolled away from bottom for this test"
+    );
+
+    let rendered = render_pane(&pane, 80, 12);
+    assert!(
+        !rendered.contains("interim partial"),
+        "partial must NOT be rendered when scrolled away from bottom; got:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("SRC\u{2026}"),
+        "no [SRC…] prefix must appear when scrolled; got:\n{rendered}"
+    );
+}
+
+/// set_partial does NOT change scroll position — committed history is stable.
+#[test]
+fn partial_update_does_not_shift_scroll() {
+    let mut pane = SubtitlePane::new();
+    for i in 0..6 {
+        pane.push(SubtitlePair::new(
+            format!("committed src {i}"),
+            format!("committed tgt {i}"),
+        ));
+    }
+    pane.clamp_scroll(78, 10);
+    pane.scroll_up(78, 10);
+    let scroll_before = pane.scroll_value_for_test();
+    assert!(scroll_before > 0, "must be scrolled for this test");
+
+    pane.set_partial(SubtitlePair::new("incoming partial", "arriving"));
+    assert_eq!(
+        pane.scroll_value_for_test(),
+        scroll_before,
+        "set_partial must not move the scroll position"
+    );
+
+    pane.set_partial(SubtitlePair::new("updated partial", "updated"));
+    assert_eq!(
+        pane.scroll_value_for_test(),
+        scroll_before,
+        "repeated set_partial must not move the scroll position"
+    );
+
+    pane.clear_partial();
+    assert_eq!(
+        pane.scroll_value_for_test(),
+        scroll_before,
+        "clear_partial must not move the scroll position"
+    );
+}
+
+/// Final result after a partial produces exactly one committed pair (no
+/// duplicate) and leaves the partial slot empty.
+#[test]
+fn final_promotion_produces_no_duplicate() {
+    let mut pane = SubtitlePane::new();
+    pane.set_partial(SubtitlePair::new("partial src", "partial tgt"));
+
+    // Promote: push the final pair then clear the partial.
+    pane.push(SubtitlePair::new("final src", "final tgt"));
+    pane.clear_partial();
+
+    assert_eq!(
+        pane.pair_count(),
+        1,
+        "exactly one committed pair after partial → final; got {}",
+        pane.pair_count()
+    );
+    assert!(
+        pane.pending_partial().is_none(),
+        "partial slot must be empty after clear_partial"
+    );
+
+    // The committed pair must contain the final text, not the partial.
+    let rendered = render_pane(&pane, 80, 12);
+    assert!(
+        rendered.contains("final src"),
+        "committed pair must show final source; got:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("partial src"),
+        "old partial text must not appear after final promotion; got:\n{rendered}"
+    );
+}

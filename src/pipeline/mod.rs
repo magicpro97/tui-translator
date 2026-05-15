@@ -455,7 +455,7 @@ where
     let stt_bytes_sent = (pcm.samples.len() as u64).saturating_mul(2);
     ctx.network_metrics.record_bytes_sent(stt_bytes_sent);
 
-    let transcript = match with_retry(|| stt.transcribe(&pcm, &source_lang)).await {
+    let (transcript, is_final) = match with_retry(|| stt.transcribe(&pcm, &source_lang)).await {
         Ok(r) if r.text.trim().is_empty() => {
             // Silent / empty result — nothing to translate.
             let audio_ms = pcm.samples.len().saturating_mul(1_000) / 16_000;
@@ -488,10 +488,11 @@ where
             set_stt_state(&ctx.stt_state, SttState::Waiting);
             tracing::info!(
                 sequence_number = pcm.sequence_number,
+                is_final = r.is_final,
                 transcript_chars = r.text.chars().count(),
                 "STT transcript recognized"
             );
-            r.text
+            (r.text, r.is_final)
         }
         Err(ProviderError::AuthError(msg)) => {
             handle_auth_error(ctx, &format!("STT: {msg}"));
@@ -559,28 +560,40 @@ where
             }
         };
 
-    // ── Push subtitle pair ────────────────────────────────────────────────────
+    // ── Push or stage subtitle pair (issue #221) ─────────────────────────────
+    // Final results commit to permanent history; interim partials are staged in
+    // the pane's separate partial slot so committed scroll position is never
+    // disturbed by in-flight updates.
     set_stt_state(&ctx.stt_state, SttState::Listening);
-    ctx.subtitle_pane
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .push(SubtitlePair::new(transcript.clone(), translation.clone()));
+    {
+        let mut pane = ctx.subtitle_pane.lock().unwrap_or_else(|p| p.into_inner());
+        if is_final {
+            pane.push(SubtitlePair::new(transcript.clone(), translation.clone()));
+            pane.clear_partial();
+        } else {
+            pane.set_partial(SubtitlePair::new(transcript.clone(), translation.clone()));
+        }
+    }
     tracing::info!(
         sequence_number = pcm.sequence_number,
+        is_final,
         transcript_chars = transcript.chars().count(),
         translation_chars = translation.chars().count(),
         "subtitle pair produced"
     );
 
-    // Issue #83: record the end-to-end latency now that the subtitle pair is
-    // ready for display.  The measurement covers STT submission → translated
-    // text pushed to the pane (excluding TTS playback, which is async).
-    let e2e_ms = e2e_start.elapsed().as_millis() as u64;
-    ctx.e2e_latency.record_ms(e2e_ms);
-    tracing::debug!(e2e_ms, "subtitle pair produced; e2e latency recorded");
+    // Issue #83: record the end-to-end latency only for final results.
+    // Partial results are not counted as completed subtitle pairs.
+    if is_final {
+        let e2e_ms = e2e_start.elapsed().as_millis() as u64;
+        ctx.e2e_latency.record_ms(e2e_ms);
+        tracing::debug!(e2e_ms, "final subtitle pair; e2e latency recorded");
+    }
 
-    // ── TTS (optional, non-fatal) ─────────────────────────────────────────────
-    if ctx.tts_enabled.load(Ordering::Relaxed) {
+    // ── TTS (optional, non-fatal, final only) ────────────────────────────────
+    // TTS is skipped for partial results — synthesising every interim update
+    // would produce overlapping, unintelligible audio and waste API quota.
+    if is_final && ctx.tts_enabled.load(Ordering::Relaxed) {
         // Issue #80: approximate TTS bytes sent = translation text length.
         ctx.network_metrics
             .record_bytes_sent(translation.len() as u64);
@@ -1813,6 +1826,197 @@ mod tests {
             loss.dropped_chunks(),
             1,
             "MT exhausted-retry must increment dropped_chunks"
+        );
+    }
+
+    // ── Partial / interim subtitle state machine (issue #221) ─────────────────
+
+    /// Mock STT that returns a non-final (partial) result.
+    struct PartialStt(&'static str);
+    impl SttProvider for PartialStt {
+        async fn transcribe(
+            &self,
+            _chunk: &PcmChunk,
+            _lang: &str,
+        ) -> Result<SttResult, ProviderError> {
+            Ok(SttResult {
+                text: self.0.to_string(),
+                confidence: Some(0.7),
+                is_final: false,
+            })
+        }
+    }
+
+    /// Mock STT that returns a sequence of results from a shared queue.
+    struct QueuedStt {
+        queue: Arc<Mutex<std::collections::VecDeque<SttResult>>>,
+    }
+    impl SttProvider for QueuedStt {
+        async fn transcribe(
+            &self,
+            _chunk: &PcmChunk,
+            _lang: &str,
+        ) -> Result<SttResult, ProviderError> {
+            let mut q = self.queue.lock().unwrap_or_else(|p| p.into_inner());
+            match q.pop_front() {
+                Some(r) => Ok(r),
+                None => Err(ProviderError::InvalidInput("queue exhausted".to_string())),
+            }
+        }
+    }
+
+    /// A non-final (partial) STT result must stage the pair in the partial slot
+    /// without committing it to the persistent history.
+    #[tokio::test]
+    async fn partial_result_stages_to_pane_without_committing() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let latency = Arc::clone(&ctx.e2e_latency);
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(rx2, PartialStt("partial text"), OkMt, OkTts, ctx).await;
+
+        let guard = pane.lock().unwrap();
+        assert_eq!(
+            guard.pair_count(),
+            0,
+            "partial result must NOT be committed to pair history"
+        );
+        assert!(
+            guard.pending_partial().is_some(),
+            "partial result must be staged in the partial slot"
+        );
+        let partial = guard.pending_partial().unwrap();
+        assert!(
+            partial.source.contains("partial text"),
+            "partial source text must match STT output: {:?}",
+            partial.source
+        );
+        drop(guard);
+
+        assert_eq!(
+            latency.count(),
+            0,
+            "partial result must NOT record an E2E latency sample"
+        );
+    }
+
+    /// A final result after a partial must commit the pair and clear the slot.
+    ///
+    /// Contract:
+    /// - After the partial: `pair_count == 0`, `pending_partial == Some(_)`.
+    /// - After the final:   `pair_count == 1`, `pending_partial == None`.
+    /// - No duplicate pair is created.
+    #[tokio::test]
+    async fn final_after_partial_promotes_and_clears() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let latency = Arc::clone(&ctx.e2e_latency);
+
+        let queue = Arc::new(Mutex::new(std::collections::VecDeque::from([
+            SttResult {
+                text: "partial".to_string(),
+                confidence: Some(0.6),
+                is_final: false,
+            },
+            SttResult {
+                text: "final text".to_string(),
+                confidence: Some(0.99),
+                is_final: true,
+            },
+        ])));
+        let stt = QueuedStt {
+            queue: Arc::clone(&queue),
+        };
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        // Each 1 500 ms chunk meets STT_WINDOW_TARGET_MS on its own, so the
+        // orchestrator makes a separate STT call for each chunk — first the
+        // partial result, then the final result.
+        tx2.send(speech_chunk_ms(1500)).await.unwrap();
+        tx2.send(speech_chunk_ms(1500)).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(rx2, stt, OkMt, OkTts, ctx).await;
+
+        let guard = pane.lock().unwrap();
+        assert_eq!(
+            guard.pair_count(),
+            1,
+            "exactly one committed pair after partial→final sequence"
+        );
+        assert!(
+            guard.pending_partial().is_none(),
+            "partial slot must be cleared after the final result"
+        );
+        let committed = guard
+            .committed_pair_at(0)
+            .expect("committed pair must exist");
+        assert!(
+            committed.source.contains("final text"),
+            "committed pair must contain the final transcript, not the partial: {:?}",
+            committed.source
+        );
+        drop(guard);
+
+        assert_eq!(
+            latency.count(),
+            1,
+            "E2E latency must be recorded exactly once — for the final result"
+        );
+    }
+
+    /// Scroll position must not shift when a partial result updates the slot
+    /// while the user is scrolled away from the bottom.
+    #[tokio::test]
+    async fn scroll_stable_during_partial_update() {
+        use crate::tui::SubtitlePane;
+
+        // Build a pane with several committed pairs and scroll it upward.
+        let mut pane = SubtitlePane::new();
+        for i in 0..5 {
+            pane.push(crate::tui::SubtitlePair::new(
+                format!("source {i}"),
+                format!("target {i}"),
+            ));
+        }
+        // Simulate a rendered frame at 80×12 so the pane knows line counts.
+        pane.clamp_scroll(78, 10);
+        // Scroll up to move away from the bottom.
+        pane.scroll_up(78, 10);
+        let scroll_before = pane.scroll_value_for_test();
+        assert!(scroll_before > 0, "must be scrolled away from bottom");
+
+        // Setting a partial must NOT change the scroll position.
+        pane.set_partial(crate::tui::SubtitlePair::new("interim src", "interim tgt"));
+        assert_eq!(
+            pane.scroll_value_for_test(),
+            scroll_before,
+            "set_partial must not shift committed scroll position"
+        );
+
+        // Updating the partial again also must not shift scroll.
+        pane.set_partial(crate::tui::SubtitlePair::new(
+            "interim src v2",
+            "interim tgt v2",
+        ));
+        assert_eq!(
+            pane.scroll_value_for_test(),
+            scroll_before,
+            "repeated set_partial must not shift committed scroll position"
+        );
+
+        // Clearing the partial must not shift scroll either.
+        pane.clear_partial();
+        assert_eq!(
+            pane.scroll_value_for_test(),
+            scroll_before,
+            "clear_partial must not shift committed scroll position"
         );
     }
 }
