@@ -324,4 +324,3 @@ any release.
 | ONNX export for MarianMT via HuggingFace Optimum | [HuggingFace Optimum ONNX export docs](https://huggingface.co/docs/optimum/exporters/onnx/usage_guides/export_a_model) |
 | `ort` Rust crate (ONNX Runtime bindings) | [crates.io/crates/ort](https://crates.io/crates/ort) |
 | `sentencepiece` Rust crate | [crates.io/crates/sentencepiece](https://crates.io/crates/sentencepiece) |
-| Prior CPU-offline roadmap research | Session report `~/.copilot/session-state/2c2e55b0-0b1f-4448-a2d7-5214e65b01a3/research/cpu-offline-roadmap-research.md` |
