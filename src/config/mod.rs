@@ -186,6 +186,22 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "vad_config_is_default")]
     pub vad: VadConfigJson,
 
+    /// Phrase hints forwarded to Google Speech-to-Text as `speechContexts`
+    /// (issue #199).
+    ///
+    /// Supply meeting-specific proper nouns, product names, or terms in
+    /// Japanese/Vietnamese that the recogniser frequently misidentifies.
+    /// The list is passed verbatim to the Google STT v1 `SpeechContext`
+    /// object; an empty list (the default) omits `speechContexts` entirely
+    /// so standard requests are not affected.
+    ///
+    /// Example: `["TuiTranslator", "ズームミーティング", "Nguyễn"]`
+    ///
+    /// Changing this value requires restarting the application so the
+    /// Google STT provider can be re-initialised with the new hints.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stt_phrase_hints: Vec<String>,
+
     /// Documentation comment accepted from `config.example.json`.
     /// Ignored by the application at runtime.  Present here so
     /// `deny_unknown_fields` does not reject the example file when a
@@ -248,6 +264,7 @@ impl Default for AppConfig {
             audio_file_path: None,
             cost_warning_usd: 0.0,
             vad: VadConfigJson::default(),
+            stt_phrase_hints: Vec::new(),
             comment: None,
             cpu_budget_pct: 0.0,
             ram_budget_mb: 0,
@@ -413,6 +430,7 @@ impl AppConfig {
             || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
             || self.stt_fallback_policy != next.stt_fallback_policy
             || self.vad != next.vad
+            || self.stt_phrase_hints != next.stt_phrase_hints
     }
 }
 
@@ -1493,6 +1511,82 @@ mod tests {
         assert!(
             !current.requires_restart(&next),
             "changing ram_budget_mb must not require a restart"
+        );
+    }
+
+    // ── stt_phrase_hints (issue #199) ───────────────────────────────────────
+
+    #[test]
+    fn stt_phrase_hints_defaults_to_empty() {
+        let cfg = AppConfig::default();
+        assert!(
+            cfg.stt_phrase_hints.is_empty(),
+            "stt_phrase_hints must default to an empty list"
+        );
+    }
+
+    #[test]
+    fn stt_phrase_hints_parses_from_json() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"{{"source_language":"ja-JP","target_language":"vi","stt_phrase_hints":["Zoom","テスト","Nguyễn"]}}"#
+        )
+        .unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.stt_phrase_hints, vec!["Zoom", "テスト", "Nguyễn"]);
+    }
+
+    #[test]
+    fn missing_stt_phrase_hints_in_old_config_defaults_to_empty() {
+        // Configs written before issue #199 do not have stt_phrase_hints.
+        // They must continue to load and validate without error.
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert!(
+            cfg.stt_phrase_hints.is_empty(),
+            "stt_phrase_hints must default to empty when absent from config"
+        );
+    }
+
+    #[test]
+    fn stt_phrase_hints_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            stt_phrase_hints: vec!["TuiTranslator".to_string()],
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing stt_phrase_hints must require a restart"
+        );
+    }
+
+    #[test]
+    fn stt_phrase_hints_skipped_when_empty_in_serialized_config() {
+        let cfg = AppConfig::default();
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        assert!(
+            !json.contains("stt_phrase_hints"),
+            "empty stt_phrase_hints must be omitted from serialized config; got: {json}"
+        );
+    }
+
+    #[test]
+    fn stt_phrase_hints_present_in_serialized_config_when_non_empty() {
+        let cfg = AppConfig {
+            stt_phrase_hints: vec!["Zoom".to_string()],
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        assert!(
+            json.contains("stt_phrase_hints"),
+            "non-empty stt_phrase_hints must appear in serialized config; got: {json}"
+        );
+        assert!(
+            json.contains("Zoom"),
+            "phrase hint value must appear in serialized config; got: {json}"
         );
     }
 }

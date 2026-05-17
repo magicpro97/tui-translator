@@ -14,7 +14,8 @@
     "cpu_budget_pct": "CPU-usage ceiling (percent) above which local Whisper inference is skipped to protect co-running apps such as Zoom or Microsoft Teams. Active when stt_provider is 'local' and after Google STT falls back to local Whisper. 0.0 (default) disables throttling. On multi-core hosts sysinfo reports per-core percentages (e.g. 400.0 = 4 full cores); set this value accordingly. Example: 80.0 to suppress inference when the process exceeds 80% of one core.",
     "ram_budget_mb": "Process RAM ceiling in MiB. 0 (default) disables the warning. When RAM exceeds this budget the status strip warns, clears after 5% hysteresis, and optional session/audio recording is considered disabled under pressure.",
     "stt_fallback_policy": "Fallback policy when the STT provider encounters a permanent authentication error. 'none' (default) halts the pipeline until the app is restarted with a valid key. 'local' automatically switches to CPU-local Whisper STT on the first Google AuthError — requires the local-stt build feature and the tiny Whisper model in ~/.tui-translator/models/. Only meaningful when stt_provider is 'google'.",
-    "vad": "Voice Activity Detection gate (issue #220 / EP-E.1). Set enabled=true to activate CPU-light VAD that suppresses silent chunks and brief transients before they reach the STT engine. All sub-fields are optional and fall back to sensible defaults."
+    "vad": "Voice Activity Detection gate (issue #220 / EP-E.1). Set enabled=true to activate CPU-light VAD that suppresses silent chunks and brief transients before they reach the STT engine. All sub-fields are optional and fall back to sensible defaults.",
+    "stt_phrase_hints": "Optional list of phrase hints forwarded to Google Speech-to-Text as speechContexts (issue #199). Supply meeting-specific proper nouns, product names, or terms in Japanese/Vietnamese that are frequently misrecognised. Default: [] (empty — omits speechContexts entirely). Example: [\"TuiTranslator\", \"ズームミーティング\", \"Nguyễn\"]. Changing this value requires restarting the application."
   },
   "source_language": "ja-JP",
   "target_language": "vi",
@@ -35,5 +36,6 @@
     "min_speech_ms": 100,
     "speech_pad_ms": 300,
     "min_silence_ms": 500
-  }
+  },
+  "stt_phrase_hints": []
 }

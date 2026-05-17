@@ -229,7 +229,8 @@ fn build_runtime_stt_provider(
                     "Google STT requires google_api_key".to_string(),
                 )
             })?;
-            let google = providers::google::stt::GoogleSttProvider::new(key)?;
+            let google = providers::google::stt::GoogleSttProvider::new(key)?
+                .with_phrase_hints(cfg.stt_phrase_hints.clone());
 
             // Issue #214: if the fallback policy is "local", wrap Google in a
             // FallbackSttProvider so it automatically switches to local Whisper
