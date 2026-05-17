@@ -354,6 +354,7 @@ Full details: [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadm
 | Document | What it covers |
 |----------|---------------|
 | [`USAGE.md`](USAGE.md) | End-user setup guide: download, configure, run |
+| [`PRIVACY.md`](PRIVACY.md) | Data flows, recording defaults, offline mode, and consent |
 | [`docs/01-business-requirements.md`](docs/01-business-requirements.md) | What the product does and who it is for |
 | [`docs/02-google-first-provider.md`](docs/02-google-first-provider.md) | Why Google Cloud is the first provider |
 | [`docs/03-system-design.md`](docs/03-system-design.md) | How the components fit together |
