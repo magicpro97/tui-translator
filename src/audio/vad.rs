@@ -135,6 +135,19 @@ pub enum VadDecision {
     Speech,
     /// This chunk is silence or suppressed noise — drop.
     Silence,
+    /// VAD has confirmed end-of-utterance: the gate fully closed after
+    /// `speech_pad_ms` + `min_silence_ms` of post-speech silence.
+    ///
+    /// The chunk itself is silence and must **not** be forwarded to the STT
+    /// window.  The caller should flush its speech accumulation window
+    /// immediately so the completed utterance is processed without waiting for
+    /// the safety-cap duration to expire.
+    ///
+    /// This signal is emitted at most once per utterance, on the chunk that
+    /// causes the `PadClosed → Silence` transition.  After this point the gate
+    /// is in `Silence` state and subsequent silent chunks return `Silence` as
+    /// usual.
+    EndOfUtterance,
 }
 
 // ─── Internal state ───────────────────────────────────────────────────────────
@@ -211,18 +224,19 @@ impl VadGate {
     ///
     /// # Decision rules
     ///
-    /// | State      | Energy      | Decision | Transition             |
-    /// |-----------|-------------|----------|------------------------|
-    /// | Silence    | < threshold | Silence  | —                      |
-    /// | Silence    | ≥ threshold | Silence  | → Confirming           |
-    /// | Confirming | ≥ threshold | Silence  | Stay; Speech on confirm|
-    /// | Confirming | < threshold | Silence  | → Silence (transient)  |
-    /// | Speech     | ≥ threshold | Speech   | —                      |
-    /// | Speech     | < threshold | Speech   | → PadOpen              |
-    /// | PadOpen    | ≥ threshold | Speech   | → Speech               |
-    /// | PadOpen    | < threshold | Speech   | Stay; PadClosed on exp.|
-    /// | PadClosed  | ≥ threshold | Speech   | → Speech               |
-    /// | PadClosed  | < threshold | Silence  | Stay; Silence on exp.  |
+    /// | State      | Energy      | Decision        | Transition                |
+    /// |-----------|-------------|-----------------|---------------------------|
+    /// | Silence    | < threshold | Silence         | —                         |
+    /// | Silence    | ≥ threshold | Silence         | → Confirming              |
+    /// | Confirming | ≥ threshold | Silence         | Stay; Speech on confirm   |
+    /// | Confirming | < threshold | Silence         | → Silence (transient)     |
+    /// | Speech     | ≥ threshold | Speech          | —                         |
+    /// | Speech     | < threshold | Speech          | → PadOpen                 |
+    /// | PadOpen    | ≥ threshold | Speech          | → Speech                  |
+    /// | PadOpen    | < threshold | Speech          | Stay; PadClosed on exp.   |
+    /// | PadClosed  | ≥ threshold | Speech          | → Speech                  |
+    /// | PadClosed  | < threshold | Silence         | Stay                      |
+    /// | PadClosed  | < threshold | EndOfUtterance  | → Silence (on expiry)     |
     #[tracing::instrument(skip_all, level = "trace")]
     pub fn process(&mut self, chunk: &AudioChunk) -> VadDecision {
         let is_above = chunk.rms_energy() >= self.config.threshold;
@@ -332,15 +346,18 @@ impl VadGate {
                 } else {
                     self.state_ms = self.state_ms.saturating_add(dur);
                     if self.state_ms >= self.config.min_silence_ms {
-                        // Enough silence confirmed — fully close gate.
+                        // Enough silence confirmed — fully close gate and signal
+                        // end-of-utterance so the caller can flush immediately.
                         tracing::debug!(
                             silence_ms = self.state_ms,
-                            "VAD: silence confirmed — gate closed"
+                            "VAD: silence confirmed — gate closed, end-of-utterance"
                         );
                         self.state = VadState::Silence;
                         self.state_ms = 0;
+                        VadDecision::EndOfUtterance
+                    } else {
+                        VadDecision::Silence
                     }
-                    VadDecision::Silence
                 }
             }
         }
@@ -635,7 +652,103 @@ mod tests {
         );
     }
 
-    // ── Fixture-based T2: ja_speech_3s.wav ───────────────────────────────────
+    // ── EndOfUtterance signal (issue #264) ───────────────────────────────────
+
+    /// `EndOfUtterance` is emitted exactly once at the `PadClosed → Silence`
+    /// transition, and the gate is in `Silence` state afterward.
+    #[test]
+    fn end_of_utterance_fires_at_pad_closed_expiry() {
+        let config = VadConfig {
+            threshold: DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 100,
+            speech_pad_ms: 300,
+            min_silence_ms: 500,
+        };
+        let mut gate = VadGate::new(config);
+
+        // Open the gate with 200 ms of speech.
+        gate.process(&speech_chunk(200));
+        assert_eq!(gate.state_label(), "speech");
+
+        // Drain through PadOpen (300 ms) then into PadClosed (100 ms).
+        for _ in 0..4 {
+            gate.process(&silent_chunk(100));
+        }
+        assert_eq!(
+            gate.state_label(),
+            "pad-closed",
+            "gate must be in pad-closed after speech_pad_ms of silence"
+        );
+
+        // Feed silence until min_silence_ms - 1 (400 ms total): must stay Silence, no EoU.
+        // After the first loop, state_ms = 100 ms in PadClosed; 3 more × 100 ms → 400 ms.
+        for _ in 0..3 {
+            let d = gate.process(&silent_chunk(100));
+            assert_eq!(
+                d,
+                VadDecision::Silence,
+                "gate must return Silence while accumulating pad-closed silence"
+            );
+        }
+        assert_eq!(gate.state_label(), "pad-closed");
+
+        // The next 100 ms chunk crosses min_silence_ms (500 ms) → EndOfUtterance.
+        let eou = gate.process(&silent_chunk(100));
+        assert_eq!(
+            eou,
+            VadDecision::EndOfUtterance,
+            "gate must return EndOfUtterance when min_silence_ms is reached"
+        );
+
+        // Gate must be fully closed now.
+        assert_eq!(gate.state_label(), "silence");
+
+        // Subsequent silent chunks return plain Silence (not another EoU).
+        let d = gate.process(&silent_chunk(100));
+        assert_eq!(
+            d,
+            VadDecision::Silence,
+            "only one EndOfUtterance per utterance; subsequent chunks return Silence"
+        );
+    }
+
+    /// A second utterance after `EndOfUtterance` produces a second signal.
+    #[test]
+    fn end_of_utterance_fires_again_for_second_utterance() {
+        let config = VadConfig {
+            threshold: DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 100,
+            speech_pad_ms: 100,
+            min_silence_ms: 200,
+        };
+        let mut gate = VadGate::new(config);
+
+        let drain = |gate: &mut VadGate| {
+            // speech_pad_ms=100 + min_silence_ms=200 = 300 ms in three chunks.
+            gate.process(&silent_chunk(100)); // PadOpen
+            gate.process(&silent_chunk(100)); // PadClosed (pad expired at 100ms)
+            gate.process(&silent_chunk(100)); // still PadClosed
+            gate.process(&silent_chunk(100)) // PadClosed→Silence → EndOfUtterance
+        };
+
+        // First utterance.
+        gate.process(&speech_chunk(200));
+        let eou1 = drain(&mut gate);
+        assert_eq!(
+            eou1,
+            VadDecision::EndOfUtterance,
+            "first utterance must produce EoU"
+        );
+
+        // Second utterance.
+        gate.process(&speech_chunk(200));
+        let eou2 = drain(&mut gate);
+        assert_eq!(
+            eou2,
+            VadDecision::EndOfUtterance,
+            "second utterance must produce EoU"
+        );
+    }
 
     /// T2 fixture — feed `ja_speech_3s.wav` through the VAD gate and verify
     /// that Speech decisions are emitted.
