@@ -3,5 +3,5 @@ source: tests/snapshot.rs
 expression: rendered
 ---
 ┌────────────────────────────┐
-│ listen | Lang:ja | TTS:on |│
+│ listen Lang:ja 1p          │
 └────────────────────────────┘

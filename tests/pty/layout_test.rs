@@ -173,6 +173,74 @@ fn layout_200x50() {
 }
 
 #[test]
+fn layout_40x10_zero_state_readable() {
+    let mut session = PtySession::spawn(40, 10, &[])
+        .expect("failed to spawn tui-translator for layout_40x10_zero_state_readable");
+    assert!(
+        session.wait_for_text("Lang:vi", STARTUP_TIMEOUT),
+        "40x10: timed out waiting for compact zero-state status"
+    );
+
+    let status_rows = session.all_rows()[6..9].join("\n");
+    assert!(
+        status_rows.contains("Lang:vi") && status_rows.contains("0p"),
+        "40x10 status rows should keep language and pair count readable; got:\n{status_rows}"
+    );
+    assert!(
+        !status_rows.contains('$'),
+        "40x10 zero-state status should not show a dollar amount; got:\n{status_rows}"
+    );
+
+    let last_row = session.row_text(9);
+    assert!(
+        last_row.contains('Q') && !last_row.contains("TUI Translator"),
+        "40x10 hints row should remain separate from the title bar; got: {last_row:?}"
+    );
+
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "layout_40x10_zero_state_readable: expected clean exit (code 0); got {code:?}"
+    );
+}
+
+#[test]
+fn layout_60x10_zero_state_cost_wording() {
+    let mut session = PtySession::spawn(60, 10, &[])
+        .expect("failed to spawn tui-translator for layout_60x10_zero_state_cost_wording");
+    assert!(
+        session.wait_for_text("no charges", STARTUP_TIMEOUT),
+        "60x10: timed out waiting for zero-state cost wording"
+    );
+
+    let status_rows = session.all_rows()[6..9].join("\n");
+    assert!(
+        status_rows.contains("Lang:vi") && status_rows.contains("no charges"),
+        "60x10 status rows should keep language and zero-cost wording readable; got:\n{status_rows}"
+    );
+    assert!(
+        !status_rows.contains('$'),
+        "60x10 zero-state status should not show a dollar amount; got:\n{status_rows}"
+    );
+
+    let last_row = session.row_text(9);
+    assert!(
+        last_row.contains('Q') && !last_row.contains("TUI Translator"),
+        "60x10 hints row should remain separate from the title bar; got: {last_row:?}"
+    );
+
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "layout_60x10_zero_state_cost_wording: expected clean exit (code 0); got {code:?}"
+    );
+}
+
+#[test]
 fn layout_resize_no_crash() {
     // Start at 120×40 then shrink to 80×24.
     //
