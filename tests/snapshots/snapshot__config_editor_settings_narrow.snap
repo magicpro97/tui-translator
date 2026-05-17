@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 682
 expression: "render_config_editor(&editor, 60, 16)"
 ---
 ┌ Settings ────────────────────────────────────────────────┐
@@ -15,7 +14,7 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  MT provider     : google                                │
 │  TTS enabled     : false                                 │
 │  STT fallback    : none                                  │
-│ Ready to save.                                           │
-│ Tab/Shift+Tab move  F2 cycle  Enter save  Esc close      │
-│                                                          │
+│  VAD pre-roll ms : 200                                   │
+│  Max window ms   : 1500                                  │
+│  Early VAD flush : true                                  │
 └──────────────────────────────────────────────────────────┘
