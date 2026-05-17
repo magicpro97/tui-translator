@@ -1,6 +1,10 @@
-test pipeline::tests::mt_error_increments_loss_counters ... ok
-test pipeline::tests::stt_network_error_sets_error_state_and_continues ... ok
+Issue #196 verification after WASAPI zero-frame guard and capture-error banner update.
 
-test result: ok. 353 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.62s
+Commands passed locally with Rust 1.90 GNU and WHISPER_DONT_GENERATE_BINDINGS=1:
+- cargo fmt --all -- --check
+- cargo test
+- cargo clippy --all-targets -- -D warnings
 
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.99s
+Runtime proof:
+- default-device launch stayed alive for 4 seconds and did not panic/abort.
+- invalid capture_device launch used TUI_TRANSLATOR_CONFIG override, stayed alive for 4 seconds, did not panic/abort, and rendered the dedicated audio-capture recovery banner with the Settings hint.

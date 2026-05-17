@@ -996,6 +996,12 @@ pub struct AppState {
     /// succeeded.  Shown in the status/metrics strip.
     pub pipeline_error_msg: Arc<Mutex<Option<String>>>,
 
+    /// Operator-facing recovery hint for audio capture startup failures.
+    ///
+    /// This is intentionally separate from [`pipeline_error_msg`] because
+    /// capture startup happens before the STT/MT/TTS pipeline exists.
+    pub capture_error_msg: Arc<Mutex<Option<String>>>,
+
     // ── Issue #86 — AuthError persistent banner ───────────────────────────
     /// Non-`None` when any provider returned `AuthError`.  Holds the
     /// human-readable message shown in the persistent banner.  Cleared only
@@ -1036,6 +1042,7 @@ impl AppState {
             metrics_tx: Arc::new(metrics_tx),
             metrics_rx,
             pipeline_error_msg: Arc::new(Mutex::new(None)),
+            capture_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
         }
@@ -1535,7 +1542,7 @@ impl Widget for &ControlHintsBar {
 /// Builds the adaptive layout (compact vs. expanded metrics) and renders all
 /// widgets: title bar with STT indicator, audio gauge, subtitle pane,
 /// status/metrics strip, the always-visible control hints bar (issue #65),
-/// and any active overlays (help, language prompt, auth-error banner, quit summary).
+/// and any active overlays (help, language prompt, auth/audio-error banners, quit summary).
 ///
 /// The audio gauge title is derived from [`AppState::capture_device_label`] so
 /// operators see the configured capture source at a glance (issue #197).
@@ -1579,6 +1586,11 @@ pub fn draw_ui(
     let metrics = state.metrics_snapshot();
     let pipeline_err = state
         .pipeline_error_msg
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    let capture_err = state
+        .capture_error_msg
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
@@ -1729,6 +1741,8 @@ pub fn draw_ui(
             show_restart_notice,
             subtitle_y_offset,
         );
+    } else if let Some(ref msg) = capture_err {
+        render_capture_error_banner(frame, area, msg, chunks[2].y.saturating_sub(area.y));
     }
 
     // ── Language prompt overlay (issue #64) ──────────────────────────────────
@@ -2098,6 +2112,54 @@ pub fn render_auth_error_banner(
     );
 }
 
+/// Render an audio-capture recovery banner as a floating overlay (#196).
+///
+/// The status strip still shows the detailed WASAPI/STT error. This banner is
+/// reserved for the short operator action so it remains readable on normal
+/// terminal widths.
+pub fn render_capture_error_banner(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    message: &str,
+    subtitle_y_offset: u16,
+) {
+    let panel_w = area.width;
+    let panel_h = 4u16.min(area.height);
+    let x = area.x;
+    let y = (area.y + subtitle_y_offset).min(area.y + area.height.saturating_sub(panel_h));
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(Clear, panel);
+
+    let lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            " \u{26a0}  Audio capture unavailable",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!(" {message}"),
+            Style::default().fg(Color::White),
+        )),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" \u{26a0} Audio Capture ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Yellow)),
+        ),
+        panel,
+    );
+}
+
 /// Draw the session-summary overlay that appears when the user presses quit.
 ///
 /// Clears the whole terminal area and shows a centred panel with session
@@ -2338,6 +2400,40 @@ mod tests {
         assert!(
             rendered.contains("Speakers (Realtek"),
             "audio gauge should show configured device name; got: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn draw_ui_capture_error_banner_keeps_recovery_hint_visible() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new();
+        *state.stt_state.lock().unwrap() = SttState::Error(
+            "WASAPI capture initialization failed: no default audio render device: Element not found. (0x80070490)."
+                .to_string(),
+        );
+        *state.capture_error_msg.lock().unwrap() =
+            Some("Press [S] to open Settings, or run --list-capture-devices.".to_string());
+
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("Audio capture unavailable"),
+            "capture-error banner should identify the audio failure; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("Press [S]"),
+            "capture-error banner should keep the settings recovery hint visible; got: {rendered:?}"
         );
     }
 

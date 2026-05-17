@@ -44,7 +44,10 @@ use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use tokio::sync::mpsc;
-use wasapi::{get_default_device, initialize_mta, Device, DeviceCollection, Direction, ShareMode};
+use wasapi::{
+    get_default_device, initialize_mta, AudioCaptureClient, Device, DeviceCollection, Direction,
+    ShareMode,
+};
 
 use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
 
@@ -192,9 +195,7 @@ fn capture_loop(
         }
 
         // Drain any pending WASAPI packets into the deque.
-        capture_client
-            .read_from_device_to_deque(blockalign, &mut sample_queue)
-            .map_err(|e| anyhow!("read from WASAPI device: {e}"))?;
+        read_available_packets(&capture_client, blockalign, &mut sample_queue)?;
 
         // Convert interleaved bytes → mono f32 and append to carry buffer.
         let mono_frames = raw_bytes_to_mono_f32(&sample_queue, channels, bits);
@@ -323,6 +324,42 @@ fn active_render_device_names() -> Result<Vec<String>> {
     }
 
     Ok(names)
+}
+
+fn read_available_packets(
+    capture_client: &AudioCaptureClient,
+    bytes_per_frame: usize,
+    data: &mut VecDeque<u8>,
+) -> Result<()> {
+    if bytes_per_frame == 0 {
+        return Err(anyhow!("WASAPI device reported zero bytes per frame"));
+    }
+
+    loop {
+        let next_frames = capture_client
+            .get_next_nbr_frames()
+            .map_err(|e| anyhow!("query WASAPI packet size: {e}"))?
+            .unwrap_or(0);
+        if next_frames == 0 {
+            return Ok(());
+        }
+
+        let packet_len = (next_frames as usize)
+            .checked_mul(bytes_per_frame)
+            .ok_or_else(|| anyhow!("WASAPI packet size overflow"))?;
+        let mut packet = vec![0u8; packet_len];
+        let (read_frames, _flags) = capture_client
+            .read_from_device(bytes_per_frame, &mut packet)
+            .map_err(|e| anyhow!("read from WASAPI device: {e}"))?;
+        if read_frames == 0 {
+            return Ok(());
+        }
+        let bytes_read = (read_frames as usize)
+            .checked_mul(bytes_per_frame)
+            .ok_or_else(|| anyhow!("WASAPI read size overflow"))?
+            .min(packet.len());
+        data.extend(packet.into_iter().take(bytes_read));
+    }
 }
 
 fn format_device_names(names: &[String]) -> String {
