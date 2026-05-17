@@ -44,7 +44,10 @@ use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use tokio::sync::mpsc;
-use wasapi::{get_default_device, initialize_mta, Device, DeviceCollection, Direction, ShareMode};
+use wasapi::{
+    get_default_device, initialize_mta, AudioCaptureClient, Device, DeviceCollection, Direction,
+    ShareMode,
+};
 
 use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
 
@@ -192,9 +195,7 @@ fn capture_loop(
         }
 
         // Drain any pending WASAPI packets into the deque.
-        capture_client
-            .read_from_device_to_deque(blockalign, &mut sample_queue)
-            .map_err(|e| anyhow!("read from WASAPI device: {e}"))?;
+        read_available_packets(&capture_client, blockalign, &mut sample_queue)?;
 
         // Convert interleaved bytes → mono f32 and append to carry buffer.
         let mono_frames = raw_bytes_to_mono_f32(&sample_queue, channels, bits);
@@ -249,13 +250,30 @@ fn select_render_device(requested: Option<&str>) -> Result<(Device, String)> {
         Some(name) => find_render_device_by_name(name),
         None => {
             let device = get_default_device(&Direction::Render)
-                .map_err(|e| anyhow!("get default render device: {e}"))?;
+                .map_err(|e| no_default_render_device_error(&e.to_string()))?;
             let device_name = device
                 .get_friendlyname()
                 .unwrap_or_else(|_| "unknown".into());
             Ok((device, device_name))
         }
     }
+}
+
+/// Build an operator-actionable error for the case where Windows reports no
+/// default audio render device.
+///
+/// The message includes the raw WASAPI diagnostic string, instructions to
+/// check Windows Sound Settings, and a hint to use `--list-capture-devices`
+/// so the operator can select an explicit device via `capture_device` in
+/// `config.json`.
+fn no_default_render_device_error(wasapi_error: &str) -> anyhow::Error {
+    anyhow!(
+        "no default audio render device: {wasapi_error}. \
+         Ensure a playback device is active in Windows Sound Settings \
+         (right-click the speaker icon → Sound settings → Output), \
+         or run `tui-translator --list-capture-devices` and set \
+         `capture_device` in config.json to an explicit device name."
+    )
 }
 
 fn find_render_device_by_name(name: &str) -> Result<(Device, String)> {
@@ -306,6 +324,42 @@ fn active_render_device_names() -> Result<Vec<String>> {
     }
 
     Ok(names)
+}
+
+fn read_available_packets(
+    capture_client: &AudioCaptureClient,
+    bytes_per_frame: usize,
+    data: &mut VecDeque<u8>,
+) -> Result<()> {
+    if bytes_per_frame == 0 {
+        return Err(anyhow!("WASAPI device reported zero bytes per frame"));
+    }
+
+    loop {
+        let next_frames = capture_client
+            .get_next_nbr_frames()
+            .map_err(|e| anyhow!("query WASAPI packet size: {e}"))?
+            .unwrap_or(0);
+        if next_frames == 0 {
+            return Ok(());
+        }
+
+        let packet_len = (next_frames as usize)
+            .checked_mul(bytes_per_frame)
+            .ok_or_else(|| anyhow!("WASAPI packet size overflow"))?;
+        let mut packet = vec![0u8; packet_len];
+        let (read_frames, _flags) = capture_client
+            .read_from_device(bytes_per_frame, &mut packet)
+            .map_err(|e| anyhow!("read from WASAPI device: {e}"))?;
+        if read_frames == 0 {
+            return Ok(());
+        }
+        let bytes_read = (read_frames as usize)
+            .checked_mul(bytes_per_frame)
+            .ok_or_else(|| anyhow!("WASAPI read size overflow"))?
+            .min(packet.len());
+        data.extend(packet.into_iter().take(bytes_read));
+    }
 }
 
 fn format_device_names(names: &[String]) -> String {
@@ -380,6 +434,69 @@ mod tests {
         assert_eq!(
             format_device_names(&[]),
             "no active playback devices reported by Windows"
+        );
+    }
+
+    // ── Issue #196 regression tests ───────────────────────────────────────────
+
+    /// `no_default_render_device_error` must produce an operator-actionable
+    /// message that includes both a Windows UI hint and the CLI escape hatch.
+    #[test]
+    fn no_default_render_device_error_is_operator_actionable() {
+        let err = no_default_render_device_error("HRESULT 0x80070490 (ERROR_NOT_FOUND)");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no default audio render device"),
+            "must state that no default device was found; got: {msg}"
+        );
+        assert!(
+            msg.contains("Windows Sound Settings"),
+            "must mention Windows Sound Settings for GUI recovery; got: {msg}"
+        );
+        assert!(
+            msg.contains("--list-capture-devices"),
+            "must suggest the CLI discovery flag; got: {msg}"
+        );
+        assert!(
+            msg.contains("capture_device"),
+            "must mention the config key so the operator knows where to set it; got: {msg}"
+        );
+    }
+
+    /// The raw WASAPI diagnostic string must be preserved verbatim inside the
+    /// error so it appears in logs and is useful for support.
+    #[test]
+    fn no_default_render_device_error_preserves_wasapi_diagnostic() {
+        let raw = "HRESULT 0xDEADBEEF some-windows-error";
+        let err = no_default_render_device_error(raw);
+        assert!(
+            err.to_string().contains(raw),
+            "raw WASAPI error must be embedded for diagnostics"
+        );
+    }
+
+    /// `find_render_device_by_name` must return `Err` (not panic) when the
+    /// requested device does not exist.  This exercises the WASAPI COM path;
+    /// the test skips gracefully if COM cannot be initialised (headless CI).
+    #[test]
+    fn find_render_device_by_name_unknown_returns_err_not_panic() {
+        // Best-effort COM initialisation — skip rather than fail if unavailable.
+        if initialize_mta().is_err() {
+            return;
+        }
+        let result = find_render_device_by_name("____nonexistent_device_issue_196____");
+        assert!(
+            result.is_err(),
+            "an unknown device name must produce Err, not panic"
+        );
+        // `wasapi::Device` does not implement Debug so we cannot use unwrap_err().
+        let msg = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => unreachable!(),
+        };
+        assert!(
+            msg.contains("was not found"),
+            "error should report the device was not found; got: {msg}"
         );
     }
 }

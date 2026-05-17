@@ -1,0 +1,26 @@
+=== RUNTIME EVIDENCE: Issue #196 - WASAPI Startup Stability ===
+Date: 2026-05-17 08:46:38
+
+--- Available audio devices on this host ---
+Audio capture devices for WASAPI loopback (Windows playback endpoints):
+  [default] Windows default playback device (leave capture_device blank)
+  - Remote Audio (current Windows default)
+
+--- Default-device launch ---
+Process exited on its own (before 4s kill): False
+Abort/panic observed: False
+Settings key visible in hints bar: True
+
+--- Invalid configured capture_device launch ---
+Config override: verification-evidence\issue-196\runtime-invalid-device-config.json
+Process exited on its own (before 4s kill): False
+Abort/panic observed: False
+Dedicated capture banner visible: True
+Recovery hint visible: True
+Settings key visible in hints bar: True
+
+--- Invalid-device stdout (TUI screen) ---
+[?1049h[1;1H┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐[2;1H│[1m[38;5;6m[49mTUI Translator[22m[38;5;8m[49m   │   [38;5;6m[49mja-JP[38;5;8m[49m → [38;5;2m[49mvi[38;5;8m[49m   │   [1m[38;5;1m[49m✗ STT: error: WASAPI capture initialization failed: render device "__definitely_[22m[39m[49m│[3;1H└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘[4;1H┌[4;3HAudio[4;9H—[4;11H__definitely_missing_issue_196_…[4;44H────────────────────────────────────────────────────────────────────────────┐[5;1H│[38;5;8m[49m                                                          0%                                                          [39m[49m│[6;1H└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘[7;1H[38;5;3m[49m┌ ⚠ Audio Capture ─────────────────────────────────────────────────────────────────────────────────────────────────────┐[8;1H│[1m ⚠  Audio capture unavailable[22m                                                                                         │[9;1H│[38;5;15m[49m Press [S] to open Settings, or run --list-capture-devices and set capture_device.[38;5;3m[49m                                    │[10;1H└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘[11;1H[38;5;15m[49m│[11;120H│[12;1H│[12;120H│[13;1H│[13;120H│[14;1H│[14;120H│[15;1H│[15;120H│[16;1H│[16;120H│[17;1H│[17;52H[38;5;8m[49mNo subtitles yet.[17;120H[38;5;15m[49m│[18;1H│[18;120H│[19;1H│[19;120H│[20;1H│[20;120H│[21;1H│[21;120H│[22;1H│[22;120H│[23;1H│[23;120H│[24;1H│[24;120H│[25;1H│[25;120H│[26;1H└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘[27;1H[39m[49m┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐[28;1H│[38;5;8m[49m ✗ STT: error: WASAPI capture initialization failed: render device "__definitely_missing_issue_196_device__" was not f[39m[49m│[29;1H└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘[30;1H[38;5;8m[49m ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit [39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l[39m[49m[59m[0m[?25l
+--- Invalid-device stderr (log output) ---
+
+=== END ===
