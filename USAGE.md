@@ -244,11 +244,11 @@ shown below.
 | Key | Unit | Default | Range | What it does |
 |-----|------|---------|-------|--------------|
 | `vad.enabled` | bool | `false` | `true` / `false` | Activates Voice Activity Detection.  When `false`, the pipeline flushes on the `max_window_ms` timer instead. |
-| `vad.threshold` | amplitude (0–1) | `0.01` | `0.001`–`1.0` | Minimum RMS energy for a chunk to be treated as speech.  Raise in noisy rooms; lower for soft speakers. |
-| `vad.min_speech_ms` | ms | `100` | `0`–`5000` | How long the audio must stay above `threshold` before the onset is confirmed as real speech (guards against noise spikes). |
+| `vad.threshold` | amplitude (0–1) | `0.01` | `0.0`–`1.0` | Minimum RMS energy for a chunk to be treated as speech.  Raise in noisy rooms; lower for soft speakers. |
+| `vad.min_speech_ms` | ms | `100` | `>= 0` (`> 0` when VAD is enabled) | How long the audio must stay above `threshold` before the onset is confirmed as real speech (guards against noise spikes). |
 | `vad.pre_roll_ms` | ms | `200` | `0`–`2000` | Audio buffered during onset confirmation that is prepended to the STT window.  Set to `0` to disable pre-roll. |
-| `vad.speech_pad_ms` | ms | `300` | `0`–`5000` | Extra silence appended after speech energy drops before EndOfUtterance fires (post-roll).  Prevents premature cuts on trailing syllables. |
-| `vad.min_silence_ms` | ms | `500` | `0`–`5000` | How long silence must persist after speech before EndOfUtterance is emitted. |
+| `vad.speech_pad_ms` | ms | `300` | `>= 0` (`> 0` when VAD is enabled) | Extra silence appended after speech energy drops before EndOfUtterance fires (post-roll).  Prevents premature cuts on trailing syllables. |
+| `vad.min_silence_ms` | ms | `500` | `>= 0` (`> 0` when VAD is enabled) | How long silence must persist after speech before EndOfUtterance is emitted. |
 
 ---
 
@@ -317,7 +317,8 @@ The sentence aggregator is flushing text too early.  Try:
 
 ---
 
-**High truncation rate (`trunc: 0.45` or higher in the metrics panel)**
+**High truncation rate (`trunc:45%` in the metrics panel, equivalent to a raw
+rate of `0.45`)**
 
 Nearly half of all STT windows are being cut at the hard cap instead of at a
 natural pause.  The speaker may be talking continuously with no obvious pauses,
