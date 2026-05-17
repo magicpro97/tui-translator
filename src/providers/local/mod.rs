@@ -604,6 +604,11 @@ impl SttProvider for LocalWhisperSttProvider {
             // pool so this works on both multi-thread and current-thread Tokio
             // runtimes without stalling or panicking.
             tokio::task::spawn_blocking(move || {
+                // Lower this blocking thread's priority so Whisper inference
+                // yields to latency-sensitive apps (Zoom, Teams, WASAPI
+                // capture).  Failure is logged as a warning — not fatal.
+                let _priority_guard =
+                    crate::pipeline::inference_priority::scoped_inference_thread_priority();
                 Self::run_inference_blocking(model_id, &ctx, &samples, &language_owned)
             })
             .await
