@@ -553,9 +553,9 @@ async fn flush_speech_window<S, M, T>(
         return;
     };
 
-    // Issue #269: record window submission; truncated = hit safety cap.
+    // Issue #269: record window submission; truncated = hit configured safety cap.
     {
-        let truncated = chunk.duration_ms >= STT_MAX_WINDOW_MS;
+        let truncated = chunk.duration_ms >= ctx.pipeline_max_window_ms;
         ctx.session_metrics
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -1695,6 +1695,45 @@ mod tests {
         assert!(
             (audio_sent - 1.5).abs() < f64::EPSILON,
             "batched STT billing should use combined audio duration, got {audio_sent}"
+        );
+    }
+
+    #[tokio::test]
+    async fn truncation_counter_uses_configured_max_window() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.pipeline_max_window_ms = 1_000;
+        let metrics = Arc::clone(&ctx.session_metrics);
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        tx2.send(speech_chunk()).await.unwrap();
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts,
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "configured 1 000 ms cap should flush two 500 ms chunks"
+        );
+        let metrics = metrics.lock().unwrap();
+        assert_eq!(metrics.total_windows, 1);
+        assert_eq!(
+            metrics.truncated_windows, 1,
+            "truncation must be measured against pipeline.max_window_ms, not the default cap"
         );
     }
 

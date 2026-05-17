@@ -141,7 +141,7 @@ pub struct MetricsSnapshot {
     pub recording_disabled_under_pressure: bool,
 
     // ── Quality / diagnostic counters (issue #269) ────────────────────────────
-    /// Fraction of speech windows flushed by the `STT_MAX_WINDOW_MS` safety
+    /// Fraction of speech windows flushed by the configured max-window safety
     /// cap rather than by VAD end-of-utterance, idle-timeout, or shutdown
     /// paths.  Computed as `truncated_windows / total_windows`.  Returns
     /// `0.0` when `total_windows` is `0` (NaN-safe).

@@ -105,10 +105,10 @@ pub struct SessionMetrics {
     /// [`truncated_windows`](Self::truncated_windows).
     pub total_windows: u64,
 
-    /// Speech windows flushed by the `STT_MAX_WINDOW_MS` safety cap rather
+    /// Speech windows flushed by the configured max-window safety cap rather
     /// than by a VAD end-of-utterance, idle-timeout, or shutdown flush.
     /// A window is considered truncated when its audio duration equals or
-    /// exceeds `STT_MAX_WINDOW_MS` (1 500 ms) at submission time.
+    /// exceeds the active `pipeline.max_window_ms` value at submission time.
     pub truncated_windows: u64,
 
     /// Cumulative count of partial-caption display regressions.  A regression
@@ -165,7 +165,7 @@ impl SessionMetrics {
     /// Record one speech window submitted to the STT API.
     ///
     /// `truncated` should be `true` when the window was flushed because its
-    /// audio duration reached the `STT_MAX_WINDOW_MS` safety cap (1 500 ms),
+    /// audio duration reached the configured max-window safety cap,
     /// as opposed to a VAD end-of-utterance flush, an idle-timeout flush, or
     /// a shutdown flush.  Used to compute
     /// `truncation_rate = truncated_windows / total_windows`.
