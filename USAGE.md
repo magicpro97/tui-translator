@@ -49,6 +49,9 @@ self-contained.
    | `tts_enabled` | `false` to show text subtitles only; `true` to also hear translation | `false` |
    | `capture_device` | Leave blank for the Windows default playback device, or choose a playback device in settings | blank |
 
+   This table is the minimal first-run subset. See `config.example.json` for
+   optional settings such as `cost_warning_usd` and `tts_output_device`.
+
    Common language codes: `en-US` (English), `ja-JP` (Japanese), `zh-CN` (Mandarin),
    `ko` (Korean), `vi` (Vietnamese), `es` (Spanish), `fr` (French), `de` (German).
 
@@ -142,7 +145,7 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 | S | Open the settings editor |
 | F2 / Ctrl+D in settings | Cycle detected capture devices while editing `capture_device` |
 | T | Toggle translated audio on or off |
-| M | Show or hide the detailed cost and latency panel |
+| M | Show or hide the metrics panel (compact/expanded) |
 | R | Reload the saved config without restarting |
 | ? | Show the help screen |
 | Q or Ctrl+C | Quit and display a session summary |

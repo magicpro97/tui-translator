@@ -14,7 +14,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 [target.x86_64-pc-windows-msvc]
-# +crt-static: link the MSVC C Runtime (msvcrt) statically into the binary.
-# This eliminates the vcruntime140.dll / msvcp140.dll dependency that would
-# otherwise require the end-user to install the VC++ Redistributable.
+# +crt-static: statically link the MSVC/UCRT runtime components that Rust and
+# native dependencies would otherwise load from vcruntime/msvcp/ucrtbase DLLs.
+# This avoids requiring the end-user to install the VC++ Redistributable.
 rustflags = ["-C", "target-feature=+crt-static"]
