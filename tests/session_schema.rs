@@ -5,8 +5,8 @@
 mod session;
 
 use session::{
-    export_srt, export_txt, is_supported_schema_version, SessionHeader, SessionLogRecord,
-    TranscriptSegment, SESSION_LOG_SCHEMA_VERSION,
+    export_srt, export_txt, is_supported_schema_version, transcript_segments_from_jsonl,
+    SessionHeader, SessionLogRecord, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION,
 };
 
 const FIXTURE: &str = include_str!("fixtures/session_log_v1.jsonl");
@@ -36,6 +36,16 @@ fn fixture_jsonl_deserializes_into_header_and_segment() {
     assert_eq!(segment.stt_latency_ms, Some(900));
     assert_eq!(segment.mt_latency_ms, Some(260));
     assert_eq!(segment.end_to_end_latency_ms, Some(1300));
+}
+
+#[test]
+fn transcript_segments_from_jsonl_extracts_segments_only() {
+    let segments = transcript_segments_from_jsonl(FIXTURE).expect("fixture must export");
+
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].segment_id, 1);
+    assert_eq!(segments[0].source_text, "おはようございます");
+    assert_eq!(segments[0].target_text, "Xin chào buổi sáng");
 }
 
 #[test]

@@ -431,6 +431,44 @@ pub fn export_txt(segments: &[TranscriptSegment]) -> String {
     out
 }
 
+/// Errors returned while loading transcript segments for export.
+#[derive(Debug, Error)]
+pub enum SessionExportError {
+    /// A JSONL record could not be parsed as the current session schema.
+    #[error("failed to parse session log line {line}: {source}")]
+    InvalidJson {
+        /// One-based JSONL line number.
+        line: usize,
+        /// Underlying JSON parse or schema-version error.
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+/// Extract transcript segments from a session JSONL string for replay/export.
+///
+/// Header records are ignored and blank lines are skipped. Future schema
+/// versions are rejected by the record deserializer instead of being guessed.
+pub fn transcript_segments_from_jsonl(
+    contents: &str,
+) -> Result<Vec<TranscriptSegment>, SessionExportError> {
+    let mut segments = Vec::new();
+    for (index, line) in contents.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let record: SessionLogRecord =
+            serde_json::from_str(line).map_err(|source| SessionExportError::InvalidJson {
+                line: index + 1,
+                source,
+            })?;
+        if let SessionLogRecord::TranscriptSegment(segment) = record {
+            segments.push(segment);
+        }
+    }
+    Ok(segments)
+}
+
 fn deserialize_supported_schema_version<'de, D>(deserializer: D) -> Result<u16, D::Error>
 where
     D: Deserializer<'de>,
