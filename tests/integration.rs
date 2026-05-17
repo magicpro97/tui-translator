@@ -42,6 +42,9 @@ mod metrics;
 #[path = "../src/config/mod.rs"]
 mod config;
 
+#[path = "../src/session/mod.rs"]
+mod session;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 

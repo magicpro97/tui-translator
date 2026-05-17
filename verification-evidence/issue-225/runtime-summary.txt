@@ -1,0 +1,30 @@
+Issue #225 evidence - non-blocking transcript session recorder
+
+Scope implemented:
+- Added opt-in `session_store` config with default `enabled = false`.
+- Added `SessionRecorder`, a bounded Tokio JSONL writer that uses `try_send`
+  from the audio hot path and flushes after each appended record.
+- Wrote session headers before subtitle processing starts and final
+  `TranscriptSegment` records after committed subtitle promotion.
+- Surfaced queue/writer failures through tracing and the pipeline status
+  message without blocking STT/MT/TTS processing.
+
+Acceptance coverage:
+- Disabled recorder creates no session directory or JSONL files.
+- Enabled recorder writes valid JSONL: one header plus final transcript
+  segments, all deserializable as `SessionLogRecord`.
+- Final-subtitle pipeline boundary records three committed subtitle segments.
+- Recorder config changes require restart, so live sessions keep one coherent
+  log destination.
+
+Validation commands:
+- `cargo fmt --all`
+- `rustup run stable-x86_64-pc-windows-gnu cargo test session_store -- --nocapture`
+- `rustup run stable-x86_64-pc-windows-gnu cargo test recorder -- --nocapture`
+- `rustup run stable-x86_64-pc-windows-gnu cargo test orchestrator_records_final_subtitle_segments_when_enabled -- --nocapture`
+- `rustup run stable-x86_64-pc-windows-gnu cargo clippy --all-targets --all-features -- -D warnings`
+
+Environment notes:
+- Local all-features validation used `WHISPER_DONT_GENERATE_BINDINGS=1`,
+  `CMAKE_GENERATOR=MinGW Makefiles`, and the GNU Rust toolchain because this
+  host does not provide the MSVC linker.

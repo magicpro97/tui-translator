@@ -33,7 +33,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 use tokio::sync::mpsc;
@@ -45,6 +45,7 @@ use crate::{
     },
     pipeline::cpu_gate::CpuGate,
     providers::{MtProvider, PcmChunk, ProviderError, SttProvider, TtsProvider},
+    session::{self, SessionRecorder, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
 
@@ -144,6 +145,12 @@ pub struct OrchestratorContext {
     /// BCP-47 target language code (runtime-editable via L key).
     pub target_language: Arc<Mutex<String>>,
 
+    /// Configured STT provider name captured for session logs.
+    pub stt_provider_name: String,
+
+    /// Configured MT provider name captured for session logs.
+    pub mt_provider_name: String,
+
     // ── TTS playback ───────────────────────────────────────────────────────
     /// Shared playback service; `None` when TTS is unavailable.
     pub playback: Arc<Mutex<Option<playback::PlaybackService>>>,
@@ -205,6 +212,9 @@ pub struct OrchestratorContext {
     /// speech accumulation window.  `None` disables VAD entirely, preserving
     /// existing behaviour.
     pub vad_config: Option<VadConfig>,
+
+    /// Optional transcript JSONL recorder. Disabled recorders do not create files.
+    pub session_recorder: SessionRecorder,
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
@@ -338,6 +348,13 @@ pub async fn run_orchestrator<S, M, T>(
         }
     }
 
+    let pipeline_error_msg = Arc::clone(&ctx.pipeline_error_msg);
+    if let Err(err) = ctx.session_recorder.shutdown().await {
+        let warn_msg = format!("⚠ Session recorder error: {err}");
+        tracing::warn!("{warn_msg}");
+        set_pipeline_error(&pipeline_error_msg, warn_msg);
+    }
+
     tracing::info!("orchestrator stopped");
 }
 
@@ -455,7 +472,12 @@ where
     let stt_bytes_sent = (pcm.samples.len() as u64).saturating_mul(2);
     ctx.network_metrics.record_bytes_sent(stt_bytes_sent);
 
-    let (transcript, is_final) = match with_retry(|| stt.transcribe(&pcm, &source_lang)).await {
+    let stt_start = Instant::now();
+    let (transcript, stt_confidence, is_final, stt_latency_ms) = match with_retry(|| {
+        stt.transcribe(&pcm, &source_lang)
+    })
+    .await
+    {
         Ok(r) if r.text.trim().is_empty() => {
             // Silent / empty result — nothing to translate.
             let audio_ms = pcm.samples.len().saturating_mul(1_000) / 16_000;
@@ -483,6 +505,7 @@ where
             return;
         }
         Ok(r) => {
+            let stt_latency_ms = stt_start.elapsed().as_millis() as u64;
             // Issue #80: approximate STT bytes received = transcript length.
             ctx.network_metrics.record_bytes_recv(r.text.len() as u64);
             set_stt_state(&ctx.stt_state, SttState::Waiting);
@@ -492,7 +515,7 @@ where
                 transcript_chars = r.text.chars().count(),
                 "STT transcript recognized"
             );
-            (r.text, r.is_final)
+            (r.text, r.confidence, r.is_final, stt_latency_ms)
         }
         Err(ProviderError::AuthError(msg)) => {
             handle_auth_error(ctx, &format!("STT: {msg}"));
@@ -529,6 +552,7 @@ where
     ctx.network_metrics
         .record_bytes_sent(transcript.len() as u64);
 
+    let mt_start = Instant::now();
     let translation =
         match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
             Ok(r) => {
@@ -542,7 +566,7 @@ where
                 ctx.network_metrics
                     .record_bytes_recv(r.translated_text.len() as u64);
                 clear_pipeline_error(&ctx.pipeline_error_msg);
-                r.translated_text
+                r
             }
             Err(ProviderError::AuthError(msg)) => {
                 set_stt_state(&ctx.stt_state, SttState::Listening);
@@ -559,6 +583,7 @@ where
                 return; // discard chunk, continue outer loop
             }
         };
+    let mt_latency_ms = mt_start.elapsed().as_millis() as u64;
 
     // ── Push or stage subtitle pair (issue #221) ─────────────────────────────
     // Final results commit to permanent history; interim partials are staged in
@@ -568,27 +593,36 @@ where
     {
         let mut pane = ctx.subtitle_pane.lock().unwrap_or_else(|p| p.into_inner());
         if is_final {
-            pane.push(SubtitlePair::new(transcript.clone(), translation.clone()));
+            pane.push(SubtitlePair::new(
+                transcript.clone(),
+                translation.translated_text.clone(),
+            ));
             pane.clear_partial();
         } else {
-            pane.set_partial(SubtitlePair::new(transcript.clone(), translation.clone()));
+            pane.set_partial(SubtitlePair::new(
+                transcript.clone(),
+                translation.translated_text.clone(),
+            ));
         }
     }
     tracing::info!(
         sequence_number = pcm.sequence_number,
         is_final,
         transcript_chars = transcript.chars().count(),
-        translation_chars = translation.chars().count(),
+        translation_chars = translation.translated_text.chars().count(),
         "subtitle pair produced"
     );
 
     // Issue #83: record the end-to-end latency only for final results.
     // Partial results are not counted as completed subtitle pairs.
-    if is_final {
+    let final_e2e_ms = if is_final {
         let e2e_ms = e2e_start.elapsed().as_millis() as u64;
         ctx.e2e_latency.record_ms(e2e_ms);
         tracing::debug!(e2e_ms, "final subtitle pair; e2e latency recorded");
-    }
+        Some(e2e_ms)
+    } else {
+        None
+    };
 
     // ── TTS (optional, non-fatal, final only) ────────────────────────────────
     // TTS is skipped for partial results — synthesising every interim update
@@ -596,9 +630,9 @@ where
     if is_final && ctx.tts_enabled.load(Ordering::Relaxed) {
         // Issue #80: approximate TTS bytes sent = translation text length.
         ctx.network_metrics
-            .record_bytes_sent(translation.len() as u64);
+            .record_bytes_sent(translation.translated_text.len() as u64);
 
-        match with_retry(|| tts.synthesise(&translation, &target_lang)).await {
+        match with_retry(|| tts.synthesise(&translation.translated_text, &target_lang)).await {
             Ok(r) => {
                 // Issue #80: approximate TTS bytes received = audio bytes length.
                 ctx.network_metrics
@@ -625,6 +659,28 @@ where
             }
         }
     }
+
+    if let Some(e2e_ms) = final_e2e_ms {
+        if ctx.session_recorder.is_enabled() {
+            let segment = build_transcript_segment(
+                &pcm,
+                &transcript,
+                &translation,
+                &source_lang,
+                &target_lang,
+                stt_confidence,
+                stt_latency_ms,
+                mt_latency_ms,
+                e2e_ms,
+                ctx,
+            );
+            if let Err(err) = ctx.session_recorder.record_segment(segment) {
+                let warn_msg = format!("⚠ Session recorder error: {err}");
+                tracing::warn!("{warn_msg}");
+                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+            }
+        }
+    }
 }
 
 // ── Audio / metrics helpers ───────────────────────────────────────────────────
@@ -644,6 +700,58 @@ fn update_audio_sent_metrics(chunk: &AudioChunk, ctx: &OrchestratorContext) {
     drop(m);
     // Record STT cost in the shared counter so the live estimate includes it.
     ctx.cost_counter.record_audio_seconds(audio_secs);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_transcript_segment(
+    pcm: &PcmChunk,
+    transcript: &str,
+    translation: &crate::providers::MtResult,
+    source_lang: &str,
+    target_lang: &str,
+    stt_confidence: Option<f32>,
+    stt_latency_ms: u64,
+    mt_latency_ms: u64,
+    e2e_ms: u64,
+    ctx: &OrchestratorContext,
+) -> TranscriptSegment {
+    let session = ctx
+        .session_metrics
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    let audio_ms = (pcm.samples.len() as u64).saturating_mul(1_000) / 16_000;
+    let audio_end_ms = (session.audio_seconds_sent * 1_000.0).round().max(0.0) as u64;
+    let audio_start_ms = audio_end_ms.saturating_sub(audio_ms);
+
+    TranscriptSegment {
+        schema_version: SESSION_LOG_SCHEMA_VERSION,
+        session_id: ctx
+            .session_recorder
+            .session_id()
+            .unwrap_or("session-recorder-disabled")
+            .to_string(),
+        segment_id: pcm.sequence_number,
+        sequence_number: pcm.sequence_number,
+        finalized_at_unix_ms: session::system_time_unix_ms(SystemTime::now()),
+        audio_start_ms,
+        audio_end_ms,
+        source_text: transcript.to_string(),
+        target_text: translation.translated_text.clone(),
+        source_language: source_lang.to_string(),
+        detected_source_language: translation.detected_source_language.clone(),
+        target_language: target_lang.to_string(),
+        stt_provider: ctx.stt_provider_name.clone(),
+        mt_provider: ctx.mt_provider_name.clone(),
+        stt_confidence,
+        stt_is_final: true,
+        stt_latency_ms: Some(stt_latency_ms),
+        mt_latency_ms: Some(mt_latency_ms),
+        end_to_end_latency_ms: Some(e2e_ms),
+        audio_seconds_sent: session.audio_seconds_sent,
+        chars_translated: session.chars_translated,
+        estimated_cost_usd: ctx.cost_counter.current_estimate_usd(),
+    }
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────────
@@ -702,6 +810,7 @@ mod tests {
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
     };
+    use tempfile::TempDir;
     use tokio::sync::mpsc;
 
     // ── with_retry tests ──────────────────────────────────────────────────────
@@ -882,6 +991,8 @@ mod tests {
             tts_enabled: Arc::new(AtomicBool::new(false)),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("en".to_string())),
+            stt_provider_name: "google".to_string(),
+            mt_provider_name: "google".to_string(),
             playback: Arc::new(Mutex::new(None)),
             shutdown,
             e2e_latency: Arc::new(crate::metrics::LatencyHistogram::new()),
@@ -892,6 +1003,7 @@ mod tests {
             provider_is_local: Arc::new(AtomicBool::new(false)),
             local_unavailable_is_fatal: false,
             vad_config: None,
+            session_recorder: SessionRecorder::disabled(),
         };
         (ctx, tx)
     }
@@ -950,6 +1062,63 @@ mod tests {
             pane.lock().unwrap().pair_count(),
             1,
             "one chunk should produce one subtitle pair"
+        );
+    }
+
+    #[tokio::test]
+    async fn orchestrator_records_final_subtitle_segments_when_enabled() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let temp = TempDir::new().unwrap();
+        let header = crate::session::SessionHeader {
+            schema_version: crate::session::SESSION_LOG_SCHEMA_VERSION,
+            session_id: "pipeline-recording-test".to_string(),
+            app_version: "test".to_string(),
+            started_at_unix_ms: 1_710_000_000_000,
+            source_language: "ja-JP".to_string(),
+            target_language: "en".to_string(),
+            stt_provider: "google".to_string(),
+            mt_provider: "google".to_string(),
+            tts_enabled: false,
+            capture_device: None,
+        };
+        let recorder = SessionRecorder::start(
+            crate::session::SessionRecorderConfig::enabled(temp.path().join("sessions")),
+            header,
+        )
+        .await
+        .unwrap();
+        let log_path = recorder.path().unwrap().to_path_buf();
+        ctx.session_recorder = recorder;
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        for _ in 0..3 {
+            tx2.send(speech_chunk_ms(1_500)).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(rx2, OkStt("hello world"), OkMt, OkTts, ctx).await;
+
+        let raw = std::fs::read_to_string(log_path).unwrap();
+        let records: Vec<crate::session::SessionLogRecord> = raw
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+
+        assert_eq!(
+            records.len(),
+            4,
+            "header plus three final transcript segments"
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| matches!(
+                    record,
+                    crate::session::SessionLogRecord::TranscriptSegment(_)
+                ))
+                .count(),
+            3
         );
     }
 

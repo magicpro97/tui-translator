@@ -82,6 +82,24 @@ impl Default for VadConfigJson {
     }
 }
 
+/// Transcript session storage settings.
+///
+/// Recording is opt-in. When disabled, no session directory or transcript file
+/// is created.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct SessionStoreConfig {
+    /// Enable per-session transcript JSONL recording. Default: `false`.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Directory where JSONL logs are written.
+    ///
+    /// `None` uses `%USERPROFILE%\.tui-translator\sessions\`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -202,6 +220,10 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stt_phrase_hints: Vec<String>,
 
+    /// Optional transcript session recording.
+    #[serde(default, skip_serializing_if = "session_store_is_default")]
+    pub session_store: SessionStoreConfig,
+
     /// Documentation comment accepted from `config.example.json`.
     /// Ignored by the application at runtime.  Present here so
     /// `deny_unknown_fields` does not reject the example file when a
@@ -265,6 +287,7 @@ impl Default for AppConfig {
             cost_warning_usd: 0.0,
             vad: VadConfigJson::default(),
             stt_phrase_hints: Vec::new(),
+            session_store: SessionStoreConfig::default(),
             comment: None,
             cpu_budget_pct: 0.0,
             ram_budget_mb: 0,
@@ -330,6 +353,10 @@ fn vad_config_is_default(v: &VadConfigJson) -> bool {
         && v.min_silence_ms == DEFAULT_MIN_SILENCE_MS
 }
 
+fn session_store_is_default(v: &SessionStoreConfig) -> bool {
+    !v.enabled && v.directory.is_none()
+}
+
 const DEFAULT_AUDIO_FILE_NAME: &str = "audio-input.wav";
 
 impl AppConfig {
@@ -357,6 +384,12 @@ impl AppConfig {
             bail!(
                 "`capture_device` must not be empty — \
                  supply a playback device name or omit the field entirely"
+            );
+        }
+        if matches!(&self.session_store.directory, Some(path) if path.trim().is_empty()) {
+            bail!(
+                "`session_store.directory` must not be empty — \
+                 supply a directory path or omit the field entirely"
             );
         }
         match self.audio_source.as_str() {
@@ -431,6 +464,7 @@ impl AppConfig {
             || self.stt_fallback_policy != next.stt_fallback_policy
             || self.vad != next.vad
             || self.stt_phrase_hints != next.stt_phrase_hints
+            || self.session_store != next.session_store
     }
 }
 
@@ -492,6 +526,11 @@ pub fn default_config_dir() -> Result<PathBuf> {
 /// Return the default configuration file path under the user's home directory.
 pub fn default_config_path() -> Result<PathBuf> {
     Ok(default_config_dir()?.join("config.json"))
+}
+
+/// Return the default transcript session directory under the user's config directory.
+pub fn default_sessions_dir() -> Result<PathBuf> {
+    Ok(default_config_dir()?.join("sessions"))
 }
 
 /// Load configuration from `path` and report whether the file existed.
@@ -809,6 +848,43 @@ mod tests {
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            // SAFETY: tests hold ENV_LOCK while mutating process-wide env vars.
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            // SAFETY: tests hold ENV_LOCK while mutating process-wide env vars.
+            unsafe {
+                std::env::remove_var(key);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            // SAFETY: guards are created only while ENV_LOCK is held.
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
     #[test]
     fn default_config_is_valid() {
         let cfg = AppConfig::default();
@@ -818,6 +894,7 @@ mod tests {
         // T1: provider fields must default to "google"
         assert_eq!(cfg.stt_provider, "google");
         assert_eq!(cfg.mt_provider, "google");
+        assert!(!cfg.session_store.enabled);
         cfg.validate()
             .expect("default config should pass validation");
     }
@@ -911,6 +988,55 @@ mod tests {
         restored
             .validate()
             .expect("local provider config must be valid");
+    }
+
+    #[test]
+    fn session_store_defaults_to_disabled_when_absent() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+
+        let cfg = load(f.path()).unwrap();
+
+        assert_eq!(cfg.session_store, SessionStoreConfig::default());
+    }
+
+    #[test]
+    fn session_store_roundtrips_enabled_directory() {
+        let original = AppConfig {
+            session_store: SessionStoreConfig {
+                enabled: true,
+                directory: Some("D:\\transcripts".to_string()),
+            },
+            ..AppConfig::default()
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert!(restored.session_store.enabled);
+        assert_eq!(
+            restored.session_store.directory.as_deref(),
+            Some("D:\\transcripts")
+        );
+        restored.validate().expect("session store config is valid");
+    }
+
+    #[test]
+    fn validate_rejects_empty_session_store_directory() {
+        let cfg = AppConfig {
+            session_store: SessionStoreConfig {
+                enabled: true,
+                directory: Some("   ".to_string()),
+            },
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+
+        assert!(
+            err.to_string().contains("session_store.directory"),
+            "error should mention session_store.directory; got: {err}"
+        );
     }
 
     #[test]
@@ -1099,6 +1225,20 @@ mod tests {
     }
 
     #[test]
+    fn session_store_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            session_store: SessionStoreConfig {
+                enabled: true,
+                directory: None,
+            },
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
+    }
+
+    #[test]
     fn validate_rejects_vad_threshold_outside_normalized_range() {
         for threshold in [-0.1, 1.1] {
             let cfg = AppConfig {
@@ -1139,23 +1279,27 @@ mod tests {
     fn default_config_path_uses_home_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let home = TempDir::new().unwrap();
-        // SAFETY: serialized by ENV_LOCK.
-        unsafe {
-            std::env::set_var("USERPROFILE", home.path());
-            std::env::remove_var("HOME");
-        }
+        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
+        let _home_guard = EnvVarGuard::remove("HOME");
 
         let path = default_config_path().unwrap();
-
-        // SAFETY: serialized by ENV_LOCK.
-        unsafe {
-            std::env::remove_var("USERPROFILE");
-        }
 
         assert_eq!(
             path,
             home.path().join(".tui-translator").join("config.json")
         );
+    }
+
+    #[test]
+    fn default_sessions_dir_uses_home_config_directory() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let home = TempDir::new().unwrap();
+        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
+        let _home_guard = EnvVarGuard::remove("HOME");
+
+        let path = default_sessions_dir().unwrap();
+
+        assert_eq!(path, home.path().join(".tui-translator").join("sessions"));
     }
 
     #[test]
