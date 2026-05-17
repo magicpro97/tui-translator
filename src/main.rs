@@ -43,7 +43,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 mod audio;
@@ -282,6 +282,67 @@ fn build_runtime_stt_provider(
         ))),
     }
 }
+
+fn start_session_recorder(
+    rt: &tokio::runtime::Runtime,
+    cfg: &config::AppConfig,
+    status_slot: &Arc<Mutex<Option<String>>>,
+) -> session::SessionRecorder {
+    if !cfg.session_store.enabled {
+        return session::SessionRecorder::disabled();
+    }
+
+    let directory = match cfg
+        .session_store
+        .directory
+        .as_ref()
+        .map(PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(config::default_sessions_dir)
+    {
+        Ok(path) => path,
+        Err(err) => {
+            let msg = format!("⚠ Session recording disabled: {err:#}");
+            tracing::warn!("{msg}");
+            *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+            return session::SessionRecorder::disabled();
+        }
+    };
+
+    let started_at_unix_ms = session::system_time_unix_ms(SystemTime::now());
+    let session_id = session::generate_session_id(started_at_unix_ms);
+    let header = session::SessionHeader {
+        schema_version: session::SESSION_LOG_SCHEMA_VERSION,
+        session_id,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        started_at_unix_ms,
+        source_language: cfg.source_language.clone(),
+        target_language: cfg.target_language.clone(),
+        stt_provider: cfg.stt_provider.clone(),
+        mt_provider: cfg.mt_provider.clone(),
+        tts_enabled: cfg.tts_enabled,
+        capture_device: cfg.capture_device.clone(),
+    };
+
+    match rt.block_on(session::SessionRecorder::start(
+        session::SessionRecorderConfig::enabled(directory),
+        header,
+    )) {
+        Ok(recorder) => {
+            if let Some(path) = recorder.path() {
+                tracing::info!(path = %path.display(), "session transcript recording enabled");
+            }
+            recorder
+        }
+        Err(err) => {
+            let msg = format!("⚠ Session recording disabled: {err:#}");
+            tracing::warn!("{msg}");
+            *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+            session::SessionRecorder::disabled()
+        }
+    }
+}
+
 /// Initialise the tracing subscriber, routing output to a log file so that
 /// diagnostic lines never reach the ConPTY terminal stream (issue #183).
 ///
@@ -710,6 +771,8 @@ fn main() -> Result<()> {
                         );
                     }
                 };
+                let session_recorder =
+                    start_session_recorder(&rt, &cfg_snapshot, &state.pipeline_error_msg);
 
                 let ctx = pipeline::OrchestratorContext {
                     audio_level: Arc::clone(&state.audio_level),
@@ -724,6 +787,8 @@ fn main() -> Result<()> {
                     tts_enabled: Arc::clone(&state.tts_enabled),
                     source_language,
                     target_language: Arc::clone(&state.target_language),
+                    stt_provider_name: cfg_snapshot.stt_provider.clone(),
+                    mt_provider_name: cfg_snapshot.mt_provider.clone(),
                     playback: Arc::clone(&playback_service),
                     shutdown: Arc::clone(&orchestrator_shutdown),
                     e2e_latency: Arc::clone(&e2e_latency),
@@ -743,6 +808,7 @@ fn main() -> Result<()> {
                     } else {
                         None
                     },
+                    session_recorder,
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(

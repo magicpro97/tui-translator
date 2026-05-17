@@ -16,9 +16,23 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Deserializer, Serialize};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
+use thiserror::Error;
+use tokio::{
+    fs::{self, File, OpenOptions},
+    io::AsyncWriteExt,
+    sync::mpsc,
+    task::JoinHandle,
+};
 
 /// Current JSONL session-log schema version.
 pub const SESSION_LOG_SCHEMA_VERSION: u16 = 1;
+
+const RECORDER_QUEUE_CAPACITY: usize = 64;
 
 /// A single line in a persisted session JSONL file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -127,6 +141,243 @@ pub fn is_supported_schema_version(version: u16) -> bool {
     version != 0 && version <= SESSION_LOG_SCHEMA_VERSION
 }
 
+/// Convert a [`SystemTime`] to Unix milliseconds, saturating at zero before the epoch.
+pub fn system_time_unix_ms(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0)
+}
+
+/// Generate an opaque session id safe for use as a log-file stem.
+pub fn generate_session_id(started_at_unix_ms: u64) -> String {
+    format!("session-{started_at_unix_ms}-{}", std::process::id())
+}
+
+/// Runtime configuration for transcript session recording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRecorderConfig {
+    /// Whether transcript JSONL recording is enabled.
+    pub enabled: bool,
+    /// Directory where per-session JSONL files are written when enabled.
+    pub directory: PathBuf,
+}
+
+impl SessionRecorderConfig {
+    /// Create an enabled recorder config using `directory`.
+    pub fn enabled(directory: impl Into<PathBuf>) -> Self {
+        Self {
+            enabled: true,
+            directory: directory.into(),
+        }
+    }
+
+    /// Create a disabled recorder config. The directory is kept for tests and diagnostics.
+    pub fn disabled(directory: impl Into<PathBuf>) -> Self {
+        Self {
+            enabled: false,
+            directory: directory.into(),
+        }
+    }
+}
+
+/// Non-blocking transcript JSONL recorder.
+///
+/// The hot path calls [`record_segment`](Self::record_segment), which uses
+/// `try_send` into a bounded channel. Disk I/O runs on a Tokio task and flushes
+/// after each line so a crash cannot leave buffered JSON records unwritten.
+pub struct SessionRecorder {
+    session_id: Option<String>,
+    path: Option<PathBuf>,
+    sender: Option<mpsc::Sender<SessionLogRecord>>,
+    writer: Option<JoinHandle<()>>,
+    last_error: Arc<Mutex<Option<String>>>,
+}
+
+impl SessionRecorder {
+    /// Return a recorder that never creates files and ignores segments.
+    pub fn disabled() -> Self {
+        Self {
+            session_id: None,
+            path: None,
+            sender: None,
+            writer: None,
+            last_error: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Start a recorder and write the header line before returning.
+    pub async fn start(
+        config: SessionRecorderConfig,
+        header: SessionHeader,
+    ) -> anyhow::Result<Self> {
+        if !config.enabled {
+            return Ok(Self::disabled());
+        }
+
+        fs::create_dir_all(&config.directory).await.map_err(|err| {
+            anyhow::anyhow!(
+                "failed to create session directory {}: {err}",
+                config.directory.display()
+            )
+        })?;
+
+        let path = config
+            .directory
+            .join(session_log_file_name(&header.session_id));
+        let session_id = header.session_id.clone();
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!("failed to create session log {}: {err}", path.display())
+            })?;
+
+        write_record_line(&mut file, &SessionLogRecord::SessionHeader(header))
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!("failed to write session header {}: {err}", path.display())
+            })?;
+
+        let (tx, rx) = mpsc::channel(RECORDER_QUEUE_CAPACITY);
+        let last_error = Arc::new(Mutex::new(None));
+        let writer = tokio::spawn(run_writer(file, rx, Arc::clone(&last_error), path.clone()));
+
+        Ok(Self {
+            session_id: Some(session_id),
+            path: Some(path),
+            sender: Some(tx),
+            writer: Some(writer),
+            last_error,
+        })
+    }
+
+    /// Return the JSONL path when recording is enabled.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// Return the active session id when recording is enabled.
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    /// Return `true` when this recorder writes transcript files.
+    pub fn is_enabled(&self) -> bool {
+        self.sender.is_some()
+    }
+
+    /// Queue one final transcript segment without waiting for disk I/O.
+    pub fn record_segment(&self, segment: TranscriptSegment) -> Result<(), SessionRecorderError> {
+        let Some(sender) = &self.sender else {
+            return Ok(());
+        };
+
+        if let Some(message) = self.last_error() {
+            return Err(SessionRecorderError::WriterStopped(message));
+        }
+
+        let segment_id = segment.segment_id;
+        match sender.try_send(SessionLogRecord::TranscriptSegment(segment)) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                Err(SessionRecorderError::QueueFull { segment_id })
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(SessionRecorderError::WriterStopped(
+                self.last_error()
+                    .unwrap_or_else(|| "session recorder writer stopped".to_string()),
+            )),
+        }
+    }
+
+    /// Return the last asynchronous writer error, if any.
+    pub fn last_error(&self) -> Option<String> {
+        self.last_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// Drop the sender and wait for the writer task to flush all queued records.
+    pub async fn shutdown(mut self) -> Result<(), SessionRecorderError> {
+        drop(self.sender.take());
+        if let Some(writer) = self.writer.take() {
+            writer
+                .await
+                .map_err(|err| SessionRecorderError::WriterStopped(err.to_string()))?;
+        }
+        if let Some(message) = self.last_error() {
+            Err(SessionRecorderError::WriterStopped(message))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Errors surfaced synchronously from the non-blocking recorder handle.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum SessionRecorderError {
+    /// The bounded writer queue is full; this segment was dropped.
+    #[error("session recorder queue is full; dropped transcript segment {segment_id}")]
+    QueueFull {
+        /// Segment that could not be queued.
+        segment_id: u64,
+    },
+    /// The writer task has stopped, usually after a disk I/O error.
+    #[error("session recorder writer stopped: {0}")]
+    WriterStopped(String),
+}
+
+async fn run_writer(
+    mut file: File,
+    mut rx: mpsc::Receiver<SessionLogRecord>,
+    last_error: Arc<Mutex<Option<String>>>,
+    path: PathBuf,
+) {
+    while let Some(record) = rx.recv().await {
+        if let Err(err) = write_record_line(&mut file, &record).await {
+            let message = format!(
+                "session recorder write failed for {}: {err}",
+                path.display()
+            );
+            tracing::warn!("{message}");
+            *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
+            break;
+        }
+    }
+
+    if let Err(err) = file.flush().await {
+        let message = format!(
+            "session recorder flush failed for {}: {err}",
+            path.display()
+        );
+        tracing::warn!("{message}");
+        *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
+    }
+}
+
+async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::io::Result<()> {
+    let mut line = serde_json::to_vec(record).map_err(std::io::Error::other)?;
+    line.push(b'\n');
+    file.write_all(&line).await?;
+    file.flush().await
+}
+
+fn session_log_file_name(session_id: &str) -> String {
+    let stem: String = session_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{stem}.jsonl")
+}
+
 fn deserialize_supported_schema_version<'de, D>(deserializer: D) -> Result<u16, D::Error>
 where
     D: Deserializer<'de>,
@@ -143,7 +394,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{is_supported_schema_version, SESSION_LOG_SCHEMA_VERSION};
+    use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn version_gate_accepts_current_and_rejects_zero_or_future() {
@@ -152,5 +404,110 @@ mod tests {
         assert!(!is_supported_schema_version(
             SESSION_LOG_SCHEMA_VERSION.saturating_add(1)
         ));
+    }
+
+    #[test]
+    fn session_log_file_name_sanitizes_path_separators() {
+        assert_eq!(
+            session_log_file_name("session/..\\bad:name"),
+            "session_.._bad_name.jsonl"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_recorder_creates_no_files() {
+        let temp = TempDir::new().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        let header = test_header("disabled-session");
+
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::disabled(sessions_dir.clone()),
+            header,
+        )
+        .await
+        .unwrap();
+        recorder.record_segment(test_segment(1)).unwrap();
+        recorder.shutdown().await.unwrap();
+
+        assert!(
+            !sessions_dir.exists(),
+            "disabled recorder must not create a sessions directory"
+        );
+    }
+
+    #[tokio::test]
+    async fn enabled_recorder_writes_valid_jsonl() {
+        let temp = TempDir::new().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone()),
+            test_header("enabled-session"),
+        )
+        .await
+        .unwrap();
+        let path = recorder.path().unwrap().to_path_buf();
+
+        for id in 1..=3 {
+            recorder.record_segment(test_segment(id)).unwrap();
+        }
+        recorder.shutdown().await.unwrap();
+
+        let raw = std::fs::read_to_string(path).unwrap();
+        let records: Vec<SessionLogRecord> = raw
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+
+        assert_eq!(records.len(), 4, "header plus three transcript records");
+        assert!(matches!(records[0], SessionLogRecord::SessionHeader(_)));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| matches!(record, SessionLogRecord::TranscriptSegment(_)))
+                .count(),
+            3
+        );
+    }
+
+    fn test_header(session_id: &str) -> SessionHeader {
+        SessionHeader {
+            schema_version: SESSION_LOG_SCHEMA_VERSION,
+            session_id: session_id.to_string(),
+            app_version: "test".to_string(),
+            started_at_unix_ms: 1_710_000_000_000,
+            source_language: "ja-JP".to_string(),
+            target_language: "vi".to_string(),
+            stt_provider: "google".to_string(),
+            mt_provider: "google".to_string(),
+            tts_enabled: false,
+            capture_device: None,
+        }
+    }
+
+    fn test_segment(segment_id: u64) -> TranscriptSegment {
+        TranscriptSegment {
+            schema_version: SESSION_LOG_SCHEMA_VERSION,
+            session_id: "enabled-session".to_string(),
+            segment_id,
+            sequence_number: segment_id,
+            finalized_at_unix_ms: 1_710_000_000_000 + segment_id,
+            audio_start_ms: segment_id * 1_000,
+            audio_end_ms: segment_id * 1_000 + 900,
+            source_text: "おはようございます".to_string(),
+            target_text: "Xin chào buổi sáng".to_string(),
+            source_language: "ja-JP".to_string(),
+            detected_source_language: Some("ja".to_string()),
+            target_language: "vi".to_string(),
+            stt_provider: "google".to_string(),
+            mt_provider: "google".to_string(),
+            stt_confidence: Some(0.9),
+            stt_is_final: true,
+            stt_latency_ms: Some(100),
+            mt_latency_ms: Some(50),
+            end_to_end_latency_ms: Some(200),
+            audio_seconds_sent: 1.0,
+            chars_translated: 10,
+            estimated_cost_usd: 0.01,
+        }
     }
 }

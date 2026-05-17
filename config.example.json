@@ -15,7 +15,8 @@
     "ram_budget_mb": "Process RAM ceiling in MiB. 0 (default) disables the warning. When RAM exceeds this budget the status strip warns, clears after 5% hysteresis, and optional session/audio recording is considered disabled under pressure.",
     "stt_fallback_policy": "Fallback policy when the STT provider encounters a permanent authentication error. 'none' (default) halts the pipeline until the app is restarted with a valid key. 'local' automatically switches to CPU-local Whisper STT on the first Google AuthError — requires the local-stt build feature and the tiny Whisper model in ~/.tui-translator/models/. Only meaningful when stt_provider is 'google'.",
     "vad": "Voice Activity Detection gate (issue #220 / EP-E.1). Set enabled=true to activate CPU-light VAD that suppresses silent chunks and brief transients before they reach the STT engine. All sub-fields are optional and fall back to sensible defaults.",
-    "stt_phrase_hints": "Optional list of phrase hints forwarded to Google Speech-to-Text as speechContexts (issue #199). Supply meeting-specific proper nouns, product names, or terms in Japanese/Vietnamese that are frequently misrecognised. Default: [] (empty — omits speechContexts entirely). Example: [\"TuiTranslator\", \"ズームミーティング\", \"Nguyễn\"]. Changing this value requires restarting the application."
+    "stt_phrase_hints": "Optional list of phrase hints forwarded to Google Speech-to-Text as speechContexts (issue #199). Supply meeting-specific proper nouns, product names, or terms in Japanese/Vietnamese that are frequently misrecognised. Default: [] (empty — omits speechContexts entirely). Example: [\"TuiTranslator\", \"ズームミーティング\", \"Nguyễn\"]. Changing this value requires restarting the application.",
+    "session_store": "Optional transcript JSONL recording. Default: { enabled: false }, which creates no session files. Set enabled=true to write transcript-only session logs under ~/.tui-translator/sessions/ or set directory to a custom folder."
   },
   "source_language": "ja-JP",
   "target_language": "vi",
@@ -30,6 +31,10 @@
   "cpu_budget_pct": 0.0,
   "ram_budget_mb": 0,
   "stt_fallback_policy": "none",
+  "session_store": {
+    "enabled": false,
+    "directory": null
+  },
   "vad": {
     "enabled": false,
     "threshold": 0.01,

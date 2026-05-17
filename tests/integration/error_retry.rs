@@ -521,6 +521,8 @@ fn make_orch_context() -> TestCtx {
         tts_enabled: Arc::new(AtomicBool::new(false)),
         source_language: Arc::new(Mutex::new("en".to_owned())),
         target_language: Arc::new(Mutex::new("ja".to_owned())),
+        stt_provider_name: "google".to_string(),
+        mt_provider_name: "google".to_string(),
         playback: Arc::new(Mutex::new(None)),
         shutdown: Arc::new(AtomicBool::new(false)),
         e2e_latency: Arc::new(crate::metrics::LatencyHistogram::new()),
@@ -530,6 +532,7 @@ fn make_orch_context() -> TestCtx {
         provider_is_local: Arc::new(AtomicBool::new(false)),
         local_unavailable_is_fatal: false,
         vad_config: None,
+        session_recorder: crate::session::SessionRecorder::disabled(),
     };
 
     TestCtx {
