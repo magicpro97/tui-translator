@@ -1,0 +1,27 @@
+Issue #190 runtime evidence - zero-state and narrow-layout readability
+
+Scope proven:
+- 40x10 zero-state full UI keeps target language and pair count readable.
+- 60x10 zero-state full UI keeps target language and "no charges" wording readable.
+- 80x24 zero-state full UI keeps the capture-device label and "no charges" wording visible.
+- Long capture-device names are truncated before they can crowd out the audio gauge.
+
+Runtime proof:
+- `cargo test --test pty layout_40x10_zero_state_readable -- --nocapture`: PASS
+- `cargo test --test pty layout_60x10_zero_state_cost_wording -- --nocapture`: PASS
+- These tests launch the compiled `tui-translator` binary in a Windows ConPTY through
+  `tests/pty/harness.rs`, wait for the first real TUI frame, and assert the visible screen rows.
+
+Deterministic render proof:
+- `tests/snapshots/snapshot__full_ui_zero_state_40x10.snap`
+- `tests/snapshots/snapshot__full_ui_zero_state_60x10.snap`
+- `tests/snapshots/snapshot__full_ui_zero_state_80x24.snap`
+- `tests/snapshots/snapshot__full_ui_long_device_40x10.snap`
+- `tests/snapshots/snapshot__status_strip_very_narrow_30cols.snap`
+
+Verification commands:
+- `cargo fmt --all -- --check`: PASS
+- `cargo clippy --all-targets --all-features -- -D warnings`: PASS
+- `cargo test --test snapshot -- --nocapture`: PASS
+- `cargo test --test pty -- --nocapture`: PASS
+- `cargo test --all-targets --all-features -- --nocapture`: PASS

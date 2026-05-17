@@ -863,6 +863,13 @@ pub(crate) fn truncate_device_name(name: &str, max_cols: usize) -> String {
 /// gauge bar remains visible.
 const MAX_DEVICE_NAME_COLS: usize = 32;
 
+fn audio_device_title_max_cols(area_width: u16) -> usize {
+    let title_width = usize::from(area_width).saturating_sub(2);
+    title_width
+        .saturating_sub(display_width(" Audio \u{2014}  "))
+        .min(MAX_DEVICE_NAME_COLS)
+}
+
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
 /// In expanded mode the block is normally 6 rows (2 border + 4 content).
@@ -1314,7 +1321,14 @@ impl StatusMetricsStrip<'_> {
         let tts_str = if self.tts_on { "on" } else { "off" };
         let cost_str = format_cost_or_zero_state(self.cost_usd);
 
-        let main_text = if area.width < 80 {
+        let main_text = if area.width < 48 {
+            format!(
+                " {} Lang:{} {}p",
+                self.stt_abbrev(),
+                self.target_language,
+                self.pairs,
+            )
+        } else if area.width < 80 {
             format!(
                 " {} | Lang:{} | TTS:{} | {}p | {} | {}",
                 self.stt_abbrev(),
@@ -1681,7 +1695,8 @@ pub fn draw_ui(
     // endpoint at a glance.  `device_name` continues to hold the runtime WASAPI
     // name used internally; the label is the operator-facing config summary.
     let capture_label = state.capture_device_label();
-    let device_display = truncate_device_name(&capture_label, MAX_DEVICE_NAME_COLS);
+    let device_display =
+        truncate_device_name(&capture_label, audio_device_title_max_cols(chunks[1].width));
     let bar_title = format!(" Audio \u{2014} {device_display} ");
     frame.render_widget(
         Gauge::default()
@@ -2401,6 +2416,13 @@ mod tests {
             rendered.contains("Speakers (Realtek"),
             "audio gauge should show configured device name; got: {rendered:?}"
         );
+    }
+
+    #[test]
+    fn audio_device_title_max_cols_respects_narrow_frames() {
+        assert_eq!(audio_device_title_max_cols(120), MAX_DEVICE_NAME_COLS);
+        assert!(audio_device_title_max_cols(40) < MAX_DEVICE_NAME_COLS);
+        assert_eq!(audio_device_title_max_cols(8), 0);
     }
 
     #[test]

@@ -112,12 +112,16 @@ fn render_auth_banner(message: &str, restart: bool, width: u16, height: u16) -> 
 
 /// Render the full UI via `draw_ui` at the given terminal size.
 fn render_full_ui(width: u16, height: u16) -> String {
+    let state = AppState::new();
+    render_full_ui_with_state(&state, width, height)
+}
+
+fn render_full_ui_with_state(state: &AppState, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
-    let state = AppState::new();
     terminal
         .draw(|frame| {
-            draw_ui(frame, &state, 0.0, false, 0.0);
+            draw_ui(frame, state, 0.0, false, 0.0);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -1186,6 +1190,65 @@ fn snapshot_full_ui_too_small_fallback() {
         "full UI fallback at 15×5 must leave the remaining rows blank after the message; got: {rows:?}"
     );
     insta::assert_snapshot!("full_ui_too_small_15x5", rendered);
+}
+
+#[test]
+fn snapshot_full_ui_zero_state_40x10() {
+    let rendered = render_full_ui(40, 10);
+    assert!(
+        rendered.contains("Lang:vi"),
+        "40x10 zero-state UI must keep the target language readable; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("0p"),
+        "40x10 zero-state UI must keep the subtitle-pair count readable; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("full_ui_zero_state_40x10", rendered);
+}
+
+#[test]
+fn snapshot_full_ui_zero_state_60x10() {
+    let rendered = render_full_ui(60, 10);
+    assert!(
+        rendered.contains("Lang:vi"),
+        "60x10 zero-state UI must keep the target language readable; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("no charges"),
+        "60x10 zero-state UI must show the zero-cost wording instead of a dollar value; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("full_ui_zero_state_60x10", rendered);
+}
+
+#[test]
+fn snapshot_full_ui_zero_state_80x24() {
+    let rendered = render_full_ui(80, 24);
+    assert!(
+        rendered.contains("no charges"),
+        "80x24 zero-state UI must show the zero-cost wording instead of a dollar value; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("Default device"),
+        "80x24 zero-state UI must keep the capture-device label visible; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("full_ui_zero_state_80x24", rendered);
+}
+
+#[test]
+fn snapshot_full_ui_long_device_40x10() {
+    let state = AppState::new();
+    *state.capture_device_label.lock().unwrap() =
+        "Speakers (Very Long USB-C Dock Audio Device for Conference Rooms)".to_string();
+    let rendered = render_full_ui_with_state(&state, 40, 10);
+    assert!(
+        rendered.contains("Lang:vi") && rendered.contains("0p"),
+        "long device names must not hide the compact status strip at 40x10; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2026}'),
+        "long device names should be visibly truncated at 40x10; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("full_ui_long_device_40x10", rendered);
 }
 
 /// Expanded metrics strip narrow mode uses "Lang:" label (#186).
