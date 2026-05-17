@@ -39,3 +39,6 @@ mod log_routing_test;
 
 #[path = "pty/onboarding_test.rs"]
 mod onboarding_test;
+
+#[path = "pty/replay_test.rs"]
+mod replay_test;
