@@ -249,13 +249,30 @@ fn select_render_device(requested: Option<&str>) -> Result<(Device, String)> {
         Some(name) => find_render_device_by_name(name),
         None => {
             let device = get_default_device(&Direction::Render)
-                .map_err(|e| anyhow!("get default render device: {e}"))?;
+                .map_err(|e| no_default_render_device_error(&e.to_string()))?;
             let device_name = device
                 .get_friendlyname()
                 .unwrap_or_else(|_| "unknown".into());
             Ok((device, device_name))
         }
     }
+}
+
+/// Build an operator-actionable error for the case where Windows reports no
+/// default audio render device.
+///
+/// The message includes the raw WASAPI diagnostic string, instructions to
+/// check Windows Sound Settings, and a hint to use `--list-capture-devices`
+/// so the operator can select an explicit device via `capture_device` in
+/// `config.json`.
+fn no_default_render_device_error(wasapi_error: &str) -> anyhow::Error {
+    anyhow!(
+        "no default audio render device: {wasapi_error}. \
+         Ensure a playback device is active in Windows Sound Settings \
+         (right-click the speaker icon → Sound settings → Output), \
+         or run `tui-translator --list-capture-devices` and set \
+         `capture_device` in config.json to an explicit device name."
+    )
 }
 
 fn find_render_device_by_name(name: &str) -> Result<(Device, String)> {
@@ -380,6 +397,69 @@ mod tests {
         assert_eq!(
             format_device_names(&[]),
             "no active playback devices reported by Windows"
+        );
+    }
+
+    // ── Issue #196 regression tests ───────────────────────────────────────────
+
+    /// `no_default_render_device_error` must produce an operator-actionable
+    /// message that includes both a Windows UI hint and the CLI escape hatch.
+    #[test]
+    fn no_default_render_device_error_is_operator_actionable() {
+        let err = no_default_render_device_error("HRESULT 0x80070490 (ERROR_NOT_FOUND)");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no default audio render device"),
+            "must state that no default device was found; got: {msg}"
+        );
+        assert!(
+            msg.contains("Windows Sound Settings"),
+            "must mention Windows Sound Settings for GUI recovery; got: {msg}"
+        );
+        assert!(
+            msg.contains("--list-capture-devices"),
+            "must suggest the CLI discovery flag; got: {msg}"
+        );
+        assert!(
+            msg.contains("capture_device"),
+            "must mention the config key so the operator knows where to set it; got: {msg}"
+        );
+    }
+
+    /// The raw WASAPI diagnostic string must be preserved verbatim inside the
+    /// error so it appears in logs and is useful for support.
+    #[test]
+    fn no_default_render_device_error_preserves_wasapi_diagnostic() {
+        let raw = "HRESULT 0xDEADBEEF some-windows-error";
+        let err = no_default_render_device_error(raw);
+        assert!(
+            err.to_string().contains(raw),
+            "raw WASAPI error must be embedded for diagnostics"
+        );
+    }
+
+    /// `find_render_device_by_name` must return `Err` (not panic) when the
+    /// requested device does not exist.  This exercises the WASAPI COM path;
+    /// the test skips gracefully if COM cannot be initialised (headless CI).
+    #[test]
+    fn find_render_device_by_name_unknown_returns_err_not_panic() {
+        // Best-effort COM initialisation — skip rather than fail if unavailable.
+        if initialize_mta().is_err() {
+            return;
+        }
+        let result = find_render_device_by_name("____nonexistent_device_issue_196____");
+        assert!(
+            result.is_err(),
+            "an unknown device name must produce Err, not panic"
+        );
+        // `wasapi::Device` does not implement Debug so we cannot use unwrap_err().
+        let msg = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => unreachable!(),
+        };
+        assert!(
+            msg.contains("was not found"),
+            "error should report the device was not found; got: {msg}"
         );
     }
 }

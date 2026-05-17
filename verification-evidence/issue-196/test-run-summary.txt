@@ -1,0 +1,6 @@
+test pipeline::tests::mt_error_increments_loss_counters ... ok
+test pipeline::tests::stt_network_error_sets_error_state_and_continues ... ok
+
+test result: ok. 353 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.62s
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.99s

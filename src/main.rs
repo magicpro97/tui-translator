@@ -760,9 +760,19 @@ fn main() -> Result<()> {
             }
         }
         Err(err) => {
+            // Issue #196: surface the failure clearly in the TUI instead of
+            // leaving the operator with only a silent missing audio gauge.
+            let err_msg = err.to_string();
+            let recovery_msg =
+                format!("{err_msg}  ·  Press [S] to open Settings and choose a capture device.");
             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
-                metrics::SttState::Error(err.to_string());
-            tracing::error!("audio capture failed to start: {err}");
+                metrics::SttState::Error(err_msg);
+            *state
+                .pipeline_error_msg
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some(recovery_msg);
+            overwrite_device_name(&state.device_name, "audio capture unavailable");
+            tracing::error!("audio capture failed to start: {err:#}");
             orchestrator_join = None;
         }
     }
