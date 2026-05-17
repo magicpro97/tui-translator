@@ -339,6 +339,28 @@ pub async fn run_orchestrator<S, M, T>(
                             // so the utterance onset is forwarded when the gate opens.
                             if vad_state == "confirming" {
                                 vad_confirming_chunks.push(chunk);
+                                // Keep the smallest recent suffix that covers
+                                // `pre_roll_ms`; chunk granularity may retain one
+                                // extra chunk rather than clipping onset audio.
+                                let pre_roll_ms = ctx
+                                    .vad_config
+                                    .as_ref()
+                                    .map_or(0, |c| c.pre_roll_ms);
+                                if pre_roll_ms == 0 {
+                                    vad_confirming_chunks.clear();
+                                } else {
+                                    let mut accumulated_ms: u32 = 0;
+                                    let mut drain_up_to: usize = 0;
+                                    for i in (0..vad_confirming_chunks.len()).rev() {
+                                        accumulated_ms = accumulated_ms
+                                            .saturating_add(vad_confirming_chunks[i].duration_ms);
+                                        if accumulated_ms >= pre_roll_ms {
+                                            drain_up_to = i;
+                                            break;
+                                        }
+                                    }
+                                    vad_confirming_chunks.drain(..drain_up_to);
+                                }
                             } else {
                                 vad_confirming_chunks.clear();
                             }
@@ -1626,6 +1648,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 100,  // short for test speed
             min_silence_ms: 200, // short for test speed
+            pre_roll_ms: crate::audio::vad::DEFAULT_PRE_ROLL_MS,
         });
         let calls = Arc::new(AtomicU32::new(0));
         let sample_counts = Arc::new(Mutex::new(Vec::new()));
@@ -1806,6 +1829,208 @@ mod tests {
         }
     }
 
+    // ── Issue #265: VAD pre-roll ──────────────────────────────────────────────
+
+    /// T1 (#265): 5 × 80 ms confirming chunks with `pre_roll_ms = 200`.
+    ///
+    /// With `min_speech_ms = 400`, chunks 1–4 stay in `Confirming` and are
+    /// pushed to the pre-roll buffer.  After each push the buffer is trimmed:
+    ///   after chunk 1: [80 ms]       (80 ms  < 200 — keep all)
+    ///   after chunk 2: [80, 80 ms]   (160 ms < 200 — keep all)
+    ///   after chunk 3: [80, 80, 80]  (240 ms ≥ 200 — keep all 3 from i=0)
+    ///   after chunk 4: [80, 80, 80]  (trimmed; i=1→240 ms ≥ 200 — drain 1)
+    ///
+    /// Chunk 5 (400 ms accumulated) confirms speech; the gate opens and emits
+    /// `Speech`.  The 3 buffered chunks are prepended, then chunk 5 is pushed.
+    /// Channel close flushes: total = 3 × 80 + 80 = 320 ms = 5 120 samples.
+    #[tokio::test]
+    async fn t1_pre_roll_caps_confirming_buffer_to_200ms() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig {
+            threshold: crate::audio::vad::DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 400,
+            speech_pad_ms: 300,
+            min_silence_ms: 500,
+            pre_roll_ms: 200,
+        });
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(16);
+        // 5 × 80 ms speech chunks — first 4 stay in Confirming; 5th confirms gate.
+        for _ in 0..5 {
+            tx2.send(speech_chunk_ms(80)).await.unwrap();
+        }
+        drop(tx2); // channel close triggers flush of pending_speech
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "T1 (#265): speech must reach STT"
+        );
+        let counts = sample_counts.lock().unwrap();
+        // 3 pre-roll chunks (240 ms) + 1 onset chunk (80 ms) = 320 ms = 5 120 samples.
+        assert_eq!(
+            counts[0], 5_120,
+            "T1 (#265): STT window must contain 3 pre-roll + 1 onset chunk (320 ms / 5 120 samples)"
+        );
+    }
+
+    /// T2 (#265): 1 × 50 ms confirming chunk with `pre_roll_ms = 200`.
+    ///
+    /// The single 50 ms chunk is shorter than the 200 ms cap; the entire buffer
+    /// is retained.  The 2nd chunk (50 ms) confirms speech (`min_speech_ms = 100`).
+    /// Channel close flushes: 1 pre-roll (50 ms) + 1 onset (50 ms) = 100 ms = 1 600 samples.
+    #[tokio::test]
+    async fn t2_pre_roll_retains_short_buffer_below_cap() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig {
+            threshold: crate::audio::vad::DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 100,
+            speech_pad_ms: 300,
+            min_silence_ms: 500,
+            pre_roll_ms: 200,
+        });
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(8);
+        // 1st chunk (50 ms) → Confirming; 2nd chunk (50 ms) → gate opens (100 ms total).
+        for _ in 0..2 {
+            tx2.send(speech_chunk_ms(50)).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "T2 (#265): short pre-roll speech must still reach STT"
+        );
+        let counts = sample_counts.lock().unwrap();
+        // 1 pre-roll chunk (50 ms) + 1 onset chunk (50 ms) = 100 ms = 1 600 samples.
+        assert_eq!(
+            counts[0], 1_600,
+            "T2 (#265): STT window must contain 1 pre-roll + 1 onset chunk (100 ms / 1 600 samples)"
+        );
+    }
+
+    /// T3 (#265): `vad.enabled = false` — no pre-roll path; fixed-window behaviour unchanged.
+    #[tokio::test]
+    async fn t3_pre_roll_not_used_when_vad_disabled() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown)); // vad_config = None
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(8);
+        // 3 × 500 ms = 1 500 ms triggers the safety-cap flush (STT_MAX_WINDOW_MS).
+        for _ in 0..3 {
+            tx2.send(speech_chunk()).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "T3 (#265): vad=disabled must still flush at safety cap"
+        );
+        assert_eq!(
+            sample_counts.lock().unwrap().as_slice(),
+            &[24_000],
+            "T3 (#265): vad=disabled must submit full 1 500 ms window (no pre-roll path)"
+        );
+    }
+
+    /// T4 (#265): `pre_roll_ms = 0` — confirming buffer is cleared immediately;
+    /// no pre-roll audio is prepended to the STT window.
+    ///
+    /// Same 5 × 80 ms setup as T1 but with `pre_roll_ms = 0`.  Each push to
+    /// the confirming buffer is immediately cleared.  When chunk 5 confirms
+    /// speech the buffer is empty, so only the 80 ms onset chunk reaches STT.
+    /// Channel close flushes: 80 ms = 1 280 samples.
+    #[tokio::test]
+    async fn t4_pre_roll_zero_disables_preroll() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig {
+            threshold: crate::audio::vad::DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 400,
+            speech_pad_ms: 300,
+            min_silence_ms: 500,
+            pre_roll_ms: 0,
+        });
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(16);
+        // Same 5 × 80 ms as T1; gate opens on chunk 5, but buffer is always cleared.
+        for _ in 0..5 {
+            tx2.send(speech_chunk_ms(80)).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "T4 (#265): speech must reach STT even with pre_roll_ms=0"
+        );
+        let counts = sample_counts.lock().unwrap();
+        // Only the onset chunk (80 ms = 1 280 samples); no pre-roll.
+        assert_eq!(
+            counts[0], 1_280,
+            "T4 (#265): pre_roll_ms=0 must submit only the onset chunk (80 ms / 1 280 samples)"
+        );
+    }
     #[test]
     fn speech_window_idle_flush_obeys_minimum_duration_and_timeout() {
         let mut window = SpeechWindow::default();

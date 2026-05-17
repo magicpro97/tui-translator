@@ -22,6 +22,7 @@ const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
 const DEFAULT_MIN_SPEECH_MS: u32 = 100;
 const DEFAULT_SPEECH_PAD_MS: u32 = 300;
 const DEFAULT_MIN_SILENCE_MS: u32 = 500;
+const DEFAULT_PRE_ROLL_MS: u32 = 200;
 
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +69,11 @@ pub struct VadConfigJson {
     /// speech.  Default: `500` ms.  Bridges short intra-utterance pauses.
     #[serde(default = "default_min_silence_ms")]
     pub min_silence_ms: u32,
+
+    /// Audio buffered during VAD `Confirming` state prepended to the STT
+    /// window on speech onset.  Default: `200` ms.  `0` disables pre-roll.
+    #[serde(default = "default_pre_roll_ms")]
+    pub pre_roll_ms: u32,
 }
 
 impl Default for VadConfigJson {
@@ -78,6 +84,7 @@ impl Default for VadConfigJson {
             min_speech_ms: DEFAULT_MIN_SPEECH_MS,
             speech_pad_ms: DEFAULT_SPEECH_PAD_MS,
             min_silence_ms: DEFAULT_MIN_SILENCE_MS,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         }
     }
 }
@@ -342,6 +349,10 @@ fn default_speech_pad_ms() -> u32 {
 fn default_min_silence_ms() -> u32 {
     DEFAULT_MIN_SILENCE_MS
 }
+#[allow(dead_code)]
+fn default_pre_roll_ms() -> u32 {
+    DEFAULT_PRE_ROLL_MS
+}
 
 /// `skip_serializing_if` predicate: omit `vad` from the JSON output when it
 /// holds the default (disabled) value to keep the config file tidy.
@@ -351,6 +362,7 @@ fn vad_config_is_default(v: &VadConfigJson) -> bool {
         && v.min_speech_ms == DEFAULT_MIN_SPEECH_MS
         && v.speech_pad_ms == DEFAULT_SPEECH_PAD_MS
         && v.min_silence_ms == DEFAULT_MIN_SILENCE_MS
+        && v.pre_roll_ms == DEFAULT_PRE_ROLL_MS
 }
 
 fn session_store_is_default(v: &SessionStoreConfig) -> bool {

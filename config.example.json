@@ -14,7 +14,7 @@
     "cpu_budget_pct": "CPU-usage ceiling (percent) above which local Whisper inference is skipped to protect co-running apps such as Zoom or Microsoft Teams. Active when stt_provider is 'local' and after Google STT falls back to local Whisper. 0.0 (default) disables throttling. On multi-core hosts sysinfo reports per-core percentages (e.g. 400.0 = 4 full cores); set this value accordingly. Example: 80.0 to suppress inference when the process exceeds 80% of one core.",
     "ram_budget_mb": "Process RAM ceiling in MiB. 0 (default) disables the warning. When RAM exceeds this budget the status strip warns, clears after 5% hysteresis, and optional session/audio recording is considered disabled under pressure.",
     "stt_fallback_policy": "Fallback policy when the STT provider encounters a permanent authentication error. Choice values: 'none' | 'local'. Press F2/Ctrl+D on this field in the settings editor to cycle choices. 'none' (default) halts the pipeline until the app is restarted with a valid key. 'local' automatically switches to CPU-local Whisper STT on the first Google AuthError — requires the local-stt build feature and ggml-tiny.bin in %USERPROFILE%\\.tui-translator\\models\\. Only meaningful when stt_provider is 'google'.",
-    "vad": "Voice Activity Detection gate (issue #220 / EP-E.1). Set enabled=true to activate CPU-light VAD that suppresses silent chunks and brief transients before they reach the STT engine. All sub-fields are optional and fall back to sensible defaults.",
+    "vad": "Voice Activity Detection gate (issue #220 / EP-E.1). Set enabled=true to activate CPU-light VAD that suppresses silent chunks and brief transients before they reach the STT engine. All sub-fields are optional and fall back to sensible defaults. pre_roll_ms (default 200): milliseconds of audio buffered during onset confirmation that is prepended to the STT window so leading consonants are not clipped; set to 0 to disable.",
     "stt_phrase_hints": "Optional list of phrase hints forwarded to Google Speech-to-Text as speechContexts (issue #199). Supply meeting-specific proper nouns, product names, or terms in Japanese/Vietnamese that are frequently misrecognised. Default: [] (empty — omits speechContexts entirely). Example: [\"TuiTranslator\", \"ズームミーティング\", \"Nguyễn\"]. Changing this value requires restarting the application.",
     "session_store": "Optional transcript JSONL recording. Default: { enabled: false }, which creates no session files. Set enabled=true to write transcript-only session logs under ~/.tui-translator/sessions/ or set directory to a custom folder."
   },
@@ -40,7 +40,8 @@
     "threshold": 0.01,
     "min_speech_ms": 100,
     "speech_pad_ms": 300,
-    "min_silence_ms": 500
+    "min_silence_ms": 500,
+    "pre_roll_ms": 200
   },
   "stt_phrase_hints": []
 }

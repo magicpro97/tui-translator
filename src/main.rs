@@ -933,6 +933,7 @@ fn main() -> Result<()> {
                             min_speech_ms: cfg_snapshot.vad.min_speech_ms,
                             speech_pad_ms: cfg_snapshot.vad.speech_pad_ms,
                             min_silence_ms: cfg_snapshot.vad.min_silence_ms,
+                            pre_roll_ms: cfg_snapshot.vad.pre_roll_ms,
                         })
                     } else {
                         None
