@@ -27,6 +27,7 @@
 pub mod cpu_gate;
 pub mod fallback;
 pub mod playback;
+pub mod segmentation;
 
 use std::{
     sync::{
@@ -44,7 +45,7 @@ use crate::{
         CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttState,
     },
     pipeline::cpu_gate::CpuGate,
-    providers::{MtProvider, PcmChunk, ProviderError, SttProvider, TtsProvider},
+    providers::{MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, TtsProvider},
     session::{self, SessionRecorder, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
@@ -213,6 +214,13 @@ pub struct OrchestratorContext {
     /// existing behaviour.
     pub vad_config: Option<VadConfig>,
 
+    /// Post-STT segmentation stabilizer (issue #222 / EP-E.3).
+    ///
+    /// Applies near-duplicate dropping, long-Japanese splitting, and
+    /// short-pause merging to every final `(transcript, translation)` pair
+    /// before it is committed to the subtitle pane.
+    pub stabilizer: Arc<Mutex<segmentation::SegmentStabilizer>>,
+
     /// Optional transcript JSONL recorder. Disabled recorders do not create files.
     pub session_recorder: SessionRecorder,
 }
@@ -348,6 +356,10 @@ pub async fn run_orchestrator<S, M, T>(
         }
     }
 
+    if !ctx.pipeline_halted.load(Ordering::Relaxed) {
+        flush_pending_stabilized_segment(&mt, &tts, &ctx).await;
+    }
+
     let pipeline_error_msg = Arc::clone(&ctx.pipeline_error_msg);
     if let Err(err) = ctx.session_recorder.shutdown().await {
         let warn_msg = format!("⚠ Session recorder error: {err}");
@@ -448,6 +460,14 @@ async fn flush_speech_window<S, M, T>(
     process_chunk(pcm, stt, mt, tts, ctx).await;
 }
 
+struct ProducedSubtitle {
+    transcript: String,
+    context: segmentation::SegmentContext,
+    dedup_key: Option<String>,
+    translation: MtResult,
+    mt_latency_ms: u64,
+}
+
 /// Drive one [`PcmChunk`] through STT → MT → (optional) TTS.
 ///
 /// Records the end-to-end subtitle latency (issue #83): the elapsed time
@@ -545,23 +565,67 @@ where
         }
     };
 
+    // ── Segmentation stabilizer (final STT only) ─────────────────────────────
+    //
+    // Issue #222 stabilizes source text before MT so merged/split source text
+    // and translated target text always describe the same segment.
+    let audio_ms = (pcm.samples.len() as u64).saturating_mul(1_000) / 16_000;
+    let segment_context = segmentation::SegmentContext::new(
+        pcm.sequence_number,
+        audio_ms,
+        stt_confidence,
+        stt_latency_ms,
+    );
+
+    let transcripts = if is_final {
+        let transcripts = ctx
+            .stabilizer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .filter_with_context(transcript.clone(), segment_context);
+        if transcripts.is_empty() {
+            set_stt_state(&ctx.stt_state, SttState::Listening);
+            ctx.subtitle_pane
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clear_partial();
+            tracing::debug!(
+                transcript = %transcript,
+                "SegmentStabilizer: final transcript suppressed (duplicate or buffered)"
+            );
+            return;
+        }
+        transcripts
+    } else {
+        vec![segmentation::StabilizedTranscript {
+            text: transcript.clone(),
+            context: segment_context,
+            dedup_key: None,
+        }]
+    };
+
     // ── MT ───────────────────────────────────────────────────────────────────
     let target_lang = lock_clone_str(&ctx.target_language);
+    let mut produced = Vec::with_capacity(transcripts.len());
 
-    // Issue #80: approximate MT bytes sent = transcript byte length.
-    ctx.network_metrics
-        .record_bytes_sent(transcript.len() as u64);
+    for transcript_to_translate in transcripts {
+        // Issue #80: approximate MT bytes sent = transcript byte length.
+        ctx.network_metrics
+            .record_bytes_sent(transcript_to_translate.text.len() as u64);
 
-    let mt_start = Instant::now();
-    let translation =
-        match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
+        let mt_start = Instant::now();
+        let translation = match with_retry(|| {
+            mt.translate(&transcript_to_translate.text, &source_lang, &target_lang)
+        })
+        .await
+        {
             Ok(r) => {
                 // Track MT input chars (billing basis: source chars sent to the API,
                 // matching the count used by GoogleMtProvider::translate).
                 ctx.session_metrics
                     .lock()
                     .unwrap_or_else(|p| p.into_inner())
-                    .chars_translated += transcript.trim().chars().count() as u64;
+                    .chars_translated += transcript_to_translate.text.trim().chars().count() as u64;
                 // Issue #80: approximate MT bytes received = translated text length.
                 ctx.network_metrics
                     .record_bytes_recv(r.translated_text.len() as u64);
@@ -583,33 +647,52 @@ where
                 return; // discard chunk, continue outer loop
             }
         };
-    let mt_latency_ms = mt_start.elapsed().as_millis() as u64;
+        produced.push(ProducedSubtitle {
+            transcript: transcript_to_translate.text,
+            context: transcript_to_translate.context,
+            dedup_key: transcript_to_translate.dedup_key,
+            translation,
+            mt_latency_ms: mt_start.elapsed().as_millis() as u64,
+        });
+    }
 
-    // ── Push or stage subtitle pair (issue #221) ─────────────────────────────
-    // Final results commit to permanent history; interim partials are staged in
-    // the pane's separate partial slot so committed scroll position is never
-    // disturbed by in-flight updates.
+    // ── Push or stage subtitle pair (issue #221, #222) ───────────────────────
+    // Final results were filtered through the SegmentStabilizer before MT.
+    // Interim partials are staged in the pane's separate partial slot so
+    // committed scroll position is never disturbed by in-flight updates.
     set_stt_state(&ctx.stt_state, SttState::Listening);
     {
         let mut pane = ctx.subtitle_pane.lock().unwrap_or_else(|p| p.into_inner());
         if is_final {
-            pane.push(SubtitlePair::new(
-                transcript.clone(),
-                translation.translated_text.clone(),
-            ));
+            for item in &produced {
+                pane.push(SubtitlePair::new(
+                    item.transcript.clone(),
+                    item.translation.translated_text.clone(),
+                ));
+            }
             pane.clear_partial();
         } else {
+            let Some(item) = produced.first() else {
+                return;
+            };
             pane.set_partial(SubtitlePair::new(
-                transcript.clone(),
-                translation.translated_text.clone(),
+                item.transcript.clone(),
+                item.translation.translated_text.clone(),
             ));
         }
+    }
+    if is_final {
+        record_committed_dedup_keys(&produced, ctx);
     }
     tracing::info!(
         sequence_number = pcm.sequence_number,
         is_final,
         transcript_chars = transcript.chars().count(),
-        translation_chars = translation.translated_text.chars().count(),
+        output_segments = produced.len(),
+        translation_chars = produced
+            .iter()
+            .map(|item| item.translation.translated_text.chars().count())
+            .sum::<usize>(),
         "subtitle pair produced"
     );
 
@@ -628,15 +711,156 @@ where
     // TTS is skipped for partial results — synthesising every interim update
     // would produce overlapping, unintelligible audio and waste API quota.
     if is_final && ctx.tts_enabled.load(Ordering::Relaxed) {
-        // Issue #80: approximate TTS bytes sent = translation text length.
+        for item in &produced {
+            // Issue #80: approximate TTS bytes sent = translation text length.
+            ctx.network_metrics
+                .record_bytes_sent(item.translation.translated_text.len() as u64);
+
+            match with_retry(|| tts.synthesise(&item.translation.translated_text, &target_lang))
+                .await
+            {
+                Ok(r) => {
+                    // Issue #80: approximate TTS bytes received = audio bytes length.
+                    ctx.network_metrics
+                        .record_bytes_recv(r.audio_bytes.len() as u64);
+                    clear_pipeline_error(&ctx.pipeline_error_msg);
+                    if let Some(svc) = ctx
+                        .playback
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .as_ref()
+                    {
+                        svc.play(r.audio_bytes);
+                    }
+                }
+                Err(ProviderError::AuthError(msg)) => {
+                    // Even a TTS AuthError halts the pipeline (#86).
+                    handle_auth_error(ctx, &format!("TTS: {msg}"));
+                }
+                Err(err) => {
+                    // TTS failure is non-fatal: the subtitle was already shown.
+                    let warn_msg = format!("⚠ TTS error: {err}");
+                    tracing::warn!("{warn_msg}");
+                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                }
+            }
+        }
+    }
+
+    if let Some(e2e_ms) = final_e2e_ms {
+        if ctx.session_recorder.is_enabled() {
+            for (split_index, item) in produced.iter().enumerate() {
+                let segment = build_transcript_segment(
+                    &item.context,
+                    &item.transcript,
+                    &item.translation,
+                    &source_lang,
+                    &target_lang,
+                    Some(item.mt_latency_ms),
+                    Some(e2e_ms),
+                    split_index,
+                    ctx,
+                );
+                if let Err(err) = ctx.session_recorder.record_segment(segment) {
+                    let warn_msg = format!("⚠ Session recorder error: {err}");
+                    tracing::warn!("{warn_msg}");
+                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                }
+            }
+        }
+    }
+}
+
+async fn flush_pending_stabilized_segment<M, T>(mt: &M, tts: &T, ctx: &OrchestratorContext)
+where
+    M: MtProvider,
+    T: TtsProvider,
+{
+    let Some(stabilized) = ({
+        ctx.stabilizer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .flush_pending_with_context()
+    }) else {
+        return;
+    };
+
+    let transcript = stabilized.text;
+    let segment_context = stabilized.context;
+    let source_lang = lock_clone_str(&ctx.source_language);
+    let target_lang = lock_clone_str(&ctx.target_language);
+    ctx.network_metrics
+        .record_bytes_sent(transcript.len() as u64);
+
+    let mt_start = Instant::now();
+    let translation =
+        match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
+            Ok(result) => {
+                ctx.session_metrics
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .chars_translated += transcript.trim().chars().count() as u64;
+                ctx.network_metrics
+                    .record_bytes_recv(result.translated_text.len() as u64);
+                clear_pipeline_error(&ctx.pipeline_error_msg);
+                result
+            }
+            Err(ProviderError::AuthError(msg)) => {
+                handle_auth_error(ctx, &format!("MT: {msg}"));
+                return;
+            }
+            Err(err) => {
+                let warn_msg = format!("⚠ Translation error: {err}");
+                tracing::warn!("{warn_msg}");
+                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                ctx.loss_metrics.record_drop();
+                return;
+            }
+        };
+    let mt_latency_ms = mt_start.elapsed().as_millis() as u64;
+
+    {
+        let mut pane = ctx.subtitle_pane.lock().unwrap_or_else(|p| p.into_inner());
+        pane.push(SubtitlePair::new(
+            transcript.clone(),
+            translation.translated_text.clone(),
+        ));
+        pane.clear_partial();
+    }
+
+    if ctx.session_recorder.is_enabled() {
+        let segment = build_transcript_segment(
+            &segment_context,
+            &transcript,
+            &translation,
+            &source_lang,
+            &target_lang,
+            Some(mt_latency_ms),
+            None,
+            0,
+            ctx,
+        );
+        if let Err(err) = ctx.session_recorder.record_segment(segment) {
+            let warn_msg = format!("⚠ Session recorder error: {err}");
+            tracing::warn!("{warn_msg}");
+            set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+        }
+    }
+
+    if let Some(key) = stabilized.dedup_key.as_deref() {
+        ctx.stabilizer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .record_committed_key(key);
+    }
+
+    if ctx.tts_enabled.load(Ordering::Relaxed) {
         ctx.network_metrics
             .record_bytes_sent(translation.translated_text.len() as u64);
-
         match with_retry(|| tts.synthesise(&translation.translated_text, &target_lang)).await {
-            Ok(r) => {
-                // Issue #80: approximate TTS bytes received = audio bytes length.
+            Ok(result) => {
                 ctx.network_metrics
-                    .record_bytes_recv(r.audio_bytes.len() as u64);
+                    .record_bytes_recv(result.audio_bytes.len() as u64);
                 clear_pipeline_error(&ctx.pipeline_error_msg);
                 if let Some(svc) = ctx
                     .playback
@@ -644,42 +868,23 @@ where
                     .unwrap_or_else(|p| p.into_inner())
                     .as_ref()
                 {
-                    svc.play(r.audio_bytes);
+                    svc.play(result.audio_bytes);
                 }
             }
-            Err(ProviderError::AuthError(msg)) => {
-                // Even a TTS AuthError halts the pipeline (#86).
-                handle_auth_error(ctx, &format!("TTS: {msg}"));
-            }
+            Err(ProviderError::AuthError(msg)) => handle_auth_error(ctx, &format!("TTS: {msg}")),
             Err(err) => {
-                // TTS failure is non-fatal: the subtitle was already shown.
                 let warn_msg = format!("⚠ TTS error: {err}");
                 tracing::warn!("{warn_msg}");
                 set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
             }
         }
     }
+}
 
-    if let Some(e2e_ms) = final_e2e_ms {
-        if ctx.session_recorder.is_enabled() {
-            let segment = build_transcript_segment(
-                &pcm,
-                &transcript,
-                &translation,
-                &source_lang,
-                &target_lang,
-                stt_confidence,
-                stt_latency_ms,
-                mt_latency_ms,
-                e2e_ms,
-                ctx,
-            );
-            if let Err(err) = ctx.session_recorder.record_segment(segment) {
-                let warn_msg = format!("⚠ Session recorder error: {err}");
-                tracing::warn!("{warn_msg}");
-                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
-            }
-        }
+fn record_committed_dedup_keys(produced: &[ProducedSubtitle], ctx: &OrchestratorContext) {
+    let mut stabilizer = ctx.stabilizer.lock().unwrap_or_else(|p| p.into_inner());
+    for key in produced.iter().filter_map(|item| item.dedup_key.as_deref()) {
+        stabilizer.record_committed_key(key);
     }
 }
 
@@ -704,15 +909,14 @@ fn update_audio_sent_metrics(chunk: &AudioChunk, ctx: &OrchestratorContext) {
 
 #[allow(clippy::too_many_arguments)]
 fn build_transcript_segment(
-    pcm: &PcmChunk,
+    context: &segmentation::SegmentContext,
     transcript: &str,
     translation: &crate::providers::MtResult,
     source_lang: &str,
     target_lang: &str,
-    stt_confidence: Option<f32>,
-    stt_latency_ms: u64,
-    mt_latency_ms: u64,
-    e2e_ms: u64,
+    mt_latency_ms: Option<u64>,
+    e2e_ms: Option<u64>,
+    split_index: usize,
     ctx: &OrchestratorContext,
 ) -> TranscriptSegment {
     let session = ctx
@@ -720,9 +924,8 @@ fn build_transcript_segment(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
-    let audio_ms = (pcm.samples.len() as u64).saturating_mul(1_000) / 16_000;
     let audio_end_ms = (session.audio_seconds_sent * 1_000.0).round().max(0.0) as u64;
-    let audio_start_ms = audio_end_ms.saturating_sub(audio_ms);
+    let audio_start_ms = audio_end_ms.saturating_sub(context.audio_ms);
 
     TranscriptSegment {
         schema_version: SESSION_LOG_SCHEMA_VERSION,
@@ -731,8 +934,8 @@ fn build_transcript_segment(
             .session_id()
             .unwrap_or("session-recorder-disabled")
             .to_string(),
-        segment_id: pcm.sequence_number,
-        sequence_number: pcm.sequence_number,
+        segment_id: transcript_segment_id(context.sequence_number, split_index),
+        sequence_number: context.sequence_number,
         finalized_at_unix_ms: session::system_time_unix_ms(SystemTime::now()),
         audio_start_ms,
         audio_end_ms,
@@ -743,15 +946,21 @@ fn build_transcript_segment(
         target_language: target_lang.to_string(),
         stt_provider: ctx.stt_provider_name.clone(),
         mt_provider: ctx.mt_provider_name.clone(),
-        stt_confidence,
+        stt_confidence: context.stt_confidence,
         stt_is_final: true,
-        stt_latency_ms: Some(stt_latency_ms),
-        mt_latency_ms: Some(mt_latency_ms),
-        end_to_end_latency_ms: Some(e2e_ms),
+        stt_latency_ms: context.stt_latency_ms,
+        mt_latency_ms,
+        end_to_end_latency_ms: e2e_ms,
         audio_seconds_sent: session.audio_seconds_sent,
         chars_translated: session.chars_translated,
         estimated_cost_usd: ctx.cost_counter.current_estimate_usd(),
     }
+}
+
+fn transcript_segment_id(sequence_number: u64, split_index: usize) -> u64 {
+    sequence_number
+        .saturating_mul(1_000)
+        .saturating_add(split_index as u64)
 }
 
 // ── State helpers ─────────────────────────────────────────────────────────────
@@ -914,6 +1123,35 @@ mod tests {
         }
     }
 
+    /// Mock STT that returns one transcript per call.
+    struct SeqStt(Arc<Mutex<std::collections::VecDeque<&'static str>>>);
+
+    impl SeqStt {
+        fn new(transcripts: Vec<&'static str>) -> Self {
+            Self(Arc::new(Mutex::new(transcripts.into())))
+        }
+    }
+
+    impl SttProvider for SeqStt {
+        async fn transcribe(
+            &self,
+            _chunk: &PcmChunk,
+            _lang: &str,
+        ) -> Result<SttResult, ProviderError> {
+            Ok(SttResult {
+                text: self
+                    .0
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .pop_front()
+                    .unwrap_or("")
+                    .to_string(),
+                confidence: Some(0.99),
+                is_final: true,
+            })
+        }
+    }
+
     /// Mock MT that returns a prefixed translation.
     struct OkMt;
     impl MtProvider for OkMt {
@@ -923,6 +1161,25 @@ mod tests {
             _src: &str,
             _tgt: &str,
         ) -> Result<MtResult, ProviderError> {
+            Ok(MtResult {
+                translated_text: format!("[tr] {text}"),
+                detected_source_language: None,
+            })
+        }
+    }
+
+    struct CountingMt {
+        calls: Arc<AtomicU32>,
+    }
+
+    impl MtProvider for CountingMt {
+        async fn translate(
+            &self,
+            text: &str,
+            _src: &str,
+            _tgt: &str,
+        ) -> Result<MtResult, ProviderError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
             Ok(MtResult {
                 translated_text: format!("[tr] {text}"),
                 detected_source_language: None,
@@ -1003,6 +1260,9 @@ mod tests {
             provider_is_local: Arc::new(AtomicBool::new(false)),
             local_unavailable_is_fatal: false,
             vad_config: None,
+            stabilizer: Arc::new(Mutex::new(
+                crate::pipeline::segmentation::SegmentStabilizer::new(),
+            )),
             session_recorder: SessionRecorder::disabled(),
         };
         (ctx, tx)
@@ -1097,7 +1357,18 @@ mod tests {
         }
         drop(tx2);
 
-        run_orchestrator(rx2, OkStt("hello world"), OkMt, OkTts, ctx).await;
+        run_orchestrator(
+            rx2,
+            SeqStt::new(vec![
+                "hello world one",
+                "hello world two",
+                "hello world three",
+            ]),
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
 
         let raw = std::fs::read_to_string(log_path).unwrap();
         let records: Vec<crate::session::SessionLogRecord> = raw
@@ -1805,6 +2076,42 @@ mod tests {
             metrics.lock().unwrap().audio_seconds_sent,
             0.0,
             "halted pipeline must not count audio as sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn halted_pipeline_skips_pending_stabilizer_flush() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        ctx.stabilizer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .filter_with_context(
+                "hi".to_string(),
+                crate::pipeline::segmentation::SegmentContext::new(0, 500, Some(0.99), 1),
+            );
+        ctx.pipeline_halted.store(true, Ordering::Relaxed);
+
+        let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(1);
+        drop(inner_tx);
+
+        run_orchestrator(
+            inner_rx,
+            OkStt("unused"),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            0,
+            "halted pipeline must not flush pending text through MT"
         );
     }
 

@@ -62,3 +62,6 @@ mod error_retry;
 
 #[path = "integration/memory_guard.rs"]
 mod memory_guard;
+
+#[path = "integration/segmentation_stabilizer.rs"]
+mod segmentation_stabilizer;

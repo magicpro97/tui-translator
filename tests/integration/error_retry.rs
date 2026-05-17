@@ -532,6 +532,9 @@ fn make_orch_context() -> TestCtx {
         provider_is_local: Arc::new(AtomicBool::new(false)),
         local_unavailable_is_fatal: false,
         vad_config: None,
+        stabilizer: Arc::new(Mutex::new(
+            crate::pipeline::segmentation::SegmentStabilizer::new(),
+        )),
         session_recorder: crate::session::SessionRecorder::disabled(),
     };
 
