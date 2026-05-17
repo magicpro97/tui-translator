@@ -941,6 +941,9 @@ fn main() -> Result<()> {
                     stabilizer: Arc::new(std::sync::Mutex::new(
                         pipeline::segmentation::SegmentStabilizer::new(),
                     )),
+                    sentence_aggregator: Arc::new(std::sync::Mutex::new(
+                        pipeline::sentence_aggregator::SentenceAggregator::new(),
+                    )),
                     session_recorder,
                 };
 

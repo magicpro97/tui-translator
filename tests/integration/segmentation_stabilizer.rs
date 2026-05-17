@@ -113,6 +113,9 @@ fn make_context() -> OrchestratorContext {
         local_unavailable_is_fatal: false,
         vad_config: None,
         stabilizer: Arc::new(Mutex::new(SegmentStabilizer::new())),
+        sentence_aggregator: Arc::new(Mutex::new(
+            crate::pipeline::sentence_aggregator::SentenceAggregator::new(),
+        )),
         session_recorder: SessionRecorder::disabled(),
     }
 }

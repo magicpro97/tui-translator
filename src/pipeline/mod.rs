@@ -28,6 +28,7 @@ pub mod cpu_gate;
 pub mod fallback;
 pub mod playback;
 pub mod segmentation;
+pub mod sentence_aggregator;
 
 use std::{
     sync::{
@@ -225,6 +226,14 @@ pub struct OrchestratorContext {
     /// before it is committed to the subtitle pane.
     pub stabilizer: Arc<Mutex<segmentation::SegmentStabilizer>>,
 
+    /// Sentence-level aggregator (issue #266).
+    ///
+    /// Sits between the `SegmentStabilizer` and the MT provider.  Holds
+    /// finalized fragments until a sentence-end character is detected (or the
+    /// max-age of 4 s expires) so MT receives complete sentence-like segments
+    /// instead of isolated words or mid-sentence fragments.
+    pub sentence_aggregator: Arc<Mutex<sentence_aggregator::SentenceAggregator>>,
+
     /// Optional transcript JSONL recorder. Disabled recorders do not create files.
     pub session_recorder: SessionRecorder,
 }
@@ -405,12 +414,16 @@ pub async fn run_orchestrator<S, M, T>(
                     flush_speech_window(&mut pending_speech, &mut seq, &stt, &mt, &tts, &ctx).await;
                     last_pending_at = None;
                 }
+                // Issue #266: flush any held sentence fragment whose max-age has elapsed.
+                flush_aged_sentence_aggregator_segment(&mt, &tts, &ctx).await;
             }
         }
     }
 
     if !ctx.pipeline_halted.load(Ordering::Relaxed) {
         flush_pending_stabilized_segment(&mt, &tts, &ctx).await;
+        // Issue #266: drain aggregator held text on shutdown after the stabilizer flush.
+        flush_pending_sentence_aggregator_segment(&mt, &tts, &ctx).await;
     }
 
     let pipeline_error_msg = Arc::clone(&ctx.pipeline_error_msg);
@@ -516,7 +529,9 @@ async fn flush_speech_window<S, M, T>(
 struct ProducedSubtitle {
     transcript: String,
     context: segmentation::SegmentContext,
-    dedup_key: Option<String>,
+    /// Dedup keys from contributing `SegmentStabilizer` fragments.
+    /// Recorded in the stabilizer after translation succeeds.
+    dedup_keys: Vec<String>,
     translation: MtResult,
     mt_latency_ms: u64,
 }
@@ -618,6 +633,20 @@ where
         }
     };
 
+    // ── Non-final results: show raw STT text as partial, skip MT (issue #266)──
+    //
+    // MT is not called for partial results. The subtitle pane shows the raw
+    // STT text so the user sees in-progress recognition without spending MT
+    // quota on every interim update.
+    if !is_final {
+        ctx.subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .set_partial(SubtitlePair::new(transcript, String::new()));
+        set_stt_state(&ctx.stt_state, SttState::Listening);
+        return;
+    }
+
     // ── Segmentation stabilizer (final STT only) ─────────────────────────────
     //
     // Issue #222 stabilizes source text before MT so merged/split source text
@@ -630,7 +659,7 @@ where
         stt_latency_ms,
     );
 
-    let transcripts = if is_final {
+    let stabilized_transcripts = {
         let transcripts = ctx
             .stabilizer
             .lock()
@@ -649,97 +678,107 @@ where
             return;
         }
         transcripts
-    } else {
-        vec![segmentation::StabilizedTranscript {
-            text: transcript.clone(),
-            context: segment_context,
-            dedup_key: None,
-        }]
     };
+
+    // ── Sentence aggregator (issue #266) ──────────────────────────────────────
+    //
+    // Push each stabilized fragment through the SentenceAggregator so MT only
+    // receives complete sentence-like segments.  The aggregator holds text
+    // without a boundary and emits it only when:
+    //   (a) a sentence-end character is found, or
+    //   (b) the 4-second max-age expires (polled in the sleep branch), or
+    //   (c) the pipeline shuts down.
+    let agg_now = Instant::now();
+    let agg_segments: Vec<sentence_aggregator::AggregatedSegment> = stabilized_transcripts
+        .into_iter()
+        .flat_map(|s| {
+            ctx.sentence_aggregator
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .push(&s.text, s.context, s.dedup_key, agg_now)
+        })
+        .collect();
+
+    if agg_segments.is_empty() {
+        // Aggregator held the text — clear any pending partial and wait for
+        // the next boundary or max-age timeout.
+        set_stt_state(&ctx.stt_state, SttState::Listening);
+        ctx.subtitle_pane
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear_partial();
+        tracing::debug!(
+            transcript = %transcript,
+            "SentenceAggregator: fragment held, awaiting sentence boundary"
+        );
+        return;
+    }
 
     // ── MT ───────────────────────────────────────────────────────────────────
     let target_lang = lock_clone_str(&ctx.target_language);
-    let mut produced = Vec::with_capacity(transcripts.len());
+    let mut produced = Vec::with_capacity(agg_segments.len());
 
-    for transcript_to_translate in transcripts {
+    for seg in agg_segments {
         // Issue #80: approximate MT bytes sent = transcript byte length.
-        ctx.network_metrics
-            .record_bytes_sent(transcript_to_translate.text.len() as u64);
+        ctx.network_metrics.record_bytes_sent(seg.text.len() as u64);
 
         let mt_start = Instant::now();
-        let translation = match with_retry(|| {
-            mt.translate(&transcript_to_translate.text, &source_lang, &target_lang)
-        })
-        .await
-        {
-            Ok(r) => {
-                // Track MT input chars (billing basis: source chars sent to the API,
-                // matching the count used by GoogleMtProvider::translate).
-                ctx.session_metrics
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .chars_translated += transcript_to_translate.text.trim().chars().count() as u64;
-                // Issue #80: approximate MT bytes received = translated text length.
-                ctx.network_metrics
-                    .record_bytes_recv(r.translated_text.len() as u64);
-                clear_pipeline_error(&ctx.pipeline_error_msg);
-                r
-            }
-            Err(ProviderError::AuthError(msg)) => {
-                set_stt_state(&ctx.stt_state, SttState::Listening);
-                handle_auth_error(ctx, &format!("MT: {msg}"));
-                return;
-            }
-            Err(err) => {
-                let warn_msg = format!("⚠ Translation error: {err}");
-                tracing::warn!("{warn_msg}");
-                set_stt_state(&ctx.stt_state, SttState::Listening);
-                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
-                // Issue #81: MT failure counts as a dropped chunk.
-                ctx.loss_metrics.record_drop();
-                return; // discard chunk, continue outer loop
-            }
-        };
+        let translation =
+            match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await {
+                Ok(r) => {
+                    // Track MT input chars (billing basis: source chars sent to the API,
+                    // matching the count used by GoogleMtProvider::translate).
+                    ctx.session_metrics
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .chars_translated += seg.text.trim().chars().count() as u64;
+                    // Issue #80: approximate MT bytes received = translated text length.
+                    ctx.network_metrics
+                        .record_bytes_recv(r.translated_text.len() as u64);
+                    clear_pipeline_error(&ctx.pipeline_error_msg);
+                    r
+                }
+                Err(ProviderError::AuthError(msg)) => {
+                    set_stt_state(&ctx.stt_state, SttState::Listening);
+                    handle_auth_error(ctx, &format!("MT: {msg}"));
+                    return;
+                }
+                Err(err) => {
+                    let warn_msg = format!("⚠ Translation error: {err}");
+                    tracing::warn!("{warn_msg}");
+                    set_stt_state(&ctx.stt_state, SttState::Listening);
+                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                    // Issue #81: MT failure counts as a dropped chunk.
+                    ctx.loss_metrics.record_drop();
+                    return; // discard chunk, continue outer loop
+                }
+            };
         produced.push(ProducedSubtitle {
-            transcript: transcript_to_translate.text,
-            context: transcript_to_translate.context,
-            dedup_key: transcript_to_translate.dedup_key,
+            transcript: seg.text,
+            context: seg.context,
+            dedup_keys: seg.dedup_keys,
             translation,
             mt_latency_ms: mt_start.elapsed().as_millis() as u64,
         });
     }
 
-    // ── Push or stage subtitle pair (issue #221, #222) ───────────────────────
-    // Final results were filtered through the SegmentStabilizer before MT.
-    // Interim partials are staged in the pane's separate partial slot so
-    // committed scroll position is never disturbed by in-flight updates.
+    // ── Push subtitle pairs (issue #221, #222) ────────────────────────────────
     set_stt_state(&ctx.stt_state, SttState::Listening);
     {
         let mut pane = ctx.subtitle_pane.lock().unwrap_or_else(|p| p.into_inner());
-        if is_final {
-            for item in &produced {
-                pane.push(SubtitlePair::new(
-                    item.transcript.clone(),
-                    item.translation.translated_text.clone(),
-                ));
-            }
-            pane.clear_partial();
-        } else {
-            let Some(item) = produced.first() else {
-                return;
-            };
-            pane.set_partial(SubtitlePair::new(
+        for item in &produced {
+            pane.push(SubtitlePair::new(
                 item.transcript.clone(),
                 item.translation.translated_text.clone(),
             ));
         }
+        pane.clear_partial();
     }
-    if is_final {
-        record_committed_dedup_keys(&produced, ctx);
-    }
+    record_committed_dedup_keys(&produced, ctx);
+
     tracing::info!(
         sequence_number = pcm.sequence_number,
-        is_final,
+        is_final = true,
         transcript_chars = transcript.chars().count(),
         output_segments = produced.len(),
         translation_chars = produced
@@ -749,21 +788,13 @@ where
         "subtitle pair produced"
     );
 
-    // Issue #83: record the end-to-end latency only for final results.
-    // Partial results are not counted as completed subtitle pairs.
-    let final_e2e_ms = if is_final {
-        let e2e_ms = e2e_start.elapsed().as_millis() as u64;
-        ctx.e2e_latency.record_ms(e2e_ms);
-        tracing::debug!(e2e_ms, "final subtitle pair; e2e latency recorded");
-        Some(e2e_ms)
-    } else {
-        None
-    };
+    // Issue #83: record end-to-end latency for final results.
+    let e2e_ms = e2e_start.elapsed().as_millis() as u64;
+    ctx.e2e_latency.record_ms(e2e_ms);
+    tracing::debug!(e2e_ms, "final subtitle pair; e2e latency recorded");
 
-    // ── TTS (optional, non-fatal, final only) ────────────────────────────────
-    // TTS is skipped for partial results — synthesising every interim update
-    // would produce overlapping, unintelligible audio and waste API quota.
-    if is_final && ctx.tts_enabled.load(Ordering::Relaxed) {
+    // ── TTS (optional, non-fatal) ─────────────────────────────────────────────
+    if ctx.tts_enabled.load(Ordering::Relaxed) {
         for item in &produced {
             // Issue #80: approximate TTS bytes sent = translation text length.
             ctx.network_metrics
@@ -800,25 +831,23 @@ where
         }
     }
 
-    if let Some(e2e_ms) = final_e2e_ms {
-        if ctx.session_recorder.is_enabled() {
-            for (split_index, item) in produced.iter().enumerate() {
-                let segment = build_transcript_segment(
-                    &item.context,
-                    &item.transcript,
-                    &item.translation,
-                    &source_lang,
-                    &target_lang,
-                    Some(item.mt_latency_ms),
-                    Some(e2e_ms),
-                    split_index,
-                    ctx,
-                );
-                if let Err(err) = ctx.session_recorder.record_segment(segment) {
-                    let warn_msg = format!("⚠ Session recorder error: {err}");
-                    tracing::warn!("{warn_msg}");
-                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
-                }
+    if ctx.session_recorder.is_enabled() {
+        for (split_index, item) in produced.iter().enumerate() {
+            let segment = build_transcript_segment(
+                &item.context,
+                &item.transcript,
+                &item.translation,
+                &source_lang,
+                &target_lang,
+                Some(item.mt_latency_ms),
+                Some(e2e_ms),
+                split_index,
+                ctx,
+            );
+            if let Err(err) = ctx.session_recorder.record_segment(segment) {
+                let warn_msg = format!("⚠ Session recorder error: {err}");
+                tracing::warn!("{warn_msg}");
+                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
             }
         }
     }
@@ -838,53 +867,130 @@ where
         return;
     };
 
-    let transcript = stabilized.text;
-    let segment_context = stabilized.context;
+    let segments = ctx
+        .sentence_aggregator
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push(
+            &stabilized.text,
+            stabilized.context,
+            stabilized.dedup_key,
+            Instant::now(),
+        );
+    for segment in segments {
+        if ctx.pipeline_halted.load(Ordering::Relaxed) {
+            break;
+        }
+        commit_aggregated_segment(Some(segment), mt, tts, ctx).await;
+    }
+}
+
+// ── Issue #266: sentence-aggregator flush helpers ─────────────────────────────
+
+/// Flush the sentence aggregator's held fragment on pipeline shutdown.
+///
+/// Called after [`flush_pending_stabilized_segment`] so both the stabilizer's
+/// short-pause buffer and the aggregator's sentence-boundary buffer are drained
+/// before the session recorder closes.
+async fn flush_pending_sentence_aggregator_segment<M, T>(mt: &M, tts: &T, ctx: &OrchestratorContext)
+where
+    M: MtProvider,
+    T: TtsProvider,
+{
+    let segment = ctx
+        .sentence_aggregator
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .flush_shutdown();
+    commit_aggregated_segment(segment, mt, tts, ctx).await;
+}
+
+/// Poll the sentence aggregator for max-age-expired held fragments.
+///
+/// Called from the periodic 50 ms sleep branch so force-flushes happen
+/// without waiting for the next STT result.
+async fn flush_aged_sentence_aggregator_segment<M, T>(mt: &M, tts: &T, ctx: &OrchestratorContext)
+where
+    M: MtProvider,
+    T: TtsProvider,
+{
+    let segment = ctx
+        .sentence_aggregator
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .poll_max_age(Instant::now());
+    commit_aggregated_segment(segment, mt, tts, ctx).await;
+}
+
+/// Translate and commit one [`AggregatedSegment`] that has been emitted by the
+/// sentence aggregator (either max-age or shutdown flush).
+async fn commit_aggregated_segment<M, T>(
+    segment: Option<sentence_aggregator::AggregatedSegment>,
+    mt: &M,
+    tts: &T,
+    ctx: &OrchestratorContext,
+) where
+    M: MtProvider,
+    T: TtsProvider,
+{
+    let Some(seg) = segment else { return };
+
     let source_lang = lock_clone_str(&ctx.source_language);
     let target_lang = lock_clone_str(&ctx.target_language);
-    ctx.network_metrics
-        .record_bytes_sent(transcript.len() as u64);
+    ctx.network_metrics.record_bytes_sent(seg.text.len() as u64);
 
     let mt_start = Instant::now();
-    let translation =
-        match with_retry(|| mt.translate(&transcript, &source_lang, &target_lang)).await {
-            Ok(result) => {
-                ctx.session_metrics
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .chars_translated += transcript.trim().chars().count() as u64;
-                ctx.network_metrics
-                    .record_bytes_recv(result.translated_text.len() as u64);
-                clear_pipeline_error(&ctx.pipeline_error_msg);
-                result
-            }
-            Err(ProviderError::AuthError(msg)) => {
-                handle_auth_error(ctx, &format!("MT: {msg}"));
-                return;
-            }
-            Err(err) => {
-                let warn_msg = format!("⚠ Translation error: {err}");
-                tracing::warn!("{warn_msg}");
-                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
-                ctx.loss_metrics.record_drop();
-                return;
-            }
-        };
+    let translation = match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await
+    {
+        Ok(result) => {
+            ctx.session_metrics
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .chars_translated += seg.text.trim().chars().count() as u64;
+            ctx.network_metrics
+                .record_bytes_recv(result.translated_text.len() as u64);
+            clear_pipeline_error(&ctx.pipeline_error_msg);
+            result
+        }
+        Err(ProviderError::AuthError(msg)) => {
+            handle_auth_error(ctx, &format!("MT: {msg}"));
+            return;
+        }
+        Err(err) => {
+            let warn_msg = format!("⚠ Translation error: {err}");
+            tracing::warn!("{warn_msg}");
+            set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+            ctx.loss_metrics.record_drop();
+            return;
+        }
+    };
     let mt_latency_ms = mt_start.elapsed().as_millis() as u64;
 
     {
         let mut pane = ctx.subtitle_pane.lock().unwrap_or_else(|p| p.into_inner());
         pane.push(SubtitlePair::new(
-            transcript.clone(),
+            seg.text.clone(),
             translation.translated_text.clone(),
         ));
         pane.clear_partial();
     }
 
+    let e2e_ms = seg.e2e_start.elapsed().as_millis() as u64;
+    ctx.e2e_latency.record_ms(e2e_ms);
+    tracing::debug!(e2e_ms, flush_reason = ?seg.flush_reason, "aggregated segment committed; e2e latency recorded");
+
+    // Record dedup keys for all contributing fragments.
+    {
+        let mut stabilizer = ctx.stabilizer.lock().unwrap_or_else(|p| p.into_inner());
+        for key in &seg.dedup_keys {
+            stabilizer.record_committed_key(key);
+        }
+    }
+
     if ctx.session_recorder.is_enabled() {
-        let segment = build_transcript_segment(
-            &segment_context,
-            &transcript,
+        let segment_rec = build_transcript_segment(
+            &seg.context,
+            &seg.text,
             &translation,
             &source_lang,
             &target_lang,
@@ -893,18 +999,11 @@ where
             0,
             ctx,
         );
-        if let Err(err) = ctx.session_recorder.record_segment(segment) {
+        if let Err(err) = ctx.session_recorder.record_segment(segment_rec) {
             let warn_msg = format!("⚠ Session recorder error: {err}");
             tracing::warn!("{warn_msg}");
             set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
         }
-    }
-
-    if let Some(key) = stabilized.dedup_key.as_deref() {
-        ctx.stabilizer
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .record_committed_key(key);
     }
 
     if ctx.tts_enabled.load(Ordering::Relaxed) {
@@ -924,7 +1023,9 @@ where
                     svc.play(result.audio_bytes);
                 }
             }
-            Err(ProviderError::AuthError(msg)) => handle_auth_error(ctx, &format!("TTS: {msg}")),
+            Err(ProviderError::AuthError(msg)) => {
+                handle_auth_error(ctx, &format!("TTS: {msg}"));
+            }
             Err(err) => {
                 let warn_msg = format!("⚠ TTS error: {err}");
                 tracing::warn!("{warn_msg}");
@@ -936,8 +1037,10 @@ where
 
 fn record_committed_dedup_keys(produced: &[ProducedSubtitle], ctx: &OrchestratorContext) {
     let mut stabilizer = ctx.stabilizer.lock().unwrap_or_else(|p| p.into_inner());
-    for key in produced.iter().filter_map(|item| item.dedup_key.as_deref()) {
-        stabilizer.record_committed_key(key);
+    for item in produced {
+        for key in &item.dedup_keys {
+            stabilizer.record_committed_key(key);
+        }
     }
 }
 
@@ -1316,6 +1419,9 @@ mod tests {
             stabilizer: Arc::new(Mutex::new(
                 crate::pipeline::segmentation::SegmentStabilizer::new(),
             )),
+            sentence_aggregator: Arc::new(Mutex::new(
+                crate::pipeline::sentence_aggregator::SentenceAggregator::new(),
+            )),
             session_recorder: SessionRecorder::disabled(),
         };
         (ctx, tx)
@@ -1413,9 +1519,12 @@ mod tests {
         run_orchestrator(
             rx2,
             SeqStt::new(vec![
-                "hello world one",
-                "hello world two",
-                "hello world three",
+                // Issue #266: text must end with a sentence boundary so the
+                // SentenceAggregator emits each fragment immediately rather
+                // than holding and combining them into one MT call.
+                "hello world one。",
+                "hello world two。",
+                "hello world three。",
             ]),
             OkMt,
             OkTts,
@@ -2966,5 +3075,186 @@ mod tests {
             scroll_before,
             "clear_partial must not shift committed scroll position"
         );
+    }
+
+    // ── Issue #266: sentence-aggregator pipeline integration ──────────────────
+
+    /// AC1: MT is not called for text without a sentence boundary.
+    ///
+    /// STT returns a fragment without `。`/`!`/`?`.  The aggregator holds it.
+    /// The subtitle pane should be empty right after the chunk (no MT call),
+    /// but the shutdown flush must translate and commit it.
+    #[tokio::test]
+    async fn aggregator_holds_fragment_without_boundary_until_shutdown() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("会議の"),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        // Shutdown flush must translate the held fragment exactly once.
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            1,
+            "shutdown must flush held fragment through MT exactly once"
+        );
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            1,
+            "held fragment must appear as a subtitle pair after shutdown flush"
+        );
+    }
+
+    /// AC4: Two sentences in one STT result produce two MT calls.
+    #[tokio::test]
+    async fn aggregator_two_sentences_produce_two_mt_calls() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("こんにちは！ありがとうございます。"),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            2,
+            "two sentence boundaries must produce exactly two MT calls"
+        );
+        assert_eq!(pane.lock().unwrap().pair_count(), 2);
+    }
+
+    /// AC3: Empty STT result produces no MT call.
+    ///
+    /// The existing empty-transcript path already returns early before the
+    /// aggregator, so this test verifies end-to-end that an empty transcript
+    /// is still dropped cleanly.
+    #[tokio::test]
+    async fn aggregator_empty_stt_result_produces_no_mt_call() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        // Silence-level audio so STT returns empty transcript.
+        tx2.send(AudioChunk::new(vec![0i16; 8_000])).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt(""),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            0,
+            "empty STT transcript must produce no MT call"
+        );
+    }
+
+    /// AC5: Shutdown flushes aggregator-held partial via commit_aggregated_segment.
+    #[tokio::test]
+    async fn aggregator_shutdown_drains_held_partial() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        // Send text without a sentence boundary.
+        tx2.send(speech_chunk()).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("未完の文"),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            1,
+            "shutdown must flush the held partial through MT"
+        );
+        assert_eq!(
+            pane.lock().unwrap().pair_count(),
+            1,
+            "partial held at shutdown must produce one subtitle pair"
+        );
+    }
+
+    /// AC2: Sentence boundary flushes immediately — MT called within the same
+    /// `process_chunk` invocation, not deferred to shutdown.
+    #[tokio::test]
+    async fn aggregator_sentence_boundary_flushes_immediately() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let pane = Arc::clone(&ctx.subtitle_pane);
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
+        // 1 500 ms chunks each meet STT_MAX_WINDOW_MS on their own, ensuring
+        // a separate STT call per chunk.
+        tx2.send(speech_chunk_ms(1500)).await.unwrap();
+        tx2.send(speech_chunk_ms(1500)).await.unwrap();
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            SeqStt::new(vec![
+                "会議の結果です。", // sentence boundary → immediate MT
+                "次の議題は",       // no boundary → held, flushed at shutdown
+            ]),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            2,
+            "boundary fragment + shutdown flush of partial = 2 MT calls"
+        );
+        assert_eq!(pane.lock().unwrap().pair_count(), 2);
     }
 }
