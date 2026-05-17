@@ -52,21 +52,21 @@ use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ModelId {
-    /// `ggml-tiny.en.bin` — English-only, ~39 MB, fastest.
+    /// `ggml-tiny.en.bin` — English-only, ~74 MB, fastest.
     TinyEn,
-    /// `ggml-tiny.bin` — Multi-lingual tiny, ~39 MB.
+    /// `ggml-tiny.bin` — Multi-lingual tiny, ~74 MB.
     Tiny,
-    /// `ggml-base.en.bin` — English-only base, ~74 MB.
+    /// `ggml-base.en.bin` — English-only base, ~141 MB.
     BaseEn,
-    /// `ggml-base.bin` — Multi-lingual base, ~74 MB.
+    /// `ggml-base.bin` — Multi-lingual base, ~141 MB.
     Base,
-    /// `ggml-small.en.bin` — English-only small, ~244 MB.
+    /// `ggml-small.en.bin` — English-only small, ~465 MB.
     SmallEn,
-    /// `ggml-small.bin` — Multi-lingual small, ~244 MB.
+    /// `ggml-small.bin` — Multi-lingual small, ~465 MB.
     Small,
-    /// `ggml-medium.en.bin` — English-only medium, ~769 MB.
+    /// `ggml-medium.en.bin` — English-only medium, ~1.43 GB.
     MediumEn,
-    /// `ggml-medium.bin` — Multi-lingual medium, ~769 MB.
+    /// `ggml-medium.bin` — Multi-lingual medium, ~1.43 GB.
     Medium,
 }
 
