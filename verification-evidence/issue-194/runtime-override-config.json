@@ -1,0 +1,7 @@
+{
+  "source_language": "ja-JP",
+  "target_language": "en",
+  "tts_enabled": false,
+  "stt_provider": "google",
+  "mt_provider": "google"
+}
