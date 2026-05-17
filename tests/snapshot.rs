@@ -501,7 +501,12 @@ fn snapshot_status_strip_expanded_idle() {
         flicker_count: 0,
         mt_call_count: 0,
     };
-    insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 6));
+    let rendered = render_strip(&strip, 80, 7);
+    assert!(
+        rendered.contains("trunc:"),
+        "quality row missing: {rendered:?}"
+    );
+    insta::assert_snapshot!("status_strip_expanded_idle", rendered);
 }
 
 #[test]
@@ -529,14 +534,16 @@ fn snapshot_status_strip_expanded_listening() {
         flicker_count: 0,
         mt_call_count: 0,
     };
-    insta::assert_snapshot!(
-        "status_strip_expanded_listening",
-        render_strip(&strip, 80, 6)
+    let rendered = render_strip(&strip, 80, 7);
+    assert!(
+        rendered.contains("trunc:"),
+        "quality row missing: {rendered:?}"
     );
+    insta::assert_snapshot!("status_strip_expanded_listening", rendered);
 }
 
 /// Expanded mode with an active cost warning: the warning row must be visible
-/// and the block must be 7 rows tall (2 borders + 4 standard rows + 1 warning).
+/// and the block must be 8 rows tall (2 borders + 5 standard rows + 1 warning).
 #[test]
 fn snapshot_status_strip_expanded_with_warning() {
     let stt = SttState::Listening;
@@ -974,10 +981,12 @@ fn snapshot_status_strip_zero_state_expanded() {
         flicker_count: 0,
         mt_call_count: 0,
     };
-    insta::assert_snapshot!(
-        "status_strip_zero_state_expanded",
-        render_strip(&strip, 80, 6)
+    let rendered = render_strip(&strip, 80, 7);
+    assert!(
+        rendered.contains("trunc:"),
+        "quality row missing: {rendered:?}"
     );
+    insta::assert_snapshot!("status_strip_zero_state_expanded", rendered);
 }
 
 /// Short device names pass through unchanged.
@@ -1359,10 +1368,14 @@ fn expanded_metrics_narrow_uses_lang_label() {
         flicker_count: 0,
         mt_call_count: 0,
     };
-    let rendered = render_strip(&strip, 60, 6);
+    let rendered = render_strip(&strip, 60, 7);
     assert!(
         rendered.contains("Lang:"),
         "expanded narrow strip must use 'Lang:' label; got: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("trunc:"),
+        "expanded narrow strip must include quality counters; got: {rendered:?}"
     );
     assert!(
         !rendered.contains("L:fr"),
