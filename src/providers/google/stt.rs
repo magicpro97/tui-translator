@@ -53,6 +53,21 @@ struct RecognitionConfig<'a> {
     enable_automatic_punctuation: bool,
     /// Google STT model variant optimised for long-form meeting audio.
     model: &'static str,
+    /// Speech adaptation hints that bias the recogniser toward specific
+    /// phrases (e.g. product names, proper nouns, Japanese/Vietnamese terms).
+    /// Serialised as `speechContexts` in the Google Speech v1 payload.
+    /// Omitted when empty so non-hint requests are not affected.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    speech_contexts: &'a [SpeechContext],
+}
+
+/// A single speech adaptation context passed to Google STT.
+///
+/// Corresponds to the `SpeechContext` message in the Google Speech v1 API.
+#[derive(Serialize)]
+struct SpeechContext {
+    /// Phrases that should be preferred during recognition.
+    phrases: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -99,6 +114,9 @@ struct SpeechRecognitionAlternative {
 pub struct GoogleSttProvider {
     api_key: String,
     client: Client,
+    /// Prebuilt speech adaptation contexts forwarded in every recognition
+    /// request.  An empty list means no hints are sent (default behaviour).
+    speech_contexts: Vec<SpeechContext>,
 }
 
 impl GoogleSttProvider {
@@ -120,7 +138,25 @@ impl GoogleSttProvider {
                 ))
             })?;
 
-        Ok(Self { api_key, client })
+        Ok(Self {
+            api_key,
+            client,
+            speech_contexts: Vec::new(),
+        })
+    }
+
+    /// Set phrase hints that will be forwarded to Google STT as
+    /// `speechContexts` on every recognition request.
+    ///
+    /// An empty list clears any previously set hints.  The hints are stored
+    /// at construction time and applied to every subsequent `transcribe` call.
+    pub fn with_phrase_hints(mut self, hints: Vec<String>) -> Self {
+        self.speech_contexts = if hints.is_empty() {
+            Vec::new()
+        } else {
+            vec![SpeechContext { phrases: hints }]
+        };
+        self
     }
 }
 
@@ -202,6 +238,7 @@ impl SttProvider for GoogleSttProvider {
                 language_code,
                 enable_automatic_punctuation: true,
                 model: "latest_long",
+                speech_contexts: &self.speech_contexts,
             },
             audio: RecognitionAudio {
                 content: audio_content,
@@ -303,6 +340,7 @@ mod tests {
             language_code: "en-US",
             enable_automatic_punctuation: true,
             model: "latest_long",
+            speech_contexts: &[],
         };
         let json = serde_json::to_string(&config).expect("serialization must not fail");
         assert!(
@@ -320,6 +358,7 @@ mod tests {
                 language_code: "ja-JP",
                 enable_automatic_punctuation: true,
                 model: "latest_long",
+                speech_contexts: &[],
             },
             audio: RecognitionAudio {
                 content: "dGVzdA==".to_string(),
@@ -329,6 +368,89 @@ mod tests {
         assert!(
             json.contains(r#""model":"latest_long""#),
             "full request payload must include model=latest_long, got: {json}"
+        );
+    }
+
+    #[test]
+    fn recognition_config_omits_speech_contexts_when_empty() {
+        let config = RecognitionConfig {
+            encoding: "LINEAR16",
+            sample_rate_hertz: 16_000,
+            language_code: "en-US",
+            enable_automatic_punctuation: true,
+            model: "latest_long",
+            speech_contexts: &[],
+        };
+        let json = serde_json::to_string(&config).expect("serialization must not fail");
+        assert!(
+            !json.contains("speechContexts"),
+            "empty phrase hints must not produce speechContexts in payload, got: {json}"
+        );
+    }
+
+    #[test]
+    fn recognition_config_includes_speech_contexts_when_hints_present() {
+        let contexts = vec![SpeechContext {
+            phrases: vec![
+                "TuiTranslator".to_string(),
+                "ズームミーティング".to_string(),
+            ],
+        }];
+        let config = RecognitionConfig {
+            encoding: "LINEAR16",
+            sample_rate_hertz: 16_000,
+            language_code: "ja-JP",
+            enable_automatic_punctuation: true,
+            model: "latest_long",
+            speech_contexts: &contexts,
+        };
+        let json = serde_json::to_string(&config).expect("serialization must not fail");
+        assert!(
+            json.contains("speechContexts"),
+            "non-empty hints must produce speechContexts in payload, got: {json}"
+        );
+        assert!(
+            json.contains("TuiTranslator"),
+            "phrase hint must appear in payload, got: {json}"
+        );
+    }
+
+    #[test]
+    fn provider_with_phrase_hints_prebuilds_serializable_speech_contexts() {
+        let provider = GoogleSttProvider::new("dummy_key")
+            .expect("valid key should build provider")
+            .with_phrase_hints(vec!["Zoom".to_string(), "テスト".to_string()]);
+        let config = RecognitionConfig {
+            encoding: "LINEAR16",
+            sample_rate_hertz: 16_000,
+            language_code: "ja-JP",
+            enable_automatic_punctuation: true,
+            model: "latest_long",
+            speech_contexts: &provider.speech_contexts,
+        };
+        let json = serde_json::to_string(&config).expect("serialization must not fail");
+
+        assert!(
+            json.contains("speechContexts"),
+            "provider phrase hints must serialize as speechContexts, got: {json}"
+        );
+        assert!(
+            json.contains("Zoom"),
+            "first hint missing from payload: {json}"
+        );
+        assert!(
+            json.contains("テスト"),
+            "second hint missing from payload: {json}"
+        );
+    }
+
+    #[test]
+    fn provider_default_has_empty_phrase_hints() {
+        let provider =
+            GoogleSttProvider::new("dummy_key").expect("valid key should build provider");
+        assert!(
+            provider.speech_contexts.is_empty(),
+            "speech_contexts must default to empty"
         );
     }
 
