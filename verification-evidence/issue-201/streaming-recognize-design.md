@@ -64,6 +64,7 @@ pub struct StreamingSttConfig {
 pub struct StreamingSttSegment {
     pub stream_id: u64,
     pub result_index: u64,
+    pub stream_audio_end_ms: u64,
     pub audio_end_ms: u64,
     pub text: String,
     pub confidence: Option<f32>,
@@ -90,8 +91,10 @@ Rationale:
 - `run_orchestrator` remains untouched for the default path.
 - A new `run_streaming_orchestrator` can be introduced behind a config switch
   and tested independently.
-- `StreamingSttSegment` uses local stream/result identifiers and audio offsets
-  so transcript stitching can deduplicate final segments across stream restarts.
+- `StreamingSttSegment` uses local stream/result identifiers plus both
+  stream-relative and session-wide monotonic audio offsets so transcript
+  stitching can deduplicate final segments across stream restarts without
+  treating valid post-restart audio as stale.
 
 Expected dependency shape for the implementation slice:
 
@@ -151,7 +154,9 @@ and `google_stt_mode = "grpc_streaming"`:
      `interim_results = true`.
    - Sends subsequent audio-only requests as chunks arrive.
    - Reopens the stream before Google's streaming limit and resends a small
-     overlap buffer for continuity.
+     overlap buffer for continuity. Each new stream stores a session timeline
+     base offset so provider-local result offsets are normalized into
+     session-wide monotonic `audio_end_ms` values before they reach the stitcher.
 3. Transcript event task
    - Receives `StreamingSttSegment` values.
    - Drops empty alternatives.
@@ -186,7 +191,9 @@ pub enum StitchAction {
 State tracked by the stitcher:
 
 - `current_stream_id`
-- highest committed `audio_end_ms`
+- highest committed session-wide `audio_end_ms`
+- per-stream session base offsets used to convert stream-relative result times
+  into monotonic session offsets
 - normalized text of the last committed final segment
 - active partial key `(stream_id, result_index)`
 - restart-overlap dedupe window
@@ -199,8 +206,10 @@ Rules:
   after stream restart overlap, ignore it.
 - A final result replaces any active partial for the same result key, even when
   the text differs.
-- Late interim results whose `audio_end_ms` is not newer than the last committed
-  final are ignored.
+- Late interim results whose session-wide `audio_end_ms` is not newer than the
+  last committed final are ignored. Comparisons must never use raw
+  stream-relative offsets after a restart, because a new gRPC stream starts its
+  result offsets near zero again.
 - If a stream errors and reconnects, keep committed finals, clear only the active
   partial, and use the restart-overlap dedupe window to avoid duplicate captions.
 - Translation for final text is recomputed from the final source text. Do not
@@ -221,7 +230,7 @@ No new subtitle-pane data structure is required for v1 streaming:
 
 - committed bilingual history remains `Vec<SubtitlePair>`
 - active interim bilingual caption remains the existing pending partial
-- partial rendering keeps the existing `[SRC...]` / `[TGT...]` visual contract
+- partial rendering keeps the existing `[SRC…]` / `[TGT…]` visual contract
 - when the user scrolls away from the bottom, committed history remains stable
   and the partial is not forced into view
 
