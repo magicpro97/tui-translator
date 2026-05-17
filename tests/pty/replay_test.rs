@@ -23,6 +23,17 @@ fn replay_session_renders_jsonl_subtitles_without_audio_capture() {
         session.wait_for_text("Replay", STARTUP_TIMEOUT),
         "replay mode should label the audio/capture area as replay"
     );
+    session
+        .send(b"s")
+        .expect("send settings key in replay mode");
+    assert!(
+        session.wait_for_text("read-only", Duration::from_secs(2)),
+        "replay mode should reject settings without opening the editor"
+    );
+    assert!(
+        !session.screen_contains("Google API key"),
+        "replay mode must not open settings or enumerate capture devices"
+    );
     assert!(
         session.wait_for_text("source-1", Duration::from_secs(4)),
         "first replay source segment should render"

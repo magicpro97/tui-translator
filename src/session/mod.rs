@@ -17,6 +17,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
+    collections::VecDeque,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -558,8 +559,10 @@ fn unsupported_schema_version(line: &str) -> Option<u64> {
 ///   paused, so resuming picks up exactly where the session was paused.
 #[derive(Debug)]
 pub struct SessionReplayer {
-    segments: Vec<TranscriptSegment>,
-    /// Index of the next segment to yield (0-based).
+    segments: VecDeque<TranscriptSegment>,
+    /// Total number of valid segments loaded before replay began.
+    total_segments: usize,
+    /// Zero-based index of the next original segment to yield.
     cursor: usize,
     paused: bool,
     skipped_count: usize,
@@ -572,8 +575,10 @@ impl SessionReplayer {
     /// [`transcript_segments_from_jsonl_lenient`].
     pub fn load(contents: &str) -> Result<Self, SessionReplayError> {
         let (segments, skipped_count) = transcript_segments_from_jsonl_lenient(contents)?;
+        let total_segments = segments.len();
         Ok(Self {
-            segments,
+            segments: VecDeque::from(segments),
+            total_segments,
             cursor: 0,
             paused: false,
             skipped_count,
@@ -589,9 +594,9 @@ impl SessionReplayer {
         if self.paused {
             return None;
         }
-        let seg = self.segments.get(self.cursor)?;
+        let seg = self.segments.pop_front()?;
         self.cursor += 1;
-        Some(seg.clone())
+        Some(seg)
     }
 
     /// Pause replay.  Future calls to [`next_segment`](Self::next_segment)
@@ -612,7 +617,7 @@ impl SessionReplayer {
 
     /// Return `true` when all segments have been yielded.
     pub fn is_done(&self) -> bool {
-        self.cursor >= self.segments.len()
+        self.segments.is_empty()
     }
 
     /// Zero-based index of the next segment to yield.
@@ -622,7 +627,7 @@ impl SessionReplayer {
 
     /// Total number of valid [`TranscriptSegment`]s loaded from the JSONL.
     pub fn segment_count(&self) -> usize {
-        self.segments.len()
+        self.total_segments
     }
 
     /// Number of lines that were skipped due to parse errors.
@@ -864,6 +869,10 @@ mod tests {
             "first segment after resume must be the one at the saved cursor"
         );
         assert_eq!(replayer.cursor(), 3);
+        assert!(
+            !replayer.is_done(),
+            "replayer must not report done until every queued segment is yielded"
+        );
 
         // Remaining segments 4 and 5 are still available.
         assert_eq!(replayer.next_segment().unwrap().segment_id, 4);

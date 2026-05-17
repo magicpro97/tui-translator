@@ -709,15 +709,14 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
 
     windows_signal::install();
 
-    let result = run_tui(
-        &state,
-        &restart_required,
-        &cfg_path,
-        &current_config,
-        &playback_service,
-        &keyboard_shutdown,
-        key_rx,
-    );
+    let tui_context = TuiRuntimeContext {
+        restart_required: &restart_required,
+        cfg_path: &cfg_path,
+        current_config: &current_config,
+        playback_service: &playback_service,
+        interaction_mode: TuiInteractionMode::ReplayReadOnly,
+    };
+    let result = run_tui(&state, &tui_context, &keyboard_shutdown, key_rx);
 
     rt.shutdown_background();
 
@@ -1345,15 +1344,14 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         });
     }
 
-    let result = run_tui(
-        state,
+    let tui_context = TuiRuntimeContext {
         restart_required,
         cfg_path,
         current_config,
         playback_service,
-        &keyboard_shutdown,
-        key_rx,
-    );
+        interaction_mode: TuiInteractionMode::Live,
+    };
+    let result = run_tui(state, &tui_context, &keyboard_shutdown, key_rx);
 
     // ── Issue #87 — graceful orchestrator shutdown ────────────────────────────
     // Signal the orchestrator to stop processing new chunks.
@@ -1783,27 +1781,58 @@ fn metrics_warning_row_active(
             || metrics.ram_warning)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TuiInteractionMode {
+    Live,
+    ReplayReadOnly,
+}
+
+impl TuiInteractionMode {
+    fn blocks_action(self, action: &UserAction) -> bool {
+        self == Self::ReplayReadOnly
+            && matches!(
+                action,
+                UserAction::OpenSettings
+                    | UserAction::ConfigChar(_)
+                    | UserAction::ConfigBackspace
+                    | UserAction::ConfigNextField
+                    | UserAction::ConfigPrevField
+                    | UserAction::ConfigSave
+                    | UserAction::ConfigCycleCaptureDevice
+                    | UserAction::ReloadConfig
+                    | UserAction::ToggleTts
+            )
+    }
+}
+
+fn ignore_replay_side_effect_action(state: &AppState, action: &UserAction) {
+    tracing::info!(?action, "ignored side-effecting action in replay mode");
+    *state
+        .pipeline_error_msg
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) =
+        Some("settings and TTS are read-only in replay mode".to_string());
+    state.close_config_editor();
+}
+
+struct TuiRuntimeContext<'a> {
+    restart_required: &'a Arc<AtomicBool>,
+    cfg_path: &'a Path,
+    current_config: &'a Arc<Mutex<config::AppConfig>>,
+    playback_service: &'a SharedPlaybackService,
+    interaction_mode: TuiInteractionMode,
+}
+
 /// Run the terminal interface.  Enters the alternate screen, runs the event
 /// loop, then returns.  The [`TerminalGuard`] restores the terminal on drop.
 fn run_tui(
     state: &AppState,
-    restart_required: &Arc<AtomicBool>,
-    cfg_path: &Path,
-    current_config: &Arc<Mutex<config::AppConfig>>,
-    playback_service: &SharedPlaybackService,
+    context: &TuiRuntimeContext<'_>,
     keyboard_shutdown: &Arc<AtomicBool>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     let mut terminal_guard = TerminalGuard::enter()?;
-    let result = event_loop(
-        terminal_guard.terminal_mut(),
-        state,
-        restart_required,
-        cfg_path,
-        current_config,
-        playback_service,
-        key_rx,
-    );
+    let result = event_loop(terminal_guard.terminal_mut(), state, context, key_rx);
     keyboard_shutdown.store(true, Ordering::Relaxed);
     result
 }
@@ -1816,10 +1845,7 @@ fn run_tui(
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &AppState,
-    restart_required: &Arc<AtomicBool>,
-    cfg_path: &Path,
-    current_config: &Arc<Mutex<config::AppConfig>>,
-    playback_service: &SharedPlaybackService,
+    context: &TuiRuntimeContext<'_>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     loop {
@@ -1830,8 +1856,9 @@ fn event_loop(
         }
 
         let expanded = state.metrics_expanded.load(Ordering::Relaxed);
-        let show_restart = restart_required.load(Ordering::Relaxed);
-        let cost_warning_usd = current_config
+        let show_restart = context.restart_required.load(Ordering::Relaxed);
+        let cost_warning_usd = context
+            .current_config
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .cost_warning_usd;
@@ -1861,15 +1888,19 @@ fn event_loop(
                 }
                 Ok(UserAction::AnyKey) => {}
                 Ok(action) => {
+                    if context.interaction_mode.blocks_action(&action) {
+                        ignore_replay_side_effect_action(state, &action);
+                        continue;
+                    }
                     let terminal_area = terminal.size()?;
                     handle_action(
                         &action,
                         state,
                         terminal_area,
-                        restart_required,
-                        cfg_path,
-                        current_config,
-                        playback_service,
+                        context.restart_required,
+                        context.cfg_path,
+                        context.current_config,
+                        context.playback_service,
                     );
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -2400,6 +2431,37 @@ mod tests {
         assert!(
             !metrics_warning_row_active(false, 0.0, &metrics),
             "compact layout height must stay fixed even when RAM warning is active"
+        );
+    }
+
+    #[test]
+    fn replay_mode_blocks_settings_reload_and_tts_actions() {
+        let blocked = [
+            UserAction::OpenSettings,
+            UserAction::ConfigChar('x'),
+            UserAction::ConfigBackspace,
+            UserAction::ConfigNextField,
+            UserAction::ConfigPrevField,
+            UserAction::ConfigSave,
+            UserAction::ConfigCycleCaptureDevice,
+            UserAction::ReloadConfig,
+            UserAction::ToggleTts,
+        ];
+
+        for action in blocked {
+            assert!(
+                TuiInteractionMode::ReplayReadOnly.blocks_action(&action),
+                "replay mode must block side-effecting action {action:?}"
+            );
+            assert!(
+                !TuiInteractionMode::Live.blocks_action(&action),
+                "live mode must keep existing action behavior for {action:?}"
+            );
+        }
+
+        assert!(
+            !TuiInteractionMode::ReplayReadOnly.blocks_action(&UserAction::PromptLanguage),
+            "replay mode can still allow in-memory language prompt changes"
         );
     }
 
