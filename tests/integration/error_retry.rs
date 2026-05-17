@@ -535,6 +535,9 @@ fn make_orch_context() -> TestCtx {
         stabilizer: Arc::new(Mutex::new(
             crate::pipeline::segmentation::SegmentStabilizer::new(),
         )),
+        sentence_aggregator: Arc::new(Mutex::new(
+            crate::pipeline::sentence_aggregator::SentenceAggregator::new(),
+        )),
         session_recorder: crate::session::SessionRecorder::disabled(),
     };
 
@@ -681,7 +684,10 @@ async fn orchestrator_mt_exhaustion_then_next_chunk_produces_subtitle() {
     }
     drop(tx);
 
-    crate::pipeline::run_orchestrator(rx, SttPassthrough("hello world"), mt, TtsNoop, tc.ctx).await;
+    // Issue #266: text must end with a sentence boundary so the SentenceAggregator
+    // emits each window immediately, not at shutdown.
+    crate::pipeline::run_orchestrator(rx, SttPassthrough("hello world."), mt, TtsNoop, tc.ctx)
+        .await;
 
     // ── Exact retry count: MAX_RETRY_ATTEMPTS for chunk 1 + 1 for chunk 2 ────
     assert_eq!(
