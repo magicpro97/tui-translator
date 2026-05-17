@@ -7,14 +7,18 @@ Scope implemented:
   version gate for future migrations.
 - Added `tests/fixtures/session_log_v1.jsonl` as a concrete header + transcript
   fixture.
-- Added `tests/session_schema.rs` to prove the fixture deserializes and optional
-  STT confidence can be omitted.
+- Added `tests/session_schema.rs` to prove the fixture deserializes, optional
+  fields can be omitted, records round-trip through serde, and unsupported
+  schema versions fail deserialization.
 
 Acceptance coverage:
-- Timestamp, source text, target text, providers, languages, latency, cumulative
-  audio/character counters, and estimated cost are represented in
+- Timestamp, source text, target text, providers, configured languages,
+  MT-detected source language, latency, cumulative audio/character counters,
+  and estimated cost are represented in
   `TranscriptSegment`.
 - Every record includes `schema_version`.
+- Future schema versions are rejected during deserialization instead of only
+  through a helper check.
 - The fixture validates through `serde_json` in the test suite.
 
 Validation commands:
