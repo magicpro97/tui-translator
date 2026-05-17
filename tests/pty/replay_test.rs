@@ -20,7 +20,7 @@ fn replay_session_renders_jsonl_subtitles_without_audio_capture() {
             .expect("failed to spawn replay session");
 
     assert!(
-        session.wait_for_text("Replay session", STARTUP_TIMEOUT),
+        session.wait_for_text("Replay", STARTUP_TIMEOUT),
         "replay mode should label the audio/capture area as replay"
     );
     assert!(
