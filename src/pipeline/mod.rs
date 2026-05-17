@@ -1592,6 +1592,23 @@ mod tests {
 
     // ── Issue #264: VAD end-of-utterance flush ────────────────────────────────
 
+    async fn wait_for_stt_calls(calls: &Arc<AtomicU32>, expected: u32, label: &str) {
+        let result = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if calls.load(Ordering::Relaxed) >= expected {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await;
+        assert!(
+            result.is_ok(),
+            "{label}: timed out waiting for {expected} STT call(s); got {}",
+            calls.load(Ordering::Relaxed)
+        );
+    }
+
     /// T1 (#264): 900 ms of speech followed by VAD end-of-utterance signal
     /// flushes the window *before* the `STT_MAX_WINDOW_MS` safety cap (1 500 ms).
     ///
@@ -1614,20 +1631,23 @@ mod tests {
         let sample_counts = Arc::new(Mutex::new(Vec::new()));
 
         let (tx2, rx2) = mpsc::channel::<AudioChunk>(32);
+        let calls_before_close = Arc::clone(&calls);
+        let sender = async move {
+            // 9 × 100 ms speech chunks → 900 ms (well below STT_MAX_WINDOW_MS = 1 500 ms).
+            for _ in 0..9 {
+                tx2.send(speech_chunk_ms(100)).await.unwrap();
+            }
+            // Drain gate: one chunk enters PadOpen, one expires the pad, then
+            // two PadClosed chunks confirm min_silence_ms and emit EndOfUtterance.
+            for _ in 0..4 {
+                tx2.send(AudioChunk::new(vec![0i16; 1_600])).await.unwrap();
+            }
 
-        // 9 × 100 ms speech chunks → 900 ms (well below STT_MAX_WINDOW_MS = 1 500 ms).
-        for _ in 0..9 {
-            tx2.send(speech_chunk_ms(100)).await.unwrap();
-        }
-        // Drain gate: 1 PadOpen chunk (100 ms) + 2 PadClosed chunks → EndOfUtterance.
-        for _ in 0..3 {
-            tx2.send(AudioChunk::new(vec![0i16; 1_600])).await.unwrap(); // 100 ms silence
-        }
-        // One more silence so EndOfUtterance fires inside the channel (before drop).
-        tx2.send(AudioChunk::new(vec![0i16; 1_600])).await.unwrap();
-        drop(tx2);
+            wait_for_stt_calls(&calls_before_close, 1, "VAD end-of-utterance").await;
+            drop(tx2);
+        };
 
-        run_orchestrator(
+        let orchestrator = run_orchestrator(
             rx2,
             RecordingStt {
                 calls: Arc::clone(&calls),
@@ -1636,12 +1656,13 @@ mod tests {
             OkMt,
             OkTts,
             ctx,
-        )
-        .await;
+        );
+        tokio::join!(orchestrator, sender);
 
-        assert!(
-            calls.load(Ordering::Relaxed) >= 1,
-            "VAD EndOfUtterance must trigger at least one STT flush"
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "VAD EndOfUtterance must trigger exactly one STT flush before channel close"
         );
         let counts = sample_counts.lock().unwrap();
         // The first flush must be well below 1 500 ms worth of samples.
@@ -1761,12 +1782,7 @@ mod tests {
             let calls_before_close = Arc::clone(&calls);
             let sender = async move {
                 tx2.send(speech_chunk()).await.unwrap(); // 500 ms meets STT_IDLE_MIN_MS.
-                tokio::time::sleep(Duration::from_millis(700)).await;
-                assert_eq!(
-                    calls_before_close.load(Ordering::Relaxed),
-                    1,
-                    "{label}: idle flush must fire before the audio channel closes"
-                );
+                wait_for_stt_calls(&calls_before_close, 1, label).await;
                 drop(tx2);
             };
 

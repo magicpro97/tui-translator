@@ -224,19 +224,19 @@ impl VadGate {
     ///
     /// # Decision rules
     ///
-    /// | State      | Energy      | Decision        | Transition                |
-    /// |-----------|-------------|-----------------|---------------------------|
-    /// | Silence    | < threshold | Silence         | —                         |
-    /// | Silence    | ≥ threshold | Silence         | → Confirming              |
-    /// | Confirming | ≥ threshold | Silence         | Stay; Speech on confirm   |
-    /// | Confirming | < threshold | Silence         | → Silence (transient)     |
-    /// | Speech     | ≥ threshold | Speech          | —                         |
-    /// | Speech     | < threshold | Speech          | → PadOpen                 |
-    /// | PadOpen    | ≥ threshold | Speech          | → Speech                  |
-    /// | PadOpen    | < threshold | Speech          | Stay; PadClosed on exp.   |
-    /// | PadClosed  | ≥ threshold | Speech          | → Speech                  |
-    /// | PadClosed  | < threshold | Silence         | Stay                      |
-    /// | PadClosed  | < threshold | EndOfUtterance  | → Silence (on expiry)     |
+    /// | State      | Energy / time condition               | Decision       | Transition              |
+    /// |-----------|----------------------------------------|----------------|-------------------------|
+    /// | Silence    | < threshold                            | Silence        | —                       |
+    /// | Silence    | ≥ threshold                            | Silence        | → Confirming            |
+    /// | Confirming | ≥ threshold                            | Silence        | Stay; Speech on confirm |
+    /// | Confirming | < threshold                            | Silence        | → Silence (transient)   |
+    /// | Speech     | ≥ threshold                            | Speech         | —                       |
+    /// | Speech     | < threshold                            | Speech         | → PadOpen               |
+    /// | PadOpen    | ≥ threshold                            | Speech         | → Speech                |
+    /// | PadOpen    | < threshold                            | Speech         | Stay; PadClosed on exp. |
+    /// | PadClosed  | ≥ threshold                            | Speech         | → Speech                |
+    /// | PadClosed  | < threshold, silence < min_silence_ms  | Silence        | Stay                    |
+    /// | PadClosed  | < threshold, silence ≥ min_silence_ms  | EndOfUtterance | → Silence               |
     #[tracing::instrument(skip_all, level = "trace")]
     pub fn process(&mut self, chunk: &AudioChunk) -> VadDecision {
         let is_above = chunk.rms_energy() >= self.config.threshold;
@@ -724,9 +724,11 @@ mod tests {
         let mut gate = VadGate::new(config);
 
         let drain = |gate: &mut VadGate| {
-            // speech_pad_ms=100 + min_silence_ms=200 = 300 ms in three chunks.
-            gate.process(&silent_chunk(100)); // PadOpen
-            gate.process(&silent_chunk(100)); // PadClosed (pad expired at 100ms)
+            // Four 100 ms silent chunks are required: the first enters PadOpen,
+            // the second expires the 100 ms pad and enters PadClosed, and the
+            // third/fourth accumulate the 200 ms min_silence_ms confirmation.
+            gate.process(&silent_chunk(100)); // Speech -> PadOpen
+            gate.process(&silent_chunk(100)); // PadOpen -> PadClosed
             gate.process(&silent_chunk(100)); // still PadClosed
             gate.process(&silent_chunk(100)) // PadClosed→Silence → EndOfUtterance
         };
