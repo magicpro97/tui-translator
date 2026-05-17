@@ -25,9 +25,9 @@ const DEFAULT_MIN_SILENCE_MS: u32 = 500;
 const DEFAULT_PRE_ROLL_MS: u32 = 200;
 const MAX_PRE_ROLL_MS: u32 = 2_000;
 
-// ─── Pipeline defaults (issue #270 / EP-I.7) ─────────────────────────────────
+// ─── Pipeline defaults (issue #267 / EP-I.4) ─────────────────────────────────
 /// Maximum speech-window duration (ms) before an unconditional STT flush.
-pub const DEFAULT_PIPELINE_MAX_WINDOW_MS: u32 = 1_500;
+pub const DEFAULT_PIPELINE_MAX_WINDOW_MS: u32 = 3_000;
 /// Whether `VadDecision::EndOfUtterance` triggers an immediate STT flush.
 pub const DEFAULT_PIPELINE_EARLY_FLUSH_ON_VAD_END: bool = true;
 /// Idle duration (ms) after the last chunk before flushing a partial window.
@@ -119,7 +119,7 @@ pub struct PipelineConfigJson {
     /// VAD is disabled this is the target window size that drives the normal
     /// flush cadence.
     ///
-    /// Range: `500`–`60000` ms.  Default: `1500` ms.
+    /// Range: `500`–`60000` ms.  Default: `3000` ms.
     #[serde(default = "default_pipeline_max_window_ms")]
     pub max_window_ms: u32,
 
@@ -2023,9 +2023,10 @@ mod tests {
     #[test]
     fn pipeline_config_change_requires_restart() {
         let current = AppConfig::default();
+        // Use 2000 ms — differs from the 3 000 ms default so requires_restart fires.
         let next = AppConfig {
             pipeline: PipelineConfigJson {
-                max_window_ms: 3000,
+                max_window_ms: 2000,
                 ..PipelineConfigJson::default()
             },
             ..AppConfig::default()
@@ -2034,5 +2035,69 @@ mod tests {
             current.requires_restart(&next),
             "changing pipeline config must require a restart"
         );
+    }
+
+    // ── Issue #267 / EP-I.4: configurable endpointing acceptance-criteria tests ─
+
+    /// AC (#267): `idle_flush_ms = 300` is within the valid 50–30 000 ms range.
+    #[test]
+    fn ep267_idle_flush_ms_300_is_valid() {
+        let cfg = AppConfig {
+            pipeline: PipelineConfigJson {
+                idle_flush_ms: 300,
+                idle_min_ms: 200,
+                ..PipelineConfigJson::default()
+            },
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("idle_flush_ms=300 must be accepted as valid");
+        assert_eq!(cfg.pipeline.idle_flush_ms, 300);
+    }
+
+    /// AC (#267): Serde rejects negative `idle_flush_ms` (unsigned field).
+    #[test]
+    fn ep267_serde_rejects_negative_idle_flush_ms() {
+        let json =
+            r#"{"source_language":"ja-JP","target_language":"vi","pipeline":{"idle_flush_ms":-1}}"#;
+        let err = serde_json::from_str::<AppConfig>(json)
+            .expect_err("negative idle_flush_ms must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("idle_flush_ms") || msg.contains("invalid") || msg.contains("negative"),
+            "serde error must mention the field or the sign problem; got: {msg}"
+        );
+    }
+
+    /// AC (#267): `max_window_ms` default is 3 000 ms (not the pre-#267 value of 1 500 ms).
+    #[test]
+    fn ep267_default_max_window_ms_is_3000() {
+        assert_eq!(
+            DEFAULT_PIPELINE_MAX_WINDOW_MS, 3_000,
+            "EP-I.4 requires max_window_ms default = 3 000 ms"
+        );
+        assert_eq!(PipelineConfigJson::default().max_window_ms, 3_000);
+    }
+
+    /// AC (#267): Missing `pipeline` block loads the 3 000 ms max-window default.
+    #[test]
+    fn ep267_missing_pipeline_block_loads_3000ms_default() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        std::io::Write::write_fmt(
+            &mut f,
+            format_args!(r#"{{"source_language":"ja-JP","target_language":"vi"}}"#),
+        )
+        .unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(
+            cfg.pipeline.max_window_ms, 3_000,
+            "missing pipeline block must produce max_window_ms=3000"
+        );
+        assert!(
+            cfg.pipeline.early_flush_on_vad_end,
+            "missing pipeline block must produce early_flush_on_vad_end=true"
+        );
+        assert_eq!(cfg.pipeline.idle_flush_ms, DEFAULT_PIPELINE_IDLE_FLUSH_MS);
+        assert_eq!(cfg.pipeline.idle_min_ms, DEFAULT_PIPELINE_IDLE_MIN_MS);
     }
 }

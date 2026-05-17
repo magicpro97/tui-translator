@@ -15,6 +15,6 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  TTS enabled     : false                                 │
 │  STT fallback    : none                                  │
 │  VAD pre-roll ms : 200                                   │
-│  Max window ms   : 1500                                  │
+│  Max window ms   : 3000                                  │
 │  Early VAD flush : true                                  │
 └──────────────────────────────────────────────────────────┘

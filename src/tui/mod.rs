@@ -236,7 +236,7 @@ pub struct ConfigEditorState {
     // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7) — stored as strings.
     /// `vad.pre_roll_ms` as decimal string (unit: ms, default: "200").
     pub vad_pre_roll_ms: String,
-    /// `pipeline.max_window_ms` as decimal string (unit: ms, default: "1500").
+    /// `pipeline.max_window_ms` as decimal string (unit: ms, default: "3000").
     pub pipeline_max_window_ms: String,
     /// `pipeline.early_flush_on_vad_end` as `"true"` or `"false"` (default: "true").
     pub pipeline_early_flush_on_vad_end: String,

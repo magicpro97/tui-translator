@@ -226,8 +226,9 @@ pub struct OrchestratorContext {
     // ── Pipeline windowing/aggregation knobs (issue #270 / EP-I.7) ────────
     /// Maximum speech-window duration (ms) before an unconditional STT flush.
     ///
-    /// Replaces the hard-coded `STT_MAX_WINDOW_MS` constant.
-    /// Defaults to [`STT_MAX_WINDOW_MS`] when the config `pipeline` block is absent.
+    /// Replaces the hard-coded `STT_MAX_WINDOW_MS` safety cap at runtime.
+    /// Defaults to `crate::config::DEFAULT_PIPELINE_MAX_WINDOW_MS` when the
+    /// config `pipeline` block is absent.
     pub pipeline_max_window_ms: u32,
 
     /// Whether `VadDecision::EndOfUtterance` triggers an immediate STT flush.
@@ -3448,5 +3449,129 @@ mod tests {
             "boundary fragment + shutdown flush of partial = 2 MT calls"
         );
         assert_eq!(pane.lock().unwrap().pair_count(), 2);
+    }
+
+    // ── Issue #267 / EP-I.4: configurable endpointing acceptance-criteria ──────
+
+    /// AC1 (#267): `pipeline.max_window_ms = 2000` — continuous speech (no VAD
+    /// end-of-utterance, no idle gap) flushes exactly once at the 2 000 ms cap.
+    ///
+    /// Four × 500 ms speech chunks accumulate 2 000 ms, which exactly meets the
+    /// configured safety cap and triggers an unconditional STT flush.
+    #[tokio::test]
+    async fn ep267_max_window_ms_2000_flushes_continuous_speech() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        // Override to the value named in the issue acceptance criterion.
+        ctx.pipeline_max_window_ms = 2_000;
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(8);
+        // 4 × 500 ms = 2 000 ms → exactly meets the configured cap.
+        for _ in 0..4 {
+            tx2.send(speech_chunk()).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "continuous speech must flush exactly once at the 2 000 ms cap"
+        );
+        assert_eq!(
+            sample_counts.lock().unwrap().as_slice(),
+            &[32_000_usize],
+            "STT window must contain exactly 2 000 ms (32 000 samples) of audio"
+        );
+    }
+
+    /// AC2 (#267): `early_flush_on_vad_end = false` — VAD EndOfUtterance must
+    /// *not* trigger an early flush; the speech window is held until channel
+    /// close (or another flush path fires).
+    ///
+    /// Setup mirrors T1 (#264) but with `pipeline_early_flush_on_vad_end = false`
+    /// and the safety-cap and idle thresholds set very high so neither fires.
+    /// After sending speech + silence that triggers EndOfUtterance, we verify
+    /// no STT call has fired; the flush happens only at channel close.
+    #[tokio::test]
+    async fn ep267_early_flush_on_vad_end_false_defers_flush_to_channel_close() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        // Disable VAD early flush — the core behaviour under test.
+        ctx.pipeline_early_flush_on_vad_end = false;
+        // Raise safety-cap and idle threshold so neither fires during the test.
+        ctx.pipeline_max_window_ms = 60_000;
+        ctx.pipeline_idle_flush_ms = 30_000;
+        ctx.vad_config = Some(VadConfig {
+            threshold: crate::audio::vad::DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 100,
+            speech_pad_ms: 0,    // no pad — keeps expected sample count exact
+            min_silence_ms: 200, // short silence for test speed
+            pre_roll_ms: crate::audio::vad::DEFAULT_PRE_ROLL_MS,
+        });
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(32);
+        let calls_clone = Arc::clone(&calls);
+        let sender = async move {
+            // 9 × 100 ms speech chunks → 900 ms, well below the 60 000 ms cap.
+            for _ in 0..9 {
+                tx2.send(speech_chunk_ms(100)).await.unwrap();
+            }
+            // Two silence chunks (200 ms total) trigger EndOfUtterance with
+            // min_silence_ms=200 and speech_pad_ms=0.
+            for _ in 0..2 {
+                tx2.send(AudioChunk::new(vec![0i16; 1_600])).await.unwrap();
+            }
+            // Allow the orchestrator to process all queued chunks and the
+            // EndOfUtterance decision before we check that no flush fired.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert_eq!(
+                calls_clone.load(Ordering::Relaxed),
+                0,
+                "early_flush_on_vad_end=false must not flush at EndOfUtterance"
+            );
+            // Channel close is the only path that should flush the window.
+            drop(tx2);
+        };
+
+        let orchestrator = run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        );
+        tokio::join!(orchestrator, sender);
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "channel close must flush the accumulated speech window exactly once"
+        );
+        let counts = sample_counts.lock().unwrap();
+        assert_eq!(
+            counts[0], 16_000_usize,
+            "flush must contain 9 × 100 ms speech + 1 × 100 ms trailing-pad speech \
+             (16 000 samples); the Speech→PadOpen transition always forwards the \
+             first silence chunk as Speech"
+        );
     }
 }
