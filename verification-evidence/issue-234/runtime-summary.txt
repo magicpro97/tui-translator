@@ -33,7 +33,8 @@ NEW-USER DECISION TEST
 A new user reading the README will encounter:
 1. Default cloud mode described under "What this does" (Google STT/MT).
 2. New "CPU-only / offline mode" section that explains when to choose offline.
-3. Cloud vs local comparison table listing API key, internet, quality, RAM tradeoffs.
+3. Cloud vs local comparison table listing API key, internet, quality, RAM tradeoffs,
+   including the current STT-offline / MT-online split.
 Conclusion: user can decide cloud vs local mode after reading both sections.
 
 8 GB LAPTOP USER RECOMMENDATION TEST
@@ -76,6 +77,10 @@ Verify AC3 (no host privileges implied):
 Verify Google cloud sections untouched:
   Select-String -Path README.md -Pattern "google_api_key"
 
+Verify offline limitation wording:
+  Select-String -Path README.md -Pattern "STT: no after model download"
+  Select-String -Path README.md -Pattern "local STT runs without internet"
+
 ---
 
 COMMAND OUTPUT RECORD
@@ -99,3 +104,9 @@ README.md:197:No Zoom host account or host privileges are needed. After models a
 
 > Select-String -Path README.md -Pattern "google_api_key"
 README.md:166:  "google_api_key": "YOUR_KEY",    // from Google Cloud Console
+
+> Select-String -Path README.md -Pattern "STT: no after model download"
+README.md:206:| Internet at runtime | Yes | STT: no after model download; MT: yes until local MT lands |
+
+> Select-String -Path README.md -Pattern "local STT runs without internet"
+README.md:284:that local STT runs without internet; translation still requires Google until

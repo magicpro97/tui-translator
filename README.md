@@ -203,7 +203,7 @@ is implemented.
 | Aspect | Google Cloud (default) | CPU-only offline (opt-in) |
 |--------|----------------------|--------------------------|
 | API key required | Yes | No |
-| Internet at runtime | Yes | No (after one-time model download) |
+| Internet at runtime | Yes | STT: no after model download; MT: yes until local MT lands |
 | STT quality | High | Good — varies by model and hardware |
 | MT quality | High | Moderate (OPUS-MT, planned Phase 7) |
 | Setup | API key + billing | One-time model download |
@@ -279,9 +279,10 @@ headroom with Zoom running.
 - **8 GB machines may hit swap** if Zoom, local STT, and local MT all run at
   once. Monitor RAM in Task Manager; switch to a smaller STT model or back to
   `stt_provider = "google"` if headroom is tight.
-- **One-time internet download required.** Models are fetched from Hugging Face
+- **One-time STT model download required.** Models are fetched from Hugging Face
   on first use and cached under `%USERPROFILE%\.tui-translator\models\`. After
-  that the app runs fully offline.
+  that local STT runs without internet; translation still requires Google until
+  local MT is implemented.
 
 ### Troubleshooting
 
