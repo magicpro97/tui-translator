@@ -1,0 +1,17 @@
+Issue #201 architecture evidence - Google StreamingRecognize plan
+
+Scope:
+- Architecture review only.
+- No runtime streaming implementation was added.
+- Existing REST Google STT/API-key behavior remains unchanged by this issue.
+
+Design artifact:
+- verification-evidence/issue-201/streaming-recognize-design.md
+
+Acceptance coverage:
+- Provider/API changes: separate StreamingSttProvider and StreamingSttSegment design.
+- Auth implications: REST API-key compatibility retained; gRPC streaming uses service-account/ADC credentials.
+- UI state model: existing SubtitlePane partial slot reused for interim bilingual captions.
+- Rollback-safe transcript stitching: dedicated stitcher rules for partial replacement, final commit, stream restart overlap, and duplicate suppression.
+- Migration steps: opt-in config, feature-gated dependencies, mock-provider tests, Google gRPC provider, live evidence, and operator docs.
+- Test strategy: provider contract, pure stitcher, pipeline integration, TUI snapshot, and live e2e evidence gates.
