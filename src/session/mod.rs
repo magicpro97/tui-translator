@@ -17,6 +17,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
+    collections::VecDeque,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -469,6 +470,172 @@ pub fn transcript_segments_from_jsonl(
     Ok(segments)
 }
 
+// ── Session replay ────────────────────────────────────────────────────────────
+
+/// Parse transcript segments from a JSONL string, skipping malformed lines.
+///
+/// Unlike [`transcript_segments_from_jsonl`], malformed JSON/record lines are
+/// logged with [`tracing::warn!`] and counted in the returned `skipped_count`.
+/// Records with unsupported schema versions still fail the replay load so
+/// callers do not silently ignore data from a future format.
+///
+/// The header record is silently ignored (not counted as skipped).
+/// Blank lines are silently ignored.
+///
+/// # Errors
+///
+/// Returns [`SessionReplayError::UnsupportedSchema`] when a valid JSON record
+/// carries a schema version outside this binary's supported range.
+pub fn transcript_segments_from_jsonl_lenient(
+    contents: &str,
+) -> Result<(Vec<TranscriptSegment>, usize), SessionReplayError> {
+    let mut segments = Vec::new();
+    let mut skipped = 0usize;
+    for (index, line) in contents.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<SessionLogRecord>(line) {
+            Ok(SessionLogRecord::TranscriptSegment(seg)) => segments.push(seg),
+            Ok(SessionLogRecord::SessionHeader(_)) => {}
+            Err(err) => {
+                if let Some(version) = unsupported_schema_version(line) {
+                    return Err(SessionReplayError::UnsupportedSchema {
+                        line: index + 1,
+                        version,
+                    });
+                }
+                tracing::warn!(
+                    line = index + 1,
+                    error = %err,
+                    "skipping malformed session log line during replay"
+                );
+                skipped += 1;
+            }
+        }
+    }
+    Ok((segments, skipped))
+}
+
+/// Errors returned while loading a session for replay.
+#[derive(Debug, Error)]
+pub enum SessionReplayError {
+    /// A JSON record uses a schema version this binary must not guess how to read.
+    #[error(
+        "unsupported session log schema version {version} on replay line {line}; supported range is 1..={SESSION_LOG_SCHEMA_VERSION}"
+    )]
+    UnsupportedSchema {
+        /// One-based JSONL line number.
+        line: usize,
+        /// Unsupported schema version found in that line.
+        version: u64,
+    },
+}
+
+fn unsupported_schema_version(line: &str) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let version = value.get("schema_version")?.as_u64()?;
+    if version == 0 || version > u64::from(SESSION_LOG_SCHEMA_VERSION) {
+        Some(version)
+    } else {
+        None
+    }
+}
+
+/// Replay engine for a session JSONL log.
+///
+/// Loads all [`TranscriptSegment`]s from a session file, tracks a cursor
+/// through them, and supports deterministic pause/resume so the position is
+/// preserved while paused.
+///
+/// # Replay contract
+///
+/// - Malformed lines are skipped with a `tracing::warn!` and counted in
+///   [`skipped_count`](Self::skipped_count).
+/// - Unsupported future schema versions are still rejected (the underlying
+///   deserializer enforces the version gate).
+/// - [`next_segment`](Self::next_segment) returns `None` when paused **or**
+///   when all segments have been yielded.  The cursor does not advance while
+///   paused, so resuming picks up exactly where the session was paused.
+#[derive(Debug)]
+pub struct SessionReplayer {
+    segments: VecDeque<TranscriptSegment>,
+    /// Total number of valid segments loaded before replay began.
+    total_segments: usize,
+    /// Zero-based index of the next original segment to yield.
+    cursor: usize,
+    paused: bool,
+    skipped_count: usize,
+}
+
+impl SessionReplayer {
+    /// Build a replayer by parsing a session JSONL string.
+    ///
+    /// Malformed lines are skipped with a warning; see
+    /// [`transcript_segments_from_jsonl_lenient`].
+    pub fn load(contents: &str) -> Result<Self, SessionReplayError> {
+        let (segments, skipped_count) = transcript_segments_from_jsonl_lenient(contents)?;
+        let total_segments = segments.len();
+        Ok(Self {
+            segments: VecDeque::from(segments),
+            total_segments,
+            cursor: 0,
+            paused: false,
+            skipped_count,
+        })
+    }
+
+    /// Advance the cursor and return the next segment.
+    ///
+    /// Returns `None` when the replayer is paused or all segments have been
+    /// yielded.  The cursor is **not** incremented while paused, so a
+    /// subsequent call after [`resume`](Self::resume) returns the same segment.
+    pub fn next_segment(&mut self) -> Option<TranscriptSegment> {
+        if self.paused {
+            return None;
+        }
+        let seg = self.segments.pop_front()?;
+        self.cursor += 1;
+        Some(seg)
+    }
+
+    /// Pause replay.  Future calls to [`next_segment`](Self::next_segment)
+    /// return `None` until [`resume`](Self::resume) is called.
+    pub fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    /// Resume replay from the position where it was paused.
+    pub fn resume(&mut self) {
+        self.paused = false;
+    }
+
+    /// Return `true` when replay is currently paused.
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Return `true` when all segments have been yielded.
+    pub fn is_done(&self) -> bool {
+        self.segments.is_empty()
+    }
+
+    /// Zero-based index of the next segment to yield.
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    /// Total number of valid [`TranscriptSegment`]s loaded from the JSONL.
+    pub fn segment_count(&self) -> usize {
+        self.total_segments
+    }
+
+    /// Number of lines that were skipped due to parse errors.
+    pub fn skipped_count(&self) -> usize {
+        self.skipped_count
+    }
+}
+
 fn deserialize_supported_schema_version<'de, D>(deserializer: D) -> Result<u16, D::Error>
 where
     D: Deserializer<'de>,
@@ -584,8 +751,8 @@ mod tests {
             finalized_at_unix_ms: 1_710_000_000_000 + segment_id,
             audio_start_ms: segment_id * 1_000,
             audio_end_ms: segment_id * 1_000 + 900,
-            source_text: "おはようございます".to_string(),
-            target_text: "Xin chào buổi sáng".to_string(),
+            source_text: format!("source-{segment_id}"),
+            target_text: format!("target-{segment_id}"),
             source_language: "ja-JP".to_string(),
             detected_source_language: Some("ja".to_string()),
             target_language: "vi".to_string(),
@@ -600,5 +767,156 @@ mod tests {
             chars_translated: 10,
             estimated_cost_usd: 0.01,
         }
+    }
+
+    /// Build a minimal JSONL string with the given segments for replay tests.
+    fn replay_jsonl(segments: &[TranscriptSegment]) -> String {
+        let header = SessionLogRecord::SessionHeader(test_header("replay-test"));
+        let mut out = serde_json::to_string(&header).unwrap();
+        out.push('\n');
+        for seg in segments {
+            out.push_str(
+                &serde_json::to_string(&SessionLogRecord::TranscriptSegment(seg.clone())).unwrap(),
+            );
+            out.push('\n');
+        }
+        out
+    }
+
+    // ── SessionReplayer unit tests ─────────────────────────────────────────────
+
+    #[test]
+    fn replayer_loads_five_segments_in_order() {
+        let segs: Vec<_> = (1..=5).map(test_segment).collect();
+        let jsonl = replay_jsonl(&segs);
+        let mut replayer = SessionReplayer::load(&jsonl).unwrap();
+
+        assert_eq!(replayer.segment_count(), 5);
+        assert_eq!(replayer.skipped_count(), 0);
+
+        for expected_id in 1u64..=5 {
+            let seg = replayer
+                .next_segment()
+                .expect("should yield segment in order");
+            assert_eq!(
+                seg.segment_id, expected_id,
+                "segment at position {expected_id} must appear in order"
+            );
+        }
+        assert!(
+            replayer.is_done(),
+            "replayer must report done after all segments"
+        );
+        assert!(
+            replayer.next_segment().is_none(),
+            "next after done must be None"
+        );
+    }
+
+    #[test]
+    fn replayer_skips_malformed_lines_and_counts_them() {
+        let good_seg = test_segment(42);
+        let header_line =
+            serde_json::to_string(&SessionLogRecord::SessionHeader(test_header("t"))).unwrap();
+        let good_line =
+            serde_json::to_string(&SessionLogRecord::TranscriptSegment(good_seg.clone())).unwrap();
+
+        let jsonl = format!("{header_line}\nnot_valid_json\n{good_line}\n{{\"bad\":true}}\n");
+        let mut replayer = SessionReplayer::load(&jsonl).unwrap();
+
+        assert_eq!(
+            replayer.skipped_count(),
+            2,
+            "two malformed lines must be counted"
+        );
+        assert_eq!(replayer.segment_count(), 1);
+
+        let yielded = replayer.next_segment().unwrap();
+        assert_eq!(yielded.segment_id, 42);
+        assert!(replayer.is_done());
+    }
+
+    #[test]
+    fn replayer_pause_preserves_cursor_and_resume_continues() {
+        let segs: Vec<_> = (1..=5).map(test_segment).collect();
+        let jsonl = replay_jsonl(&segs);
+        let mut replayer = SessionReplayer::load(&jsonl).unwrap();
+
+        // Yield the first two segments (ids 1, 2).
+        assert_eq!(replayer.next_segment().unwrap().segment_id, 1);
+        assert_eq!(replayer.next_segment().unwrap().segment_id, 2);
+        assert_eq!(replayer.cursor(), 2);
+
+        // Pause: cursor must not advance.
+        replayer.pause();
+        assert!(replayer.is_paused());
+        assert!(
+            replayer.next_segment().is_none(),
+            "next_segment while paused must return None"
+        );
+        assert_eq!(replayer.cursor(), 2, "cursor must not change while paused");
+
+        // Multiple paused calls are idempotent.
+        assert!(replayer.next_segment().is_none());
+        assert_eq!(replayer.cursor(), 2);
+
+        // Resume: must continue from exactly position 2 (segment id 3).
+        replayer.resume();
+        assert!(!replayer.is_paused());
+        assert_eq!(
+            replayer.next_segment().unwrap().segment_id,
+            3,
+            "first segment after resume must be the one at the saved cursor"
+        );
+        assert_eq!(replayer.cursor(), 3);
+        assert!(
+            !replayer.is_done(),
+            "replayer must not report done until every queued segment is yielded"
+        );
+
+        // Remaining segments 4 and 5 are still available.
+        assert_eq!(replayer.next_segment().unwrap().segment_id, 4);
+        assert_eq!(replayer.next_segment().unwrap().segment_id, 5);
+        assert!(replayer.is_done());
+    }
+
+    #[test]
+    fn replayer_ignores_blank_lines_and_header() {
+        let seg = test_segment(7);
+        let header_line =
+            serde_json::to_string(&SessionLogRecord::SessionHeader(test_header("t2"))).unwrap();
+        let seg_line = serde_json::to_string(&SessionLogRecord::TranscriptSegment(seg)).unwrap();
+        let jsonl = format!("\n{header_line}\n\n{seg_line}\n\n");
+        let replayer = SessionReplayer::load(&jsonl).unwrap();
+
+        assert_eq!(replayer.segment_count(), 1);
+        assert_eq!(
+            replayer.skipped_count(),
+            0,
+            "header and blank lines must not count as skipped"
+        );
+    }
+
+    #[test]
+    fn replayer_rejects_future_schema_version() {
+        let line =
+            serde_json::to_string(&SessionLogRecord::TranscriptSegment(test_segment(9))).unwrap();
+        let future_version = u64::from(SESSION_LOG_SCHEMA_VERSION) + 1;
+        let line = line.replace(
+            &format!("\"schema_version\":{}", SESSION_LOG_SCHEMA_VERSION),
+            &format!("\"schema_version\":{future_version}"),
+        );
+
+        let err = transcript_segments_from_jsonl_lenient(&line).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                SessionReplayError::UnsupportedSchema {
+                    line: 1,
+                    version
+                } if version == future_version
+            ),
+            "future schema version must fail replay load, got {err:?}"
+        );
     }
 }

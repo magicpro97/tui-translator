@@ -123,6 +123,13 @@ struct SessionExportArgs {
     format: SessionExportFormat,
 }
 
+/// Arguments for `--replay-session`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayArgs {
+    /// Path to the session JSONL file to replay.
+    pub path: PathBuf,
+}
+
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
 //
 // Handles CTRL_C_EVENT, CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT (window X button),
@@ -551,6 +558,175 @@ fn run_session_export(args: &SessionExportArgs) -> Result<()> {
     Ok(())
 }
 
+// ── Session replay (issue #226 / EP-F.3) ─────────────────────────────────────
+
+/// Parse `--replay-session <path>` from an argument iterator.
+///
+/// Returns `Ok(None)` when no replay flag is present.  Returns an error when
+/// `--replay-session` appears without a following path value.
+fn parse_replay_args_from<I>(args: I) -> Result<Option<ReplayArgs>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--replay-session") {
+            let value = iter
+                .next()
+                .with_context(|| "missing value after --replay-session")?;
+            if value.to_string_lossy().starts_with("--") {
+                bail!("missing value after --replay-session");
+            }
+            return Ok(Some(ReplayArgs {
+                path: PathBuf::from(value),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+/// Run the TUI in session-replay mode.
+///
+/// Reads `args.path`, loads all [`TranscriptSegment`]s via
+/// [`session::SessionReplayer`] (malformed lines are skipped with a warning),
+/// populates the subtitle pane one segment at a time, and shows the normal TUI.
+/// Audio capture, STT, MT, and TTS providers are **not started**.
+///
+/// The existing `Space` pause / resume key works: when the user pauses, the
+/// replay feeder stops advancing until they resume.
+fn run_session_replay(args: &ReplayArgs) -> Result<()> {
+    let contents = fs::read_to_string(&args.path)
+        .with_context(|| format!("failed to read session log {}", args.path.display()))?;
+
+    let replayer = session::SessionReplayer::load(&contents)
+        .with_context(|| format!("failed to load replay session {}", args.path.display()))?;
+    let segment_count = replayer.segment_count();
+    let skipped_count = replayer.skipped_count();
+
+    if skipped_count > 0 {
+        tracing::warn!(
+            skipped = skipped_count,
+            path = %args.path.display(),
+            "skipped malformed lines during replay load"
+        );
+    }
+    tracing::info!(
+        segments = segment_count,
+        skipped = skipped_count,
+        path = %args.path.display(),
+        "starting session replay"
+    );
+
+    let state = AppState::new();
+    // Display a clear indicator in the device-name slot so the operator knows
+    // they are watching a replay, not a live session.
+    overwrite_device_name(
+        &state.device_name,
+        &format!("REPLAY: {}", args.path.display()),
+    );
+    overwrite_capture_device_label(
+        &state.capture_device_label,
+        &Some("Replay session".to_string()),
+    );
+    *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+        metrics::SttState::Error("replay mode — no live audio".to_string());
+
+    // Wrap the replayer in Arc<Mutex<>> so the feeder task and the TUI can both
+    // access it.  The TUI's `paused` AtomicBool drives pause/resume for replay.
+    let replayer = Arc::new(Mutex::new(replayer));
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("failed to build Tokio runtime for replay")?;
+
+    // Spawn the replay feeder task: push one SubtitlePair per 600 ms, honoring
+    // the `state.paused` flag (Space key).
+    {
+        let subtitle_pane = Arc::clone(&state.subtitle_pane);
+        let paused = Arc::clone(&state.paused);
+        let replayer = Arc::clone(&replayer);
+        rt.spawn(async move {
+            loop {
+                // When paused, poll at 50 ms so the resume is snappy.
+                if paused.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    continue;
+                }
+
+                let maybe_seg = {
+                    let mut r = replayer.lock().unwrap_or_else(|p| p.into_inner());
+                    r.next_segment()
+                };
+
+                match maybe_seg {
+                    None => {
+                        // Replayer is done (or paused, handled above).
+                        // If done, wait a bit and re-check; exit when is_done.
+                        let done = replayer.lock().unwrap_or_else(|p| p.into_inner()).is_done();
+                        if done {
+                            tracing::info!("session replay finished; all segments displayed");
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    Some(seg) => {
+                        let pair = tui::SubtitlePair::new(seg.source_text, seg.target_text);
+                        subtitle_pane
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .push(pair);
+                        // 600 ms between segments keeps replay readable.
+                        tokio::time::sleep(Duration::from_millis(600)).await;
+                    }
+                }
+            }
+        });
+    }
+
+    // Dummy config objects — replay mode does not read or write config.
+    let restart_required = Arc::new(AtomicBool::new(false));
+    let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+    let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+    let (key_tx, key_rx) = mpsc::channel::<UserAction>();
+    let keyboard_shutdown = Arc::new(AtomicBool::new(false));
+    {
+        let lang_flag = Arc::clone(&state.lang_prompt_active);
+        let config_editor_flag = Arc::clone(&state.config_editor_active);
+        let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
+        rt.spawn(async move {
+            tokio::task::spawn_blocking(move || {
+                keyboard_task(key_tx, lang_flag, config_editor_flag, keyboard_shutdown)
+            })
+            .await
+            .ok();
+        });
+    }
+
+    // Use a dummy cfg_path; replay mode never writes config.
+    let cfg_path = PathBuf::from("replay.json");
+
+    windows_signal::install();
+
+    let tui_context = TuiRuntimeContext {
+        restart_required: &restart_required,
+        cfg_path: &cfg_path,
+        current_config: &current_config,
+        playback_service: &playback_service,
+        interaction_mode: TuiInteractionMode::ReplayReadOnly,
+    };
+    let result = run_tui(&state, &tui_context, &keyboard_shutdown, key_rx);
+
+    rt.shutdown_background();
+
+    if result.is_ok() {
+        print_session_summary_to_stdout(&state);
+    }
+
+    result
+}
+
 fn main() -> Result<()> {
     init_tracing();
 
@@ -558,6 +734,12 @@ fn main() -> Result<()> {
 
     if should_list_audio_devices() {
         print_audio_devices_to_stdout()?;
+        return Ok(());
+    }
+
+    // Replay mode — bypasses all audio/STT/MT/TTS provider construction.
+    if let Some(replay_args) = parse_replay_args_from(std::env::args_os().skip(1))? {
+        run_session_replay(&replay_args)?;
         return Ok(());
     }
 
@@ -1162,15 +1344,14 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         });
     }
 
-    let result = run_tui(
-        state,
+    let tui_context = TuiRuntimeContext {
         restart_required,
         cfg_path,
         current_config,
         playback_service,
-        &keyboard_shutdown,
-        key_rx,
-    );
+        interaction_mode: TuiInteractionMode::Live,
+    };
+    let result = run_tui(state, &tui_context, &keyboard_shutdown, key_rx);
 
     // ── Issue #87 — graceful orchestrator shutdown ────────────────────────────
     // Signal the orchestrator to stop processing new chunks.
@@ -1600,27 +1781,58 @@ fn metrics_warning_row_active(
             || metrics.ram_warning)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TuiInteractionMode {
+    Live,
+    ReplayReadOnly,
+}
+
+impl TuiInteractionMode {
+    fn blocks_action(self, action: &UserAction) -> bool {
+        self == Self::ReplayReadOnly
+            && matches!(
+                action,
+                UserAction::OpenSettings
+                    | UserAction::ConfigChar(_)
+                    | UserAction::ConfigBackspace
+                    | UserAction::ConfigNextField
+                    | UserAction::ConfigPrevField
+                    | UserAction::ConfigSave
+                    | UserAction::ConfigCycleCaptureDevice
+                    | UserAction::ReloadConfig
+                    | UserAction::ToggleTts
+            )
+    }
+}
+
+fn ignore_replay_side_effect_action(state: &AppState, action: &UserAction) {
+    tracing::info!(?action, "ignored side-effecting action in replay mode");
+    *state
+        .pipeline_error_msg
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) =
+        Some("settings and TTS are read-only in replay mode".to_string());
+    state.close_config_editor();
+}
+
+struct TuiRuntimeContext<'a> {
+    restart_required: &'a Arc<AtomicBool>,
+    cfg_path: &'a Path,
+    current_config: &'a Arc<Mutex<config::AppConfig>>,
+    playback_service: &'a SharedPlaybackService,
+    interaction_mode: TuiInteractionMode,
+}
+
 /// Run the terminal interface.  Enters the alternate screen, runs the event
 /// loop, then returns.  The [`TerminalGuard`] restores the terminal on drop.
 fn run_tui(
     state: &AppState,
-    restart_required: &Arc<AtomicBool>,
-    cfg_path: &Path,
-    current_config: &Arc<Mutex<config::AppConfig>>,
-    playback_service: &SharedPlaybackService,
+    context: &TuiRuntimeContext<'_>,
     keyboard_shutdown: &Arc<AtomicBool>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     let mut terminal_guard = TerminalGuard::enter()?;
-    let result = event_loop(
-        terminal_guard.terminal_mut(),
-        state,
-        restart_required,
-        cfg_path,
-        current_config,
-        playback_service,
-        key_rx,
-    );
+    let result = event_loop(terminal_guard.terminal_mut(), state, context, key_rx);
     keyboard_shutdown.store(true, Ordering::Relaxed);
     result
 }
@@ -1633,10 +1845,7 @@ fn run_tui(
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &AppState,
-    restart_required: &Arc<AtomicBool>,
-    cfg_path: &Path,
-    current_config: &Arc<Mutex<config::AppConfig>>,
-    playback_service: &SharedPlaybackService,
+    context: &TuiRuntimeContext<'_>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
     loop {
@@ -1647,8 +1856,9 @@ fn event_loop(
         }
 
         let expanded = state.metrics_expanded.load(Ordering::Relaxed);
-        let show_restart = restart_required.load(Ordering::Relaxed);
-        let cost_warning_usd = current_config
+        let show_restart = context.restart_required.load(Ordering::Relaxed);
+        let cost_warning_usd = context
+            .current_config
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .cost_warning_usd;
@@ -1678,15 +1888,19 @@ fn event_loop(
                 }
                 Ok(UserAction::AnyKey) => {}
                 Ok(action) => {
+                    if context.interaction_mode.blocks_action(&action) {
+                        ignore_replay_side_effect_action(state, &action);
+                        continue;
+                    }
                     let terminal_area = terminal.size()?;
                     handle_action(
                         &action,
                         state,
                         terminal_area,
-                        restart_required,
-                        cfg_path,
-                        current_config,
-                        playback_service,
+                        context.restart_required,
+                        context.cfg_path,
+                        context.current_config,
+                        context.playback_service,
                     );
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -2217,6 +2431,37 @@ mod tests {
         assert!(
             !metrics_warning_row_active(false, 0.0, &metrics),
             "compact layout height must stay fixed even when RAM warning is active"
+        );
+    }
+
+    #[test]
+    fn replay_mode_blocks_settings_reload_and_tts_actions() {
+        let blocked = [
+            UserAction::OpenSettings,
+            UserAction::ConfigChar('x'),
+            UserAction::ConfigBackspace,
+            UserAction::ConfigNextField,
+            UserAction::ConfigPrevField,
+            UserAction::ConfigSave,
+            UserAction::ConfigCycleCaptureDevice,
+            UserAction::ReloadConfig,
+            UserAction::ToggleTts,
+        ];
+
+        for action in blocked {
+            assert!(
+                TuiInteractionMode::ReplayReadOnly.blocks_action(&action),
+                "replay mode must block side-effecting action {action:?}"
+            );
+            assert!(
+                !TuiInteractionMode::Live.blocks_action(&action),
+                "live mode must keep existing action behavior for {action:?}"
+            );
+        }
+
+        assert!(
+            !TuiInteractionMode::ReplayReadOnly.blocks_action(&UserAction::PromptLanguage),
+            "replay mode can still allow in-memory language prompt changes"
         );
     }
 
@@ -3344,5 +3589,62 @@ mod tests {
 
         assert!(result.tts_enabled);
         assert_eq!(result.stt_fallback_policy, "local");
+    }
+
+    // ── Replay CLI parsing tests (issue #226) ─────────────────────────────────
+
+    #[test]
+    fn parse_replay_args_accepts_flag_and_path() {
+        let parsed = parse_replay_args_from(vec![
+            OsString::from("--replay-session"),
+            OsString::from(r"C:\sessions\meeting.jsonl"),
+        ])
+        .unwrap()
+        .expect("replay args should be detected");
+
+        assert_eq!(parsed.path, PathBuf::from(r"C:\sessions\meeting.jsonl"));
+    }
+
+    #[test]
+    fn parse_replay_args_returns_none_when_flag_absent() {
+        let result = parse_replay_args_from(vec![
+            OsString::from("--export-session"),
+            OsString::from("meeting.jsonl"),
+        ])
+        .unwrap();
+
+        assert!(result.is_none(), "no replay flag → must return None");
+    }
+
+    #[test]
+    fn parse_replay_args_requires_path_value() {
+        // Flag without a following path value must return an error.
+        let err = parse_replay_args_from(vec![OsString::from("--replay-session")])
+            .expect_err("missing path should be rejected");
+        assert!(
+            err.to_string().contains("--replay-session"),
+            "error message must name the flag"
+        );
+    }
+
+    #[test]
+    fn parse_replay_args_rejects_another_flag_as_value() {
+        let err = parse_replay_args_from(vec![
+            OsString::from("--replay-session"),
+            OsString::from("--other-flag"),
+        ])
+        .expect_err("another flag as value must be rejected");
+        assert!(err.to_string().contains("--replay-session"));
+    }
+
+    /// Verify that `parse_replay_args_from` returns `None` for an empty
+    /// argument list, proving the bypass path is not accidentally triggered.
+    #[test]
+    fn replay_bypass_not_triggered_with_no_args() {
+        let result = parse_replay_args_from(std::iter::empty::<OsString>()).unwrap();
+        assert!(
+            result.is_none(),
+            "no args must not trigger replay mode; audio/provider startup proceeds normally"
+        );
     }
 }

@@ -90,6 +90,16 @@ impl PtySession {
     /// The working directory is set to `std::env::temp_dir()` so no accidental
     /// `config.json` from the repository root is loaded.
     pub fn spawn(cols: u16, rows: u16, extra_env: &[(&str, &str)]) -> Result<Self, String> {
+        Self::spawn_with_args(cols, rows, extra_env, &[])
+    }
+
+    /// Spawn the binary with additional command-line arguments.
+    pub fn spawn_with_args(
+        cols: u16,
+        rows: u16,
+        extra_env: &[(&str, &str)],
+        args: &[&str],
+    ) -> Result<Self, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -102,6 +112,7 @@ impl PtySession {
 
         let sandbox = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
         let mut cmd = CommandBuilder::new(BINARY);
+        cmd.args(args);
         // Most PTY tests assert the steady-state UI and intentionally bypass
         // the first-run setup flow unless they override this flag explicitly.
         cmd.env("TUI_TRANSLATOR_SKIP_ONBOARDING", "1");
