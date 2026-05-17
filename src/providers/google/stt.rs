@@ -114,9 +114,9 @@ struct SpeechRecognitionAlternative {
 pub struct GoogleSttProvider {
     api_key: String,
     client: Client,
-    /// Phrase hints forwarded as `speechContexts` in every recognition
+    /// Prebuilt speech adaptation contexts forwarded in every recognition
     /// request.  An empty list means no hints are sent (default behaviour).
-    phrase_hints: Vec<String>,
+    speech_contexts: Vec<SpeechContext>,
 }
 
 impl GoogleSttProvider {
@@ -141,17 +141,21 @@ impl GoogleSttProvider {
         Ok(Self {
             api_key,
             client,
-            phrase_hints: Vec::new(),
+            speech_contexts: Vec::new(),
         })
     }
 
     /// Set phrase hints that will be forwarded to Google STT as
     /// `speechContexts` on every recognition request.
     ///
-    /// An empty slice clears any previously set hints.  The hints are stored
+    /// An empty list clears any previously set hints.  The hints are stored
     /// at construction time and applied to every subsequent `transcribe` call.
     pub fn with_phrase_hints(mut self, hints: Vec<String>) -> Self {
-        self.phrase_hints = hints;
+        self.speech_contexts = if hints.is_empty() {
+            Vec::new()
+        } else {
+            vec![SpeechContext { phrases: hints }]
+        };
         self
     }
 }
@@ -227,15 +231,6 @@ impl SttProvider for GoogleSttProvider {
         let pcm_bytes: Vec<u8> = chunk.samples.iter().flat_map(|s| s.to_le_bytes()).collect();
         let audio_content = STANDARD.encode(&pcm_bytes);
 
-        // Build the optional speech adaptation context from stored phrase hints.
-        let speech_contexts: Vec<SpeechContext> = if self.phrase_hints.is_empty() {
-            Vec::new()
-        } else {
-            vec![SpeechContext {
-                phrases: self.phrase_hints.clone(),
-            }]
-        };
-
         let request_body = RecognizeRequest {
             config: RecognitionConfig {
                 encoding: "LINEAR16",
@@ -243,7 +238,7 @@ impl SttProvider for GoogleSttProvider {
                 language_code,
                 enable_automatic_punctuation: true,
                 model: "latest_long",
-                speech_contexts: &speech_contexts,
+                speech_contexts: &self.speech_contexts,
             },
             audio: RecognitionAudio {
                 content: audio_content,
@@ -421,12 +416,32 @@ mod tests {
     }
 
     #[test]
-    fn provider_with_phrase_hints_includes_speech_contexts_in_serialized_config() {
+    fn provider_with_phrase_hints_prebuilds_serializable_speech_contexts() {
         let provider = GoogleSttProvider::new("dummy_key")
             .expect("valid key should build provider")
             .with_phrase_hints(vec!["Zoom".to_string(), "テスト".to_string()]);
-        // Verify stored hints are correct.
-        assert_eq!(provider.phrase_hints, vec!["Zoom", "テスト"]);
+        let config = RecognitionConfig {
+            encoding: "LINEAR16",
+            sample_rate_hertz: 16_000,
+            language_code: "ja-JP",
+            enable_automatic_punctuation: true,
+            model: "latest_long",
+            speech_contexts: &provider.speech_contexts,
+        };
+        let json = serde_json::to_string(&config).expect("serialization must not fail");
+
+        assert!(
+            json.contains("speechContexts"),
+            "provider phrase hints must serialize as speechContexts, got: {json}"
+        );
+        assert!(
+            json.contains("Zoom"),
+            "first hint missing from payload: {json}"
+        );
+        assert!(
+            json.contains("テスト"),
+            "second hint missing from payload: {json}"
+        );
     }
 
     #[test]
@@ -434,8 +449,8 @@ mod tests {
         let provider =
             GoogleSttProvider::new("dummy_key").expect("valid key should build provider");
         assert!(
-            provider.phrase_hints.is_empty(),
-            "phrase_hints must default to empty"
+            provider.speech_contexts.is_empty(),
+            "speech_contexts must default to empty"
         );
     }
 
