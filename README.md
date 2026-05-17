@@ -218,36 +218,50 @@ is implemented.
 
 ### Recommended model tier
 
-The table below is based on benchmarks run on an i5-12400 / 32 GB Windows 11
-host using CPU INT8 inference (`docs/09-cpu-model-benchmark.md`).
-**Quality and latency vary by hardware** — always verify on your target machine.
+The application uses GGML-format Whisper model files from the
+[whisper.cpp project](https://huggingface.co/ggerganov/whisper.cpp).
+The current `local-stt` release loads `ggml-tiny.bin`; model selection is not
+configurable yet. The table below uses approximate RAM figures derived from CPU
+INT8 benchmarks (`docs/09-cpu-model-benchmark.md`). **Quality and latency vary
+by hardware** — always verify on your target machine.
 
-| Model | Disk | Peak RAM (30 s clip) | CER (ja) | Recommendation |
-|-------|-----:|--------------------:|--------:|----------------|
-| `faster-whisper-tiny` | 72 MB | ~278 MB | 5.6% | Low-resource fallback only |
-| **`faster-whisper-base`** | 139 MB | ~288 MB | 0.0% | **Recommended default** |
-| `faster-whisper-small` | 461 MB | ~600 MB | 0.0% | Quality option — 16 GB+ recommended |
+| Model file | Disk | Approx. peak RAM | Accuracy (ja) | Recommendation |
+|-----------|-----:|----------------:|:-------------:|----------------|
+| **`ggml-tiny.bin`** | **~74 MB** | **~280 MB** | Good | **Required by the current release** |
+| `ggml-base.bin` | ~141 MB | ~290 MB | Excellent | Manifest only; not selected by current app releases |
+| `ggml-small.bin` | ~465 MB | ~600 MB | Excellent | Manifest only; not selected by current app releases |
 
-**8 GB machines:** Start with `faster-whisper-base`. Zoom or Teams typically
-consumes 1–2 GB of RAM while a call is active; adding the base model brings the
-combined overhead to roughly 1.5–2.5 GB. Switch to `tiny` if free RAM drops
-below about 1 GB. Do not use `small` on an 8 GB machine unless a co-run
-benchmark confirms RTF < 1.0 and sufficient headroom.
+**8 GB machines:** Use `ggml-tiny.bin`. Zoom or Teams typically consumes
+1–2 GB of RAM while a call is active; adding the tiny model keeps the combined
+overhead modest. Do not download only `ggml-base.bin` or `ggml-small.bin` for
+the current release because the application will still look for `ggml-tiny.bin`.
 
-**16 GB machines:** `faster-whisper-base` is still the safe conservative
-default. Upgrade to `faster-whisper-small` after confirming CPU and thermal
-headroom with Zoom running.
+**16 GB machines:** The current release still uses `ggml-tiny.bin`. Larger
+models are listed in the built-in manifest for later model-selection work, but
+they are not selected by the app today.
 
 ### Enabling local STT
 
 > Local STT requires the executable to be built with the `local-stt` feature
 > flag. Check the release notes for a build that includes it.
 
-1. Download the Whisper model into the local model cache:
+1. Download the GGML-format Whisper model file used by the current release:
+   `ggml-tiny.bin` (~74 MB, multilingual).
+
+   Download links (from the [whisper.cpp Hugging Face repository](https://huggingface.co/ggerganov/whisper.cpp)):
+   - **Tiny (~74 MB, required):** `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin`
+
+   Place the downloaded file in the per-user model cache directory:
 
    ```text
    %USERPROFILE%\.tui-translator\models\
    ```
+
+   Example result: `C:\Users\YourName\.tui-translator\models\ggml-tiny.bin`
+
+   The application verifies the SHA-256 checksum on startup and will report a
+   clear error if the file is missing or corrupted. See `USAGE.md` for the
+   expected checksums and a one-line PowerShell verification command.
 
 2. Add or update these fields in your `config.json`:
 
@@ -279,18 +293,22 @@ headroom with Zoom running.
 - **8 GB machines may hit swap** if Zoom, local STT, and local MT all run at
   once. Monitor RAM in Task Manager; switch to a smaller STT model or back to
   `stt_provider = "google"` if headroom is tight.
-- **One-time STT model download required.** Models are fetched from Hugging Face
-  on first use and cached under `%USERPROFILE%\.tui-translator\models\`. After
-  that local STT runs without internet; translation still requires Google until
-  local MT is implemented.
+- **One-time STT model download required.** Model files must be downloaded
+  manually from Hugging Face and placed in
+  `%USERPROFILE%\.tui-translator\models\` before enabling local STT. The
+  application verifies the SHA-256 checksum on startup and reports a clear
+  error if the file is missing or corrupted. A dedicated model-download
+  command (issue #236) is planned for a future release. After the model is
+  in place, local STT runs without internet; translation still requires
+  Google until local MT is implemented.
 
 ### Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Subtitles lag or pile up | RTF > 1.0 — model too large for this CPU | Switch from `small` to `base` or `tiny` |
+| Subtitles lag or pile up | RTF > 1.0 — model too large for this CPU | Switch from `ggml-small.bin` to `ggml-base.bin` or `ggml-tiny.bin` |
 | High CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to 70–80 to throttle inference |
-| RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Lower the threshold or switch to `tiny` |
+| RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Lower the threshold or switch to `ggml-tiny.bin` |
 | "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
 | No translation output | Local MT not yet implemented | Use `mt_provider = "google"` with a valid Google API key |
 

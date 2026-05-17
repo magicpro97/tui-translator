@@ -203,3 +203,225 @@ the free [VB-CABLE Virtual Audio Device](https://vb-audio.com/Cable/) (third-par
    panel so you still hear the meeting.
 
 With this configuration, Zoom audio flows through the virtual cable and TUI Translator captures it.
+
+---
+
+## Optional: Offline / Local Speech-to-Text Mode
+
+By default, TUI Translator sends audio to Google Cloud for transcription and translation.
+This works well but requires a Google API key and an active internet connection during the
+meeting.
+
+**Local mode** lets you transcribe speech entirely on your own computer using a small
+AI model that runs on the CPU. No audio is sent to any cloud service for speech
+recognition, and no API key is needed for transcription.
+
+> **Translation still requires Google Cloud — for now.**
+> Local speech-to-text (STT) is available now. Local machine translation (MT)
+> is planned for a future release. Until then, translation still goes through
+> Google Cloud Translation and requires a Google API key and an internet connection.
+> If you do not supply an API key, the application shows a provider error and
+> keeps audio capture in metrics-only mode instead of producing subtitles.
+
+---
+
+### Is local mode right for you?
+
+Use local mode when:
+
+- You do not have a Google Cloud API key, or would prefer not to send audio to
+  an external service.
+- Your internet connection is unreliable during meetings.
+- You want live Japanese speech recognition without cloud billing, even if
+  translation still requires a Google key.
+
+---
+
+### Before you begin — check your release build
+
+Local mode requires a release build that includes the `local-stt` feature.
+
+1. Open the [Releases page](https://github.com/magicpro97/tui-translator/releases).
+2. Find the release you downloaded and read its release notes.
+3. If the notes mention **`local-stt`**, your build supports local mode.
+4. If not, download a release that lists `local-stt` before continuing.
+
+---
+
+### Step A — Download the speech recognition model
+
+The application uses GGML-format Whisper model files from the
+[whisper.cpp project on Hugging Face](https://huggingface.co/ggerganov/whisper.cpp).
+You download the model file once and place it in a folder on your computer.
+After that, local STT runs without an internet connection.
+
+**Required model for the current release: `ggml-tiny.bin`** (multilingual, ~74 MB)
+
+| Model file | Size | Notes |
+|-----------|-----:|-------|
+| **`ggml-tiny.bin`** | **~74 MB** | **Required by current app releases; fastest, lower accuracy for Japanese** |
+| `ggml-base.bin` | ~141 MB | Listed in the manifest, but not selected by current app releases |
+| `ggml-small.bin` | ~465 MB | Listed in the manifest, but not selected by current app releases |
+
+Download this model file:
+
+| Model | Download link |
+|-------|--------------|
+| **Tiny (required)** | **https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin** |
+
+> **Important:** Current releases do not have a setting for choosing a larger
+> Whisper model. If you download only `ggml-base.bin` or `ggml-small.bin`, the
+> app will still report that `ggml-tiny.bin` is missing.
+
+> **Tip:** Right-click the link and choose "Save link as" to download directly to
+> a folder of your choice.
+
+> **About model checksums:**
+> These model files are published by the whisper.cpp project on Hugging Face.
+> The application verifies the SHA-256 checksum of the downloaded file every
+> time it starts — you do not need to check it yourself. If the file is
+> corrupted or incomplete, the application will print an error message and tell
+> you what to do. The expected SHA-256 values are listed in
+> [Step C](#step-c----optional-manual-checksum-verification) if you want to
+> verify the download yourself before running the application.
+
+---
+
+### Step B — Place the model file in the correct folder
+
+1. Open **File Explorer** and navigate to this path (copy and paste it into
+   the address bar):
+
+   ```text
+   %USERPROFILE%\.tui-translator\models
+   ```
+
+   If the `models` folder does not exist, create it now.
+
+2. Move the downloaded `.bin` file into that folder. When done, the full path
+   should look like this example:
+
+   ```text
+   C:\Users\YourName\.tui-translator\models\ggml-tiny.bin
+   ```
+
+   Replace `YourName` with your Windows user name.
+
+---
+
+### Step C — Optional: manual checksum verification
+
+The application checks the file automatically on startup. If you want to verify
+the download yourself before running the application, open **PowerShell** and
+run this command (adjust the file name if you downloaded a different model):
+
+```powershell
+Get-FileHash "$env:USERPROFILE\.tui-translator\models\ggml-tiny.bin" -Algorithm SHA256
+```
+
+The `Hash` value in the output must match exactly:
+
+| Model file | Expected SHA-256 |
+|-----------|-----------------|
+| `ggml-tiny.bin` | `be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21` |
+| `ggml-base.bin` | `60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe` |
+| `ggml-small.bin` | `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b` |
+
+If the hash does not match, delete the `.bin` file and download it again.
+
+---
+
+### Step D — Update your settings
+
+Open your settings file in Notepad:
+
+```text
+%USERPROFILE%\.tui-translator\config.json
+```
+
+Or press **S** inside the running application to open the settings editor.
+
+Change or add the following settings:
+
+```json
+{
+  "stt_provider": "local",
+  "stt_fallback_policy": "none",
+  "cpu_budget_pct": 80.0,
+  "ram_budget_mb": 6144
+}
+```
+
+What each setting does:
+
+| Setting | Recommended value | Purpose |
+|---------|------------------|---------|
+| `stt_provider` | `"local"` | Use the on-device Whisper model instead of Google Cloud STT |
+| `stt_fallback_policy` | `"none"` | Stay on local STT; or set `"local"` to auto-switch if Google auth fails |
+| `cpu_budget_pct` | `80.0` | Pause recognition when your CPU is already above 80% — this protects Zoom call quality |
+| `ram_budget_mb` | `6144` | Show a status bar warning if the application uses more than 6 GB of RAM |
+
+> **Using local STT as a fallback only?**
+> If you want to keep Google STT normally and only switch to local STT when
+> your Google API key fails, leave `stt_provider` as `"google"` and set
+> `stt_fallback_policy` to `"local"`. The application will switch over
+> automatically on the first authentication error.
+
+> **Translation:** Keep `mt_provider` as `"google"` (the default) and supply
+> your Google API key in `google_api_key` to receive translated subtitles.
+> Without a Google API key, the application shows a provider error and keeps
+> audio capture in metrics-only mode instead of producing subtitles.
+
+---
+
+### Step E — Start the application and verify
+
+1. Start TUI Translator as usual (Step 4 of this guide).
+2. Look at the **status bar** at the bottom of the window. It should display
+   the STT provider as `local`.
+3. Join a Zoom meeting and wait for someone to speak. Subtitle lines should
+   appear within a few seconds.
+4. Press **M** to open the metrics panel. The STT row shows the current
+   provider and response time.
+
+---
+
+### Hardware requirements
+
+| System RAM | Recommended model | Notes |
+|-----------|------------------|-------|
+| 8 GB | `ggml-tiny.bin` | Zoom typically uses 1–2 GB during a call; `tiny` keeps local STT overhead modest |
+| 16 GB or more | `ggml-tiny.bin` | Current releases still load `tiny`; larger models need a future model-selection setting |
+
+> **RAM pressure on 8 GB machines:** If TUI Translator shows a RAM warning or
+> subtitles start lagging, switch to `ggml-tiny.bin`, or return to Google Cloud
+> STT (`stt_provider: "google"`).
+
+---
+
+### What local mode does and does not replace
+
+| Feature | Local mode | Still needs Google |
+|---------|:----------:|:-----------------:|
+| Speech-to-text | ✅ Runs on your CPU | — |
+| Machine translation | ❌ Not yet available locally | ✅ Google API key required |
+| Text-to-speech (optional, `tts_enabled: true`) | ❌ Not yet available locally | ✅ Google API key required |
+
+Local machine translation is planned for a future release. Until it ships,
+`mt_provider` only accepts `"google"`. Setting it to `"local"` is not
+supported by release builds and will show a provider error until you switch it
+back to `"google"`.
+
+---
+
+### Troubleshooting local mode
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `model 'tiny' not found` error on startup | Model file missing or in the wrong folder | Check the file is at `%USERPROFILE%\.tui-translator\models\ggml-tiny.bin` |
+| `checksum mismatch` error | Corrupted or partial download | Delete the `.bin` file and download it again |
+| `local-stt feature not available` message | Your build does not include local STT | Download a release that lists `local-stt` in the release notes |
+| Subtitles lag or pile up | CPU cannot keep up with local STT | Reduce other CPU-heavy apps or switch back to `stt_provider: "google"` |
+| Very high CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to `70.0` or `80.0` |
+| RAM warning in the status bar | Model + Zoom are using too much RAM | Lower `ram_budget_mb`, or switch to `ggml-tiny.bin`, or use `stt_provider: "google"` |
+| No translation output | Local MT is not yet implemented | Keep `mt_provider: "google"` and supply a valid Google API key |
