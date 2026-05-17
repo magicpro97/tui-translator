@@ -164,13 +164,14 @@ pub fn format_cost_display(cost_usd: f64) -> String {
 
 /// Format a cost estimate for zero-state-safe display.
 ///
-/// Returns `"no charges"` when no billable activity has occurred yet:
-/// zero, negative, NaN, or any non-finite value. Showing `~$0.000` at
-/// startup is confusing because it looks like a real charge, and a negative
-/// startup value must never leak to the user as a dollar amount.
+/// Returns `"no charges"` when there is no finite, strictly positive billable
+/// estimate yet: zero, negative, NaN, or any non-finite value. Showing
+/// `~$0.000` at startup is confusing because it looks like a real charge, and
+/// a negative startup value must never leak to the user as a dollar amount.
 ///
-/// For any strictly positive value this delegates to [`format_cost_display`]
-/// so the format is consistent with all other cost surfaces.
+/// For any finite value greater than `0.0`, this delegates to
+/// [`format_cost_display`] so the format is consistent with all other cost
+/// surfaces.
 ///
 /// # Examples
 ///

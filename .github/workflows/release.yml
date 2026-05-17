@@ -94,10 +94,12 @@ jobs:
         id: inno
         shell: pwsh
         run: |
+          $innoSetupVersion = "6.5.4"
+
           function Find-Iscc {
             $command = Get-Command iscc.exe -ErrorAction SilentlyContinue
             if ($command) {
-              return $command.Source
+              return $command.Path
             }
 
             $candidates = @(
@@ -118,7 +120,7 @@ jobs:
 
           $iscc = Find-Iscc
           if (-not $iscc) {
-            choco install innosetup --yes --no-progress
+            choco install innosetup --version $innoSetupVersion --yes --no-progress
             $iscc = Find-Iscc
           }
 
