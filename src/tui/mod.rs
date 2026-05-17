@@ -163,7 +163,7 @@ enum ConfigEditorField {
     MtProvider,
     TtsEnabled,
     SttFallbackPolicy,
-    // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7).
+    // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4).
     VadPreRollMs,
     PipelineMaxWindowMs,
     PipelineEarlyFlushOnVadEnd,
@@ -233,7 +233,7 @@ pub struct ConfigEditorState {
     pub tts_enabled: String,
     /// STT fallback policy (`"none"` or `"local"`).
     pub stt_fallback_policy: String,
-    // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7) — stored as strings.
+    // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4) — stored as strings.
     /// `vad.pre_roll_ms` as decimal string (unit: ms, default: "200").
     pub vad_pre_roll_ms: String,
     /// `pipeline.max_window_ms` as decimal string (unit: ms, default: "3000").
@@ -2197,7 +2197,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             &editor.stt_fallback_policy,
             active,
         ),
-        // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7).
+        // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4).
         config_editor_field_line(
             ConfigEditorField::VadPreRollMs,
             &editor.vad_pre_roll_ms,

@@ -223,7 +223,7 @@ pub struct OrchestratorContext {
     /// existing behaviour.
     pub vad_config: Option<VadConfig>,
 
-    // ── Pipeline windowing/aggregation knobs (issue #270 / EP-I.7) ────────
+    // ── Pipeline windowing/aggregation knobs (issue #267 / EP-I.4) ────────
     /// Maximum speech-window duration (ms) before an unconditional STT flush.
     ///
     /// Replaces the hard-coded `STT_MAX_WINDOW_MS` safety cap at runtime.
@@ -3525,7 +3525,8 @@ mod tests {
         let calls = Arc::new(AtomicU32::new(0));
         let sample_counts = Arc::new(Mutex::new(Vec::new()));
 
-        let (tx2, rx2) = mpsc::channel::<AudioChunk>(32);
+        let channel_capacity = 32;
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(channel_capacity);
         let calls_clone = Arc::clone(&calls);
         let sender = async move {
             // 9 × 100 ms speech chunks → 900 ms, well below the 60 000 ms cap.
@@ -3537,9 +3538,14 @@ mod tests {
             for _ in 0..2 {
                 tx2.send(AudioChunk::new(vec![0i16; 1_600])).await.unwrap();
             }
-            // Allow the orchestrator to process all queued chunks and the
-            // EndOfUtterance decision before we check that no flush fired.
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while tx2.capacity() < channel_capacity {
+                    tokio::task::yield_now().await;
+                }
+                tokio::task::yield_now().await;
+            })
+            .await
+            .expect("orchestrator must drain queued speech/silence chunks");
             assert_eq!(
                 calls_clone.load(Ordering::Relaxed),
                 0,
