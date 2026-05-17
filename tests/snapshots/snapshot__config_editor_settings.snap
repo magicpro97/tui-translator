@@ -19,6 +19,6 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  STT fallback    : none                                                  │
        │                                                                          │
        │ Ready to save.                                                           │
-       │ Tab/Down: next   Shift+Tab/Up: prev   F2/Ctrl+D: cycle value   Enter:    │
-       │save   Esc: close                                                         │
+       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
+       │ Providers: Google MT only; restart after provider changes.               │
        └──────────────────────────────────────────────────────────────────────────┘

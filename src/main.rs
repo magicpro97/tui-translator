@@ -29,7 +29,7 @@
 //! - Issue #87: graceful shutdown — waits up to 2 s for in-progress calls.
 //! - Issue #88: Windows console control handler catches forced terminal close.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
@@ -1242,10 +1242,20 @@ fn normalize_optional_field(value: &str) -> Option<String> {
     }
 }
 
+fn parse_editor_bool(field_name: &str, value: &str) -> Result<bool> {
+    match value.trim() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => {
+            bail!("validation failed: `{field_name}` must be \"true\" or \"false\", got {other:?}")
+        }
+    }
+}
+
 fn build_config_from_editor(
     editor: &tui::ConfigEditorState,
     current_config: &config::AppConfig,
-) -> config::AppConfig {
+) -> Result<config::AppConfig> {
     let mut next_cfg = current_config.clone();
     next_cfg.source_language = editor.source_language.trim().to_string();
     next_cfg.target_language = editor.target_language.trim().to_string();
@@ -1255,9 +1265,9 @@ fn build_config_from_editor(
     next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
     next_cfg.stt_provider = editor.stt_provider.trim().to_string();
     next_cfg.mt_provider = editor.mt_provider.trim().to_string();
-    next_cfg.tts_enabled = editor.tts_enabled.trim() == "true";
+    next_cfg.tts_enabled = parse_editor_bool("tts_enabled", &editor.tts_enabled)?;
     next_cfg.stt_fallback_policy = editor.stt_fallback_policy.trim().to_string();
-    next_cfg
+    Ok(next_cfg)
 }
 
 fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
@@ -1312,7 +1322,7 @@ fn save_config_editor(
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
-        let mut next = build_config_from_editor(&editor, &current);
+        let mut next = build_config_from_editor(&editor, &current)?;
         config::apply_editor_defaults(cfg_path, &mut next)?;
         next
     };
@@ -2333,7 +2343,7 @@ mod tests {
         editor.stt_provider = "local".to_string();
         editor.mt_provider = "local".to_string();
 
-        let next = build_config_from_editor(&editor, &current);
+        let next = build_config_from_editor(&editor, &current).unwrap();
 
         assert_eq!(next.stt_provider, "local");
         assert_eq!(next.mt_provider, "local");
@@ -2638,6 +2648,44 @@ mod tests {
         assert!(
             status.contains("Save failed") && status.contains("validation"),
             "status should mention validation failure: {status}"
+        );
+        assert!(!cfg_path.exists(), "invalid config must not be written");
+    }
+
+    #[test]
+    fn config_save_rejects_invalid_tts_enabled_and_keeps_editor_open() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.tts_enabled = "True".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(state.config_editor_active.load(Ordering::Relaxed));
+        let editor = state.config_editor_snapshot().expect("editor snapshot");
+        let status = editor.status_message.expect("save failure message");
+        assert!(
+            status.contains("Save failed") && status.contains("tts_enabled"),
+            "status should mention the invalid TTS field: {status}"
         );
         assert!(!cfg_path.exists(), "invalid config must not be written");
     }
@@ -2985,7 +3033,7 @@ mod tests {
             tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
         editor.tts_enabled = "true".to_string();
 
-        let result = build_config_from_editor(&editor, &current);
+        let result = build_config_from_editor(&editor, &current).unwrap();
 
         assert!(result.tts_enabled, "tts_enabled must be persisted as true");
     }
@@ -2999,7 +3047,7 @@ mod tests {
             tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
         editor.tts_enabled = "false".to_string();
 
-        let result = build_config_from_editor(&editor, &current);
+        let result = build_config_from_editor(&editor, &current).unwrap();
 
         assert!(
             !result.tts_enabled,
@@ -3015,7 +3063,7 @@ mod tests {
             tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
         editor.stt_fallback_policy = "local".to_string();
 
-        let result = build_config_from_editor(&editor, &current);
+        let result = build_config_from_editor(&editor, &current).unwrap();
 
         assert_eq!(
             result.stt_fallback_policy, "local",
@@ -3032,7 +3080,7 @@ mod tests {
         // Set the real key directly (as the editor holds the unmasked value).
         editor.google_api_key = "AIzaSyRealKey123456789".to_string();
 
-        let result = build_config_from_editor(&editor, &current);
+        let result = build_config_from_editor(&editor, &current).unwrap();
 
         assert_eq!(
             result.google_api_key.as_deref(),
@@ -3051,7 +3099,7 @@ mod tests {
 
         let editor =
             tui::ConfigEditorState::from_config(&cfg, cfg_path, ConfigEditorMode::Settings);
-        let result = build_config_from_editor(&editor, &cfg);
+        let result = build_config_from_editor(&editor, &cfg).unwrap();
 
         assert!(result.tts_enabled);
         assert_eq!(result.stt_fallback_policy, "local");

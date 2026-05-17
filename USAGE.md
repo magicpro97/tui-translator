@@ -143,7 +143,7 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 | Space | Pause or resume translation |
 | L | Change the target language for this session |
 | S | Open the settings editor |
-| F2 / Ctrl+D in settings | Cycle through the allowed values for a choice field (e.g. `capture_device`, `stt_provider`, `mt_provider`, `audio_source`, `stt_fallback_policy`) |
+| F2 / Ctrl+D in settings | Cycle through the allowed values for a choice field (e.g. `capture_device`, `stt_provider`, `audio_source`, `stt_fallback_policy`) |
 | T | Toggle translated audio on or off |
 | M | Show or hide the metrics panel (compact/expanded) |
 | R | Reload the saved config without restarting |

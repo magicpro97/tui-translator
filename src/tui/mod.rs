@@ -208,7 +208,7 @@ pub struct ConfigEditorState {
     pub audio_file_path: String,
     /// STT backend name saved in config (`google` now, `local` for offline mode).
     pub stt_provider: String,
-    /// MT backend name saved in config (`google` now, `local` for offline mode).
+    /// MT backend name saved in config (`google` is the only implemented option).
     pub mt_provider: String,
     /// Whether TTS audio output is enabled, stored as `"true"` or `"false"`.
     pub tts_enabled: String,
@@ -347,7 +347,10 @@ impl ConfigEditorState {
                 self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
             }
             ConfigEditorField::MtProvider => {
-                self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
+                self.mt_provider = "google".to_string();
+                self.set_status_message(
+                    " MT provider: Google only. Local translation is not implemented yet.",
+                );
             }
             ConfigEditorField::TtsEnabled => {
                 self.cycle_choice_field(&["false", "true"], ". Save to apply.");
@@ -2028,9 +2031,9 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     let is_compact_editor = panel.width < 76 || panel.height <= 16;
     let key_hint = if is_compact_editor {
-        " Tab: next  Shift+Tab: prev  F2: cycle  Enter: save  Esc: close"
+        " Tab/Shift+Tab move  F2 cycle  Enter save  Esc close"
     } else {
-        " Tab/Down: next   Shift+Tab/Up: prev   F2/Ctrl+D: cycle value   Enter: save   Esc: close"
+        " Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close"
     };
     let config_path_display = if is_compact_editor {
         let path_budget = panel.width.saturating_sub(9) as usize;
@@ -2038,20 +2041,25 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     } else {
         editor.config_path.clone()
     };
-    let show_status_separator =
-        !(is_compact_editor && matches!(editor.mode, ConfigEditorMode::Onboarding));
-
     // Mask the API key for display — the real value is kept in editor.google_api_key.
     let masked_key = mask_api_key(&editor.google_api_key);
 
     let active = editor.active_field();
-    let mut lines = vec![
-        Line::from(Span::styled(intro, Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled(
-            format!(" Path: {config_path_display}"),
+    let mut lines = Vec::new();
+    if !is_compact_editor {
+        lines.push(Line::from(Span::styled(
+            intro,
             Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        format!(" Path: {config_path_display}"),
+        Style::default().fg(Color::DarkGray),
+    )));
+    if !is_compact_editor {
+        lines.push(Line::from(""));
+    }
+    lines.extend([
         config_editor_field_line(
             ConfigEditorField::SourceLanguage,
             &editor.source_language,
@@ -2082,9 +2090,9 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             &editor.stt_fallback_policy,
             active,
         ),
-    ];
+    ]);
 
-    if show_status_separator {
+    if !is_compact_editor {
         lines.push(Line::from(""));
     }
     lines.push(Line::from(Span::styled(
@@ -2101,7 +2109,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     if !is_compact_editor {
         lines.push(Line::from(Span::styled(
-            " Providers: google now; local is saved for offline mode. Restart required.",
+            " Providers: Google MT only; restart after provider changes.",
             Style::default().fg(Color::DarkGray),
         )));
     }
@@ -2117,25 +2125,16 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     );
 }
 
-/// Produce a display string for an API key that hides the middle portion.
+/// Produce a display string for an API key without exposing its characters.
 ///
-/// Shows the first 4 and last 4 characters with bullet points in between so
-/// the user can recognise which key is loaded without exposing it on screen.
-/// Returns an em-dash placeholder when the key is empty.
+/// Returns a fixed bullet mask for any non-empty key and an em-dash
+/// placeholder when the key is empty.
 pub(crate) fn mask_api_key(key: &str) -> String {
     const BULLET: &str = "\u{2022}";
-    if key.is_empty() {
+    if key.trim().is_empty() {
         return "\u{2014} (not set)".to_string();
     }
-    let chars: Vec<char> = key.chars().collect();
-    let len = chars.len();
-    if len <= 8 {
-        return BULLET.repeat(len);
-    }
-    let prefix: String = chars[..4].iter().collect();
-    let suffix: String = chars[len - 4..].iter().collect();
-    let mid_count = (len - 8).min(12);
-    format!("{prefix}{}{suffix}", BULLET.repeat(mid_count))
+    BULLET.repeat(8)
 }
 
 fn config_editor_field_line(
@@ -2751,7 +2750,16 @@ mod tests {
         assert_eq!(editor.mt_provider, "google");
 
         editor.cycle_active_field();
-        assert_eq!(editor.mt_provider, "local");
+        assert_eq!(editor.mt_provider, "google");
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("not implemented"),
+            "cycling MT provider should explain that local MT is unavailable"
+        );
+        editor.mt_provider = "local".to_string();
         editor.cycle_active_field();
         assert_eq!(editor.mt_provider, "google");
     }
@@ -2828,8 +2836,7 @@ mod tests {
     #[test]
     fn mask_api_key_short_returns_bullets_only() {
         let result = mask_api_key("abc");
-        // 3 characters → 3 bullets
-        assert_eq!(result.chars().count(), 3);
+        assert_eq!(result, "\u{2022}".repeat(8));
         assert!(
             result.chars().all(|c| c == '\u{2022}'),
             "short key should be fully masked with bullets; got: {result:?}"
@@ -2837,34 +2844,17 @@ mod tests {
     }
 
     #[test]
-    fn mask_api_key_long_preserves_prefix_and_suffix() {
+    fn mask_api_key_long_returns_bullets_only() {
         let key = "AIzaSyABCDEF123456789xyz";
         let result = mask_api_key(key);
-        assert!(
-            result.starts_with("AIza"),
-            "masked key should start with first 4 chars; got: {result:?}"
-        );
-        assert!(
-            result.ends_with("xyz\u{0000}".trim_end_matches('\0')),
-            "masked key should end with last 4 chars"
-        );
-        // Last 4 chars of "AIzaSyABCDEF123456789xyz" are "6xyz" — 24 chars total
-        let last4: String = key
-            .chars()
-            .rev()
-            .take(4)
-            .collect::<String>()
-            .chars()
-            .rev()
-            .collect();
-        assert!(
-            result.ends_with(&last4),
-            "masked key should end with '{last4}'; got: {result:?}"
-        );
-        // The full key should NOT appear in the masked result.
+        assert_eq!(result, "\u{2022}".repeat(8));
         assert!(
             !result.contains(key),
             "masked key must not contain the full original key; got: {result:?}"
+        );
+        assert!(
+            !result.contains("AIza") && !result.contains("6xyz"),
+            "masked key must not expose prefix or suffix; got: {result:?}"
         );
     }
 
@@ -2902,10 +2892,9 @@ mod tests {
             !rendered.contains(key),
             "rendered editor must not expose the full API key; got: {rendered:?}"
         );
-        // The first 4 chars should be visible as a recognition aid.
         assert!(
-            rendered.contains("AIza"),
-            "rendered editor should show the first 4 chars of the key; got: {rendered:?}"
+            !rendered.contains("AIza") && !rendered.contains("6xyz"),
+            "rendered editor must not expose API key prefix or suffix; got: {rendered:?}"
         );
     }
 

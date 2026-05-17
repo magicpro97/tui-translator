@@ -4,9 +4,7 @@ assertion_line: 682
 expression: "render_config_editor(&editor, 60, 16)"
 ---
 ┌ Settings ────────────────────────────────────────────────┐
-│ Edit the saved config and press Enter to persist changes.│
 │ Path: C:\Users\demo\.tui-translator\config.json          │
-│                                                          │
 │  Source language : ja-JP                                 │
 │> Target language : vi_                                   │
 │  Google API key  : — (not set)                           │
@@ -17,5 +15,7 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  MT provider     : google                                │
 │  TTS enabled     : false                                 │
 │  STT fallback    : none                                  │
+│ Ready to save.                                           │
+│ Tab/Shift+Tab move  F2 cycle  Enter save  Esc close      │
 │                                                          │
 └──────────────────────────────────────────────────────────┘

@@ -4,10 +4,7 @@ assertion_line: 652
 expression: "render_config_editor(&editor, 60, 16)"
 ---
 ┌ First-Run Setup ─────────────────────────────────────────┐
-│ Save your initial config to the home folder, then restart│
-│if prompted.                                              │
 │ Path: C:\Users\demo\.tui-translator\config.json          │
-│                                                          │
 │> Source language : ja-JP_                                │
 │  Target language : vi                                    │
 │  Google API key  : — (not set)                           │
@@ -18,4 +15,7 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  MT provider     : google                                │
 │  TTS enabled     : false                                 │
 │  STT fallback    : none                                  │
+│ Ready to save.                                           │
+│ Tab/Shift+Tab move  F2 cycle  Enter save  Esc close      │
+│                                                          │
 └──────────────────────────────────────────────────────────┘

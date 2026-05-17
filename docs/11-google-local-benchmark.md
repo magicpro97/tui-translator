@@ -60,7 +60,7 @@ Environment used for the local Whisper build:
 ```powershell
 $env:WHISPER_DONT_GENERATE_BINDINGS = "1"
 $env:CMAKE_GENERATOR = "MinGW Makefiles"
-$env:CMAKE_MAKE_PROGRAM = "C:\Users\linhnt102\scoop\apps\mingw-winlibs\current\bin\mingw32-make.exe"
+$env:CMAKE_MAKE_PROGRAM = "$env:USERPROFILE\scoop\apps\mingw-winlibs\current\bin\mingw32-make.exe"
 $env:CMAKE_BUILD_PARALLEL_LEVEL = "2"
 $env:CARGO_BUILD_JOBS = "2"
 $env:CARGO_INCREMENTAL = "0"

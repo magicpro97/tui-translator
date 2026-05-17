@@ -107,6 +107,9 @@ async fn main() -> Result<()> {
         println!("provider_benchmark [--rounds N]");
         return Ok(());
     };
+    if !cfg!(feature = "local-stt") {
+        bail!("provider_benchmark requires a local-stt build; rerun with `--features local-stt`");
+    }
     let key = google_api_key()?;
     let fixtures = fixtures()?;
 
