@@ -302,8 +302,8 @@ fn start_session_recorder(
     {
         Ok(path) => path,
         Err(err) => {
-            let msg = format!("⚠ Session recording disabled: {err:#}");
-            tracing::warn!("{msg}");
+            let msg = session_recording_disabled_status(&err);
+            tracing::warn!("session recording disabled: {err:#}");
             *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
             return session::SessionRecorder::disabled();
         }
@@ -335,12 +335,16 @@ fn start_session_recorder(
             recorder
         }
         Err(err) => {
-            let msg = format!("⚠ Session recording disabled: {err:#}");
-            tracing::warn!("{msg}");
+            let msg = session_recording_disabled_status(&err);
+            tracing::warn!("session recording disabled: {err:#}");
             *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
             session::SessionRecorder::disabled()
         }
     }
+}
+
+fn session_recording_disabled_status(err: &anyhow::Error) -> String {
+    format!("⚠ Session recording disabled: {err}").replace(['\r', '\n'], " ")
 }
 
 /// Initialise the tracing subscriber, routing output to a log file so that

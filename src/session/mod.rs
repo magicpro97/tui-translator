@@ -410,7 +410,7 @@ mod tests {
     fn session_log_file_name_sanitizes_path_separators() {
         assert_eq!(
             session_log_file_name("session/..\\bad:name"),
-            "session_.._bad_name.jsonl"
+            "session____bad_name.jsonl"
         );
     }
 

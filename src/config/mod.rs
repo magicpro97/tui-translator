@@ -848,6 +848,43 @@ mod tests {
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            // SAFETY: tests hold ENV_LOCK while mutating process-wide env vars.
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, previous }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            // SAFETY: tests hold ENV_LOCK while mutating process-wide env vars.
+            unsafe {
+                std::env::remove_var(key);
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            // SAFETY: guards are created only while ENV_LOCK is held.
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
     #[test]
     fn default_config_is_valid() {
         let cfg = AppConfig::default();
@@ -1242,18 +1279,10 @@ mod tests {
     fn default_config_path_uses_home_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let home = TempDir::new().unwrap();
-        // SAFETY: serialized by ENV_LOCK.
-        unsafe {
-            std::env::set_var("USERPROFILE", home.path());
-            std::env::remove_var("HOME");
-        }
+        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
+        let _home_guard = EnvVarGuard::remove("HOME");
 
         let path = default_config_path().unwrap();
-
-        // SAFETY: serialized by ENV_LOCK.
-        unsafe {
-            std::env::remove_var("USERPROFILE");
-        }
 
         assert_eq!(
             path,
@@ -1265,18 +1294,10 @@ mod tests {
     fn default_sessions_dir_uses_home_config_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let home = TempDir::new().unwrap();
-        // SAFETY: serialized by ENV_LOCK.
-        unsafe {
-            std::env::set_var("USERPROFILE", home.path());
-            std::env::remove_var("HOME");
-        }
+        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
+        let _home_guard = EnvVarGuard::remove("HOME");
 
         let path = default_sessions_dir().unwrap();
-
-        // SAFETY: serialized by ENV_LOCK.
-        unsafe {
-            std::env::remove_var("USERPROFILE");
-        }
 
         assert_eq!(path, home.path().join(".tui-translator").join("sessions"));
     }
