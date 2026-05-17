@@ -83,6 +83,14 @@ pub const DEFAULT_SPEECH_PAD_MS: u32 = 300;
 /// short intra-utterance pauses (breaths, punctuation).
 pub const DEFAULT_MIN_SILENCE_MS: u32 = 500;
 
+/// Default pre-roll duration in milliseconds.
+///
+/// Audio captured while VAD is in the `Confirming` state is buffered and
+/// prepended to the STT window when speech is confirmed.  This ensures that
+/// leading consonants are not lost during the confirmation window.
+/// `0` disables pre-roll entirely.
+pub const DEFAULT_PRE_ROLL_MS: u32 = 200;
+
 // ─── VadConfig ────────────────────────────────────────────────────────────────
 
 /// Configuration for the VAD gate.
@@ -113,6 +121,15 @@ pub struct VadConfig {
     /// Short intra-utterance pauses (breaths, hesitations) stay below this
     /// threshold so consecutive words are merged into one STT window.
     pub min_silence_ms: u32,
+
+    /// Audio buffered during the `Confirming` state that is prepended to the
+    /// STT window when the gate opens.
+    ///
+    /// Prevents leading consonants from being lost while VAD waits to confirm
+    /// speech onset.  The orchestrator trims the confirming-chunk buffer to
+    /// the smallest recent chunk suffix that covers this duration.
+    /// `0` disables pre-roll entirely.
+    pub pre_roll_ms: u32,
 }
 
 impl Default for VadConfig {
@@ -122,6 +139,7 @@ impl Default for VadConfig {
             min_speech_ms: DEFAULT_MIN_SPEECH_MS,
             speech_pad_ms: DEFAULT_SPEECH_PAD_MS,
             min_silence_ms: DEFAULT_MIN_SILENCE_MS,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         }
     }
 }
@@ -464,6 +482,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 300,
             min_silence_ms: 500,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
@@ -504,6 +523,7 @@ mod tests {
             min_speech_ms: 100, // 100 ms = 1 × 100 ms chunk
             speech_pad_ms: 200,
             min_silence_ms: 300,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
@@ -558,6 +578,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 200,
             min_silence_ms: 300,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
@@ -606,6 +627,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 300,
             min_silence_ms: 500,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
@@ -631,6 +653,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 300,
             min_silence_ms: 500,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
@@ -663,6 +686,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 300,
             min_silence_ms: 500,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
@@ -720,6 +744,7 @@ mod tests {
             min_speech_ms: 100,
             speech_pad_ms: 100,
             min_silence_ms: 200,
+            pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         };
         let mut gate = VadGate::new(config);
 
