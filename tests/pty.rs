@@ -42,3 +42,6 @@ mod onboarding_test;
 
 #[path = "pty/replay_test.rs"]
 mod replay_test;
+
+#[path = "pty/audio_archive_test.rs"]
+mod audio_archive_test;

@@ -31,8 +31,6 @@
 //!
 //! [`AudioArchiveConfig`]: crate::config::AudioArchiveConfig
 
-#![allow(dead_code)]
-
 use std::{
     io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -188,7 +186,7 @@ impl AudioArchiveWriter {
             "⚠ Audio archiving is ENABLED — raw captured audio will be saved to disk. \
              Disable with audio_archive.store_audio=false when not needed."
         );
-        let file_name = format!("{session_id}.wav");
+        let file_name = session_wav_file_name(session_id);
         let path = config.directory.join(file_name);
         Self::open(&path, config.max_size_bytes)
     }
@@ -266,9 +264,29 @@ impl AudioArchiveWriter {
     pub fn is_disabled(&self) -> bool {
         self.inner.is_none()
     }
+
+    /// Disable this writer and close any open archive file.
+    pub fn disable(&mut self) {
+        self.inner = None;
+    }
 }
 
 // ── WAV header helpers ────────────────────────────────────────────────────────
+
+fn session_wav_file_name(session_id: &str) -> String {
+    let stem: String = session_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let stem = if stem.is_empty() { "session" } else { &stem };
+    format!("{stem}.wav")
+}
 
 /// Write a 44-byte canonical RIFF/WAVE header with the given `data_bytes` as
 /// the size of the `data` chunk.
@@ -450,6 +468,24 @@ mod tests {
             samples_1s.as_slice(),
             "decoded samples must match original samples"
         );
+    }
+
+    #[test]
+    fn start_sanitizes_session_id_before_building_file_path() {
+        let dir = TempDir::new().unwrap();
+        let resolved = AudioArchiveWriterConfig::from_parts(
+            true,
+            true,
+            Some(&dir.path().to_string_lossy()),
+            0,
+            dir.path().to_path_buf(),
+        );
+
+        let writer = AudioArchiveWriter::start(&resolved, "..\\evil/session:id").unwrap();
+        let wav_path = writer.path().unwrap().to_path_buf();
+
+        assert_eq!(wav_path.parent(), Some(dir.path()));
+        assert_eq!(wav_path.file_name().unwrap(), "___evil_session_id.wav");
     }
 
     #[test]

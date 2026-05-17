@@ -326,6 +326,8 @@ fn start_session_recorder(
     rt: &tokio::runtime::Runtime,
     cfg: &config::AppConfig,
     status_slot: &Arc<Mutex<Option<String>>>,
+    started_at_unix_ms: u64,
+    session_id: &str,
 ) -> session::SessionRecorder {
     if !cfg.session_store.enabled {
         return session::SessionRecorder::disabled();
@@ -348,11 +350,9 @@ fn start_session_recorder(
         }
     };
 
-    let started_at_unix_ms = session::system_time_unix_ms(SystemTime::now());
-    let session_id = session::generate_session_id(started_at_unix_ms);
     let header = session::SessionHeader {
         schema_version: session::SESSION_LOG_SCHEMA_VERSION,
-        session_id,
+        session_id: session_id.to_string(),
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         started_at_unix_ms,
         source_language: cfg.source_language.clone(),
@@ -384,6 +384,97 @@ fn start_session_recorder(
 
 fn session_recording_disabled_status(err: &anyhow::Error) -> String {
     format!("⚠ Session recording disabled: {err}").replace(['\r', '\n'], " ")
+}
+
+fn start_audio_archive(
+    cfg: &config::AppConfig,
+    session_id: &str,
+    status_slot: &Arc<Mutex<Option<String>>>,
+) -> audio::AudioArchiveWriter {
+    if !cfg.audio_archive.store_audio || !cfg.audio_archive.consent_given {
+        return audio::AudioArchiveWriter::disabled();
+    }
+
+    let directory = match cfg
+        .audio_archive
+        .directory
+        .as_ref()
+        .map(PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(config::default_audio_archive_dir)
+    {
+        Ok(path) => path,
+        Err(err) => {
+            let msg = audio_archive_disabled_status(&err);
+            tracing::warn!("audio archive disabled: {err:#}");
+            *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+            return audio::AudioArchiveWriter::disabled();
+        }
+    };
+
+    let archive_config = audio::AudioArchiveWriterConfig {
+        enabled: true,
+        directory,
+        max_size_bytes: cfg.audio_archive.max_size_mb.saturating_mul(1024 * 1024),
+    };
+
+    match audio::AudioArchiveWriter::start(&archive_config, session_id) {
+        Ok(writer) => {
+            if let Some(path) = writer.path() {
+                tracing::info!(path = %path.display(), "raw audio archive enabled");
+                *status_slot.lock().unwrap_or_else(|p| p.into_inner()) =
+                    Some(format!("⚠ Audio archiving enabled: {}", path.display()));
+            }
+            writer
+        }
+        Err(err) => {
+            let msg = audio_archive_disabled_status(&err);
+            tracing::warn!("audio archive disabled: {err:#}");
+            *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+            audio::AudioArchiveWriter::disabled()
+        }
+    }
+}
+
+fn audio_archive_disabled_status(err: &anyhow::Error) -> String {
+    format!("⚠ Audio archive disabled: {err}").replace(['\r', '\n'], " ")
+}
+
+fn attach_audio_archive(
+    rt: &tokio::runtime::Runtime,
+    stream: audio::CaptureStream,
+    mut writer: audio::AudioArchiveWriter,
+    status_slot: Arc<Mutex<Option<String>>>,
+) -> audio::CaptureStream {
+    if writer.is_disabled() {
+        return stream;
+    }
+
+    let info = stream.info;
+    let mut input_rx = stream.receiver;
+    let (output_tx, output_rx) = tokio::sync::mpsc::channel(64);
+
+    rt.spawn(async move {
+        while let Some(chunk) = input_rx.recv().await {
+            if !writer.is_disabled() {
+                if let Err(err) = writer.append_chunk(&chunk) {
+                    let msg = audio_archive_disabled_status(&err);
+                    tracing::warn!("audio archive disabled after write error: {err:#}");
+                    *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+                    writer.disable();
+                }
+            }
+
+            if output_tx.send(chunk).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    audio::CaptureStream {
+        info,
+        receiver: output_rx,
+    }
 }
 
 /// Initialise the tracing subscriber, routing output to a log file so that
@@ -953,6 +1044,14 @@ fn main() -> Result<()> {
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .clone();
+            let started_at_unix_ms = session::system_time_unix_ms(SystemTime::now());
+            let session_id = session::generate_session_id(started_at_unix_ms);
+            let stream = attach_audio_archive(
+                &rt,
+                stream,
+                start_audio_archive(&cfg_snapshot, &session_id, &state.pipeline_error_msg),
+                Arc::clone(&state.pipeline_error_msg),
+            );
 
             if let Some(provider_msg) = runtime_provider_error(&cfg_snapshot) {
                 tracing::warn!("{provider_msg}");
@@ -1082,8 +1181,13 @@ fn main() -> Result<()> {
                         );
                     }
                 };
-                let session_recorder =
-                    start_session_recorder(&rt, &cfg_snapshot, &state.pipeline_error_msg);
+                let session_recorder = start_session_recorder(
+                    &rt,
+                    &cfg_snapshot,
+                    &state.pipeline_error_msg,
+                    started_at_unix_ms,
+                    &session_id,
+                );
 
                 let ctx = pipeline::OrchestratorContext {
                     audio_level: Arc::clone(&state.audio_level),
@@ -2691,6 +2795,54 @@ mod tests {
                 .audio_seconds_sent
                 > 0.0
         );
+    }
+
+    #[test]
+    fn audio_archive_disabled_status_is_single_line() {
+        let err = anyhow::anyhow!("first line\r\nsecond line");
+
+        assert_eq!(
+            audio_archive_disabled_status(&err),
+            "⚠ Audio archive disabled: first line  second line"
+        );
+    }
+
+    #[test]
+    fn attach_audio_archive_writes_and_forwards_chunks() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let dir = TempDir::new().unwrap();
+        let archive_config = audio::AudioArchiveWriterConfig {
+            enabled: true,
+            directory: dir.path().to_path_buf(),
+            max_size_bytes: 0,
+        };
+        let writer = audio::AudioArchiveWriter::start(&archive_config, "archive-forward").unwrap();
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let stream = audio::CaptureStream {
+            info: audio::CaptureInfo {
+                device_name: "test source".to_string(),
+                native_sample_rate: 16_000,
+            },
+            receiver: rx,
+        };
+        let mut archived = attach_audio_archive(&rt, stream, writer, Arc::new(Mutex::new(None)));
+        let chunk = AudioChunk::new(vec![123i16; 16_000]);
+
+        rt.block_on(async {
+            tx.send(chunk.clone()).await.unwrap();
+            drop(tx);
+
+            let forwarded = archived.receiver.recv().await.unwrap();
+            assert_eq!(forwarded.samples, chunk.samples);
+            assert!(archived.receiver.recv().await.is_none());
+        });
+
+        let wav_path = dir.path().join("archive-forward.wav");
+        let source = audio::WavFileSource::open(&wav_path).unwrap();
+        assert_eq!(source.total_samples(), chunk.samples.len());
     }
 
     #[test]
