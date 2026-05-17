@@ -1255,6 +1255,8 @@ fn build_config_from_editor(
     next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
     next_cfg.stt_provider = editor.stt_provider.trim().to_string();
     next_cfg.mt_provider = editor.mt_provider.trim().to_string();
+    next_cfg.tts_enabled = editor.tts_enabled.trim() == "true";
+    next_cfg.stt_fallback_policy = editor.stt_fallback_policy.trim().to_string();
     next_cfg
 }
 
@@ -1863,7 +1865,7 @@ fn handle_action(
             let _ = state.with_config_editor_mut(|editor| editor.prev_field());
         }
         UserAction::ConfigCycleCaptureDevice => {
-            let _ = state.with_config_editor_mut(|editor| editor.cycle_capture_device());
+            let _ = state.with_config_editor_mut(|editor| editor.cycle_active_field());
         }
         UserAction::ConfigSave => {
             if let Err(err) = save_config_editor(
@@ -2971,5 +2973,84 @@ mod tests {
             home.path().join(".tui-translator").join("config.json"),
             "fallback path must use the home config location; got {path:?}"
         );
+    }
+
+    // ── build_config_from_editor — new fields ─────────────────────────────────
+
+    #[test]
+    fn build_config_from_editor_persists_tts_enabled_true() {
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let current = config::AppConfig::default();
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.tts_enabled = "true".to_string();
+
+        let result = build_config_from_editor(&editor, &current);
+
+        assert!(result.tts_enabled, "tts_enabled must be persisted as true");
+    }
+
+    #[test]
+    fn build_config_from_editor_persists_tts_enabled_false() {
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut current = config::AppConfig::default();
+        current.tts_enabled = true;
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.tts_enabled = "false".to_string();
+
+        let result = build_config_from_editor(&editor, &current);
+
+        assert!(!result.tts_enabled, "tts_enabled must be persisted as false");
+    }
+
+    #[test]
+    fn build_config_from_editor_persists_stt_fallback_policy() {
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let current = config::AppConfig::default();
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.stt_fallback_policy = "local".to_string();
+
+        let result = build_config_from_editor(&editor, &current);
+
+        assert_eq!(
+            result.stt_fallback_policy, "local",
+            "stt_fallback_policy must be persisted from editor"
+        );
+    }
+
+    #[test]
+    fn build_config_from_editor_keeps_real_api_key_not_masked() {
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let current = config::AppConfig::default();
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        // Set the real key directly (as the editor holds the unmasked value).
+        editor.google_api_key = "AIzaSyRealKey123456789".to_string();
+
+        let result = build_config_from_editor(&editor, &current);
+
+        assert_eq!(
+            result.google_api_key.as_deref(),
+            Some("AIzaSyRealKey123456789"),
+            "build_config_from_editor must preserve the real (unmasked) API key"
+        );
+    }
+
+    #[test]
+    fn build_config_from_editor_round_trips_tts_and_fallback() {
+        // Verify that a full round-trip preserves the exact fields.
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut cfg = config::AppConfig::default();
+        cfg.tts_enabled = true;
+        cfg.stt_fallback_policy = "local".to_string();
+
+        let editor =
+            tui::ConfigEditorState::from_config(&cfg, cfg_path, ConfigEditorMode::Settings);
+        let result = build_config_from_editor(&editor, &cfg);
+
+        assert!(result.tts_enabled);
+        assert_eq!(result.stt_fallback_policy, "local");
     }
 }
