@@ -161,6 +161,199 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 
 ---
 
+## Speech windowing and translation quality
+
+TUI Translator does not send audio to Google Speech-to-Text (STT) as a raw
+continuous stream.  Instead it collects audio into **speech windows**, flushes
+each window when a natural pause is detected, and then assembles the resulting
+text fragments into complete sentences before sending them to machine
+translation (MT).  Understanding these stages helps you tune the application
+for different meeting styles and diagnose quality problems such as word
+fragments or subtitle flicker.
+
+---
+
+### How a speech window is built
+
+The diagram below shows the lifecycle from raw audio to a translated subtitle
+line when Voice Activity Detection (VAD) is enabled.
+
+```
+Audio stream (time flows right)
+─────────────────────────────────────────────────────────────────────────────►
+
+[─ silence ─][─ confirming ─][──────────── speech ────────][─ post-roll ─][silence]
+              ↑                                              ↑              ↑
+              VAD onset                                      │         EndOfUtterance
+              detected                             speech_pad_ms          fired
+                                                   (post-roll)
+             ◄──► pre_roll_ms
+             (buffered during
+              confirming,
+              prepended to window)
+
+             ◄────────────────────── STT window ────────────►
+                                                             │
+                                                             ▼  flush
+                                                   ┌─ sentence aggregator ─┐
+                                                   │ holds text until:     │
+                                                   │  • sentence boundary  │
+                                                   │  • sentence_max_age_ms│
+                                                   └──────────┬────────────┘
+                                                              │
+                                                              ▼
+                                                        MT (translate)
+                                                              │
+                                                              ▼
+                                                       subtitle pane
+```
+
+**Stages explained:**
+
+1. **Pre-roll** — While VAD is in the "confirming" state it buffers incoming
+   audio.  When the onset is confirmed as real speech, up to `vad.pre_roll_ms`
+   of that buffered audio is prepended to the STT window so leading consonants
+   are not clipped.
+2. **Speech** — Audio accumulates in the window until one of three flush
+   conditions fires: a VAD EndOfUtterance signal (when
+   `pipeline.early_flush_on_vad_end` is `true`), the window reaches
+   `pipeline.max_window_ms`, or silence has lasted longer than
+   `pipeline.idle_flush_ms` and the window is at least `pipeline.idle_min_ms`
+   long.
+3. **Post-roll** — `vad.speech_pad_ms` adds a short tail of silence after
+   speech energy drops before EndOfUtterance is emitted.  This gives the
+   speaker time to finish a trailing syllable without being cut off.
+4. **Flush** — The complete window (pre-roll + speech + post-roll) is sent to
+   Google STT as a single audio segment.
+5. **Sentence aggregation** — The STT result is pushed into the sentence
+   aggregator, which holds text that does not end with a sentence boundary
+   character (`.`, `。`, `?`, `!`, etc.) and combines it with the next
+   fragment.  If no sentence boundary arrives within
+   `pipeline.sentence_max_age_ms`, the partial text is force-flushed to MT to
+   keep subtitles moving.
+
+---
+
+### VAD configuration reference
+
+All fields live inside the `"vad"` block of
+`%USERPROFILE%\.tui-translator\config.json`.  Set `"enabled": true` to
+activate VAD.  All other sub-fields are optional and fall back to the defaults
+shown below.
+
+| Key | Unit | Default | Range | What it does |
+|-----|------|---------|-------|--------------|
+| `vad.enabled` | bool | `false` | `true` / `false` | Activates Voice Activity Detection.  When `false`, the pipeline flushes on the `max_window_ms` timer instead. |
+| `vad.threshold` | amplitude (0–1) | `0.01` | `0.001`–`1.0` | Minimum RMS energy for a chunk to be treated as speech.  Raise in noisy rooms; lower for soft speakers. |
+| `vad.min_speech_ms` | ms | `100` | `0`–`5000` | How long the audio must stay above `threshold` before the onset is confirmed as real speech (guards against noise spikes). |
+| `vad.pre_roll_ms` | ms | `200` | `0`–`2000` | Audio buffered during onset confirmation that is prepended to the STT window.  Set to `0` to disable pre-roll. |
+| `vad.speech_pad_ms` | ms | `300` | `0`–`5000` | Extra silence appended after speech energy drops before EndOfUtterance fires (post-roll).  Prevents premature cuts on trailing syllables. |
+| `vad.min_silence_ms` | ms | `500` | `0`–`5000` | How long silence must persist after speech before EndOfUtterance is emitted. |
+
+---
+
+### Pipeline configuration reference
+
+All fields live inside the `"pipeline"` block of your config file.  You can
+omit the entire block to use built-in defaults.  Changes require a restart.
+
+| Key | Unit | Default | Range | What it does |
+|-----|------|---------|-------|--------------|
+| `pipeline.max_window_ms` | ms | `3000` | `500`–`60000` | Hard upper limit on STT window duration.  If no other flush fires first, the window is sent to STT at this age.  When VAD is disabled, this also sets the regular flush cadence. |
+| `pipeline.early_flush_on_vad_end` | bool | `true` | `true` / `false` | When `true`, a VAD EndOfUtterance signal flushes the window immediately for low-latency subtitles.  Set to `false` to wait for `max_window_ms` instead (fewer API calls, more delay). |
+| `pipeline.idle_flush_ms` | ms | `600` | `50`–`30000` | If no new audio chunk arrives for this long, the current partial window is flushed early (provided `idle_min_ms` is met). |
+| `pipeline.idle_min_ms` | ms | `500` | `50`–`30000` | Minimum speech accumulated in the window before an idle flush is allowed.  Prevents tiny noise bursts from being sent to STT. |
+| `pipeline.sentence_max_age_ms` | ms | `4000` | `500`–`60000` | Maximum time the sentence aggregator holds a partial text fragment before force-flushing it to MT.  Higher values improve sentence completeness; lower values reduce subtitle lag when a speaker trails off mid-sentence. |
+
+---
+
+### Recommended settings for common scenarios
+
+The table below shows starting-point configurations for three common meeting
+styles.  Apply the relevant values inside the `"vad"` and `"pipeline"` blocks
+in your config file and restart the application.
+
+| Scenario | `vad.enabled` | `vad.speech_pad_ms` | `vad.min_silence_ms` | `pipeline.max_window_ms` | `pipeline.sentence_max_age_ms` | Notes |
+|----------|:-------------:|--------------------:|---------------------:|-------------------------:|-------------------------------:|-------|
+| **Dense monologue** (one speaker, fast continuous speech) | `true` | `400` | `600` | `5000` | `6000` | Longer post-roll and silence gap reduce mid-sentence cuts during rapid speech. |
+| **Dialogue** (back-and-forth, multiple speakers) | `true` | `200` | `400` | `3000` | `3000` | Shorter gaps keep subtitles snappy during fast turn-taking. |
+| **VAD disabled** (fallback for noisy environments) | `false` | — | — | `3000` | `4000` | Fixed-window mode: flushes every `max_window_ms` regardless of silence.  Use when background noise causes VAD to trigger constantly. |
+
+> **Tip:** You can also open the settings editor with **S** in the running app
+> and change values without editing JSON by hand.  Save and restart after
+> any `pipeline` or `vad` change.
+
+---
+
+### Reading the quality counters
+
+Press **M** to open the expanded metrics panel.  The bottom line shows three
+quality counters:
+
+```
+trunc:12%  flicker:3  mt:47
+```
+
+| Counter | What it means | Good target | How to improve |
+|---------|--------------|-------------|----------------|
+| `trunc:X%` | **Truncation rate** — the share of STT windows that hit the `max_window_ms` hard cap instead of finishing at a natural pause or sentence boundary.  High values mean speech is regularly being cut mid-utterance. | < 10 % | Raise `pipeline.max_window_ms`, or enable VAD so utterances flush at natural pause points. |
+| `flicker:N` | **Flicker count** — how many times the live subtitle text shrank unexpectedly during in-flight recognition (a non-monotonic partial update).  Visible as a brief flash or replacement of text you just read. | 0 | Enable VAD to reduce out-of-order partials; or lower `pipeline.max_window_ms` to send shorter, more predictable windows. |
+| `mt:N` | **MT call count** — total successful translation API calls this session.  Each call has a small billing cost.  The sentence aggregator reduces this number by batching STT fragments into full sentences before translating. | Informational | Raise `pipeline.sentence_max_age_ms` to let the aggregator combine more fragments (note: raises subtitle latency). |
+
+---
+
+### Diagnosing common quality problems
+
+**Word fragments in subtitles** (for example, subtitles show `会議` then `の結果です` as separate
+lines instead of one complete sentence)
+
+The sentence aggregator is flushing text too early.  Try:
+
+- Raise `pipeline.sentence_max_age_ms` (for example from `4000` to `6000`).
+- Enable VAD (`vad.enabled: true`) so the window flushes at natural pauses
+  rather than on a fixed timer.
+- Raise `vad.speech_pad_ms` (for example to `400`) so trailing syllables are
+  not cut off before VAD fires EndOfUtterance.
+
+---
+
+**High truncation rate (`trunc: 0.45` or higher in the metrics panel)**
+
+Nearly half of all STT windows are being cut at the hard cap instead of at a
+natural pause.  The speaker may be talking continuously with no obvious pauses,
+or `max_window_ms` is too short for the meeting's speaking pace.
+
+- Raise `pipeline.max_window_ms` (for example from `3000` to `6000`).
+- If VAD is enabled, try raising `vad.min_silence_ms` slightly (for example
+  from `500` to `700`) so VAD waits a little longer before declaring
+  end-of-utterance.
+- If the speaker genuinely never pauses, a nonzero truncation rate is expected
+  and harmless — the app sends a rolling window to STT and subtitles still
+  appear continuously.
+
+---
+
+**Running with `vad.enabled: false` (fixed-window fallback)**
+
+When VAD is disabled the pipeline uses **fixed-window mode**:
+
+- Audio accumulates for up to `pipeline.max_window_ms` milliseconds and is
+  then sent to STT unconditionally.
+- If no new audio arrives within `pipeline.idle_flush_ms`, the partial window
+  is flushed early (provided it contains at least `pipeline.idle_min_ms` of
+  speech).
+- The VAD-specific fields (`vad.threshold`, `vad.min_speech_ms`,
+  `vad.pre_roll_ms`, `vad.speech_pad_ms`, `vad.min_silence_ms`) are ignored.
+- The sentence aggregator still operates normally, combining STT fragments into
+  sentences before MT.
+
+Fixed-window mode is simpler and works in any environment, but produces more
+mid-word cuts and a higher `trunc:%` reading compared to VAD-enabled mode.
+It is the right choice when background noise causes VAD to trigger constantly
+and flood the STT API with silent chunks.
+
+---
+
 ## Troubleshooting
 
 **"API key not valid" or no subtitles appear**
