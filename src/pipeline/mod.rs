@@ -534,6 +534,8 @@ struct ProducedSubtitle {
     dedup_keys: Vec<String>,
     translation: MtResult,
     mt_latency_ms: u64,
+    e2e_start: Instant,
+    split_index: usize,
 }
 
 /// Drive one [`PcmChunk`] through STT → MT → (optional) TTS.
@@ -688,7 +690,7 @@ where
     //   (a) a sentence-end character is found, or
     //   (b) the 4-second max-age expires (polled in the sleep branch), or
     //   (c) the pipeline shuts down.
-    let agg_now = Instant::now();
+    let agg_now = e2e_start;
     let agg_segments: Vec<sentence_aggregator::AggregatedSegment> = stabilized_transcripts
         .into_iter()
         .flat_map(|s| {
@@ -759,6 +761,8 @@ where
             dedup_keys: seg.dedup_keys,
             translation,
             mt_latency_ms: mt_start.elapsed().as_millis() as u64,
+            e2e_start: seg.e2e_start,
+            split_index: seg.split_index,
         });
     }
 
@@ -788,10 +792,22 @@ where
         "subtitle pair produced"
     );
 
-    // Issue #83: record end-to-end latency for final results.
-    let e2e_ms = e2e_start.elapsed().as_millis() as u64;
-    ctx.e2e_latency.record_ms(e2e_ms);
-    tracing::debug!(e2e_ms, "final subtitle pair; e2e latency recorded");
+    // Issue #83/#266: record end-to-end latency for each committed sentence
+    // from the earliest contributing STT submission, not just the boundary
+    // fragment that finally triggered MT.
+    let e2e_samples: Vec<u64> = produced
+        .iter()
+        .map(|item| item.e2e_start.elapsed().as_millis() as u64)
+        .collect();
+    for e2e_ms in &e2e_samples {
+        ctx.e2e_latency.record_ms(*e2e_ms);
+    }
+    tracing::debug!(
+        samples = e2e_samples.len(),
+        min_e2e_ms = e2e_samples.iter().copied().min().unwrap_or(0),
+        max_e2e_ms = e2e_samples.iter().copied().max().unwrap_or(0),
+        "final subtitle pair(s); e2e latency recorded"
+    );
 
     // ── TTS (optional, non-fatal) ─────────────────────────────────────────────
     if ctx.tts_enabled.load(Ordering::Relaxed) {
@@ -832,7 +848,7 @@ where
     }
 
     if ctx.session_recorder.is_enabled() {
-        for (split_index, item) in produced.iter().enumerate() {
+        for (index, item) in produced.iter().enumerate() {
             let segment = build_transcript_segment(
                 &item.context,
                 &item.transcript,
@@ -840,8 +856,8 @@ where
                 &source_lang,
                 &target_lang,
                 Some(item.mt_latency_ms),
-                Some(e2e_ms),
-                split_index,
+                Some(e2e_samples[index]),
+                item.split_index,
                 ctx,
             );
             if let Err(err) = ctx.session_recorder.record_segment(segment) {
@@ -914,6 +930,9 @@ where
     M: MtProvider,
     T: TtsProvider,
 {
+    if ctx.pipeline_halted.load(Ordering::Relaxed) {
+        return;
+    }
     let segment = ctx
         .sentence_aggregator
         .lock()
@@ -934,6 +953,9 @@ async fn commit_aggregated_segment<M, T>(
     T: TtsProvider,
 {
     let Some(seg) = segment else { return };
+    if ctx.pipeline_halted.load(Ordering::Relaxed) {
+        return;
+    }
 
     let source_lang = lock_clone_str(&ctx.source_language);
     let target_lang = lock_clone_str(&ctx.target_language);
@@ -995,8 +1017,8 @@ async fn commit_aggregated_segment<M, T>(
             &source_lang,
             &target_lang,
             Some(mt_latency_ms),
-            None,
-            0,
+            Some(e2e_ms),
+            seg.split_index,
             ctx,
         );
         if let Err(err) = ctx.session_recorder.record_segment(segment_rec) {
@@ -3181,6 +3203,51 @@ mod tests {
             mt_calls.load(Ordering::Relaxed),
             0,
             "empty STT transcript must produce no MT call"
+        );
+    }
+
+    /// Review regression (#277): max-age polling must not call MT after a
+    /// fatal provider error has halted the pipeline.
+    #[tokio::test]
+    async fn aggregator_max_age_flush_skips_api_calls_when_pipeline_halted() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let mt_calls = Arc::new(AtomicU32::new(0));
+        let held_since =
+            Instant::now() - Duration::from_millis(sentence_aggregator::MAX_AGE_MS + 1);
+
+        ctx.sentence_aggregator
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(
+                "未完の文",
+                segmentation::SegmentContext::default(),
+                None,
+                held_since,
+            );
+        ctx.pipeline_halted.store(true, Ordering::Relaxed);
+
+        flush_aged_sentence_aggregator_segment(
+            &CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            &OkTts,
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            0,
+            "halted pipeline must not call MT from the max-age poll branch"
+        );
+        assert!(
+            ctx.sentence_aggregator
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .flush_shutdown()
+                .is_some(),
+            "held text should not be consumed when max-age polling is skipped due to halt"
         );
     }
 

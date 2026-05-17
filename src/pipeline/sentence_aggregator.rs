@@ -61,6 +61,9 @@ pub struct AggregatedSegment {
     /// record end-to-end latency when the segment is flushed asynchronously
     /// (max-age timer or shutdown) rather than emitted inline.
     pub e2e_start: Instant,
+    /// Stable index for session segment IDs when one STT window emits multiple
+    /// sentence segments or a later shutdown/max-age flush emits a held tail.
+    pub split_index: usize,
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -70,6 +73,7 @@ struct HeldFragment {
     context: SegmentContext,
     held_since: Instant,
     dedup_keys: Vec<String>,
+    next_split_index: usize,
 }
 
 // ── SentenceAggregator ────────────────────────────────────────────────────────
@@ -138,6 +142,7 @@ impl SentenceAggregator {
                 context,
                 held_since: held.held_since,
                 dedup_keys,
+                next_split_index: held.next_split_index,
             }
         } else {
             HeldFragment {
@@ -145,6 +150,7 @@ impl SentenceAggregator {
                 context,
                 held_since: now,
                 dedup_keys: dedup_key.into_iter().collect(),
+                next_split_index: 0,
             }
         };
 
@@ -171,6 +177,7 @@ impl SentenceAggregator {
             flush_reason: FlushReason::MaxAge,
             dedup_keys: fragment.dedup_keys,
             e2e_start: fragment.held_since,
+            split_index: fragment.next_split_index,
         })
     }
 
@@ -189,6 +196,7 @@ impl SentenceAggregator {
             flush_reason: FlushReason::Shutdown,
             dedup_keys: fragment.dedup_keys,
             e2e_start: fragment.held_since,
+            split_index: fragment.next_split_index,
         })
     }
 
@@ -207,6 +215,7 @@ impl SentenceAggregator {
             context,
             held_since,
             dedup_keys,
+            mut next_split_index,
         } = fragment;
 
         let mut sentence_texts = Vec::new();
@@ -229,12 +238,17 @@ impl SentenceAggregator {
         };
         let segments = sentence_texts
             .into_iter()
-            .map(|sentence| AggregatedSegment {
-                text: sentence,
-                context,
-                flush_reason: FlushReason::SentenceBoundary,
-                dedup_keys: segment_dedup_keys.clone(),
-                e2e_start: held_since,
+            .map(|sentence| {
+                let split_index = next_split_index;
+                next_split_index = next_split_index.saturating_add(1);
+                AggregatedSegment {
+                    text: sentence,
+                    context,
+                    flush_reason: FlushReason::SentenceBoundary,
+                    dedup_keys: segment_dedup_keys.clone(),
+                    e2e_start: held_since,
+                    split_index,
+                }
             })
             .collect::<Vec<_>>();
 
@@ -246,6 +260,7 @@ impl SentenceAggregator {
                 // Do not commit the source fragment's dedup key until every
                 // trailing word from that fragment has been translated.
                 dedup_keys,
+                next_split_index,
             });
         }
 
@@ -342,6 +357,8 @@ mod tests {
         );
         assert_eq!(segs[0].text, "こんにちは！");
         assert_eq!(segs[1].text, "ありがとうございます。");
+        assert_eq!(segs[0].split_index, 0);
+        assert_eq!(segs[1].split_index, 1);
         assert!(
             agg.flush_shutdown().is_none(),
             "no remainder should be held"
@@ -434,9 +451,11 @@ mod tests {
         let segs = agg.push("Done. Still going", ctx(), None, now);
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].text, "Done.");
+        assert_eq!(segs[0].split_index, 0);
 
         let flushed = agg.flush_shutdown().expect("remainder must be held");
         assert_eq!(flushed.text, "Still going");
+        assert_eq!(flushed.split_index, 1);
     }
 
     // ── Dedup-key propagation ─────────────────────────────────────────────────
@@ -470,5 +489,6 @@ mod tests {
         let flushed = agg.flush_shutdown().expect("tail should be held");
         assert_eq!(flushed.text, "Still going");
         assert_eq!(flushed.dedup_keys, vec!["key-a".to_string()]);
+        assert_eq!(flushed.split_index, 1);
     }
 }
