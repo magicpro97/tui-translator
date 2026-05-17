@@ -196,6 +196,68 @@ pub struct SessionStoreConfig {
     pub directory: Option<String>,
 }
 
+// ─── Audio archive configuration (issue #228) ────────────────────────────────
+
+/// Raw audio archive settings (issue #228 / EP-F.3).
+///
+/// Saving raw captured audio is **disabled by default** (`store_audio: false`).
+/// Enabling it requires the user to supply explicit consent (`consent_given:
+/// true`) so the application never silently records audio to disk.
+///
+/// When both `store_audio` and `consent_given` are `true`, every captured
+/// [`crate::audio::AudioChunk`] is appended to a single WAV file for the
+/// session.  The WAV is identical in format to the soak fixture accepted by
+/// [`crate::audio::WavFileSource`]: 16 kHz, mono, 16-bit signed PCM.
+///
+/// # Privacy
+///
+/// Raw audio files contain every sound your speakers/headphones produced
+/// during the meeting.  Think carefully before enabling this.  The application
+/// emits a tracing warning on every startup when archiving is active.
+///
+/// # Quota / retention
+///
+/// `max_size_mb` (default: `0`, disabled) is a **soft per-file quota**.  Once
+/// the current WAV file exceeds this size no further samples are written; the
+/// header is finalized and the archive writer stops until the next session.
+/// `0` means no quota.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AudioArchiveConfig {
+    /// Enable raw WAV archiving.  Default: `false`.
+    ///
+    /// Must be `false` OR accompanied by `consent_given: true`.  Setting
+    /// `store_audio: true` without `consent_given: true` is rejected by
+    /// [`AppConfig::validate`].
+    #[serde(default)]
+    pub store_audio: bool,
+
+    /// Explicit user consent to record raw audio.  Default: `false`.
+    ///
+    /// The application will not record audio unless this is `true`.
+    /// This field must be set deliberately; it cannot be toggled silently by
+    /// any automatic migration or default-fill path.
+    #[serde(default)]
+    pub consent_given: bool,
+
+    /// Directory where per-session WAV files are written.
+    ///
+    /// `None` uses `%USERPROFILE%\.tui-translator\audio-archive\`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+
+    /// Soft per-file quota in MiB.  `0` (default) means no quota.
+    ///
+    /// Once the WAV file for the current session reaches this size, the
+    /// archive writer stops appending samples and finalizes the WAV header.
+    #[serde(default)]
+    pub max_size_mb: u64,
+}
+
+fn audio_archive_is_default(v: &AudioArchiveConfig) -> bool {
+    !v.store_audio && !v.consent_given && v.directory.is_none() && v.max_size_mb == 0
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -373,6 +435,13 @@ pub struct AppConfig {
     /// preserves existing behaviour.
     #[serde(default, skip_serializing_if = "pipeline_config_is_default")]
     pub pipeline: PipelineConfigJson,
+
+    /// Optional raw audio archive (issue #228 / EP-F.3).
+    ///
+    /// Disabled by default (`store_audio: false`).  Both `store_audio` and
+    /// `consent_given` must be `true` before any WAV file is created.
+    #[serde(default, skip_serializing_if = "audio_archive_is_default")]
+    pub audio_archive: AudioArchiveConfig,
 }
 
 impl Default for AppConfig {
@@ -397,6 +466,7 @@ impl Default for AppConfig {
             cpu_budget_pct: 0.0,
             ram_budget_mb: 0,
             pipeline: PipelineConfigJson::default(),
+            audio_archive: AudioArchiveConfig::default(),
         }
     }
 }
@@ -614,6 +684,19 @@ impl AppConfig {
                 self.pipeline.sentence_max_age_ms
             );
         }
+        // ── Audio archive validation (issue #228) ─────────────────────────
+        if self.audio_archive.store_audio && !self.audio_archive.consent_given {
+            bail!(
+                "`audio_archive.store_audio` is true but `audio_archive.consent_given` is false — \
+                 you must set consent_given=true to acknowledge that raw audio will be saved to disk"
+            );
+        }
+        if matches!(&self.audio_archive.directory, Some(path) if path.trim().is_empty()) {
+            bail!(
+                "`audio_archive.directory` must not be empty — \
+                 supply a directory path or omit the field entirely"
+            );
+        }
         Ok(())
     }
 
@@ -635,6 +718,7 @@ impl AppConfig {
             || self.stt_phrase_hints != next.stt_phrase_hints
             || self.session_store != next.session_store
             || self.pipeline != next.pipeline
+            || self.audio_archive != next.audio_archive
     }
 }
 
@@ -701,6 +785,12 @@ pub fn default_config_path() -> Result<PathBuf> {
 /// Return the default transcript session directory under the user's config directory.
 pub fn default_sessions_dir() -> Result<PathBuf> {
     Ok(default_config_dir()?.join("sessions"))
+}
+
+/// Return the default audio archive directory under the user's config directory.
+#[allow(dead_code)]
+pub fn default_audio_archive_dir() -> Result<PathBuf> {
+    Ok(default_config_dir()?.join("audio-archive"))
 }
 
 /// Load configuration from `path` and report whether the file existed.
