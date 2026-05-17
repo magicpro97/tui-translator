@@ -574,8 +574,28 @@ impl SubtitlePane {
     ///
     /// The committed-pair cache is not invalidated because the partial does not
     /// participate in the scrollable history.
-    pub fn set_partial(&mut self, pair: SubtitlePair) {
+    ///
+    /// # Flicker detection (issue #269)
+    ///
+    /// Returns `true` when the new source text is a display regression: it
+    /// does not start with the previous partial's source text (non-monotonic /
+    /// shrinking STT update).  The caller should record a flicker event in
+    /// [`SessionMetrics`](crate::metrics::SessionMetrics) when this returns
+    /// `true`.  Returns `false` on the first partial or when the new text is a
+    /// monotonic extension.
+    pub fn set_partial(&mut self, pair: SubtitlePair) -> bool {
+        let is_flicker = match &self.pending_partial {
+            Some(prev) if !prev.source.is_empty() => {
+                // Regression: new source text does not start with the previous
+                // partial source text.  Growth ("Hello" → "Hello World") is
+                // normal; shrinking or replacement ("Hello World" → "Hello" or
+                // "Hello" → "World") is a flicker.
+                !pair.source.starts_with(prev.source.as_str())
+            }
+            _ => false,
+        };
         self.pending_partial = Some(pair);
+        is_flicker
     }
 
     /// Remove the current partial caption.
@@ -1033,15 +1053,16 @@ fn audio_device_title_max_cols(area_width: u16) -> usize {
 
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
-/// In expanded mode the block is normally 6 rows (2 border + 4 content).
-/// When a cost warning is active an extra content row is needed, making it 7.
-/// In compact mode the strip is always 3 rows.
+/// In expanded mode the block is normally 7 rows (2 border + 5 content):
+/// STT/TTS, metrics, elapsed, CPU/RAM/Net, and the issue-#269 quality row.
+/// When a cost or RAM warning is active an extra content row is needed,
+/// making it 8.  In compact mode the strip is always 3 rows.
 pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
     if metrics_expanded {
         if over_threshold {
-            7u16
+            8u16
         } else {
-            6u16
+            7u16
         }
     } else {
         3u16
@@ -1049,9 +1070,9 @@ pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> 
 }
 
 pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
-    // Expanded mode: 2 border rows + 4 standard content rows (STT/TTS, metrics,
-    // elapsed, runtime CPU/RAM/Net/E2E/Loss) + optional cost-warning row = 6 or 7
-    // total.  Compact mode keeps 3 rows.
+    // Expanded mode: 2 border rows + 5 standard content rows (STT/TTS, metrics,
+    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters) + optional warning row = 7
+    // or 8 total.  Compact mode keeps 3 rows.
     let metrics_h = expanded_metrics_height(metrics_expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1399,7 +1420,7 @@ impl Default for AppState {
 
 // ── StatusMetricsStrip ────────────────────────────────────────────────────────
 
-/// Compact (3-row) or expanded (6-row) metrics strip rendered below the
+/// Compact (3-row) or expanded (7-row) metrics strip rendered below the
 /// subtitle pane.
 ///
 /// In **compact** mode (the default) the strip is a single bordered line
@@ -1435,6 +1456,13 @@ pub struct StatusMetricsStrip<'a> {
     /// When `true`, both compact and expanded modes surface a yellow warning
     /// so the operator knows to investigate before the OS starts paging.
     pub ram_warning: bool,
+    // ── Issue #269: quality / diagnostic counters ─────────────────────────
+    /// Truncation rate: fraction of windows flushed by the safety cap.
+    pub truncation_rate: f64,
+    /// Count of partial-caption display regressions.
+    pub flicker_count: u64,
+    /// Count of successful MT API calls.
+    pub mt_call_count: u64,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -1643,6 +1671,17 @@ impl StatusMetricsStrip<'_> {
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
+
+        // Issue #269: quality / diagnostic counters line.
+        lines.push(Line::from(Span::styled(
+            format!(
+                "trunc:{:.0}%  flicker:{}  mt:{}",
+                self.truncation_rate * 100.0,
+                self.flicker_count,
+                self.mt_call_count,
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
 
         // Issue #74/#231: show one warning line when cost or RAM exceeds threshold.
         let cost_over = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
@@ -1899,6 +1938,10 @@ pub fn draw_ui(
         e2e_latency_ms: metrics.e2e_latency_ms,
         loss_pct: metrics.loss_pct,
         ram_warning: metrics.ram_warning,
+        // Issue #269: quality / diagnostic counters.
+        truncation_rate: metrics.truncation_rate,
+        flicker_count: metrics.flicker_count,
+        mt_call_count: metrics.mt_call_count,
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -3138,5 +3181,97 @@ mod tests {
     fn wrap_to_lines_empty_text_returns_one_line() {
         let lines = wrap_to_lines("[SRC] ", "", 40, Color::Cyan);
         assert_eq!(lines.len(), 1);
+    }
+
+    // ── Issue #269: set_partial flicker detection ────────────────────────────
+
+    #[test]
+    fn set_partial_first_call_is_never_a_flicker() {
+        let mut pane = SubtitlePane::new();
+        let is_flicker = pane.set_partial(SubtitlePair::new("Hello", ""));
+        assert!(
+            !is_flicker,
+            "first set_partial with no previous partial must not report flicker"
+        );
+    }
+
+    #[test]
+    fn set_partial_monotonic_growth_is_not_a_flicker() {
+        let mut pane = SubtitlePane::new();
+        pane.set_partial(SubtitlePair::new("Hello", ""));
+        let is_flicker = pane.set_partial(SubtitlePair::new("Hello World", ""));
+        assert!(
+            !is_flicker,
+            "extending 'Hello' → 'Hello World' is monotonic growth, not a flicker"
+        );
+    }
+
+    #[test]
+    fn set_partial_shrinking_text_is_a_flicker() {
+        let mut pane = SubtitlePane::new();
+        pane.set_partial(SubtitlePair::new("Hello World", ""));
+        let is_flicker = pane.set_partial(SubtitlePair::new("Hello", ""));
+        assert!(
+            is_flicker,
+            "'Hello World' → 'Hello' is a regression (shrink) and must report flicker"
+        );
+    }
+
+    #[test]
+    fn set_partial_text_replacement_is_a_flicker() {
+        let mut pane = SubtitlePane::new();
+        pane.set_partial(SubtitlePair::new("Hello", ""));
+        let is_flicker = pane.set_partial(SubtitlePair::new("World", ""));
+        assert!(
+            is_flicker,
+            "'Hello' → 'World' is a non-monotonic replacement and must report flicker"
+        );
+    }
+
+    #[test]
+    fn set_partial_same_text_is_not_a_flicker() {
+        let mut pane = SubtitlePane::new();
+        pane.set_partial(SubtitlePair::new("Hello", ""));
+        let is_flicker = pane.set_partial(SubtitlePair::new("Hello", ""));
+        assert!(
+            !is_flicker,
+            "identical text ('Hello' → 'Hello') starts-with itself so is not a flicker"
+        );
+    }
+
+    #[test]
+    fn set_partial_empty_previous_is_not_a_flicker() {
+        let mut pane = SubtitlePane::new();
+        pane.set_partial(SubtitlePair::new("", ""));
+        let is_flicker = pane.set_partial(SubtitlePair::new("Hello", ""));
+        assert!(
+            !is_flicker,
+            "empty previous partial must never trigger flicker (no content to regress from)"
+        );
+    }
+
+    #[test]
+    fn set_partial_does_not_scroll_and_returns_flicker_state() {
+        let mut pane = SubtitlePane::new();
+        // Populate pane so we have something to scroll.
+        for i in 0..5 {
+            pane.push(SubtitlePair::new(
+                format!("Source {i}"),
+                format!("Target {i}"),
+            ));
+        }
+        pane.clamp_scroll(80, 10);
+        pane.scroll_up(80, 10);
+        let scroll_before = pane.scroll_value_for_test();
+
+        // Even when flicker is detected, scroll position must not change.
+        pane.set_partial(SubtitlePair::new("Long text here", ""));
+        let is_flicker = pane.set_partial(SubtitlePair::new("Short", ""));
+        assert!(is_flicker, "shrink must be detected as flicker");
+        assert_eq!(
+            pane.scroll_value_for_test(),
+            scroll_before,
+            "set_partial must not change scroll position even when flicker is detected"
+        );
     }
 }

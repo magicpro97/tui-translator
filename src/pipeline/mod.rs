@@ -553,6 +553,15 @@ async fn flush_speech_window<S, M, T>(
         return;
     };
 
+    // Issue #269: record window submission; truncated = hit safety cap.
+    {
+        let truncated = chunk.duration_ms >= STT_MAX_WINDOW_MS;
+        ctx.session_metrics
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .record_window(truncated);
+    }
+
     tracing::info!(
         sequence_number = *seq,
         audio_ms = chunk.duration_ms,
@@ -681,10 +690,18 @@ where
     // STT text so the user sees in-progress recognition without spending MT
     // quota on every interim update.
     if !is_final {
-        ctx.subtitle_pane
+        // Issue #269: detect and record flicker (partial text regression).
+        let is_flicker = ctx
+            .subtitle_pane
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .set_partial(SubtitlePair::new(transcript, String::new()));
+        if is_flicker {
+            ctx.session_metrics
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .record_flicker_event();
+        }
         set_stt_state(&ctx.stt_state, SttState::Listening);
         return;
     }
@@ -770,10 +787,14 @@ where
                 Ok(r) => {
                     // Track MT input chars (billing basis: source chars sent to the API,
                     // matching the count used by GoogleMtProvider::translate).
-                    ctx.session_metrics
-                        .lock()
-                        .unwrap_or_else(|p| p.into_inner())
-                        .chars_translated += seg.text.trim().chars().count() as u64;
+                    {
+                        let mut m = ctx
+                            .session_metrics
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner());
+                        m.chars_translated += seg.text.trim().chars().count() as u64;
+                        m.record_mt_call(); // Issue #269
+                    }
                     // Issue #80: approximate MT bytes received = translated text length.
                     ctx.network_metrics
                         .record_bytes_recv(r.translated_text.len() as u64);
@@ -1005,10 +1026,14 @@ async fn commit_aggregated_segment<M, T>(
     let translation = match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await
     {
         Ok(result) => {
-            ctx.session_metrics
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .chars_translated += seg.text.trim().chars().count() as u64;
+            {
+                let mut m = ctx
+                    .session_metrics
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                m.chars_translated += seg.text.trim().chars().count() as u64;
+                m.record_mt_call(); // Issue #269
+            }
             ctx.network_metrics
                 .record_bytes_recv(result.translated_text.len() as u64);
             clear_pipeline_error(&ctx.pipeline_error_msg);

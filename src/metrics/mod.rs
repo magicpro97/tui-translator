@@ -98,6 +98,28 @@ pub struct SessionMetrics {
     pub line_pairs_shown: u64,
     /// Wall-clock instant when the session started; drives elapsed-time display.
     pub session_start: Instant,
+
+    // ── Issue #269: quality / diagnostic counters ─────────────────────────────
+    /// Total speech windows submitted to the STT API (non-skipped, including
+    /// both truncated and non-truncated windows).  Used as the denominator for
+    /// [`truncated_windows`](Self::truncated_windows).
+    pub total_windows: u64,
+
+    /// Speech windows flushed by the `STT_MAX_WINDOW_MS` safety cap rather
+    /// than by a VAD end-of-utterance, idle-timeout, or shutdown flush.
+    /// A window is considered truncated when its audio duration equals or
+    /// exceeds `STT_MAX_WINDOW_MS` (1 500 ms) at submission time.
+    pub truncated_windows: u64,
+
+    /// Cumulative count of partial-caption display regressions.  A regression
+    /// is counted when the new in-flight source text does not start with the
+    /// previous partial source text (non-monotonic / shrinking STT update).
+    pub flicker_count: u64,
+
+    /// Cumulative count of successful MT API calls.  Incremented once per
+    /// `translate()` `Ok` result; never incremented on errors, empty-text
+    /// skips, or non-final STT partials.
+    pub mt_call_count: u64,
 }
 
 impl Default for SessionMetrics {
@@ -108,6 +130,10 @@ impl Default for SessionMetrics {
             estimated_cost_usd: 0.0,
             line_pairs_shown: 0,
             session_start: Instant::now(),
+            total_windows: 0,
+            truncated_windows: 0,
+            flicker_count: 0,
+            mt_call_count: 0,
         }
     }
 }
@@ -132,6 +158,38 @@ impl SessionMetrics {
     /// deltas before they can offset already-recorded usage.
     pub fn record_audio_seconds_sent(&mut self, seconds: f64) {
         self.audio_seconds_sent += cost::billable_audio_seconds(seconds);
+    }
+
+    // ── Issue #269: quality / diagnostic counter helpers ──────────────────────
+
+    /// Record one speech window submitted to the STT API.
+    ///
+    /// `truncated` should be `true` when the window was flushed because its
+    /// audio duration reached the `STT_MAX_WINDOW_MS` safety cap (1 500 ms),
+    /// as opposed to a VAD end-of-utterance flush, an idle-timeout flush, or
+    /// a shutdown flush.  Used to compute
+    /// `truncation_rate = truncated_windows / total_windows`.
+    pub fn record_window(&mut self, truncated: bool) {
+        self.total_windows += 1;
+        if truncated {
+            self.truncated_windows += 1;
+        }
+    }
+
+    /// Record one partial-caption display regression.
+    ///
+    /// Call when the new in-flight STT source text does not start with the
+    /// previous partial source text (non-monotonic / shrinking update).
+    pub fn record_flicker_event(&mut self) {
+        self.flicker_count += 1;
+    }
+
+    /// Record one successful MT API call.
+    ///
+    /// Call only on `translate()` `Ok` results; not on errors, empty-text
+    /// skips, or non-final STT partials.
+    pub fn record_mt_call(&mut self) {
+        self.mt_call_count += 1;
     }
 
     /// Elapsed wall-clock seconds since `session_start`.
@@ -261,6 +319,52 @@ mod tests {
         assert_ne!(SttState::Sending.label(), SttState::Listening.label());
         assert_ne!(SttState::Waiting.label(), SttState::Listening.label());
         assert_ne!(SttState::Sending.label(), SttState::Waiting.label());
+    }
+
+    // ── Issue #269: quality counter tests ────────────────────────────────────
+
+    #[test]
+    fn record_window_increments_total_and_conditional_truncated() {
+        let mut m = SessionMetrics::default();
+        m.record_window(false);
+        m.record_window(false);
+        m.record_window(true);
+        assert_eq!(m.total_windows, 3);
+        assert_eq!(m.truncated_windows, 1);
+    }
+
+    #[test]
+    fn record_window_non_truncated_does_not_change_truncated_counter() {
+        let mut m = SessionMetrics::default();
+        m.record_window(false);
+        assert_eq!(m.total_windows, 1);
+        assert_eq!(m.truncated_windows, 0);
+    }
+
+    #[test]
+    fn record_flicker_event_increments_flicker_count() {
+        let mut m = SessionMetrics::default();
+        m.record_flicker_event();
+        m.record_flicker_event();
+        assert_eq!(m.flicker_count, 2);
+    }
+
+    #[test]
+    fn record_mt_call_increments_mt_call_count() {
+        let mut m = SessionMetrics::default();
+        m.record_mt_call();
+        m.record_mt_call();
+        m.record_mt_call();
+        assert_eq!(m.mt_call_count, 3);
+    }
+
+    #[test]
+    fn default_session_metrics_quality_counters_are_zero() {
+        let m = SessionMetrics::default();
+        assert_eq!(m.total_windows, 0);
+        assert_eq!(m.truncated_windows, 0);
+        assert_eq!(m.flicker_count, 0);
+        assert_eq!(m.mt_call_count, 0);
     }
 
     #[test]

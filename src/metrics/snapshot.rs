@@ -139,6 +139,21 @@ pub struct MetricsSnapshot {
     /// guard output gives the recording/export layer a single pressure signal
     /// to honor when that optional feature is enabled.
     pub recording_disabled_under_pressure: bool,
+
+    // ── Quality / diagnostic counters (issue #269) ────────────────────────────
+    /// Fraction of speech windows flushed by the `STT_MAX_WINDOW_MS` safety
+    /// cap rather than by VAD end-of-utterance, idle-timeout, or shutdown
+    /// paths.  Computed as `truncated_windows / total_windows`.  Returns
+    /// `0.0` when `total_windows` is `0` (NaN-safe).
+    pub truncation_rate: f64,
+
+    /// Cumulative count of partial-caption display regressions: the in-flight
+    /// source text shrank or no longer started with the previous partial.
+    pub flicker_count: u64,
+
+    /// Cumulative count of successful MT API calls.  Never incremented on
+    /// errors or skipped non-final STT results.
+    pub mt_call_count: u64,
 }
 
 impl Default for MetricsSnapshot {
@@ -164,6 +179,9 @@ impl Default for MetricsSnapshot {
             local_inferences_skipped: 0,
             ram_warning: false,
             recording_disabled_under_pressure: false,
+            truncation_rate: 0.0,
+            flicker_count: 0,
+            mt_call_count: 0,
         }
     }
 }
@@ -255,6 +273,10 @@ mod tests {
         assert_eq!(s.local_inferences_skipped, 0);
         assert!(!s.ram_warning);
         assert!(!s.recording_disabled_under_pressure);
+        // Issue #269: quality counters default to zero / 0.0.
+        assert_eq!(s.truncation_rate, 0.0);
+        assert_eq!(s.flicker_count, 0);
+        assert_eq!(s.mt_call_count, 0);
     }
 
     #[test]
@@ -386,5 +408,47 @@ mod tests {
             s.ram_bytes, 200_000,
             "latched warning should display the last non-zero RAM reading"
         );
+    }
+
+    // ── Issue #269: quality / diagnostic counter snapshot tests ──────────────
+
+    #[test]
+    fn truncation_rate_is_zero_when_no_windows_recorded() {
+        let s = MetricsSnapshot {
+            truncation_rate: 0.0,
+            ..MetricsSnapshot::default()
+        };
+        assert_eq!(s.truncation_rate, 0.0, "NaN-safe: zero when no windows");
+    }
+
+    #[test]
+    fn truncation_rate_is_one_when_all_windows_truncated() {
+        let s = MetricsSnapshot {
+            truncation_rate: 1.0,
+            ..MetricsSnapshot::default()
+        };
+        assert_eq!(s.truncation_rate, 1.0);
+    }
+
+    #[test]
+    fn truncation_rate_partial_fraction() {
+        // 1 truncated out of 4 → 0.25
+        let rate = 1.0_f64 / 4.0_f64;
+        let s = MetricsSnapshot {
+            truncation_rate: rate,
+            ..MetricsSnapshot::default()
+        };
+        assert!((s.truncation_rate - 0.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn flicker_and_mt_call_counts_are_carried_in_snapshot() {
+        let s = MetricsSnapshot {
+            flicker_count: 7,
+            mt_call_count: 42,
+            ..MetricsSnapshot::default()
+        };
+        assert_eq!(s.flicker_count, 7);
+        assert_eq!(s.mt_call_count, 42);
     }
 }
