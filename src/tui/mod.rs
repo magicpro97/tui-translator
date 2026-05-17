@@ -393,10 +393,7 @@ impl ConfigEditorState {
             .unwrap_or(0);
         let next = choices[(idx + 1) % choices.len()];
         *self.active_field_mut() = next.to_string();
-        self.status_message = Some(format!(
-            " {} set to \"{next}\"{save_hint}",
-            field.label(),
-        ));
+        self.status_message = Some(format!(" {} set to \"{next}\"{save_hint}", field.label(),));
     }
 }
 
@@ -2055,16 +2052,36 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
-        config_editor_field_line(ConfigEditorField::SourceLanguage, &editor.source_language, active),
-        config_editor_field_line(ConfigEditorField::TargetLanguage, &editor.target_language, active),
+        config_editor_field_line(
+            ConfigEditorField::SourceLanguage,
+            &editor.source_language,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::TargetLanguage,
+            &editor.target_language,
+            active,
+        ),
         config_editor_field_line(ConfigEditorField::GoogleApiKey, &masked_key, active),
         config_editor_field_line(ConfigEditorField::AudioSource, &editor.audio_source, active),
-        config_editor_field_line(ConfigEditorField::CaptureDevice, &editor.capture_device, active),
-        config_editor_field_line(ConfigEditorField::AudioFilePath, &editor.audio_file_path, active),
+        config_editor_field_line(
+            ConfigEditorField::CaptureDevice,
+            &editor.capture_device,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::AudioFilePath,
+            &editor.audio_file_path,
+            active,
+        ),
         config_editor_field_line(ConfigEditorField::SttProvider, &editor.stt_provider, active),
         config_editor_field_line(ConfigEditorField::MtProvider, &editor.mt_provider, active),
         config_editor_field_line(ConfigEditorField::TtsEnabled, &editor.tts_enabled, active),
-        config_editor_field_line(ConfigEditorField::SttFallbackPolicy, &editor.stt_fallback_policy, active),
+        config_editor_field_line(
+            ConfigEditorField::SttFallbackPolicy,
+            &editor.stt_fallback_policy,
+            active,
+        ),
     ];
 
     if show_status_separator {
@@ -2696,7 +2713,11 @@ mod tests {
         assert_eq!(editor.audio_source, "wasapi");
         // Status message mentions restart.
         assert!(
-            editor.status_message.as_deref().unwrap_or("").contains("restart"),
+            editor
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("restart"),
             "cycling audio source should hint that restart is required"
         );
     }
@@ -2752,7 +2773,11 @@ mod tests {
         assert_eq!(editor.tts_enabled, "false");
         // Status message mentions save.
         assert!(
-            editor.status_message.as_deref().unwrap_or("").contains("Save"),
+            editor
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("Save"),
             "cycling TTS should prompt to save"
         );
     }
@@ -2824,7 +2849,14 @@ mod tests {
             "masked key should end with last 4 chars"
         );
         // Last 4 chars of "AIzaSyABCDEF123456789xyz" are "6xyz" — 24 chars total
-        let last4: String = key.chars().rev().take(4).collect::<String>().chars().rev().collect();
+        let last4: String = key
+            .chars()
+            .rev()
+            .take(4)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
         assert!(
             result.ends_with(&last4),
             "masked key should end with '{last4}'; got: {result:?}"

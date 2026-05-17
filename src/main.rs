@@ -3001,7 +3001,10 @@ mod tests {
 
         let result = build_config_from_editor(&editor, &current);
 
-        assert!(!result.tts_enabled, "tts_enabled must be persisted as false");
+        assert!(
+            !result.tts_enabled,
+            "tts_enabled must be persisted as false"
+        );
     }
 
     #[test]
