@@ -640,7 +640,7 @@ fn update_audio_sent_metrics(chunk: &AudioChunk, ctx: &OrchestratorContext) {
         .session_metrics
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    m.audio_seconds_sent += audio_secs;
+    m.record_audio_seconds_sent(audio_secs);
     drop(m);
     // Record STT cost in the shared counter so the live estimate includes it.
     ctx.cost_counter.record_audio_seconds(audio_secs);

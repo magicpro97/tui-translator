@@ -118,10 +118,20 @@ impl SessionMetrics {
     /// Pricing as of Q1 2025 (verify against current Google billing page):
     /// - Speech-to-Text: $0.006 per 15 seconds = $0.0004 per second
     /// - Translation:    $20 per 1 000 000 characters = $0.00002 per character
+    ///
+    /// Each billable component is clamped before summing so that any
+    /// floating-point drift or upstream counter anomaly never produces a
+    /// negative cost value.
     pub fn recalculate_cost(&mut self) {
-        let stt_cost = self.audio_seconds_sent * 0.0004;
+        let stt_cost = cost::billable_audio_seconds(self.audio_seconds_sent) * 0.0004;
         let translate_cost = self.chars_translated as f64 * 0.00002;
         self.estimated_cost_usd = stt_cost + translate_cost;
+    }
+
+    /// Add audio duration that was sent to STT, ignoring invalid or negative
+    /// deltas before they can offset already-recorded usage.
+    pub fn record_audio_seconds_sent(&mut self, seconds: f64) {
+        self.audio_seconds_sent += cost::billable_audio_seconds(seconds);
     }
 
     /// Elapsed wall-clock seconds since `session_start`.
@@ -152,6 +162,56 @@ mod tests {
         let mut m = SessionMetrics::default();
         m.recalculate_cost();
         assert_eq!(m.estimated_cost_usd, 0.0);
+    }
+
+    /// Regression guard for issue #195: recalculate_cost must clamp to 0.0
+    /// even if audio_seconds_sent is somehow negative (float drift / counter
+    /// anomaly).
+    #[test]
+    fn recalculate_cost_clamps_negative_to_zero() {
+        let mut m = SessionMetrics {
+            audio_seconds_sent: -325.0, // would give -0.13 USD without the clamp
+            ..Default::default()
+        };
+        m.recalculate_cost();
+        assert_eq!(
+            m.estimated_cost_usd, 0.0,
+            "recalculate_cost must never produce a negative estimated_cost_usd (issue #195)"
+        );
+    }
+
+    #[test]
+    fn recalculate_cost_negative_audio_does_not_offset_translation_cost() {
+        let mut m = SessionMetrics {
+            audio_seconds_sent: -325.0,
+            chars_translated: 10_000,
+            ..Default::default()
+        };
+        m.recalculate_cost();
+        assert_eq!(m.estimated_cost_usd, 0.2);
+    }
+
+    #[test]
+    fn record_audio_seconds_sent_ignores_negative_deltas_before_accumulation() {
+        let mut m = SessionMetrics::default();
+        m.record_audio_seconds_sent(100.0);
+        m.record_audio_seconds_sent(-325.0);
+        m.recalculate_cost();
+
+        assert_eq!(m.audio_seconds_sent, 100.0);
+        assert_eq!(m.estimated_cost_usd, 0.04);
+    }
+
+    #[test]
+    fn record_audio_seconds_sent_ignores_non_finite_deltas() {
+        let mut m = SessionMetrics::default();
+        m.record_audio_seconds_sent(100.0);
+        m.record_audio_seconds_sent(f64::NAN);
+        m.record_audio_seconds_sent(f64::INFINITY);
+        m.recalculate_cost();
+
+        assert_eq!(m.audio_seconds_sent, 100.0);
+        assert_eq!(m.estimated_cost_usd, 0.04);
     }
 
     #[test]

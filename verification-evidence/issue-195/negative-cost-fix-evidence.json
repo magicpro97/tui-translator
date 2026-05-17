@@ -1,0 +1,113 @@
+{
+  "issue": "#195",
+  "title": "[P1] WP-11.07 — Investigate negative startup cost before any configured usage",
+  "branch": "issue-195-negative-cost",
+  "date": "2026-05-14",
+  "proof": "unit-and-snapshot-test-suite",
+
+  "root_cause": {
+    "summary": "Three related defects could allow negative or misleading zero-state cost to surface at startup.",
+    "defect_1": {
+      "location": "src/metrics/cost.rs — format_cost_or_zero_state()",
+      "description": "The zero-state guard used exact equality `cost_usd == 0.0`.  A tiny negative value produced by float drift (or the second defect) would fail the equality check, fall into the `else` branch, and pass through to format_cost_display() which clamps to zero but returns '~$0.000' instead of the clear 'no charges' string.  Result: startup showed '~$0.000' or, before the format_cost_display clamp was added, a literal negative dollar amount.",
+      "fix": "Changed the guard to only format finite, strictly positive values as dollar amounts.  Any zero, negative, NaN, or infinite value now returns 'no charges', matching acceptance criterion #2."
+    },
+    "defect_2": {
+      "location": "src/metrics/mod.rs — SessionMetrics audio accumulation",
+      "description": "The legacy cost path exposed `audio_seconds_sent` and callers added raw deltas directly. A later negative delta could erase already-recorded valid STT usage.",
+      "fix": "Added `SessionMetrics::record_audio_seconds_sent()` and switched the main and pipeline accumulation paths to it. The helper ignores non-positive or non-finite deltas before they can offset valid usage; `recalculate_cost()` still clamps as a defense-in-depth guard."
+    },
+    "defect_3": {
+      "location": "src/metrics/cost.rs — CostCounter audio accumulation",
+      "description": "The live CostCounter path added raw audio deltas to the cumulative counter. A later negative delta could erase previously recorded valid STT usage before final cost calculation.",
+      "fix": "Added a shared `billable_audio_seconds()` guard and made `CostCounter::record_audio_seconds()` ignore non-positive or non-finite deltas before accumulation. `total_usd()` still uses the same guard as a defense-in-depth clamp."
+    }
+  },
+
+  "acceptance_criteria": {
+    "criterion_1_no_negative_cost_at_startup": {
+      "met": true,
+      "evidence": "Both CostCounter::record_audio_seconds() and SessionMetrics::record_audio_seconds_sent() reject invalid/negative deltas before accumulation, and their final calculation paths keep defense-in-depth clamps. Both paths are tested."
+    },
+    "criterion_2_clear_zero_state_string": {
+      "met": true,
+      "evidence": "format_cost_or_zero_state(0.0) and format_cost_or_zero_state(-0.13) both return 'no charges'.  Snapshots snapshot__status_strip_zero_state_narrow and snapshot__status_strip_zero_state_expanded confirm the TUI shows 'no charges' at startup."
+    },
+    "criterion_3_release_path_fix": {
+      "met": true,
+      "evidence": "The fix is in the shared format helper (cost.rs) used by all display surfaces, and both metrics accumulation paths reject invalid/negative audio deltas before summing."
+    },
+    "criterion_4_runtime_evidence": {
+      "met": true,
+      "evidence": "Real startup launch evidence is recorded in runtime-startup-summary.txt and runtime-startup-onboarding-stdout.txt. The captured TUI shows 'no charges', with no negative dollar amount and no '~$0.000'."
+    }
+  },
+
+  "test_results": {
+    "zero_state_returns_no_charges_string": "PASS — format_cost_or_zero_state(0.0) == 'no charges'",
+    "zero_state_negative_cost_returns_no_charges": "PASS — format_cost_or_zero_state(-0.13) == 'no charges' (regression guard for issue #195 example value)",
+    "zero_state_nan_cost_returns_no_charges": "PASS — format_cost_or_zero_state(NaN) == 'no charges'",
+    "zero_state_negative_zero_returns_no_charges": "PASS — format_cost_or_zero_state(-0.0) == 'no charges'",
+    "recalculate_cost_clamps_negative_to_zero": "PASS — SessionMetrics with audio_seconds_sent=-325.0 recalculates to estimated_cost_usd=0.0 (defense-in-depth guard)",
+    "negative_audio_seconds_do_not_offset_positive_usage": "PASS — CostCounter keeps a valid 100s STT charge plus 10,000 translated chars after an anomalous -325s delta",
+    "non_finite_audio_seconds_are_ignored_before_accumulation": "PASS — CostCounter ignores NaN and infinite audio deltas before accumulation",
+    "recalculate_cost_negative_audio_does_not_offset_translation_cost": "PASS — SessionMetrics with a direct negative aggregate plus 10,000 translated chars returns 0.2 USD",
+    "record_audio_seconds_sent_ignores_negative_deltas_before_accumulation": "PASS — SessionMetrics keeps a valid 100s STT duration after an anomalous -325s delta",
+    "record_audio_seconds_sent_ignores_non_finite_deltas": "PASS — SessionMetrics ignores NaN and infinite audio deltas before accumulation",
+    "snapshot_status_strip_zero_state_narrow": "PASS — rendered strip at 60 cols shows 'no charges'",
+    "snapshot_status_strip_zero_state_expanded": "PASS — rendered expanded metrics shows 'Cost: no charges'",
+    "runtime_startup_launch": "PASS — launched target/debug/tui-translator.exe with a temp USERPROFILE and no configured usage; captured TUI shows 'no charges', no negative dollar amount, no '~$0.000', and no panic/abort",
+    "total_tests_run": "cargo test passed: 244 unit/integration tests, 1 soak fixture test, 2 soak runner tests, and 3 WASAPI probe tests; 0 failed"
+  },
+
+  "tui_rendered_zero_state": {
+    "compact_60cols": "┌──────────────────────────────────────────────────────────┐\n│ idle | Lang:vi | TTS:off | 0p | no charges | 0:00        │\n└──────────────────────────────────────────────────────────┘",
+    "compact_120cols": "┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐\n│ STT: idle │ Lang:vi │ TTS:off │ 0 pairs │ Audio:0s │ no charges │ 0:00                                               │\n└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘",
+    "expanded_80cols": "┌ Metrics ─────────────────────────────────────────────────────────────────────┐\n│STT: idle   TTS: off                                                          │\n│Target: vi   Pairs: 0   Cost: no charges                                      │\n│Elapsed: 0:00                                                                 │\n│CPU:0%  RAM:0MB  Net:↑0/↓0 kbps  E2E:—  Loss:0.0%                             │\n└──────────────────────────────────────────────────────────────────────────────┘",
+    "note": "Captured from insta snapshot assertions.  All three surfaces show 'no charges' not '~$0.000'."
+  },
+
+  "files_changed": [
+    {
+      "file": "src/metrics/cost.rs",
+      "changes": [
+        "CostCounterState::total_usd: clamps negative audio seconds before summing with MT/TTS costs",
+        "CostCounter::record_audio_seconds: ignores non-positive and non-finite deltas before they can offset accumulated valid usage",
+        "format_cost_or_zero_state: guard condition changed from `cost_usd == 0.0` to finite and strictly positive to catch zero, negative, NaN, and infinite values",
+        "Updated doc-comment with expanded examples including -0.13",
+        "New tests: negative_audio_seconds_do_not_offset_positive_usage, non_finite_audio_seconds_are_ignored_before_accumulation, zero_state_negative_cost_returns_no_charges, zero_state_nan_cost_returns_no_charges, zero_state_negative_zero_returns_no_charges, zero_state_infinite_cost_returns_no_charges"
+      ]
+    },
+    {
+      "file": "src/metrics/mod.rs",
+      "changes": [
+        "SessionMetrics::record_audio_seconds_sent: ignores non-positive and non-finite deltas before they can offset accumulated valid usage",
+        "SessionMetrics::recalculate_cost: defense-in-depth clamp for negative aggregate values",
+        "New tests: recalculate_cost_clamps_negative_to_zero, recalculate_cost_negative_audio_does_not_offset_translation_cost, record_audio_seconds_sent_ignores_negative_deltas_before_accumulation, record_audio_seconds_sent_ignores_non_finite_deltas"
+      ]
+    },
+    {
+      "file": "src/main.rs",
+      "changes": [
+        "Uses SessionMetrics::record_audio_seconds_sent() instead of directly adding raw audio deltas"
+      ]
+    },
+    {
+      "file": "src/pipeline/mod.rs",
+      "changes": [
+        "Uses SessionMetrics::record_audio_seconds_sent() instead of directly adding raw audio deltas"
+      ]
+    }
+  ],
+
+  "commands_run": [
+    "rustup run 1.90.0-x86_64-pc-windows-gnu cargo fmt --all -- --check  [PASS]",
+    "rustup run 1.90.0-x86_64-pc-windows-gnu cargo test  [PASS]",
+    "rustup run 1.90.0-x86_64-pc-windows-gnu cargo test  [PASS: 244 unit/integration + 1 soak + 2 soak runner + 3 WASAPI probe]",
+    "rustup run 1.90.0-x86_64-pc-windows-gnu cargo clippy --all-targets -- -D warnings  [PASS]",
+    "target/debug/tui-translator.exe launched with a temporary USERPROFILE and no configured usage for 4 seconds  [PASS: 'no charges' visible; no negative dollar amount; no '~$0.000'; no panic/abort]"
+  ],
+
+  "negative_cost_not_observed": true,
+  "zero_state_shows_no_charges": true
+}

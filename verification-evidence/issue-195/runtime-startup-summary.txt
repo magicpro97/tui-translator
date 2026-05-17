@@ -1,0 +1,7 @@
+Issue #195 runtime onboarding startup evidence
+Process exited on its own before 4s kill: False
+Zero-state string visible: True
+Negative dollar amount visible: False
+Tilde-zero dollar visible: False
+Panic/abort observed: False
+Temp USERPROFILE: verification-evidence\issue-195\runtime-startup-home
