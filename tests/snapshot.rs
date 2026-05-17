@@ -319,6 +319,9 @@ fn snapshot_status_strip_compact_idle() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -344,6 +347,9 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -372,6 +378,9 @@ fn snapshot_status_strip_compact_restart_notice() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -402,6 +411,9 @@ fn snapshot_status_strip_compact_sending() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -427,6 +439,9 @@ fn snapshot_status_strip_compact_waiting() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -452,6 +467,9 @@ fn snapshot_status_strip_compact_error() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -479,8 +497,16 @@ fn snapshot_status_strip_expanded_idle() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
-    insta::assert_snapshot!("status_strip_expanded_idle", render_strip(&strip, 80, 6));
+    let rendered = render_strip(&strip, 80, 7);
+    assert!(
+        rendered.contains("trunc:"),
+        "quality row missing: {rendered:?}"
+    );
+    insta::assert_snapshot!("status_strip_expanded_idle", rendered);
 }
 
 #[test]
@@ -504,15 +530,20 @@ fn snapshot_status_strip_expanded_listening() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
-    insta::assert_snapshot!(
-        "status_strip_expanded_listening",
-        render_strip(&strip, 80, 6)
+    let rendered = render_strip(&strip, 80, 7);
+    assert!(
+        rendered.contains("trunc:"),
+        "quality row missing: {rendered:?}"
     );
+    insta::assert_snapshot!("status_strip_expanded_listening", rendered);
 }
 
 /// Expanded mode with an active cost warning: the warning row must be visible
-/// and the block must be 7 rows tall (2 borders + 4 standard rows + 1 warning).
+/// and the block must be 8 rows tall (2 borders + 5 standard rows + 1 warning).
 #[test]
 fn snapshot_status_strip_expanded_with_warning() {
     let stt = SttState::Listening;
@@ -534,11 +565,14 @@ fn snapshot_status_strip_expanded_with_warning() {
         e2e_latency_ms: Some(420),
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 7,
-        "expanded_height() must be 7 when over_threshold; got {height}"
+        height, 8,
+        "expanded_height() must be 8 when over_threshold; got {height}"
     );
     insta::assert_snapshot!(
         "status_strip_expanded_with_warning",
@@ -570,6 +604,9 @@ fn snapshot_status_strip_narrow_abbreviated() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -599,6 +636,9 @@ fn snapshot_status_strip_wide_full_labels() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -757,6 +797,9 @@ fn stt_error_state_label_contains_message() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -787,6 +830,9 @@ fn narrow_strip_uses_abbreviated_labels() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
@@ -806,10 +852,10 @@ fn narrow_strip_uses_abbreviated_labels() {
 /// when `cost_usd` exceeds `cost_warning_usd` (issue #74).
 ///
 /// Verifies:
-/// 1. `expanded_height()` returns 7 (not 6) when over threshold.
+/// 1. `expanded_height()` returns 8 (not 7) when over threshold.
 /// 2. `expanded_metrics_height(true, true)` matches that value.
-/// 3. The rendered text at 7 rows contains the warning.
-/// 4. The same strip at 6 rows (old, wrong height) does NOT show the warning.
+/// 3. The rendered text at 8 rows contains the warning.
+/// 4. The same strip at 7 rows (old, wrong height) does NOT show the warning.
 #[test]
 fn expanded_warning_renders_when_over_threshold() {
     let stt = SttState::Idle;
@@ -831,23 +877,26 @@ fn expanded_warning_renders_when_over_threshold() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
 
-    // Height accounting must be 7 when warning is active.
+    // Height accounting must be 8 when warning is active.
     assert_eq!(
         strip.expanded_height(),
-        7,
-        "expanded_height() must return 7 when cost exceeds threshold"
+        8,
+        "expanded_height() must return 8 when cost exceeds threshold"
     );
     assert_eq!(
         expanded_metrics_height(true, true),
-        7,
-        "expanded_metrics_height(expanded=true, over_threshold=true) must be 7"
+        8,
+        "expanded_metrics_height(expanded=true, over_threshold=true) must be 8"
     );
     assert_eq!(
         expanded_metrics_height(true, false),
-        6,
-        "expanded_metrics_height(expanded=true, over_threshold=false) must be 6"
+        7,
+        "expanded_metrics_height(expanded=true, over_threshold=false) must be 7"
     );
     assert_eq!(
         expanded_metrics_height(false, true),
@@ -855,22 +904,22 @@ fn expanded_warning_renders_when_over_threshold() {
         "expanded_metrics_height(expanded=false, ...) must always be 3"
     );
 
-    // At the correct height of 7 the warning IS visible.
-    let rendered_7 = render_strip(&strip, 80, 7);
+    // At the correct height of 8 the warning IS visible.
+    let rendered_8 = render_strip(&strip, 80, 8);
     assert!(
-        rendered_7.contains("Cost warning"),
-        "expanded strip at 7 rows must show cost warning; got:\n{rendered_7}"
+        rendered_8.contains("Cost warning"),
+        "expanded strip at 8 rows must show cost warning; got:\n{rendered_8}"
     );
     assert!(
-        rendered_7.contains("1.20"),
-        "cost warning must include the current cost value; got:\n{rendered_7}"
+        rendered_8.contains("1.20"),
+        "cost warning must include the current cost value; got:\n{rendered_8}"
     );
 
-    // At the old (wrong) height of 6 the 5th line is clipped — regression guard.
-    let rendered_6 = render_strip(&strip, 80, 6);
+    // At the old (wrong) height of 7 the 6th content line is clipped — regression guard.
+    let rendered_7 = render_strip(&strip, 80, 7);
     assert!(
-        !rendered_6.contains("Cost warning"),
-        "at 6 rows the warning row IS clipped — confirms fix was needed; got:\n{rendered_6}"
+        !rendered_7.contains("Cost warning"),
+        "at 7 rows the warning row IS clipped — confirms fix was needed; got:\n{rendered_7}"
     );
 }
 
@@ -896,6 +945,9 @@ fn snapshot_status_strip_zero_state_narrow() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -925,11 +977,16 @@ fn snapshot_status_strip_zero_state_expanded() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
-    insta::assert_snapshot!(
-        "status_strip_zero_state_expanded",
-        render_strip(&strip, 80, 6)
+    let rendered = render_strip(&strip, 80, 7);
+    assert!(
+        rendered.contains("trunc:"),
+        "quality row missing: {rendered:?}"
     );
+    insta::assert_snapshot!("status_strip_zero_state_expanded", rendered);
 }
 
 /// Short device names pass through unchanged.
@@ -999,6 +1056,9 @@ fn narrow_compact_strip_uses_lang_label() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1033,6 +1093,9 @@ fn narrow_compact_strip_uses_tts_label() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1067,6 +1130,9 @@ fn compact_restart_notice_is_spelled_out() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1101,6 +1167,9 @@ fn snapshot_status_strip_very_narrow_30cols() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1295,11 +1364,18 @@ fn expanded_metrics_narrow_uses_lang_label() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
-    let rendered = render_strip(&strip, 60, 6);
+    let rendered = render_strip(&strip, 60, 7);
     assert!(
         rendered.contains("Lang:"),
         "expanded narrow strip must use 'Lang:' label; got: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("trunc:"),
+        "expanded narrow strip must include quality counters; got: {rendered:?}"
     );
     assert!(
         !rendered.contains("L:fr"),
@@ -1600,6 +1676,9 @@ fn snapshot_status_strip_compact_ram_warning() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: true,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1640,11 +1719,14 @@ fn snapshot_status_strip_expanded_ram_warning() {
         e2e_latency_ms: Some(420),
         loss_pct: 0.0,
         ram_warning: true,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 7,
-        "expanded_height() must be 7 when ram_warning is true; got {height}"
+        height, 8,
+        "expanded_height() must be 8 when ram_warning is true; got {height}"
     );
     let rendered = render_strip(&strip, 80, height);
     assert!(
@@ -1681,8 +1763,11 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         e2e_latency_ms: Some(420),
         loss_pct: 0.0,
         ram_warning: true,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
-    assert_eq!(strip.expanded_height(), 7);
+    assert_eq!(strip.expanded_height(), 8);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
     assert!(
         rendered.contains("Cost warning") && rendered.contains("RAM warning"),
@@ -1692,7 +1777,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
 
 /// Expanded strip: no extra row and no warning when `ram_warning` is false.
 #[test]
-fn expanded_metrics_height_is_6_without_any_warning() {
+fn expanded_metrics_height_is_7_without_any_warning() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
@@ -1712,10 +1797,13 @@ fn expanded_metrics_height_is_6_without_any_warning() {
         e2e_latency_ms: None,
         loss_pct: 0.0,
         ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
     };
     assert_eq!(
         strip.expanded_height(),
-        6,
-        "no warnings → expanded_height() must be 6"
+        7,
+        "no warnings → expanded_height() must be 7"
     );
 }

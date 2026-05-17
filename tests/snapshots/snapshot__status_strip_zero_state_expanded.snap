@@ -1,10 +1,11 @@
 ---
 source: tests/snapshot.rs
-expression: "render_strip(&strip, 80, 6)"
+expression: "render_strip(&strip, 80, 7)"
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
 │STT: idle   TTS: off                                                          │
 │Target: vi   Pairs: 0   Cost: no charges                                      │
 │Elapsed: 0:00                                                                 │
 │CPU:0%  RAM:0MB  Net:↑0/↓0 kbps  E2E:—  Loss:0.0%                             │
+│trunc:0%  flicker:0  mt:0                                                     │
 └──────────────────────────────────────────────────────────────────────────────┘

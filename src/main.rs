@@ -1101,6 +1101,14 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     estimated_cost_usd: cost_counter.current_estimate_usd(),
                     line_pairs_shown,
                     session_start: session.session_start,
+                    // Issue #269: quality / diagnostic counters.
+                    truncation_rate: if session.total_windows > 0 {
+                        session.truncated_windows as f64 / session.total_windows as f64
+                    } else {
+                        0.0
+                    },
+                    flicker_count: session.flicker_count,
+                    mt_call_count: session.mt_call_count,
                     ..MetricsSnapshot::default()
                 };
 
