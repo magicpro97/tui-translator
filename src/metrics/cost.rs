@@ -32,9 +32,10 @@ struct CostCounterState {
 
 impl CostCounterState {
     fn total_usd(&self) -> f64 {
-        self.audio_seconds * STT_USD_PER_SECOND
-            + self.translated_chars as f64 * MT_USD_PER_CHARACTER
-            + self.synthesized_chars as f64 * TTS_USD_PER_CHARACTER
+        let stt_cost = self.audio_seconds.max(0.0) * STT_USD_PER_SECOND;
+        let mt_cost = self.translated_chars as f64 * MT_USD_PER_CHARACTER;
+        let tts_cost = self.synthesized_chars as f64 * TTS_USD_PER_CHARACTER;
+        stt_cost + mt_cost + tts_cost
     }
 }
 
@@ -150,25 +151,28 @@ pub fn format_cost_display(cost_usd: f64) -> String {
 
 /// Format a cost estimate for zero-state-safe display.
 ///
-/// Returns `"no charges"` when `cost_usd` is exactly `0.0`, meaning no
-/// billable activity has occurred in this session yet.  Showing `~$0.000`
-/// at startup is confusing — it looks like an actual charge. For any
-/// non-zero value this delegates to [`format_cost_display`] so the format
-/// is consistent with all other cost surfaces.
+/// Returns `"no charges"` when no billable activity has occurred yet:
+/// zero, negative, NaN, or any non-finite value. Showing `~$0.000` at
+/// startup is confusing because it looks like a real charge, and a negative
+/// startup value must never leak to the user as a dollar amount.
+///
+/// For any strictly positive value this delegates to [`format_cost_display`]
+/// so the format is consistent with all other cost surfaces.
 ///
 /// # Examples
 ///
 /// ```ignore
 /// use tui_translator::metrics::cost::format_cost_or_zero_state;
-/// assert_eq!(format_cost_or_zero_state(0.0),   "no charges");
-/// assert_eq!(format_cost_or_zero_state(0.006), "~$0.006");
-/// assert_eq!(format_cost_or_zero_state(1.5),   "~$1.500");
+/// assert_eq!(format_cost_or_zero_state(0.0),    "no charges");
+/// assert_eq!(format_cost_or_zero_state(-0.13),  "no charges");
+/// assert_eq!(format_cost_or_zero_state(0.006),  "~$0.006");
+/// assert_eq!(format_cost_or_zero_state(1.5),    "~$1.500");
 /// ```
 pub fn format_cost_or_zero_state(cost_usd: f64) -> String {
-    if cost_usd == 0.0 {
-        "no charges".to_string()
-    } else {
+    if cost_usd.is_finite() && cost_usd > 0.0 {
         format_cost_display(cost_usd)
+    } else {
+        "no charges".to_string()
     }
 }
 
@@ -248,6 +252,15 @@ mod tests {
         c.record_audio_seconds(5.0);
         let expected = 15.0 * STT_USD_PER_SECOND;
         assert!((c.current_estimate_usd() - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn negative_audio_seconds_do_not_offset_positive_usage() {
+        let c = CostCounter::new();
+        c.record_audio_seconds(-325.0);
+        c.record_translated_characters(10_000);
+
+        assert_eq!(c.current_estimate_usd(), 0.2);
     }
 
     // ── Warning threshold ─────────────────────────────────────────────────────
@@ -390,6 +403,41 @@ mod tests {
     #[test]
     fn zero_state_returns_no_charges_string() {
         assert_eq!(format_cost_or_zero_state(0.0), "no charges");
+    }
+
+    /// Regression guard for issue #195: negative startup cost must never
+    /// display as a dollar amount — show "no charges" instead.
+    #[test]
+    fn zero_state_negative_cost_returns_no_charges() {
+        assert_eq!(
+            format_cost_or_zero_state(-0.13),
+            "no charges",
+            "negative cost at startup must show 'no charges', not a negative dollar amount"
+        );
+        assert_eq!(format_cost_or_zero_state(-0.001), "no charges");
+        assert_eq!(format_cost_or_zero_state(-1000.0), "no charges");
+    }
+
+    /// NaN cost must also show the zero-state string rather than a garbled dollar amount.
+    #[test]
+    fn zero_state_nan_cost_returns_no_charges() {
+        assert_eq!(
+            format_cost_or_zero_state(f64::NAN),
+            "no charges",
+            "NaN cost must show 'no charges'"
+        );
+    }
+
+    /// Negative zero (-0.0) is still zero — must show "no charges".
+    #[test]
+    fn zero_state_negative_zero_returns_no_charges() {
+        assert_eq!(format_cost_or_zero_state(-0.0_f64), "no charges");
+    }
+
+    #[test]
+    fn zero_state_infinite_cost_returns_no_charges() {
+        assert_eq!(format_cost_or_zero_state(f64::INFINITY), "no charges");
+        assert_eq!(format_cost_or_zero_state(f64::NEG_INFINITY), "no charges");
     }
 
     #[test]

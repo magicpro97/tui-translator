@@ -118,8 +118,12 @@ impl SessionMetrics {
     /// Pricing as of Q1 2025 (verify against current Google billing page):
     /// - Speech-to-Text: $0.006 per 15 seconds = $0.0004 per second
     /// - Translation:    $20 per 1 000 000 characters = $0.00002 per character
+    ///
+    /// Each billable component is clamped to `0.0` before summing so that any
+    /// floating-point drift or upstream counter anomaly never produces a
+    /// negative cost value or offsets a positive component (issue #195).
     pub fn recalculate_cost(&mut self) {
-        let stt_cost = self.audio_seconds_sent * 0.0004;
+        let stt_cost = self.audio_seconds_sent.max(0.0) * 0.0004;
         let translate_cost = self.chars_translated as f64 * 0.00002;
         self.estimated_cost_usd = stt_cost + translate_cost;
     }
@@ -152,6 +156,33 @@ mod tests {
         let mut m = SessionMetrics::default();
         m.recalculate_cost();
         assert_eq!(m.estimated_cost_usd, 0.0);
+    }
+
+    /// Regression guard for issue #195: recalculate_cost must clamp to 0.0
+    /// even if audio_seconds_sent is somehow negative (float drift / counter
+    /// anomaly).
+    #[test]
+    fn recalculate_cost_clamps_negative_to_zero() {
+        let mut m = SessionMetrics {
+            audio_seconds_sent: -325.0, // would give -0.13 USD without the clamp
+            ..Default::default()
+        };
+        m.recalculate_cost();
+        assert_eq!(
+            m.estimated_cost_usd, 0.0,
+            "recalculate_cost must never produce a negative estimated_cost_usd (issue #195)"
+        );
+    }
+
+    #[test]
+    fn recalculate_cost_negative_audio_does_not_offset_translation_cost() {
+        let mut m = SessionMetrics {
+            audio_seconds_sent: -325.0,
+            chars_translated: 10_000,
+            ..Default::default()
+        };
+        m.recalculate_cost();
+        assert_eq!(m.estimated_cost_usd, 0.2);
     }
 
     #[test]
