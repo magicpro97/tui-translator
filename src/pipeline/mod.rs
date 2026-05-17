@@ -50,7 +50,11 @@ use crate::{
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
 
-const STT_WINDOW_TARGET_MS: u32 = 1_500;
+/// Safety cap: maximum speech-window duration before an unconditional STT
+/// flush.  When VAD is enabled this is a hard upper bound that fires when no
+/// `EndOfUtterance` signal arrives (e.g. continuous speech).  When VAD is
+/// disabled this is the target window size that drives the normal flush cadence.
+const STT_MAX_WINDOW_MS: u32 = 1_500;
 const STT_IDLE_FLUSH_MS: u64 = 600;
 const STT_IDLE_MIN_MS: u32 = 500;
 
@@ -313,27 +317,54 @@ pub async fn run_orchestrator<S, M, T>(
                 // When VAD is enabled, drop chunks classified as silence.
                 // The gate tracks state across chunks so padding and transient
                 // suppression are applied correctly.
+                //
+                // Issue #264: `EndOfUtterance` triggers an immediate flush so
+                // complete utterances reach STT before the `STT_MAX_WINDOW_MS`
+                // safety cap expires.
                 if let Some(gate) = vad_gate.as_mut() {
-                    if gate.process(&chunk) == VadDecision::Silence {
-                        let duration_ms = chunk.duration_ms;
-                        let vad_state = gate.state_label();
-                        // Confirming chunks may become real speech; keep them
-                        // so the utterance onset is forwarded when the gate opens.
-                        if vad_state == "confirming" {
-                            vad_confirming_chunks.push(chunk);
-                        } else {
-                            vad_confirming_chunks.clear();
+                    let decision = gate.process(&chunk);
+                    match decision {
+                        VadDecision::Speech => {
+                            // Drain any buffered confirming-phase onset chunks
+                            // so the utterance start is not clipped.
+                            for buffered in vad_confirming_chunks.drain(..) {
+                                pending_speech.push(buffered);
+                            }
+                            // fall through to the push / ready_for_stt check below
                         }
-                        tracing::trace!(
-                            duration_ms,
-                            vad_state,
-                            "VAD: chunk suppressed"
-                        );
-                        continue;
-                    }
-
-                    for buffered in vad_confirming_chunks.drain(..) {
-                        pending_speech.push(buffered);
+                        VadDecision::Silence | VadDecision::EndOfUtterance => {
+                            let duration_ms = chunk.duration_ms;
+                            let vad_state = gate.state_label();
+                            // Confirming chunks may become real speech; keep them
+                            // so the utterance onset is forwarded when the gate opens.
+                            if vad_state == "confirming" {
+                                vad_confirming_chunks.push(chunk);
+                            } else {
+                                vad_confirming_chunks.clear();
+                            }
+                            tracing::trace!(
+                                duration_ms,
+                                vad_state,
+                                "VAD: chunk suppressed"
+                            );
+                            if decision == VadDecision::EndOfUtterance {
+                                tracing::debug!(
+                                    window_ms = pending_speech.duration_ms,
+                                    "VAD: end-of-utterance — flushing speech window early"
+                                );
+                                flush_speech_window(
+                                    &mut pending_speech,
+                                    &mut seq,
+                                    &stt,
+                                    &mt,
+                                    &tts,
+                                    &ctx,
+                                )
+                                .await;
+                                last_pending_at = None;
+                            }
+                            continue;
+                        }
                     }
                 }
 
@@ -385,7 +416,7 @@ impl SpeechWindow {
     }
 
     fn ready_for_stt(&self) -> bool {
-        self.duration_ms >= STT_WINDOW_TARGET_MS
+        self.duration_ms >= STT_MAX_WINDOW_MS
     }
 
     fn ready_after_idle(&self, idle_for: Duration) -> bool {
@@ -1559,6 +1590,222 @@ mod tests {
         );
     }
 
+    // ── Issue #264: VAD end-of-utterance flush ────────────────────────────────
+
+    async fn wait_for_stt_calls(calls: &Arc<AtomicU32>, expected: u32, label: &str) {
+        let result = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if calls.load(Ordering::Relaxed) >= expected {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await;
+        assert!(
+            result.is_ok(),
+            "{label}: timed out waiting for {expected} STT call(s); got {}",
+            calls.load(Ordering::Relaxed)
+        );
+    }
+
+    /// T1 (#264): 900 ms of speech followed by VAD end-of-utterance signal
+    /// flushes the window *before* the `STT_MAX_WINDOW_MS` safety cap (1 500 ms).
+    ///
+    /// Setup: VAD configured with short pad (100 ms) and short silence (200 ms)
+    /// so the `EndOfUtterance` signal fires promptly in the test without real
+    /// wall-clock waiting.  Nine 100 ms speech chunks (900 ms total) are sent,
+    /// then silence chunks drain the gate through PadOpen → PadClosed →
+    /// EndOfUtterance.
+    #[tokio::test]
+    async fn t1_vad_end_of_utterance_flushes_below_safety_cap() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig {
+            threshold: crate::audio::vad::DEFAULT_VAD_THRESHOLD,
+            min_speech_ms: 100,
+            speech_pad_ms: 100,  // short for test speed
+            min_silence_ms: 200, // short for test speed
+        });
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(32);
+        let calls_before_close = Arc::clone(&calls);
+        let sender = async move {
+            // 9 × 100 ms speech chunks → 900 ms (well below STT_MAX_WINDOW_MS = 1 500 ms).
+            for _ in 0..9 {
+                tx2.send(speech_chunk_ms(100)).await.unwrap();
+            }
+            // Drain gate: one chunk enters PadOpen, one expires the pad, then
+            // two PadClosed chunks confirm min_silence_ms and emit EndOfUtterance.
+            for _ in 0..4 {
+                tx2.send(AudioChunk::new(vec![0i16; 1_600])).await.unwrap();
+            }
+
+            wait_for_stt_calls(&calls_before_close, 1, "VAD end-of-utterance").await;
+            drop(tx2);
+        };
+
+        let orchestrator = run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        );
+        tokio::join!(orchestrator, sender);
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "VAD EndOfUtterance must trigger exactly one STT flush before channel close"
+        );
+        let counts = sample_counts.lock().unwrap();
+        // The first flush must be well below 1 500 ms worth of samples.
+        // 1 500 ms @ 16 kHz = 24 000 samples.
+        assert!(
+            counts[0] < 24_000,
+            "flush triggered by EndOfUtterance must contain fewer than 1 500 ms of audio; \
+             got {} samples ({} ms)",
+            counts[0],
+            counts[0] / 16
+        );
+    }
+
+    /// T2 (#264): When VAD never signals end-of-utterance (continuous speech),
+    /// the pipeline flushes at `STT_MAX_WINDOW_MS` (1 500 ms safety cap).
+    ///
+    /// Three × 500 ms speech chunks saturate the safety cap without any
+    /// `EndOfUtterance` signal (gate stays in `Speech` state throughout).
+    #[tokio::test]
+    async fn t2_continuous_speech_flushes_at_safety_cap() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.vad_config = Some(VadConfig::default());
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(8);
+        // 3 × 500 ms = 1 500 ms → exactly meets the safety cap.
+        for _ in 0..3 {
+            tx2.send(speech_chunk()).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "continuous speech without EoU must flush once at safety cap"
+        );
+        let counts = sample_counts.lock().unwrap();
+        assert_eq!(
+            counts[0], 24_000,
+            "safety-cap flush must contain exactly 1 500 ms (24 000 samples) of audio"
+        );
+    }
+
+    /// T3 (#264): With `vad_config = None` the pipeline uses fixed-duration
+    /// behaviour (flush at `STT_MAX_WINDOW_MS`), identical to the pre-VAD path.
+    #[tokio::test]
+    async fn t3_vad_disabled_uses_fixed_duration_flush() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let calls = Arc::new(AtomicU32::new(0));
+        let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(8);
+        // 3 × 500 ms = 1 500 ms → fixed target triggers flush.
+        for _ in 0..3 {
+            tx2.send(speech_chunk()).await.unwrap();
+        }
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            RecordingStt {
+                calls: Arc::clone(&calls),
+                sample_counts: Arc::clone(&sample_counts),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "vad=disabled: flush must occur at STT_MAX_WINDOW_MS"
+        );
+        assert_eq!(
+            sample_counts.lock().unwrap().as_slice(),
+            &[24_000],
+            "vad=disabled: exactly 1 500 ms of audio must be submitted"
+        );
+    }
+
+    /// T4 (#264): 500 ms of speech followed by 600 ms of idle time triggers
+    /// the idle flush, not the safety cap.  This verifies that the idle flush
+    /// path is unaffected by the VAD end-of-utterance changes.
+    ///
+    /// The orchestrator's 50 ms sleep branch fires the idle flush once the
+    /// `STT_IDLE_FLUSH_MS` (600 ms) timeout elapses with no new audio.
+    #[tokio::test]
+    async fn t4_idle_flush_fires_regardless_of_vad() {
+        for (label, vad_config) in [
+            ("vad disabled", None),
+            ("vad enabled", Some(VadConfig::default())),
+        ] {
+            let shutdown = Arc::new(AtomicBool::new(false));
+            let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+            ctx.vad_config = vad_config;
+            let calls = Arc::new(AtomicU32::new(0));
+            let sample_counts = Arc::new(Mutex::new(Vec::new()));
+
+            let (tx2, rx2) = mpsc::channel::<AudioChunk>(8);
+            let calls_before_close = Arc::clone(&calls);
+            let sender = async move {
+                tx2.send(speech_chunk()).await.unwrap(); // 500 ms meets STT_IDLE_MIN_MS.
+                wait_for_stt_calls(&calls_before_close, 1, label).await;
+                drop(tx2);
+            };
+
+            let orchestrator = run_orchestrator(
+                rx2,
+                RecordingStt {
+                    calls: Arc::clone(&calls),
+                    sample_counts: Arc::clone(&sample_counts),
+                },
+                OkMt,
+                OkTts,
+                ctx,
+            );
+            tokio::join!(orchestrator, sender);
+
+            assert_eq!(
+                sample_counts.lock().unwrap().as_slice(),
+                &[8_000],
+                "{label}: idle flush should submit the single 500 ms speech window"
+            );
+        }
+    }
+
     #[test]
     fn speech_window_idle_flush_obeys_minimum_duration_and_timeout() {
         let mut window = SpeechWindow::default();
@@ -2411,7 +2658,7 @@ mod tests {
         };
 
         let (tx2, rx2) = mpsc::channel::<AudioChunk>(4);
-        // Each 1 500 ms chunk meets STT_WINDOW_TARGET_MS on its own, so the
+        // Each 1 500 ms chunk meets STT_MAX_WINDOW_MS on its own, so the
         // orchestrator makes a separate STT call for each chunk — first the
         // partial result, then the final result.
         tx2.send(speech_chunk_ms(1500)).await.unwrap();
