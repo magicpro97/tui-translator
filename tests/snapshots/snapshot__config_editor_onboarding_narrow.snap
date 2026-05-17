@@ -1,21 +1,21 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 615
+assertion_line: 652
 expression: "render_config_editor(&editor, 60, 16)"
 ---
 ┌ First-Run Setup ─────────────────────────────────────────┐
-│ Save your initial config to the home folder, then restart│
-│if prompted.                                              │
 │ Path: C:\Users\demo\.tui-translator\config.json          │
-│                                                          │
 │> Source language : ja-JP_                                │
 │  Target language : vi                                    │
-│  Google API key  : —                                     │
+│  Google API key  : — (not set)                           │
 │  Audio source    : wasapi                                │
 │  Capture device  : Windows default playback              │
 │  Audio file path : —                                     │
 │  STT provider    : google                                │
 │  MT provider     : google                                │
+│  TTS enabled     : false                                 │
+│  STT fallback    : none                                  │
 │ Ready to save.                                           │
-│ Tab: next  Shift+Tab: prev  Enter: save  Esc: close      │
+│ Tab/Shift+Tab move  F2 cycle  Enter save  Esc close      │
+│                                                          │
 └──────────────────────────────────────────────────────────┘

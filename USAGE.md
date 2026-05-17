@@ -143,12 +143,21 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 | Space | Pause or resume translation |
 | L | Change the target language for this session |
 | S | Open the settings editor |
-| F2 / Ctrl+D in settings | Cycle detected capture devices while editing `capture_device` |
+| F2 / Ctrl+D in settings | Cycle through the allowed values for a choice field (e.g. `capture_device`, `stt_provider`, `audio_source`, `stt_fallback_policy`) |
 | T | Toggle translated audio on or off |
 | M | Show or hide the metrics panel (compact/expanded) |
 | R | Reload the saved config without restarting |
 | ? | Show the help screen |
 | Q or Ctrl+C | Quit and display a session summary |
+
+> **Settings with choice fields:** In the settings editor, any field that accepts a fixed set
+> of values (provider names, language codes, backend names) can be cycled with **F2** or
+> **Ctrl+D** without typing.  The cursor must be on that field's row.
+>
+> **API key display:** The `google_api_key` field is masked in the TUI settings editor
+> (shown as `••••••••`) to prevent accidental screen exposure.  The actual key is stored
+> in plain text in `%USERPROFILE%\.tui-translator\config.json` — keep that file private
+> and do not share it.
 
 ---
 

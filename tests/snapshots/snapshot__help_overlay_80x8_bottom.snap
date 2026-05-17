@@ -1,10 +1,11 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1377
 expression: "render_help(80, 8, 9999)"
 ---
             ┌ Help [8/8] — ↑↓ scroll · Esc close ──────────────────┐            
             │  L          Change target language                   │            
-            │  S          Settings (F2/Ctrl+D cycles devices)      │            
+            │  S          Settings (F2/Ctrl+D cycles field values) │            
             │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            

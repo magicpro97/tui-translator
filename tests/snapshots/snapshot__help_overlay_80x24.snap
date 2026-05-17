@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1335
 expression: "render_help(80, 24, 0)"
 ---
                                                                                 
@@ -16,7 +17,7 @@ expression: "render_help(80, 24, 0)"
             │  T          Toggle TTS audio output                  │            
             │  M          Toggle metrics panel (compact/expanded)  │            
             │  L          Change target language                   │            
-            │  S          Settings (F2/Ctrl+D cycles devices)      │            
+            │  S          Settings (F2/Ctrl+D cycles field values) │            
             │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            

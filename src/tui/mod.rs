@@ -75,6 +75,10 @@ const MIN_USABLE_ROWS: u16 = 3   // title bar
     + 3   // metrics strip (compact mode minimum)
     + 1; // control hints bar
 
+/// Preset BCP-47 language codes offered by F2/Ctrl+D when the source or
+/// target language field is active in the settings editor.
+const LANGUAGE_PRESETS: [&str; 5] = ["ja-JP", "vi", "en-US", "zh-CN", "ko"];
+
 // ── UserAction ───────────────────────────────────────────────────────────────
 
 /// All keyboard shortcuts supported by the application.
@@ -108,7 +112,11 @@ pub enum UserAction {
     ConfigPrevField,
     /// Save the current config-editor contents.
     ConfigSave,
-    /// F2 / Ctrl+D while editing settings — cycle detected capture devices.
+    /// F2 / Ctrl+D while editing settings — cycle values for the active
+    /// selectable field.  For language, audio source, provider, and
+    /// TTS/fallback fields the next preset is selected.  For the capture
+    /// device field the next detected WASAPI device is selected (same
+    /// behaviour as before).  Free-form fields show an explanatory message.
     ConfigCycleCaptureDevice,
     /// T — toggle translated audio on or off.
     ToggleTts,
@@ -153,10 +161,12 @@ enum ConfigEditorField {
     AudioFilePath,
     SttProvider,
     MtProvider,
+    TtsEnabled,
+    SttFallbackPolicy,
 }
 
 impl ConfigEditorField {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::SourceLanguage,
         Self::TargetLanguage,
         Self::GoogleApiKey,
@@ -165,6 +175,8 @@ impl ConfigEditorField {
         Self::AudioFilePath,
         Self::SttProvider,
         Self::MtProvider,
+        Self::TtsEnabled,
+        Self::SttFallbackPolicy,
     ];
 
     fn label(self) -> &'static str {
@@ -177,6 +189,8 @@ impl ConfigEditorField {
             Self::AudioFilePath => "Audio file path",
             Self::SttProvider => "STT provider",
             Self::MtProvider => "MT provider",
+            Self::TtsEnabled => "TTS enabled",
+            Self::SttFallbackPolicy => "STT fallback",
         }
     }
 }
@@ -194,8 +208,12 @@ pub struct ConfigEditorState {
     pub audio_file_path: String,
     /// STT backend name saved in config (`google` now, `local` for offline mode).
     pub stt_provider: String,
-    /// MT backend name saved in config (`google` now, `local` for offline mode).
+    /// MT backend name saved in config (`google` is the only implemented option).
     pub mt_provider: String,
+    /// Whether TTS audio output is enabled, stored as `"true"` or `"false"`.
+    pub tts_enabled: String,
+    /// STT fallback policy (`"none"` or `"local"`).
+    pub stt_fallback_policy: String,
     pub config_path: String,
     pub status_message: Option<String>,
     pub capture_device_options: Vec<String>,
@@ -214,6 +232,12 @@ impl ConfigEditorState {
             audio_file_path: config.audio_file_path.clone().unwrap_or_default(),
             stt_provider: config.stt_provider.clone(),
             mt_provider: config.mt_provider.clone(),
+            tts_enabled: if config.tts_enabled {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            },
+            stt_fallback_policy: config.stt_fallback_policy.clone(),
             config_path: config_path.display().to_string(),
             status_message: None,
             capture_device_options: Vec::new(),
@@ -234,6 +258,8 @@ impl ConfigEditorState {
             ConfigEditorField::AudioFilePath => &mut self.audio_file_path,
             ConfigEditorField::SttProvider => &mut self.stt_provider,
             ConfigEditorField::MtProvider => &mut self.mt_provider,
+            ConfigEditorField::TtsEnabled => &mut self.tts_enabled,
+            ConfigEditorField::SttFallbackPolicy => &mut self.stt_fallback_policy,
         }
     }
 
@@ -300,6 +326,77 @@ impl ConfigEditorState {
                 " Capture device selected: {next}. Save and restart to use it."
             ));
         }
+    }
+
+    /// Cycle the value of the currently active selectable field.
+    ///
+    /// Dispatches to the appropriate cycle helper based on the active field:
+    /// language fields cycle through practical presets, choice fields cycle
+    /// through their accepted values, and the capture-device field uses the
+    /// detected WASAPI device list.  Free-form fields (API key, file path)
+    /// show a plain status message instead.
+    pub fn cycle_active_field(&mut self) {
+        match self.active_field() {
+            ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage => {
+                self.cycle_language_presets();
+            }
+            ConfigEditorField::AudioSource => {
+                self.cycle_choice_field(&["wasapi", "file"], ". Save and restart to apply.");
+            }
+            ConfigEditorField::SttProvider => {
+                self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
+            }
+            ConfigEditorField::MtProvider => {
+                self.mt_provider = "google".to_string();
+                self.set_status_message(
+                    " MT provider: Google only. Local translation is not implemented yet.",
+                );
+            }
+            ConfigEditorField::TtsEnabled => {
+                self.cycle_choice_field(&["false", "true"], ". Save to apply.");
+            }
+            ConfigEditorField::SttFallbackPolicy => {
+                self.cycle_choice_field(&["none", "local"], ". Save and restart to apply.");
+            }
+            ConfigEditorField::CaptureDevice => self.cycle_capture_device(),
+            ConfigEditorField::GoogleApiKey | ConfigEditorField::AudioFilePath => {
+                self.set_status_message(
+                    " Type to edit this field. No preset values are available.",
+                );
+            }
+        }
+    }
+
+    fn cycle_language_presets(&mut self) {
+        let field = self.active_field();
+        let current = self.active_field_mut().trim().to_string();
+        let idx = LANGUAGE_PRESETS
+            .iter()
+            .position(|&p| p == current.as_str())
+            .unwrap_or(usize::MAX);
+        let next_idx = if idx >= LANGUAGE_PRESETS.len() - 1 {
+            0
+        } else {
+            idx + 1
+        };
+        let next = LANGUAGE_PRESETS[next_idx];
+        *self.active_field_mut() = next.to_string();
+        self.status_message = Some(format!(
+            " {} set to \"{next}\". Press Enter to save.",
+            field.label(),
+        ));
+    }
+
+    fn cycle_choice_field(&mut self, choices: &[&str], save_hint: &str) {
+        let field = self.active_field();
+        let current = self.active_field_mut().trim().to_string();
+        let idx = choices
+            .iter()
+            .position(|&c| c == current.as_str())
+            .unwrap_or(0);
+        let next = choices[(idx + 1) % choices.len()];
+        *self.active_field_mut() = next.to_string();
+        self.status_message = Some(format!(" {} set to \"{next}\"{save_hint}", field.label(),));
     }
 }
 
@@ -1826,7 +1923,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from("  T          Toggle TTS audio output"),
         Line::from("  M          Toggle metrics panel (compact/expanded)"),
         Line::from("  L          Change target language"),
-        Line::from("  S          Settings (F2/Ctrl+D cycles devices)"),
+        Line::from("  S          Settings (F2/Ctrl+D cycles field values)"),
         Line::from("  R          Reload config from disk"),
         Line::from("  ?          Show / hide this help"),
         Line::from("  Esc        Dismiss this overlay"),
@@ -1909,7 +2006,7 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 /// Render the shared first-run / settings editor overlay.
 pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &ConfigEditorState) {
     let panel_w = 76u16.min(area.width);
-    let panel_h = 17u16.min(area.height);
+    let panel_h = 19u16.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -1934,9 +2031,9 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     let is_compact_editor = panel.width < 76 || panel.height <= 16;
     let key_hint = if is_compact_editor {
-        " Tab: next  Shift+Tab: prev  Enter: save  Esc: close"
+        " Tab/Shift+Tab move  F2 cycle  Enter save  Esc close"
     } else {
-        " Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close"
+        " Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close"
     };
     let config_path_display = if is_compact_editor {
         let path_budget = panel.width.saturating_sub(9) as usize;
@@ -1944,59 +2041,58 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     } else {
         editor.config_path.clone()
     };
-    let show_status_separator =
-        !(is_compact_editor && matches!(editor.mode, ConfigEditorMode::Onboarding));
+    // Mask the API key for display — the real value is kept in editor.google_api_key.
+    let masked_key = mask_api_key(&editor.google_api_key);
 
-    let mut lines = vec![
-        Line::from(Span::styled(intro, Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled(
-            format!(" Path: {config_path_display}"),
+    let active = editor.active_field();
+    let mut lines = Vec::new();
+    if !is_compact_editor {
+        lines.push(Line::from(Span::styled(
+            intro,
             Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(""),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        format!(" Path: {config_path_display}"),
+        Style::default().fg(Color::DarkGray),
+    )));
+    if !is_compact_editor {
+        lines.push(Line::from(""));
+    }
+    lines.extend([
         config_editor_field_line(
             ConfigEditorField::SourceLanguage,
             &editor.source_language,
-            editor.active_field(),
+            active,
         ),
         config_editor_field_line(
             ConfigEditorField::TargetLanguage,
             &editor.target_language,
-            editor.active_field(),
+            active,
         ),
-        config_editor_field_line(
-            ConfigEditorField::GoogleApiKey,
-            &editor.google_api_key,
-            editor.active_field(),
-        ),
-        config_editor_field_line(
-            ConfigEditorField::AudioSource,
-            &editor.audio_source,
-            editor.active_field(),
-        ),
+        config_editor_field_line(ConfigEditorField::GoogleApiKey, &masked_key, active),
+        config_editor_field_line(ConfigEditorField::AudioSource, &editor.audio_source, active),
         config_editor_field_line(
             ConfigEditorField::CaptureDevice,
             &editor.capture_device,
-            editor.active_field(),
+            active,
         ),
         config_editor_field_line(
             ConfigEditorField::AudioFilePath,
             &editor.audio_file_path,
-            editor.active_field(),
+            active,
         ),
+        config_editor_field_line(ConfigEditorField::SttProvider, &editor.stt_provider, active),
+        config_editor_field_line(ConfigEditorField::MtProvider, &editor.mt_provider, active),
+        config_editor_field_line(ConfigEditorField::TtsEnabled, &editor.tts_enabled, active),
         config_editor_field_line(
-            ConfigEditorField::SttProvider,
-            &editor.stt_provider,
-            editor.active_field(),
+            ConfigEditorField::SttFallbackPolicy,
+            &editor.stt_fallback_policy,
+            active,
         ),
-        config_editor_field_line(
-            ConfigEditorField::MtProvider,
-            &editor.mt_provider,
-            editor.active_field(),
-        ),
-    ];
+    ]);
 
-    if show_status_separator {
+    if !is_compact_editor {
         lines.push(Line::from(""));
     }
     lines.push(Line::from(Span::styled(
@@ -2013,7 +2109,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     if !is_compact_editor {
         lines.push(Line::from(Span::styled(
-            " Providers: google now; local is saved for offline mode. Restart required.",
+            " Providers: Google MT only; restart after provider changes.",
             Style::default().fg(Color::DarkGray),
         )));
     }
@@ -2029,6 +2125,18 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     );
 }
 
+/// Produce a display string for an API key without exposing its characters.
+///
+/// Returns a fixed bullet mask for any non-empty key and an em-dash
+/// placeholder when the key is empty.
+pub(crate) fn mask_api_key(key: &str) -> String {
+    const BULLET: &str = "\u{2022}";
+    if key.trim().is_empty() {
+        return "\u{2014} (not set)".to_string();
+    }
+    BULLET.repeat(8)
+}
+
 fn config_editor_field_line(
     field: ConfigEditorField,
     value: &str,
@@ -2038,11 +2146,11 @@ fn config_editor_field_line(
     let prefix = if is_active { "> " } else { "  " };
     let display_value = if value.is_empty() {
         match field {
-            ConfigEditorField::CaptureDevice => "Windows default playback",
-            _ => "—",
+            ConfigEditorField::CaptureDevice => "Windows default playback".to_string(),
+            _ => "\u{2014}".to_string(),
         }
     } else {
-        value
+        value.to_string()
     };
     let style = if is_active {
         Style::default()
@@ -2056,7 +2164,7 @@ fn config_editor_field_line(
         Span::styled(prefix, style),
         Span::styled(format!("{:<16}", field.label()), style),
         Span::raw(": "),
-        Span::styled(display_value.to_string(), style),
+        Span::styled(display_value, style),
         Span::styled(if is_active { "_" } else { "" }, style),
     ])
 }
@@ -2540,6 +2648,281 @@ mod tests {
             rendered.contains("MT provider"),
             "editor should render MT provider field; got: {rendered:?}"
         );
+    }
+
+    // ── config_editor selector cycling ──────────────────────────────────────
+
+    #[test]
+    fn config_editor_cycles_source_language_presets() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // Default source language is "ja-JP" (first preset).
+        assert_eq!(editor.source_language, "ja-JP");
+        // Select source language field (index 0).
+        editor.selected_field = 0;
+
+        editor.cycle_active_field();
+        assert_eq!(editor.source_language, "vi");
+        editor.cycle_active_field();
+        assert_eq!(editor.source_language, "en-US");
+        editor.cycle_active_field();
+        assert_eq!(editor.source_language, "zh-CN");
+        editor.cycle_active_field();
+        assert_eq!(editor.source_language, "ko");
+        // Wraps around.
+        editor.cycle_active_field();
+        assert_eq!(editor.source_language, "ja-JP");
+    }
+
+    #[test]
+    fn config_editor_cycles_target_language_presets() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // Default target language is "vi" (second preset).
+        assert_eq!(editor.target_language, "vi");
+        // Select target language field (index 1).
+        editor.selected_field = 1;
+
+        editor.cycle_active_field();
+        assert_eq!(editor.target_language, "en-US");
+        editor.cycle_active_field();
+        assert_eq!(editor.target_language, "zh-CN");
+    }
+
+    #[test]
+    fn config_editor_cycles_audio_source() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // Audio source field is index 3.
+        editor.selected_field = 3;
+        assert_eq!(editor.audio_source, "wasapi");
+
+        editor.cycle_active_field();
+        assert_eq!(editor.audio_source, "file");
+        editor.cycle_active_field();
+        assert_eq!(editor.audio_source, "wasapi");
+        // Status message mentions restart.
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("restart"),
+            "cycling audio source should hint that restart is required"
+        );
+    }
+
+    #[test]
+    fn config_editor_cycles_stt_provider() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // STT provider field is index 6.
+        editor.selected_field = 6;
+        assert_eq!(editor.stt_provider, "google");
+
+        editor.cycle_active_field();
+        assert_eq!(editor.stt_provider, "local");
+        editor.cycle_active_field();
+        assert_eq!(editor.stt_provider, "google");
+    }
+
+    #[test]
+    fn config_editor_cycles_mt_provider() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // MT provider field is index 7.
+        editor.selected_field = 7;
+        assert_eq!(editor.mt_provider, "google");
+
+        editor.cycle_active_field();
+        assert_eq!(editor.mt_provider, "google");
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("not implemented"),
+            "cycling MT provider should explain that local MT is unavailable"
+        );
+        editor.mt_provider = "local".to_string();
+        editor.cycle_active_field();
+        assert_eq!(editor.mt_provider, "google");
+    }
+
+    #[test]
+    fn config_editor_cycles_tts_enabled() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // TTS enabled field is index 8.
+        editor.selected_field = 8;
+        assert_eq!(editor.tts_enabled, "false");
+
+        editor.cycle_active_field();
+        assert_eq!(editor.tts_enabled, "true");
+        editor.cycle_active_field();
+        assert_eq!(editor.tts_enabled, "false");
+        // Status message mentions save.
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .unwrap_or("")
+                .contains("Save"),
+            "cycling TTS should prompt to save"
+        );
+    }
+
+    #[test]
+    fn config_editor_cycles_stt_fallback_policy() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // STT fallback policy field is index 9.
+        editor.selected_field = 9;
+        assert_eq!(editor.stt_fallback_policy, "none");
+
+        editor.cycle_active_field();
+        assert_eq!(editor.stt_fallback_policy, "local");
+        editor.cycle_active_field();
+        assert_eq!(editor.stt_fallback_policy, "none");
+    }
+
+    #[test]
+    fn config_editor_cycle_active_field_dispatches_to_capture_device_when_active() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.set_capture_device_options(vec!["Speakers (Realtek Audio)".to_string()]);
+        // CaptureDevice field is index 4.
+        editor.selected_field = 4;
+
+        editor.cycle_active_field();
+        assert_eq!(editor.capture_device, "Speakers (Realtek Audio)");
+    }
+
+    // ── API key masking ──────────────────────────────────────────────────────
+
+    #[test]
+    fn mask_api_key_empty_returns_placeholder() {
+        let result = mask_api_key("");
+        assert!(
+            result.contains("not set"),
+            "empty key should show 'not set' placeholder; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn mask_api_key_short_returns_bullets_only() {
+        let result = mask_api_key("abc");
+        assert_eq!(result, "\u{2022}".repeat(8));
+        assert!(
+            result.chars().all(|c| c == '\u{2022}'),
+            "short key should be fully masked with bullets; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn mask_api_key_long_returns_bullets_only() {
+        let key = "AIzaSyABCDEF123456789xyz";
+        let result = mask_api_key(key);
+        assert_eq!(result, "\u{2022}".repeat(8));
+        assert!(
+            !result.contains(key),
+            "masked key must not contain the full original key; got: {result:?}"
+        );
+        assert!(
+            !result.contains("AIza") && !result.contains("6xyz"),
+            "masked key must not expose prefix or suffix; got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn render_config_editor_does_not_expose_full_api_key() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let key = "AIzaSyABCDEF123456789xyz";
+        let mut cfg = AppConfig::default();
+        cfg.google_api_key = Some(key.to_string());
+        let editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        // Confirm the editor holds the real (unmasked) key.
+        assert_eq!(editor.google_api_key, key);
+
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            !rendered.contains(key),
+            "rendered editor must not expose the full API key; got: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("AIza") && !rendered.contains("6xyz"),
+            "rendered editor must not expose API key prefix or suffix; got: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn config_editor_state_loads_tts_and_fallback_fields() {
+        let mut cfg = AppConfig::default();
+        cfg.tts_enabled = true;
+        cfg.stt_fallback_policy = "local".to_string();
+        let editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        assert_eq!(editor.tts_enabled, "true");
+        assert_eq!(editor.stt_fallback_policy, "local");
+    }
+
+    #[test]
+    fn config_editor_state_defaults_tts_false_and_fallback_none() {
+        let editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        assert_eq!(editor.tts_enabled, "false");
+        assert_eq!(editor.stt_fallback_policy, "none");
     }
 
     // ── SubtitlePair ────────────────────────────────────────────────────────

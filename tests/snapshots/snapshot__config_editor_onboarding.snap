@@ -1,23 +1,24 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 602
+assertion_line: 639
 expression: "render_config_editor(&editor, 90, 20)"
 ---
-
        ┌ First-Run Setup ─────────────────────────────────────────────────────────┐
        │ Save your initial config to the home folder, then restart if prompted.   │
        │ Path: C:\Users\demo\.tui-translator\config.json                          │
        │                                                                          │
        │> Source language : ja-JP_                                                │
        │  Target language : vi                                                    │
-       │  Google API key  : demo-key                                              │
+       │  Google API key  : ••••••••                                              │
        │  Audio source    : wasapi                                                │
        │  Capture device  : Windows default playback                              │
        │  Audio file path : C:\capture\fixture.wav                                │
        │  STT provider    : google                                                │
        │  MT provider     : google                                                │
+       │  TTS enabled     : false                                                 │
+       │  STT fallback    : none                                                  │
        │                                                                          │
        │ Ready to save.                                                           │
-       │ Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close       │
-       │ Providers: google now; local is saved for offline mode. Restart required.│
+       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
+       │ Providers: Google MT only; restart after provider changes.               │
        └──────────────────────────────────────────────────────────────────────────┘

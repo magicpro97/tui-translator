@@ -24,6 +24,10 @@ path = "tests/soak/run_soak.rs"
 name = "audio_stability_proof"
 path = "src/bin/audio_stability_proof.rs"
 
+[[bin]]
+name = "provider_benchmark"
+path = "src/bin/provider_benchmark.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.26"

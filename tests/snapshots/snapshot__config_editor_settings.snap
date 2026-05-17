@@ -1,23 +1,24 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 631
+assertion_line: 668
 expression: "render_config_editor(&editor, 90, 20)"
 ---
-
        ┌ Settings ────────────────────────────────────────────────────────────────┐
        │ Edit the saved config and press Enter to persist changes.                │
        │ Path: C:\Users\demo\.tui-translator\config.json                          │
        │                                                                          │
        │  Source language : ja-JP                                                 │
        │  Target language : vi                                                    │
-       │  Google API key  : —                                                     │
+       │  Google API key  : — (not set)                                           │
        │> Audio source    : file_                                                 │
        │  Capture device  : Windows default playback                              │
        │  Audio file path : C:\capture\meeting.wav                                │
        │  STT provider    : google                                                │
        │  MT provider     : google                                                │
+       │  TTS enabled     : false                                                 │
+       │  STT fallback    : none                                                  │
        │                                                                          │
        │ Ready to save.                                                           │
-       │ Tab/Down: next   Shift+Tab/Up: previous   Enter: save   Esc: close       │
-       │ Providers: google now; local is saved for offline mode. Restart required.│
+       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
+       │ Providers: Google MT only; restart after provider changes.               │
        └──────────────────────────────────────────────────────────────────────────┘
