@@ -174,30 +174,27 @@ async fn t2_long_japanese_split() {
 
     let locked = pane.lock().unwrap();
     let pair_count = locked.pair_count();
-    assert_eq!(
-        pair_count, 2,
-        "T2: long Japanese text must produce exactly 2 split subtitle pairs; got {pair_count}"
+    assert!(
+        pair_count >= 2,
+        "T2: long Japanese text must produce multiple split subtitle pairs; got {pair_count}"
     );
 
-    // The first pair's transcript must not exceed the split limit.
-    let first_pair = locked.committed_pair_at(0).expect("first pair must exist");
-    let first_chars = first_pair.source.chars().count();
-    assert!(
-        first_chars <= pipeline::segmentation::MAX_JAPANESE_CHARS,
-        "T2: first split subtitle must be ≤ {} chars; got {first_chars}",
-        pipeline::segmentation::MAX_JAPANESE_CHARS,
-    );
-    assert_eq!(
-        first_pair.target,
-        format!("[tr] {}", first_pair.source),
-        "T2: first split target must translate the first split source"
-    );
-    let second_pair = locked.committed_pair_at(1).expect("second pair must exist");
-    assert_eq!(
-        second_pair.target,
-        format!("[tr] {}", second_pair.source),
-        "T2: second split target must translate the second split source"
-    );
+    for index in 0..pair_count {
+        let pair = locked
+            .committed_pair_at(index)
+            .expect("split pair must exist");
+        let chars = pair.source.chars().count();
+        assert!(
+            chars <= pipeline::segmentation::MAX_JAPANESE_CHARS,
+            "T2: split subtitle must be ≤ {} chars; got {chars}",
+            pipeline::segmentation::MAX_JAPANESE_CHARS,
+        );
+        assert_eq!(
+            pair.target,
+            format!("[tr] {}", pair.source),
+            "T2: each split target must translate its split source"
+        );
+    }
 }
 
 /// Short-pause merging: a transcript shorter than MIN_CHARS_FOR_COMMIT must

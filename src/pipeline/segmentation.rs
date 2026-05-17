@@ -157,25 +157,14 @@ impl SegmentStabilizer {
     /// Returns a `Vec` of transcripts to translate and commit:
     /// - **empty** — drop the pair (duplicate or still buffering).
     /// - **one item** — commit a single subtitle pair (the normal path).
-    /// - **two items** — translate and commit two text chunks from a long-text split.
+    /// - **multiple items** — translate and commit chunks from a long-text split.
     ///
-    /// The caller is responsible for pushing each returned pair to the subtitle
-    /// pane in order.
-    pub fn filter(&mut self, transcript: String) -> Vec<String> {
-        let items = self.filter_with_context(transcript, SegmentContext::default());
-        for item in &items {
-            if let Some(key) = item.dedup_key.as_deref() {
-                self.record_committed_key(key);
-            }
-        }
-        items.into_iter().map(|item| item.text).collect()
-    }
-
-    /// Filter a final transcript while preserving source-audio metadata.
+    /// The caller is responsible for translating/pushing each returned segment,
+    /// then calling [`SegmentStabilizer::record_committed_key`] only after the
+    /// subtitle commit succeeds.
     ///
-    /// This is the pipeline-facing variant.  It keeps enough context for
-    /// session JSONL recording even when a short segment is buffered and later
-    /// flushed at end-of-stream.
+    /// This keeps enough context for session JSONL recording even when a short
+    /// segment is buffered and later flushed at end-of-stream.
     pub fn filter_with_context(
         &mut self,
         transcript: String,
@@ -214,22 +203,16 @@ impl SegmentStabilizer {
             return vec![];
         }
 
-        // Split long Japanese text at a safe boundary.
-        let (first, second) = split_at_boundary(trimmed, MAX_JAPANESE_CHARS);
-
-        let mut result = vec![StabilizedTranscript {
-            text: first,
-            context,
-            dedup_key: Some(normalized.clone()),
-        }];
-        if let Some(remainder) = second {
-            result.push(StabilizedTranscript {
-                text: remainder,
+        // Split long Japanese text at safe boundaries until every emitted
+        // subtitle fits the configured display limit.
+        split_all_at_boundaries(trimmed, MAX_JAPANESE_CHARS)
+            .into_iter()
+            .map(|text| StabilizedTranscript {
+                text,
                 context,
-                dedup_key: Some(normalized),
-            });
-        }
-        result
+                dedup_key: Some(normalized.clone()),
+            })
+            .collect()
     }
 
     /// Flush any buffered short transcript.
@@ -343,11 +326,44 @@ pub fn split_at_boundary(text: &str, max_chars: usize) -> (String, Option<String
     )
 }
 
+/// Split `text` repeatedly until every returned chunk fits `max_chars`.
+pub fn split_all_at_boundaries(text: &str, max_chars: usize) -> Vec<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if max_chars == 0 {
+        return vec![trimmed.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut remaining = trimmed.to_string();
+    loop {
+        let (first, rest) = split_at_boundary(&remaining, max_chars);
+        chunks.push(first);
+        let Some(next) = rest else {
+            break;
+        };
+        remaining = next;
+    }
+    chunks
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn filter_and_commit(s: &mut SegmentStabilizer, transcript: String) -> Vec<String> {
+        let items = s.filter_with_context(transcript, SegmentContext::default());
+        for item in &items {
+            if let Some(key) = item.dedup_key.as_deref() {
+                s.record_committed_key(key);
+            }
+        }
+        items.into_iter().map(|item| item.text).collect()
+    }
 
     // ── normalize_for_dedup ───────────────────────────────────────────────────
 
@@ -417,6 +433,21 @@ mod tests {
         assert_eq!(rest.unwrap().chars().count(), 10);
     }
 
+    #[test]
+    fn split_all_repeats_until_every_chunk_is_within_limit() {
+        let text = "あ".repeat((MAX_JAPANESE_CHARS * 2) + 7);
+        let chunks = split_all_at_boundaries(&text, MAX_JAPANESE_CHARS);
+
+        assert_eq!(chunks.len(), 3, "text over 2x limit must produce 3 chunks");
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.chars().count() <= MAX_JAPANESE_CHARS),
+            "every split chunk must fit MAX_JAPANESE_CHARS"
+        );
+        assert_eq!(chunks.concat(), text);
+    }
+
     /// T2 acceptance: Japanese text > 40 chars with punctuation splits at safe
     /// boundary.
     #[test]
@@ -444,10 +475,10 @@ mod tests {
     #[test]
     fn t1_near_duplicate_with_terminal_punctuation_is_dropped() {
         let mut s = SegmentStabilizer::new();
-        let first = s.filter("Hello world".into());
+        let first = filter_and_commit(&mut s, "Hello world".into());
         assert_eq!(first.len(), 1, "first occurrence must be committed");
 
-        let second = s.filter("Hello world!".into());
+        let second = filter_and_commit(&mut s, "Hello world!".into());
         assert!(
             second.is_empty(),
             "near-duplicate differing only in terminal punctuation must be dropped"
@@ -457,25 +488,25 @@ mod tests {
     #[test]
     fn exact_duplicate_is_dropped() {
         let mut s = SegmentStabilizer::new();
-        s.filter("Hello world".into());
-        let result = s.filter("Hello world".into());
+        filter_and_commit(&mut s, "Hello world".into());
+        let result = filter_and_commit(&mut s, "Hello world".into());
         assert!(result.is_empty(), "exact duplicate must be dropped");
     }
 
     #[test]
     fn different_text_is_not_dropped() {
         let mut s = SegmentStabilizer::new();
-        s.filter("Hello world".into());
-        let result = s.filter("Goodbye world".into());
+        filter_and_commit(&mut s, "Hello world".into());
+        let result = filter_and_commit(&mut s, "Goodbye world".into());
         assert_eq!(result.len(), 1, "distinct text must be committed");
     }
 
     #[test]
     fn duplicate_is_dropped_within_window() {
         let mut s = SegmentStabilizer::new();
-        s.filter("alpha".into());
-        s.filter("beta".into());
-        let result = s.filter("alpha".into());
+        filter_and_commit(&mut s, "alpha".into());
+        filter_and_commit(&mut s, "beta".into());
+        let result = filter_and_commit(&mut s, "alpha".into());
         assert!(result.is_empty(), "duplicate within window must be dropped");
     }
 
@@ -484,17 +515,17 @@ mod tests {
         let mut s = SegmentStabilizer::new();
         // Push DEDUP_WINDOW_SIZE + 1 distinct items to evict the first one.
         for i in 0..=DEDUP_WINDOW_SIZE {
-            s.filter(format!("sentence-{i} long enough text"));
+            filter_and_commit(&mut s, format!("sentence-{i} long enough text"));
         }
         // "sentence-0 long enough text" has now been evicted.
-        let result = s.filter("sentence-0 long enough text".into());
+        let result = filter_and_commit(&mut s, "sentence-0 long enough text".into());
         assert_eq!(result.len(), 1, "evicted entry must be re-accepted");
     }
 
     #[test]
     fn short_segment_is_buffered_not_committed() {
         let mut s = SegmentStabilizer::new();
-        let result = s.filter("hi".into());
+        let result = filter_and_commit(&mut s, "hi".into());
         assert!(
             result.is_empty(),
             "transcript shorter than MIN_CHARS_FOR_COMMIT must be buffered"
@@ -509,9 +540,9 @@ mod tests {
     fn short_segment_merges_with_next() {
         let mut s = SegmentStabilizer::new();
         // Buffer a short transcript.
-        s.filter("hi".into());
+        filter_and_commit(&mut s, "hi".into());
         // Next segment should receive the prepended buffered text.
-        let result = s.filter("how are you".into());
+        let result = filter_and_commit(&mut s, "how are you".into());
         assert_eq!(result.len(), 1, "merged segment must be committed");
         let transcript = &result[0];
         assert!(
@@ -527,7 +558,7 @@ mod tests {
     #[test]
     fn flush_pending_returns_buffered_text_on_shutdown() {
         let mut s = SegmentStabilizer::new();
-        s.filter("ok".into()); // buffered (< MIN_CHARS_FOR_COMMIT)
+        filter_and_commit(&mut s, "ok".into()); // buffered (< MIN_CHARS_FOR_COMMIT)
         let flushed = s.flush_pending();
         assert!(
             flushed.is_some(),
@@ -551,34 +582,29 @@ mod tests {
         assert!(text.chars().count() > 40);
 
         let mut s = SegmentStabilizer::new();
-        let result = s.filter(text.into());
+        let result = filter_and_commit(&mut s, text.into());
 
-        assert_eq!(
-            result.len(),
-            2,
-            "long Japanese text must produce two chunks"
-        );
-        let first_transcript = &result[0];
         assert!(
-            first_transcript.chars().count() <= 40,
-            "first part must be ≤ 40 chars; got {}",
-            first_transcript.chars().count()
+            result.len() >= 2,
+            "long Japanese text must produce multiple chunks"
         );
-        let second_transcript = &result[1];
-        assert!(
-            !second_transcript.is_empty(),
-            "second part must not be empty"
-        );
+        for transcript in &result {
+            assert!(
+                transcript.chars().count() <= MAX_JAPANESE_CHARS,
+                "split transcript must be ≤ {MAX_JAPANESE_CHARS} chars; got {}",
+                transcript.chars().count()
+            );
+        }
     }
 
     #[test]
     fn clear_resets_dedup_window_and_pending() {
         let mut s = SegmentStabilizer::new();
-        s.filter("alpha long enough text".into());
-        s.filter("hi".into()); // buffered
+        filter_and_commit(&mut s, "alpha long enough text".into());
+        filter_and_commit(&mut s, "hi".into()); // buffered
         s.clear();
         // After clear, "alpha long enough text" is not in the window.
-        let result = s.filter("alpha long enough text".into());
+        let result = filter_and_commit(&mut s, "alpha long enough text".into());
         assert_eq!(result.len(), 1, "cleared stabilizer must accept old text");
         assert!(
             s.pending_short.is_none(),

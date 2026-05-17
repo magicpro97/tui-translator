@@ -356,7 +356,9 @@ pub async fn run_orchestrator<S, M, T>(
         }
     }
 
-    flush_pending_stabilized_segment(&mt, &tts, &ctx).await;
+    if !ctx.pipeline_halted.load(Ordering::Relaxed) {
+        flush_pending_stabilized_segment(&mt, &tts, &ctx).await;
+    }
 
     let pipeline_error_msg = Arc::clone(&ctx.pipeline_error_msg);
     if let Err(err) = ctx.session_recorder.shutdown().await {
@@ -1159,6 +1161,25 @@ mod tests {
             _src: &str,
             _tgt: &str,
         ) -> Result<MtResult, ProviderError> {
+            Ok(MtResult {
+                translated_text: format!("[tr] {text}"),
+                detected_source_language: None,
+            })
+        }
+    }
+
+    struct CountingMt {
+        calls: Arc<AtomicU32>,
+    }
+
+    impl MtProvider for CountingMt {
+        async fn translate(
+            &self,
+            text: &str,
+            _src: &str,
+            _tgt: &str,
+        ) -> Result<MtResult, ProviderError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
             Ok(MtResult {
                 translated_text: format!("[tr] {text}"),
                 detected_source_language: None,
@@ -2055,6 +2076,42 @@ mod tests {
             metrics.lock().unwrap().audio_seconds_sent,
             0.0,
             "halted pipeline must not count audio as sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn halted_pipeline_skips_pending_stabilizer_flush() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let mt_calls = Arc::new(AtomicU32::new(0));
+
+        ctx.stabilizer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .filter_with_context(
+                "hi".to_string(),
+                crate::pipeline::segmentation::SegmentContext::new(0, 500, Some(0.99), 1),
+            );
+        ctx.pipeline_halted.store(true, Ordering::Relaxed);
+
+        let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(1);
+        drop(inner_tx);
+
+        run_orchestrator(
+            inner_rx,
+            OkStt("unused"),
+            CountingMt {
+                calls: Arc::clone(&mt_calls),
+            },
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            mt_calls.load(Ordering::Relaxed),
+            0,
+            "halted pipeline must not flush pending text through MT"
         );
     }
 
