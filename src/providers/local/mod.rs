@@ -42,6 +42,8 @@ use thiserror::Error;
 use crate::config::home_dir;
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
+mod inference_priority;
+
 // ── Model identifier ─────────────────────────────────────────────────────────
 
 /// Identifies a Whisper model variant supported by the local STT backend.
@@ -607,8 +609,7 @@ impl SttProvider for LocalWhisperSttProvider {
                 // Lower this blocking thread's priority so Whisper inference
                 // yields to latency-sensitive apps (Zoom, Teams, WASAPI
                 // capture).  Failure is logged as a warning — not fatal.
-                let _priority_guard =
-                    crate::pipeline::inference_priority::scoped_inference_thread_priority();
+                let _priority_guard = inference_priority::scoped_inference_thread_priority();
                 Self::run_inference_blocking(model_id, &ctx, &samples, &language_owned)
             })
             .await

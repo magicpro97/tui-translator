@@ -26,7 +26,6 @@
 
 pub mod cpu_gate;
 pub mod fallback;
-pub mod inference_priority;
 pub mod playback;
 pub mod segmentation;
 pub mod sentence_aggregator;
