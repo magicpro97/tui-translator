@@ -51,6 +51,7 @@ mod config;
 mod metrics;
 mod pipeline;
 mod providers;
+mod session;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
