@@ -243,7 +243,7 @@ shown below.
 
 | Key | Unit | Default | Range | What it does |
 |-----|------|---------|-------|--------------|
-| `vad.enabled` | bool | `false` | `true` / `false` | Activates Voice Activity Detection.  When `false`, the pipeline flushes on the `max_window_ms` timer instead. |
+| `vad.enabled` | bool | `false` | `true` / `false` | Activates Voice Activity Detection.  When `false`, fixed-window mode uses the `max_window_ms` timer and can still flush earlier on the idle timeout. |
 | `vad.threshold` | amplitude (0–1) | `0.01` | `0.0`–`1.0` | Minimum RMS energy for a chunk to be treated as speech.  Raise in noisy rooms; lower for soft speakers. |
 | `vad.min_speech_ms` | ms | `100` | `>= 0` (`> 0` when VAD is enabled) | How long the audio must stay above `threshold` before the onset is confirmed as real speech (guards against noise spikes). |
 | `vad.pre_roll_ms` | ms | `200` | `0`–`2000` | Audio buffered during onset confirmation that is prepended to the STT window.  Set to `0` to disable pre-roll. |
@@ -260,7 +260,7 @@ omit the entire block to use built-in defaults.  Changes require a restart.
 | Key | Unit | Default | Range | What it does |
 |-----|------|---------|-------|--------------|
 | `pipeline.max_window_ms` | ms | `3000` | `500`–`60000` | Hard upper limit on STT window duration.  If no other flush fires first, the window is sent to STT at this age.  When VAD is disabled, this also sets the regular flush cadence. |
-| `pipeline.early_flush_on_vad_end` | bool | `true` | `true` / `false` | When `true`, a VAD EndOfUtterance signal flushes the window immediately for low-latency subtitles.  Set to `false` to wait for `max_window_ms` instead (fewer API calls, more delay). |
+| `pipeline.early_flush_on_vad_end` | bool | `true` | `true` / `false` | When `true`, a VAD EndOfUtterance signal flushes the window immediately for low-latency subtitles.  Set to `false` to disable that VAD-triggered flush; `max_window_ms`, idle timeout, and shutdown flushes still apply. |
 | `pipeline.idle_flush_ms` | ms | `600` | `50`–`30000` | If no new audio chunk arrives for this long, the current partial window is flushed early (provided `idle_min_ms` is met). |
 | `pipeline.idle_min_ms` | ms | `500` | `50`–`30000` | Minimum speech accumulated in the window before an idle flush is allowed.  Prevents tiny noise bursts from being sent to STT. |
 | `pipeline.sentence_max_age_ms` | ms | `4000` | `500`–`60000` | Maximum time the sentence aggregator holds a partial text fragment before force-flushing it to MT.  Higher values improve sentence completeness; lower values reduce subtitle lag when a speaker trails off mid-sentence. |
@@ -277,7 +277,7 @@ in your config file and restart the application.
 |----------|:-------------:|--------------------:|---------------------:|-------------------------:|-------------------------------:|-------|
 | **Dense monologue** (one speaker, fast continuous speech) | `true` | `400` | `600` | `5000` | `6000` | Longer post-roll and silence gap reduce mid-sentence cuts during rapid speech. |
 | **Dialogue** (back-and-forth, multiple speakers) | `true` | `200` | `400` | `3000` | `3000` | Shorter gaps keep subtitles snappy during fast turn-taking. |
-| **VAD disabled** (fallback for noisy environments) | `false` | — | — | `3000` | `4000` | Fixed-window mode: flushes every `max_window_ms` regardless of silence.  Use when background noise causes VAD to trigger constantly. |
+| **VAD disabled** (fallback for noisy environments) | `false` | — | — | `3000` | `4000` | Fixed-window mode: flushes at `max_window_ms`, or earlier when the idle timeout fires.  Use when background noise causes VAD to trigger constantly. |
 
 > **Tip:** You can also open the settings editor with **S** in the running app
 > and change values without editing JSON by hand.  Save and restart after
@@ -296,7 +296,7 @@ trunc:12%  flicker:3  mt:47
 
 | Counter | What it means | Good target | How to improve |
 |---------|--------------|-------------|----------------|
-| `trunc:X%` | **Truncation rate** — the share of STT windows that hit the `max_window_ms` hard cap instead of finishing at a natural pause or sentence boundary.  High values mean speech is regularly being cut mid-utterance. | < 10 % | Raise `pipeline.max_window_ms`, or enable VAD so utterances flush at natural pause points. |
+| `trunc:X%` | **Truncation rate** — the share of STT windows that hit the `max_window_ms` hard cap instead of finishing at a VAD pause, idle timeout, or sentence boundary.  High values mean speech is regularly being cut mid-utterance. | < 10 % | Raise `pipeline.max_window_ms`, or enable VAD so utterances flush at natural pause points. |
 | `flicker:N` | **Flicker count** — how many times the live subtitle text shrank unexpectedly during in-flight recognition (a non-monotonic partial update).  Visible as a brief flash or replacement of text you just read. | 0 | Enable VAD to reduce out-of-order partials; or lower `pipeline.max_window_ms` to send shorter, more predictable windows. |
 | `mt:N` | **MT call count** — total successful translation API calls this session.  Each call has a small billing cost.  The sentence aggregator reduces this number by batching STT fragments into full sentences before translating. | Informational | Raise `pipeline.sentence_max_age_ms` to let the aggregator combine more fragments (note: raises subtitle latency). |
 
