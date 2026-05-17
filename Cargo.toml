@@ -91,6 +91,8 @@ rubato = "0.15"
 wasapi = "0.14"
 # Audio playback — TTS output via system default audio device (Windows only)
 rodio = "0.17"
+# Windows thread-scheduling API (SetThreadPriority) for inference priority hints (#232)
+windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation"] }
 
 [dev-dependencies]
 # Snapshot testing for the TUI layouts

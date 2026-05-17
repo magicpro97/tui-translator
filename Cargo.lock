@@ -2596,6 +2596,7 @@ dependencies = [
  "vt100",
  "wasapi",
  "whisper-rs",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
