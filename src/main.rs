@@ -812,6 +812,9 @@ fn main() -> Result<()> {
                     } else {
                         None
                     },
+                    stabilizer: Arc::new(std::sync::Mutex::new(
+                        pipeline::segmentation::SegmentStabilizer::new(),
+                    )),
                     session_recorder,
                 };
 
