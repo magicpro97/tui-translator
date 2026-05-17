@@ -23,6 +23,19 @@ const DEFAULT_MIN_SPEECH_MS: u32 = 100;
 const DEFAULT_SPEECH_PAD_MS: u32 = 300;
 const DEFAULT_MIN_SILENCE_MS: u32 = 500;
 const DEFAULT_PRE_ROLL_MS: u32 = 200;
+const MAX_PRE_ROLL_MS: u32 = 2_000;
+
+// ─── Pipeline defaults (issue #270 / EP-I.7) ─────────────────────────────────
+/// Maximum speech-window duration (ms) before an unconditional STT flush.
+pub const DEFAULT_PIPELINE_MAX_WINDOW_MS: u32 = 1_500;
+/// Whether `VadDecision::EndOfUtterance` triggers an immediate STT flush.
+pub const DEFAULT_PIPELINE_EARLY_FLUSH_ON_VAD_END: bool = true;
+/// Idle duration (ms) after the last chunk before flushing a partial window.
+pub const DEFAULT_PIPELINE_IDLE_FLUSH_MS: u64 = 600;
+/// Minimum accumulated speech (ms) before an idle flush is allowed.
+pub const DEFAULT_PIPELINE_IDLE_MIN_MS: u32 = 500;
+/// Maximum time (ms) a partial sentence fragment is held before force-flush.
+pub const DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS: u64 = 4_000;
 
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +84,8 @@ pub struct VadConfigJson {
     pub min_silence_ms: u32,
 
     /// Audio buffered during VAD `Confirming` state prepended to the STT
-    /// window on speech onset.  Default: `200` ms.  `0` disables pre-roll.
+    /// window on speech onset.  Range: `0`-`2000` ms.  Default: `200` ms.
+    /// `0` disables pre-roll.
     #[serde(default = "default_pre_roll_ms")]
     pub pre_roll_ms: u32,
 }
@@ -87,6 +101,81 @@ impl Default for VadConfigJson {
             pre_roll_ms: DEFAULT_PRE_ROLL_MS,
         }
     }
+}
+
+// ─── Pipeline configuration (issue #270 / EP-I.7) ────────────────────────────
+
+/// Speech-window and aggregation tuning knobs, serialisable from `config.json`.
+///
+/// All fields are optional in the JSON; absent fields fall back to the values
+/// used by the runtime pipeline (the values below match the hard-coded defaults
+/// in `pipeline/mod.rs` and `pipeline/sentence_aggregator.rs` prior to this
+/// issue so existing users see no behaviour change).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PipelineConfigJson {
+    /// Maximum speech-window duration in milliseconds before an unconditional
+    /// STT flush.  When VAD is enabled this is the hard upper-bound that fires
+    /// when no `EndOfUtterance` signal arrives (e.g. continuous speech).  When
+    /// VAD is disabled this is the target window size that drives the normal
+    /// flush cadence.
+    ///
+    /// Range: `500`–`60000` ms.  Default: `1500` ms.
+    #[serde(default = "default_pipeline_max_window_ms")]
+    pub max_window_ms: u32,
+
+    /// When `true` (default), a VAD `EndOfUtterance` event triggers an
+    /// immediate STT flush of the current speech window — giving low-latency
+    /// results on natural utterance endings.  Set to `false` to suppress the
+    /// immediate flush and let the window drain by `max_window_ms` / idle
+    /// cadence instead.
+    #[serde(default = "default_pipeline_early_flush_on_vad_end")]
+    pub early_flush_on_vad_end: bool,
+
+    /// Idle duration in milliseconds after the last audio chunk before flushing
+    /// a partial speech window.  The window must also satisfy `idle_min_ms`
+    /// before the flush is allowed.
+    ///
+    /// Range: `50`–`30000` ms.  Default: `600` ms.
+    #[serde(default = "default_pipeline_idle_flush_ms")]
+    pub idle_flush_ms: u64,
+
+    /// Minimum accumulated speech in milliseconds for an idle flush to proceed.
+    /// Prevents extremely short windows (noise spikes) from being sent to STT
+    /// after a brief silence.
+    ///
+    /// Range: `50`–`30000` ms.  Default: `500` ms.
+    #[serde(default = "default_pipeline_idle_min_ms")]
+    pub idle_min_ms: u32,
+
+    /// Maximum time in milliseconds a partial sentence fragment is held in the
+    /// `SentenceAggregator` before being force-flushed to machine translation.
+    /// Lower values reduce latency at the cost of more mid-sentence MT calls;
+    /// higher values improve sentence completeness.
+    ///
+    /// Range: `500`–`60000` ms.  Default: `4000` ms.
+    #[serde(default = "default_pipeline_sentence_max_age_ms")]
+    pub sentence_max_age_ms: u64,
+}
+
+impl Default for PipelineConfigJson {
+    fn default() -> Self {
+        Self {
+            max_window_ms: DEFAULT_PIPELINE_MAX_WINDOW_MS,
+            early_flush_on_vad_end: DEFAULT_PIPELINE_EARLY_FLUSH_ON_VAD_END,
+            idle_flush_ms: DEFAULT_PIPELINE_IDLE_FLUSH_MS,
+            idle_min_ms: DEFAULT_PIPELINE_IDLE_MIN_MS,
+            sentence_max_age_ms: DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS,
+        }
+    }
+}
+
+/// `skip_serializing_if` predicate: omit `pipeline` when all values are default.
+fn pipeline_config_is_default(p: &PipelineConfigJson) -> bool {
+    p.max_window_ms == DEFAULT_PIPELINE_MAX_WINDOW_MS
+        && p.early_flush_on_vad_end == DEFAULT_PIPELINE_EARLY_FLUSH_ON_VAD_END
+        && p.idle_flush_ms == DEFAULT_PIPELINE_IDLE_FLUSH_MS
+        && p.idle_min_ms == DEFAULT_PIPELINE_IDLE_MIN_MS
+        && p.sentence_max_age_ms == DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS
 }
 
 /// Transcript session storage settings.
@@ -275,6 +364,15 @@ pub struct AppConfig {
     /// [`MetricsSnapshot::ram_bytes`]: crate::metrics::MetricsSnapshot::ram_bytes
     #[serde(default)]
     pub ram_budget_mb: u64,
+
+    /// Speech-window and sentence-aggregation tuning knobs (issue #270 / EP-I.7).
+    ///
+    /// Controls the maximum STT window duration, idle-flush cadence, and
+    /// sentence-aggregator max-age.  All fields have sensible defaults
+    /// matching the pre-issue hard-coded constants, so omitting this block
+    /// preserves existing behaviour.
+    #[serde(default, skip_serializing_if = "pipeline_config_is_default")]
+    pub pipeline: PipelineConfigJson,
 }
 
 impl Default for AppConfig {
@@ -298,6 +396,7 @@ impl Default for AppConfig {
             comment: None,
             cpu_budget_pct: 0.0,
             ram_budget_mb: 0,
+            pipeline: PipelineConfigJson::default(),
         }
     }
 }
@@ -352,6 +451,28 @@ fn default_min_silence_ms() -> u32 {
 #[allow(dead_code)]
 fn default_pre_roll_ms() -> u32 {
     DEFAULT_PRE_ROLL_MS
+}
+
+// Pipeline default helpers — referenced via #[serde(default = "...")] on PipelineConfigJson.
+#[allow(dead_code)]
+fn default_pipeline_max_window_ms() -> u32 {
+    DEFAULT_PIPELINE_MAX_WINDOW_MS
+}
+#[allow(dead_code)]
+fn default_pipeline_early_flush_on_vad_end() -> bool {
+    DEFAULT_PIPELINE_EARLY_FLUSH_ON_VAD_END
+}
+#[allow(dead_code)]
+fn default_pipeline_idle_flush_ms() -> u64 {
+    DEFAULT_PIPELINE_IDLE_FLUSH_MS
+}
+#[allow(dead_code)]
+fn default_pipeline_idle_min_ms() -> u32 {
+    DEFAULT_PIPELINE_IDLE_MIN_MS
+}
+#[allow(dead_code)]
+fn default_pipeline_sentence_max_age_ms() -> u64 {
+    DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS
 }
 
 /// `skip_serializing_if` predicate: omit `vad` from the JSON output when it
@@ -451,11 +572,47 @@ impl AppConfig {
                 "`vad.min_speech_ms`, `vad.speech_pad_ms`, and `vad.min_silence_ms` must be > 0 when VAD is enabled"
             );
         }
+        if self.vad.pre_roll_ms > MAX_PRE_ROLL_MS {
+            bail!(
+                "`vad.pre_roll_ms` must be 0-{MAX_PRE_ROLL_MS} ms, got {} \
+                 (default: {DEFAULT_PRE_ROLL_MS})",
+                self.vad.pre_roll_ms
+            );
+        }
         match self.stt_fallback_policy.as_str() {
             "none" | "local" => {}
             other => {
                 bail!("`stt_fallback_policy` must be \"none\" or \"local\", got {other:?}");
             }
+        }
+        // ── Pipeline config validation (issue #270) ────────────────────────
+        if !(500..=60_000).contains(&self.pipeline.max_window_ms) {
+            bail!(
+                "`pipeline.max_window_ms` must be 500–60000 ms, got {} \
+                 (default: {DEFAULT_PIPELINE_MAX_WINDOW_MS})",
+                self.pipeline.max_window_ms
+            );
+        }
+        if !(50..=30_000).contains(&self.pipeline.idle_flush_ms) {
+            bail!(
+                "`pipeline.idle_flush_ms` must be 50–30000 ms, got {} \
+                 (default: {DEFAULT_PIPELINE_IDLE_FLUSH_MS})",
+                self.pipeline.idle_flush_ms
+            );
+        }
+        if !(50..=30_000).contains(&self.pipeline.idle_min_ms) {
+            bail!(
+                "`pipeline.idle_min_ms` must be 50–30000 ms, got {} \
+                 (default: {DEFAULT_PIPELINE_IDLE_MIN_MS})",
+                self.pipeline.idle_min_ms
+            );
+        }
+        if !(500..=60_000).contains(&self.pipeline.sentence_max_age_ms) {
+            bail!(
+                "`pipeline.sentence_max_age_ms` must be 500–60000 ms, got {} \
+                 (default: {DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS})",
+                self.pipeline.sentence_max_age_ms
+            );
         }
         Ok(())
     }
@@ -477,6 +634,7 @@ impl AppConfig {
             || self.vad != next.vad
             || self.stt_phrase_hints != next.stt_phrase_hints
             || self.session_store != next.session_store
+            || self.pipeline != next.pipeline
     }
 }
 
@@ -1288,6 +1446,23 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_vad_pre_roll_above_range() {
+        let cfg = AppConfig {
+            vad: VadConfigJson {
+                pre_roll_ms: MAX_PRE_ROLL_MS + 1,
+                ..VadConfigJson::default()
+            },
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("vad.pre_roll_ms"),
+            "error should mention vad.pre_roll_ms; got: {err}"
+        );
+    }
+
+    #[test]
     fn default_config_path_uses_home_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let home = TempDir::new().unwrap();
@@ -1743,6 +1918,121 @@ mod tests {
         assert!(
             json.contains("Zoom"),
             "phrase hint value must appear in serialized config; got: {json}"
+        );
+    }
+
+    // ── pipeline config (issue #270 / EP-I.7) ──────────────────────────────
+
+    /// Missing `pipeline` block must produce defaults (backward compatibility).
+    #[test]
+    fn pipeline_config_defaults_when_absent() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(
+            cfg.pipeline,
+            PipelineConfigJson::default(),
+            "missing pipeline block must use built-in defaults"
+        );
+        assert_eq!(cfg.pipeline.max_window_ms, DEFAULT_PIPELINE_MAX_WINDOW_MS);
+        assert_eq!(
+            cfg.pipeline.early_flush_on_vad_end,
+            DEFAULT_PIPELINE_EARLY_FLUSH_ON_VAD_END
+        );
+        assert_eq!(cfg.pipeline.idle_flush_ms, DEFAULT_PIPELINE_IDLE_FLUSH_MS);
+        assert_eq!(cfg.pipeline.idle_min_ms, DEFAULT_PIPELINE_IDLE_MIN_MS);
+        assert_eq!(
+            cfg.pipeline.sentence_max_age_ms,
+            DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS
+        );
+    }
+
+    /// Round-trip: serialize non-default pipeline, re-parse, compare.
+    #[test]
+    fn pipeline_config_round_trip() {
+        let original = AppConfig {
+            pipeline: PipelineConfigJson {
+                max_window_ms: 2000,
+                early_flush_on_vad_end: false,
+                idle_flush_ms: 800,
+                idle_min_ms: 400,
+                sentence_max_age_ms: 6000,
+            },
+            ..AppConfig::default()
+        };
+        original
+            .validate()
+            .expect("pipeline config should be valid");
+
+        let json = serde_json::to_string_pretty(&original).expect("serialize");
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.pipeline.max_window_ms, 2000);
+        assert!(!restored.pipeline.early_flush_on_vad_end);
+        assert_eq!(restored.pipeline.idle_flush_ms, 800);
+        assert_eq!(restored.pipeline.idle_min_ms, 400);
+        assert_eq!(restored.pipeline.sentence_max_age_ms, 6000);
+        restored
+            .validate()
+            .expect("restored pipeline config must be valid");
+    }
+
+    /// Default pipeline config must be omitted from serialized JSON (tidy output).
+    #[test]
+    fn pipeline_config_omitted_when_default() {
+        let cfg = AppConfig::default();
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        assert!(
+            !json.contains("\"pipeline\""),
+            "default pipeline block must be omitted from serialized config; got: {json}"
+        );
+    }
+
+    /// Validate rejects `max_window_ms` below minimum.
+    #[test]
+    fn validate_rejects_pipeline_max_window_ms_below_min() {
+        let cfg = AppConfig {
+            pipeline: PipelineConfigJson {
+                max_window_ms: 100,
+                ..PipelineConfigJson::default()
+            },
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("pipeline.max_window_ms"),
+            "error should mention pipeline.max_window_ms; got: {err}"
+        );
+    }
+
+    /// Serde must reject a negative value for `max_window_ms` (unsigned field).
+    #[test]
+    fn serde_rejects_negative_max_window_ms() {
+        let json =
+            r#"{"source_language":"ja-JP","target_language":"vi","pipeline":{"max_window_ms":-1}}"#;
+        let err = serde_json::from_str::<AppConfig>(json)
+            .expect_err("negative max_window_ms must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("max_window_ms") || msg.contains("invalid") || msg.contains("negative"),
+            "serde error should mention max_window_ms or describe the sign error; got: {msg}"
+        );
+    }
+
+    /// Pipeline config change must require restart.
+    #[test]
+    fn pipeline_config_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            pipeline: PipelineConfigJson {
+                max_window_ms: 3000,
+                ..PipelineConfigJson::default()
+            },
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing pipeline config must require a restart"
         );
     }
 }

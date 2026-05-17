@@ -163,10 +163,17 @@ enum ConfigEditorField {
     MtProvider,
     TtsEnabled,
     SttFallbackPolicy,
+    // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7).
+    VadPreRollMs,
+    PipelineMaxWindowMs,
+    PipelineEarlyFlushOnVadEnd,
+    PipelineIdleFlushMs,
+    PipelineIdleMinMs,
+    PipelineSentenceMaxAgeMs,
 }
 
 impl ConfigEditorField {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 16] = [
         Self::SourceLanguage,
         Self::TargetLanguage,
         Self::GoogleApiKey,
@@ -177,6 +184,12 @@ impl ConfigEditorField {
         Self::MtProvider,
         Self::TtsEnabled,
         Self::SttFallbackPolicy,
+        Self::VadPreRollMs,
+        Self::PipelineMaxWindowMs,
+        Self::PipelineEarlyFlushOnVadEnd,
+        Self::PipelineIdleFlushMs,
+        Self::PipelineIdleMinMs,
+        Self::PipelineSentenceMaxAgeMs,
     ];
 
     fn label(self) -> &'static str {
@@ -191,6 +204,12 @@ impl ConfigEditorField {
             Self::MtProvider => "MT provider",
             Self::TtsEnabled => "TTS enabled",
             Self::SttFallbackPolicy => "STT fallback",
+            Self::VadPreRollMs => "VAD pre-roll ms",
+            Self::PipelineMaxWindowMs => "Max window ms",
+            Self::PipelineEarlyFlushOnVadEnd => "Early VAD flush",
+            Self::PipelineIdleFlushMs => "Idle flush ms",
+            Self::PipelineIdleMinMs => "Idle min ms",
+            Self::PipelineSentenceMaxAgeMs => "Sentence max ms",
         }
     }
 }
@@ -214,6 +233,19 @@ pub struct ConfigEditorState {
     pub tts_enabled: String,
     /// STT fallback policy (`"none"` or `"local"`).
     pub stt_fallback_policy: String,
+    // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7) — stored as strings.
+    /// `vad.pre_roll_ms` as decimal string (unit: ms, default: "200").
+    pub vad_pre_roll_ms: String,
+    /// `pipeline.max_window_ms` as decimal string (unit: ms, default: "1500").
+    pub pipeline_max_window_ms: String,
+    /// `pipeline.early_flush_on_vad_end` as `"true"` or `"false"` (default: "true").
+    pub pipeline_early_flush_on_vad_end: String,
+    /// `pipeline.idle_flush_ms` as decimal string (unit: ms, default: "600").
+    pub pipeline_idle_flush_ms: String,
+    /// `pipeline.idle_min_ms` as decimal string (unit: ms, default: "500").
+    pub pipeline_idle_min_ms: String,
+    /// `pipeline.sentence_max_age_ms` as decimal string (unit: ms, default: "4000").
+    pub pipeline_sentence_max_age_ms: String,
     pub config_path: String,
     pub status_message: Option<String>,
     pub capture_device_options: Vec<String>,
@@ -238,6 +270,16 @@ impl ConfigEditorState {
                 "false".to_string()
             },
             stt_fallback_policy: config.stt_fallback_policy.clone(),
+            vad_pre_roll_ms: config.vad.pre_roll_ms.to_string(),
+            pipeline_max_window_ms: config.pipeline.max_window_ms.to_string(),
+            pipeline_early_flush_on_vad_end: if config.pipeline.early_flush_on_vad_end {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            },
+            pipeline_idle_flush_ms: config.pipeline.idle_flush_ms.to_string(),
+            pipeline_idle_min_ms: config.pipeline.idle_min_ms.to_string(),
+            pipeline_sentence_max_age_ms: config.pipeline.sentence_max_age_ms.to_string(),
             config_path: config_path.display().to_string(),
             status_message: None,
             capture_device_options: Vec::new(),
@@ -260,6 +302,14 @@ impl ConfigEditorState {
             ConfigEditorField::MtProvider => &mut self.mt_provider,
             ConfigEditorField::TtsEnabled => &mut self.tts_enabled,
             ConfigEditorField::SttFallbackPolicy => &mut self.stt_fallback_policy,
+            ConfigEditorField::VadPreRollMs => &mut self.vad_pre_roll_ms,
+            ConfigEditorField::PipelineMaxWindowMs => &mut self.pipeline_max_window_ms,
+            ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
+                &mut self.pipeline_early_flush_on_vad_end
+            }
+            ConfigEditorField::PipelineIdleFlushMs => &mut self.pipeline_idle_flush_ms,
+            ConfigEditorField::PipelineIdleMinMs => &mut self.pipeline_idle_min_ms,
+            ConfigEditorField::PipelineSentenceMaxAgeMs => &mut self.pipeline_sentence_max_age_ms,
         }
     }
 
@@ -363,6 +413,20 @@ impl ConfigEditorState {
                 self.set_status_message(
                     " Type to edit this field. No preset values are available.",
                 );
+            }
+            ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
+                self.cycle_choice_field(&["true", "false"], ". Save and restart to apply.");
+            }
+            ConfigEditorField::VadPreRollMs
+            | ConfigEditorField::PipelineMaxWindowMs
+            | ConfigEditorField::PipelineIdleFlushMs
+            | ConfigEditorField::PipelineIdleMinMs
+            | ConfigEditorField::PipelineSentenceMaxAgeMs => {
+                let field = self.active_field();
+                self.set_status_message(format!(
+                    " {}: type an integer (ms). Save and restart to apply.",
+                    field.label()
+                ));
             }
         }
     }
@@ -2006,7 +2070,7 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 /// Render the shared first-run / settings editor overlay.
 pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &ConfigEditorState) {
     let panel_w = 76u16.min(area.width);
-    let panel_h = 19u16.min(area.height);
+    let panel_h = 28u16.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -2088,6 +2152,37 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
         config_editor_field_line(
             ConfigEditorField::SttFallbackPolicy,
             &editor.stt_fallback_policy,
+            active,
+        ),
+        // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7).
+        config_editor_field_line(
+            ConfigEditorField::VadPreRollMs,
+            &editor.vad_pre_roll_ms,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::PipelineMaxWindowMs,
+            &editor.pipeline_max_window_ms,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::PipelineEarlyFlushOnVadEnd,
+            &editor.pipeline_early_flush_on_vad_end,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::PipelineIdleFlushMs,
+            &editor.pipeline_idle_flush_ms,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::PipelineIdleMinMs,
+            &editor.pipeline_idle_min_ms,
+            active,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::PipelineSentenceMaxAgeMs,
+            &editor.pipeline_sentence_max_age_ms,
             active,
         ),
     ]);

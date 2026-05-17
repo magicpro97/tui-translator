@@ -55,9 +55,13 @@ use crate::{
 /// flush.  When VAD is enabled this is a hard upper bound that fires when no
 /// `EndOfUtterance` signal arrives (e.g. continuous speech).  When VAD is
 /// disabled this is the target window size that drives the normal flush cadence.
-const STT_MAX_WINDOW_MS: u32 = 1_500;
-const STT_IDLE_FLUSH_MS: u64 = 600;
-const STT_IDLE_MIN_MS: u32 = 500;
+///
+/// These are the default values preserved for backwards compatibility and
+/// used when no `pipeline` config block is present.  At runtime the
+/// orchestrator reads its values from `OrchestratorContext::pipeline_*`.
+pub(crate) const STT_MAX_WINDOW_MS: u32 = 1_500;
+pub(crate) const STT_IDLE_FLUSH_MS: u64 = 600;
+pub(crate) const STT_IDLE_MIN_MS: u32 = 500;
 
 // Re-export the retry utilities so that other modules and the integration-test
 // binary (which path-imports this module) continue to find them here.
@@ -219,6 +223,31 @@ pub struct OrchestratorContext {
     /// existing behaviour.
     pub vad_config: Option<VadConfig>,
 
+    // ── Pipeline windowing/aggregation knobs (issue #270 / EP-I.7) ────────
+    /// Maximum speech-window duration (ms) before an unconditional STT flush.
+    ///
+    /// Replaces the hard-coded `STT_MAX_WINDOW_MS` constant.
+    /// Defaults to [`STT_MAX_WINDOW_MS`] when the config `pipeline` block is absent.
+    pub pipeline_max_window_ms: u32,
+
+    /// Whether `VadDecision::EndOfUtterance` triggers an immediate STT flush.
+    ///
+    /// When `true` (default), utterance endings flush the speech window early
+    /// for lower latency.  When `false`, the window drains by max_window_ms /
+    /// idle cadence, which can improve accuracy on continuous speech but adds
+    /// latency.
+    pub pipeline_early_flush_on_vad_end: bool,
+
+    /// Idle duration (ms) after the last chunk before flushing a partial window.
+    ///
+    /// Replaces the hard-coded `STT_IDLE_FLUSH_MS` constant.
+    pub pipeline_idle_flush_ms: u64,
+
+    /// Minimum accumulated speech (ms) for an idle flush to proceed.
+    ///
+    /// Replaces the hard-coded `STT_IDLE_MIN_MS` constant.
+    pub pipeline_idle_min_ms: u32,
+
     /// Post-STT segmentation stabilizer (issue #222 / EP-E.3).
     ///
     /// Applies near-duplicate dropping, long-Japanese splitting, and
@@ -379,20 +408,27 @@ pub async fn run_orchestrator<S, M, T>(
                                 "VAD: chunk suppressed"
                             );
                             if decision == VadDecision::EndOfUtterance {
-                                tracing::debug!(
-                                    window_ms = pending_speech.duration_ms,
-                                    "VAD: end-of-utterance — flushing speech window early"
-                                );
-                                flush_speech_window(
-                                    &mut pending_speech,
-                                    &mut seq,
-                                    &stt,
-                                    &mt,
-                                    &tts,
-                                    &ctx,
-                                )
-                                .await;
-                                last_pending_at = None;
+                                if ctx.pipeline_early_flush_on_vad_end {
+                                    tracing::debug!(
+                                        window_ms = pending_speech.duration_ms,
+                                        "VAD: end-of-utterance — flushing speech window early"
+                                    );
+                                    flush_speech_window(
+                                        &mut pending_speech,
+                                        &mut seq,
+                                        &stt,
+                                        &mt,
+                                        &tts,
+                                        &ctx,
+                                    )
+                                    .await;
+                                    last_pending_at = None;
+                                } else {
+                                    tracing::debug!(
+                                        window_ms = pending_speech.duration_ms,
+                                        "VAD: end-of-utterance — early flush suppressed by config"
+                                    );
+                                }
                             }
                             continue;
                         }
@@ -401,14 +437,18 @@ pub async fn run_orchestrator<S, M, T>(
 
                 pending_speech.push(chunk);
                 last_pending_at = Some(Instant::now());
-                if pending_speech.ready_for_stt() {
+                if pending_speech.ready_for_stt(ctx.pipeline_max_window_ms) {
                     flush_speech_window(&mut pending_speech, &mut seq, &stt, &mt, &tts, &ctx).await;
                     last_pending_at = None;
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if last_pending_at
-                    .map(|at| pending_speech.ready_after_idle(at.elapsed()))
+                    .map(|at| pending_speech.ready_after_idle(
+                        at.elapsed(),
+                        ctx.pipeline_idle_flush_ms,
+                        ctx.pipeline_idle_min_ms,
+                    ))
                     .unwrap_or(false)
                 {
                     flush_speech_window(&mut pending_speech, &mut seq, &stt, &mt, &tts, &ctx).await;
@@ -450,14 +490,14 @@ impl SpeechWindow {
         self.samples.extend(chunk.samples);
     }
 
-    fn ready_for_stt(&self) -> bool {
-        self.duration_ms >= STT_MAX_WINDOW_MS
+    fn ready_for_stt(&self, max_window_ms: u32) -> bool {
+        self.duration_ms >= max_window_ms
     }
 
-    fn ready_after_idle(&self, idle_for: Duration) -> bool {
+    fn ready_after_idle(&self, idle_for: Duration, idle_flush_ms: u64, idle_min_ms: u32) -> bool {
         !self.samples.is_empty()
-            && self.duration_ms >= STT_IDLE_MIN_MS
-            && idle_for >= Duration::from_millis(STT_IDLE_FLUSH_MS)
+            && self.duration_ms >= idle_min_ms
+            && idle_for >= Duration::from_millis(idle_flush_ms)
     }
 
     fn take_chunk(&mut self) -> Option<AudioChunk> {
@@ -1438,6 +1478,11 @@ mod tests {
             provider_is_local: Arc::new(AtomicBool::new(false)),
             local_unavailable_is_fatal: false,
             vad_config: None,
+            // Pipeline knobs — use module-level defaults so existing tests are unchanged.
+            pipeline_max_window_ms: STT_MAX_WINDOW_MS,
+            pipeline_early_flush_on_vad_end: true,
+            pipeline_idle_flush_ms: STT_IDLE_FLUSH_MS,
+            pipeline_idle_min_ms: STT_IDLE_MIN_MS,
             stabilizer: Arc::new(Mutex::new(
                 crate::pipeline::segmentation::SegmentStabilizer::new(),
             )),
@@ -2166,7 +2211,11 @@ mod tests {
     fn speech_window_idle_flush_obeys_minimum_duration_and_timeout() {
         let mut window = SpeechWindow::default();
         assert!(
-            !window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS)),
+            !window.ready_after_idle(
+                Duration::from_millis(STT_IDLE_FLUSH_MS),
+                STT_IDLE_FLUSH_MS,
+                STT_IDLE_MIN_MS
+            ),
             "empty windows must not flush"
         );
 
@@ -2175,7 +2224,11 @@ mod tests {
             duration_ms: STT_IDLE_MIN_MS - 1,
         });
         assert!(
-            !window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS)),
+            !window.ready_after_idle(
+                Duration::from_millis(STT_IDLE_FLUSH_MS),
+                STT_IDLE_FLUSH_MS,
+                STT_IDLE_MIN_MS
+            ),
             "audio below the idle minimum must wait for more speech"
         );
 
@@ -2184,11 +2237,19 @@ mod tests {
             duration_ms: 1,
         });
         assert!(
-            !window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS - 1)),
+            !window.ready_after_idle(
+                Duration::from_millis(STT_IDLE_FLUSH_MS - 1),
+                STT_IDLE_FLUSH_MS,
+                STT_IDLE_MIN_MS
+            ),
             "idle flush must wait for the full timeout"
         );
         assert!(
-            window.ready_after_idle(Duration::from_millis(STT_IDLE_FLUSH_MS)),
+            window.ready_after_idle(
+                Duration::from_millis(STT_IDLE_FLUSH_MS),
+                STT_IDLE_FLUSH_MS,
+                STT_IDLE_MIN_MS
+            ),
             "idle flush should submit enough audio at the timeout"
         );
     }

@@ -532,6 +532,10 @@ fn make_orch_context() -> TestCtx {
         provider_is_local: Arc::new(AtomicBool::new(false)),
         local_unavailable_is_fatal: false,
         vad_config: None,
+        pipeline_max_window_ms: crate::pipeline::STT_MAX_WINDOW_MS,
+        pipeline_early_flush_on_vad_end: true,
+        pipeline_idle_flush_ms: crate::pipeline::STT_IDLE_FLUSH_MS,
+        pipeline_idle_min_ms: crate::pipeline::STT_IDLE_MIN_MS,
         stabilizer: Arc::new(Mutex::new(
             crate::pipeline::segmentation::SegmentStabilizer::new(),
         )),

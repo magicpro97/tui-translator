@@ -938,11 +938,20 @@ fn main() -> Result<()> {
                     } else {
                         None
                     },
+                    // Pipeline windowing/aggregation knobs (issue #270 / EP-I.7).
+                    pipeline_max_window_ms: cfg_snapshot.pipeline.max_window_ms,
+                    pipeline_early_flush_on_vad_end: cfg_snapshot.pipeline.early_flush_on_vad_end,
+                    pipeline_idle_flush_ms: cfg_snapshot.pipeline.idle_flush_ms,
+                    pipeline_idle_min_ms: cfg_snapshot.pipeline.idle_min_ms,
                     stabilizer: Arc::new(std::sync::Mutex::new(
                         pipeline::segmentation::SegmentStabilizer::new(),
                     )),
                     sentence_aggregator: Arc::new(std::sync::Mutex::new(
-                        pipeline::sentence_aggregator::SentenceAggregator::new(),
+                        pipeline::sentence_aggregator::SentenceAggregator::with_max_age(
+                            std::time::Duration::from_millis(
+                                cfg_snapshot.pipeline.sentence_max_age_ms,
+                            ),
+                        ),
                     )),
                     session_recorder,
                 };
@@ -1384,6 +1393,26 @@ fn parse_editor_bool(field_name: &str, value: &str) -> Result<bool> {
     }
 }
 
+fn parse_editor_u32(field_name: &str, value: &str) -> Result<u32> {
+    let trimmed = value.trim();
+    trimmed.parse::<u32>().map_err(|_| {
+        anyhow::anyhow!(
+            "validation failed: `{field_name}` must be a positive integer (e.g. 1500), \
+             got {trimmed:?}"
+        )
+    })
+}
+
+fn parse_editor_u64(field_name: &str, value: &str) -> Result<u64> {
+    let trimmed = value.trim();
+    trimmed.parse::<u64>().map_err(|_| {
+        anyhow::anyhow!(
+            "validation failed: `{field_name}` must be a positive integer (e.g. 600), \
+             got {trimmed:?}"
+        )
+    })
+}
+
 fn build_config_from_editor(
     editor: &tui::ConfigEditorState,
     current_config: &config::AppConfig,
@@ -1399,6 +1428,22 @@ fn build_config_from_editor(
     next_cfg.mt_provider = editor.mt_provider.trim().to_string();
     next_cfg.tts_enabled = parse_editor_bool("tts_enabled", &editor.tts_enabled)?;
     next_cfg.stt_fallback_policy = editor.stt_fallback_policy.trim().to_string();
+    // Pipeline knobs (issue #270).
+    next_cfg.vad.pre_roll_ms = parse_editor_u32("vad.pre_roll_ms", &editor.vad_pre_roll_ms)?;
+    next_cfg.pipeline.max_window_ms =
+        parse_editor_u32("pipeline.max_window_ms", &editor.pipeline_max_window_ms)?;
+    next_cfg.pipeline.early_flush_on_vad_end = parse_editor_bool(
+        "pipeline.early_flush_on_vad_end",
+        &editor.pipeline_early_flush_on_vad_end,
+    )?;
+    next_cfg.pipeline.idle_flush_ms =
+        parse_editor_u64("pipeline.idle_flush_ms", &editor.pipeline_idle_flush_ms)?;
+    next_cfg.pipeline.idle_min_ms =
+        parse_editor_u32("pipeline.idle_min_ms", &editor.pipeline_idle_min_ms)?;
+    next_cfg.pipeline.sentence_max_age_ms = parse_editor_u64(
+        "pipeline.sentence_max_age_ms",
+        &editor.pipeline_sentence_max_age_ms,
+    )?;
     Ok(next_cfg)
 }
 
