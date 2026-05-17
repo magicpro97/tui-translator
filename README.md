@@ -175,6 +175,126 @@ Never put your real API key in `config.example.json`.
 
 ---
 
+## CPU-only / offline mode
+
+> **This is an opt-in feature.** The default mode uses Google Cloud STT and
+> Translation and requires a Google API key and an internet connection. Offline
+> mode is an alternative for situations where a cloud key is unavailable or
+> undesirable.
+
+### When to use offline mode
+
+Use offline mode when:
+
+- You are joining a Zoom or Microsoft Teams meeting **as a guest** and neither a
+  host account nor host-side translation controls are available to you.
+- You do not have a Google Cloud API key, or you prefer not to send audio to an
+  external service.
+- Your internet connection is unreliable during the meeting.
+- You want local Japanese speech recognition now, with a migration path toward
+  fully local Japanese-to-Vietnamese captions as local MT lands.
+
+No Zoom host account or host privileges are needed. After models are downloaded,
+local STT can run without internet; translation still uses Google until local MT
+is implemented.
+
+### Cloud vs local: quick comparison
+
+| Aspect | Google Cloud (default) | CPU-only offline (opt-in) |
+|--------|----------------------|--------------------------|
+| API key required | Yes | No |
+| Internet at runtime | Yes | No (after one-time model download) |
+| STT quality | High | Good — varies by model and hardware |
+| MT quality | High | Moderate (OPUS-MT, planned Phase 7) |
+| Setup | API key + billing | One-time model download |
+| Extra RAM | Minimal | ~300–600 MB (STT model) |
+| Extra CPU | Minimal | Moderate (INT8 inference on CPU) |
+| Cost per session | Per-API-call billing | Free after download |
+
+> **Note:** Local machine translation (MT) is planned for a future release
+> (Phase 7 / issue #217). Until then, offline STT is available but translation
+> still requires `mt_provider = "google"` and a Google API key, or translation
+> output must be omitted.
+
+### Recommended model tier
+
+The table below is based on benchmarks run on an i5-12400 / 32 GB Windows 11
+host using CPU INT8 inference (`docs/09-cpu-model-benchmark.md`).
+**Quality and latency vary by hardware** — always verify on your target machine.
+
+| Model | Disk | Peak RAM (30 s clip) | CER (ja) | Recommendation |
+|-------|-----:|--------------------:|--------:|----------------|
+| `faster-whisper-tiny` | 72 MB | ~278 MB | 5.6% | Low-resource fallback only |
+| **`faster-whisper-base`** | 139 MB | ~288 MB | 0.0% | **Recommended default** |
+| `faster-whisper-small` | 461 MB | ~600 MB | 0.0% | Quality option — 16 GB+ recommended |
+
+**8 GB machines:** Start with `faster-whisper-base`. Zoom or Teams typically
+consumes 1–2 GB of RAM while a call is active; adding the base model brings the
+combined overhead to roughly 1.5–2.5 GB. Switch to `tiny` if free RAM drops
+below about 1 GB. Do not use `small` on an 8 GB machine unless a co-run
+benchmark confirms RTF < 1.0 and sufficient headroom.
+
+**16 GB machines:** `faster-whisper-base` is still the safe conservative
+default. Upgrade to `faster-whisper-small` after confirming CPU and thermal
+headroom with Zoom running.
+
+### Enabling local STT
+
+> Local STT requires the executable to be built with the `local-stt` feature
+> flag. Check the release notes for a build that includes it.
+
+1. Download the Whisper model into the local model cache:
+
+   ```text
+   %USERPROFILE%\.tui-translator\models\
+   ```
+
+2. Add or update these fields in your `config.json`:
+
+   ```jsonc
+   {
+     "stt_provider": "local",         // use CPU-local Whisper instead of Google STT
+     "stt_fallback_policy": "none",   // or "local" to auto-switch if Google auth fails
+     "cpu_budget_pct": 80.0,          // skip inference above this CPU % (protects Zoom/Teams)
+     "ram_budget_mb": 6144            // warn in the status bar when process RAM exceeds this MiB
+   }
+   ```
+
+| Field | Values | Purpose |
+|-------|--------|---------|
+| `stt_provider` | `"google"` (default) / `"local"` | Select Google Cloud STT or CPU-local Whisper |
+| `stt_fallback_policy` | `"none"` (default) / `"local"` | `"local"` auto-switches to Whisper on Google auth error |
+| `cpu_budget_pct` | `0.0` (off) or a percentage | CPU ceiling; inference skips above this value to protect co-running apps |
+| `ram_budget_mb` | `0` (off) or MiB | Status bar warns when process RAM exceeds this value |
+
+### Known limitations
+
+- **Quality and latency vary by hardware.** The benchmark numbers above come
+  from a single high-end host. A slower CPU will have higher real-time factors
+  (RTF). If RTF exceeds 1.0 the model cannot keep up with live audio and chunks
+  will queue up.
+- **Local MT is not yet available.** Translation still requires
+  `mt_provider = "google"` and a valid API key. OPUS-MT (`mt_provider = "local"`)
+  is planned for Phase 7.
+- **8 GB machines may hit swap** if Zoom, local STT, and local MT all run at
+  once. Monitor RAM in Task Manager; switch to a smaller STT model or back to
+  `stt_provider = "google"` if headroom is tight.
+- **One-time internet download required.** Models are fetched from Hugging Face
+  on first use and cached under `%USERPROFILE%\.tui-translator\models\`. After
+  that the app runs fully offline.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Subtitles lag or pile up | RTF > 1.0 — model too large for this CPU | Switch from `small` to `base` or `tiny` |
+| High CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to 70–80 to throttle inference |
+| RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Lower the threshold or switch to `tiny` |
+| "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
+| No translation output | Local MT not yet implemented | Use `mt_provider = "google"` with a valid Google API key |
+
+---
+
 ## Project structure
 
 ```

@@ -1,0 +1,101 @@
+Issue #234 — EP-H.1: Add README CPU-only offline mode section
+==============================================================
+Date: 2026-05-17
+Branch: issue-234-readme-offline
+Changed files: README.md, verification-evidence/issue-234/runtime-summary.txt
+
+---
+
+ACCEPTANCE CRITERIA MAP
+-----------------------
+
+AC1: README names recommended default model tier.
+  Section: "CPU-only / offline mode > Recommended model tier"
+  Evidence: Table row with `faster-whisper-base` marked **Recommended default**.
+  Quote: "| **`faster-whisper-base`** | 139 MB | ~288 MB | 0.0% | **Recommended default** |"
+
+AC2: README warns that CPU-only quality/latency varies by hardware.
+  Section: "CPU-only / offline mode > Recommended model tier"
+  Evidence: Explicit warning before the model table.
+  Quote: "Quality and latency vary by hardware — always verify on your target machine."
+  Also in "Known limitations": "The benchmark numbers above come from a single high-end host.
+  A slower CPU will have higher real-time factors (RTF)."
+
+AC3: Docs do not imply host Zoom privileges are needed.
+  Section: "CPU-only / offline mode > When to use offline mode"
+  Evidence: Explicit statement that no host account or privileges are required.
+  Quote: "No Zoom host account or host privileges are needed."
+
+---
+
+NEW-USER DECISION TEST
+----------------------
+A new user reading the README will encounter:
+1. Default cloud mode described under "What this does" (Google STT/MT).
+2. New "CPU-only / offline mode" section that explains when to choose offline.
+3. Cloud vs local comparison table listing API key, internet, quality, RAM tradeoffs.
+Conclusion: user can decide cloud vs local mode after reading both sections.
+
+8 GB LAPTOP USER RECOMMENDATION TEST
+--------------------------------------
+Section "Recommended model tier" explicitly states:
+  "8 GB machines: Start with `faster-whisper-base`."
+  "Do not use `small` on an 8 GB machine unless a co-run benchmark confirms
+  RTF < 1.0 and sufficient headroom."
+Model table shows base peak RSS ~288 MB, well within safe bounds.
+Conclusion: 8 GB user finds a safe, clearly labeled recommendation.
+
+GOOGLE/CLOUD BEHAVIOR UNCHANGED CHECK
+---------------------------------------
+The existing "What this does", "Requirements", "Quick start", and
+"Configuration file reference" sections were not modified.
+The new section is additive; default mode (Google Cloud) is preserved and
+described as the default throughout.
+Validation command: git diff --check (see below).
+
+---
+
+VALIDATION COMMANDS
+-------------------
+
+Check for whitespace errors:
+  git diff --check HEAD
+
+Verify new section present in README:
+  Select-String -Path README.md -Pattern "CPU-only / offline mode"
+
+Verify AC1 (default model named):
+  Select-String -Path README.md -Pattern "Recommended default"
+
+Verify AC2 (hardware warning):
+  Select-String -Path README.md -Pattern "vary by hardware"
+
+Verify AC3 (no host privileges implied):
+  Select-String -Path README.md -Pattern "No Zoom host account"
+
+Verify Google cloud sections untouched:
+  Select-String -Path README.md -Pattern "google_api_key"
+
+---
+
+COMMAND OUTPUT RECORD
+---------------------
+
+> git diff --check
+(no output — no whitespace errors; exit code 0)
+
+> Select-String -Path README.md -Pattern "CPU-only / offline mode"
+README.md:178:## CPU-only / offline mode
+
+> Select-String -Path README.md -Pattern "Recommended default"
+README.md:228:| **`faster-whisper-base`** | 139 MB | ~288 MB | 0.0% | **Recommended default** |
+
+> Select-String -Path README.md -Pattern "vary by hardware"
+README.md:223:**Quality and latency vary by hardware** -- always verify on your target machine.
+README.md:272:- **Quality and latency vary by hardware.** The benchmark numbers above come
+
+> Select-String -Path README.md -Pattern "No Zoom host account"
+README.md:197:No Zoom host account or host privileges are needed. After models are downloaded,
+
+> Select-String -Path README.md -Pattern "google_api_key"
+README.md:166:  "google_api_key": "YOUR_KEY",    // from Google Cloud Console
