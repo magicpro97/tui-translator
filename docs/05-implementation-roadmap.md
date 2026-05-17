@@ -333,9 +333,8 @@ The project currently delivers in eight phases (Phase 0 through Phase 7). Each p
 
 ### Phase 7 — CPU Offline Provider (v2-cpu-offline milestone)
 
-Phase 7 extends the original six-phase roadmap. The delivery order above is now
-Phase 0 through Phase 7, with Phase 6 still required before Phase 7
-implementation work begins.
+Phase 7 is part of the current Phase 0 through Phase 7 delivery order, with
+Phase 6 still required before Phase 7 implementation work begins.
 
 **Goal:** Enable fully offline, CPU-only speech-to-text transcription using
 local Whisper models (tiny / base / small), expose a local Whisper STT
@@ -416,7 +415,9 @@ collected. See `docs/09-cpu-model-benchmark.md` for STT benchmark methodology,
 
 ## Dependency Map Summary
 
-The following shows which phases depend on which. A phase cannot start until all phases it depends on are complete.
+The following shows which phases depend on which. Implementation work for a phase
+cannot start until all phases it depends on are complete; research and benchmark
+evidence may be collected earlier when it does not change runtime behavior.
 
 ```
 Phase 0 (Skeleton)

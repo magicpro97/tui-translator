@@ -190,6 +190,28 @@ fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
     rows.join("\n")
 }
 
+fn assert_rendered_frame<'a>(
+    rendered: &'a str,
+    width: u16,
+    height: u16,
+    label: &str,
+) -> Vec<&'a str> {
+    let rows: Vec<&str> = rendered.split('\n').collect();
+    assert_eq!(
+        rows.len(),
+        height as usize,
+        "{label} must include exactly {height} terminal rows; got {rows:?}"
+    );
+    for (index, row) in rows.iter().enumerate() {
+        assert_eq!(
+            row.chars().count(),
+            width as usize,
+            "{label} row {index} must include exactly {width} terminal cells; got {row:?}"
+        );
+    }
+    rows
+}
+
 // ── SubtitlePane — 80×24 ─────────────────────────────────────────────────────
 
 #[test]
@@ -1101,7 +1123,7 @@ fn snapshot_help_overlay_narrow() {
 #[test]
 fn snapshot_lang_prompt_narrow() {
     let rendered = render_lang_prompt("ja", 40, 8);
-    let rows: Vec<&str> = rendered.split('\n').collect();
+    let rows = assert_rendered_frame(&rendered, 40, 8, "lang prompt at 40x8");
     assert!(!rendered.is_empty(), "lang prompt must render at 40×8");
     assert!(
         rows[0].trim().is_empty() && rows[6].trim().is_empty() && rows[7].trim().is_empty(),
@@ -1180,7 +1202,7 @@ fn full_ui_below_minimum_shows_fallback() {
 fn snapshot_full_ui_too_small_fallback() {
     // Below minimum — should show fallback, not panic.
     let rendered = render_full_ui(15, 5);
-    let rows: Vec<&str> = rendered.split('\n').collect();
+    let rows = assert_rendered_frame(&rendered, 15, 5, "full UI fallback at 15x5");
     assert!(
         rows[0].contains("Resize terminal"),
         "full UI fallback at 15×5 must render the resize message in the visible frame; got: {rows:?}"
