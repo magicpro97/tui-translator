@@ -423,5 +423,5 @@ back to `"google"`.
 | `local-stt feature not available` message | Your build does not include local STT | Download a release that lists `local-stt` in the release notes |
 | Subtitles lag or pile up | CPU cannot keep up with local STT | Reduce other CPU-heavy apps or switch back to `stt_provider: "google"` |
 | Very high CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to `70.0` or `80.0` |
-| RAM warning in the status bar | Model + Zoom are using too much RAM | Lower `ram_budget_mb`, or switch to `ggml-tiny.bin`, or use `stt_provider: "google"` |
+| RAM warning in the status bar | Model + Zoom are using too much RAM | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or use `stt_provider: "google"` |
 | No translation output | Local MT is not yet implemented | Keep `mt_provider: "google"` and supply a valid Google API key |

@@ -308,7 +308,7 @@ they are not selected by the app today.
 |---------|-------------|-----|
 | Subtitles lag or pile up | RTF > 1.0 — model too large for this CPU | Switch from `ggml-small.bin` to `ggml-base.bin` or `ggml-tiny.bin` |
 | High CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to 70–80 to throttle inference |
-| RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Lower the threshold or switch to `ggml-tiny.bin` |
+| RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or switch back to Google STT |
 | "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
 | No translation output | Local MT not yet implemented | Use `mt_provider = "google"` with a valid Google API key |
 
