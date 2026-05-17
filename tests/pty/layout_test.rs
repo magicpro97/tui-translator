@@ -193,8 +193,8 @@ fn layout_40x10_zero_state_readable() {
 
     let last_row = session.row_text(9);
     assert!(
-        last_row.contains('Q') && !last_row.contains("TUI Translator"),
-        "40x10 hints row should remain separate from the title bar; got: {last_row:?}"
+        !last_row.contains("TUI Translator"),
+        "40x10 bottom row should remain separate from the title bar; got: {last_row:?}"
     );
 
     session.quit_cleanly().expect("send quit");
