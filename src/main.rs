@@ -1307,7 +1307,7 @@ fn handle_audio_chunk(
     session_metrics
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .audio_seconds_sent += audio_secs;
+        .record_audio_seconds_sent(audio_secs);
     // Record STT usage in the shared CostCounter (issues #71–#76).
     // MT and TTS providers will call their respective record_* methods when wired.
     cost_counter.record_audio_seconds(audio_secs);

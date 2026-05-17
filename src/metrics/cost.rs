@@ -32,10 +32,18 @@ struct CostCounterState {
 
 impl CostCounterState {
     fn total_usd(&self) -> f64 {
-        let stt_cost = self.audio_seconds.max(0.0) * STT_USD_PER_SECOND;
+        let stt_cost = billable_audio_seconds(self.audio_seconds) * STT_USD_PER_SECOND;
         let mt_cost = self.translated_chars as f64 * MT_USD_PER_CHARACTER;
         let tts_cost = self.synthesized_chars as f64 * TTS_USD_PER_CHARACTER;
         stt_cost + mt_cost + tts_cost
+    }
+}
+
+pub(crate) fn billable_audio_seconds(seconds: f64) -> f64 {
+    if seconds.is_finite() && seconds > 0.0 {
+        seconds
+    } else {
+        0.0
     }
 }
 
@@ -73,6 +81,11 @@ impl CostCounter {
     ///
     /// Call this after each streaming chunk or recognition request.
     pub fn record_audio_seconds(&self, seconds: f64) {
+        let seconds = billable_audio_seconds(seconds);
+        if seconds == 0.0 {
+            return;
+        }
+
         self.state
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -257,10 +270,21 @@ mod tests {
     #[test]
     fn negative_audio_seconds_do_not_offset_positive_usage() {
         let c = CostCounter::new();
+        c.record_audio_seconds(100.0);
         c.record_audio_seconds(-325.0);
         c.record_translated_characters(10_000);
 
-        assert_eq!(c.current_estimate_usd(), 0.2);
+        assert!((c.current_estimate_usd() - 0.24).abs() < 1e-10);
+    }
+
+    #[test]
+    fn non_finite_audio_seconds_are_ignored_before_accumulation() {
+        let c = CostCounter::new();
+        c.record_audio_seconds(100.0);
+        c.record_audio_seconds(f64::NAN);
+        c.record_audio_seconds(f64::INFINITY);
+
+        assert!((c.current_estimate_usd() - 0.04).abs() < 1e-10);
     }
 
     // ── Warning threshold ─────────────────────────────────────────────────────

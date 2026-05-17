@@ -119,13 +119,19 @@ impl SessionMetrics {
     /// - Speech-to-Text: $0.006 per 15 seconds = $0.0004 per second
     /// - Translation:    $20 per 1 000 000 characters = $0.00002 per character
     ///
-    /// Each billable component is clamped to `0.0` before summing so that any
+    /// Each billable component is clamped before summing so that any
     /// floating-point drift or upstream counter anomaly never produces a
-    /// negative cost value or offsets a positive component (issue #195).
+    /// negative cost value.
     pub fn recalculate_cost(&mut self) {
-        let stt_cost = self.audio_seconds_sent.max(0.0) * 0.0004;
+        let stt_cost = cost::billable_audio_seconds(self.audio_seconds_sent) * 0.0004;
         let translate_cost = self.chars_translated as f64 * 0.00002;
         self.estimated_cost_usd = stt_cost + translate_cost;
+    }
+
+    /// Add audio duration that was sent to STT, ignoring invalid or negative
+    /// deltas before they can offset already-recorded usage.
+    pub fn record_audio_seconds_sent(&mut self, seconds: f64) {
+        self.audio_seconds_sent += cost::billable_audio_seconds(seconds);
     }
 
     /// Elapsed wall-clock seconds since `session_start`.
@@ -183,6 +189,29 @@ mod tests {
         };
         m.recalculate_cost();
         assert_eq!(m.estimated_cost_usd, 0.2);
+    }
+
+    #[test]
+    fn record_audio_seconds_sent_ignores_negative_deltas_before_accumulation() {
+        let mut m = SessionMetrics::default();
+        m.record_audio_seconds_sent(100.0);
+        m.record_audio_seconds_sent(-325.0);
+        m.recalculate_cost();
+
+        assert_eq!(m.audio_seconds_sent, 100.0);
+        assert_eq!(m.estimated_cost_usd, 0.04);
+    }
+
+    #[test]
+    fn record_audio_seconds_sent_ignores_non_finite_deltas() {
+        let mut m = SessionMetrics::default();
+        m.record_audio_seconds_sent(100.0);
+        m.record_audio_seconds_sent(f64::NAN);
+        m.record_audio_seconds_sent(f64::INFINITY);
+        m.recalculate_cost();
+
+        assert_eq!(m.audio_seconds_sent, 100.0);
+        assert_eq!(m.estimated_cost_usd, 0.04);
     }
 
     #[test]
