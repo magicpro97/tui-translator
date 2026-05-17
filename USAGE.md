@@ -377,12 +377,12 @@ What each setting does:
 ### Step E — Start the application and verify
 
 1. Start TUI Translator as usual (Step 4 of this guide).
-2. Look at the **status bar** at the bottom of the window. It should display
-   the STT provider as `local`.
+2. Look at the **status bar** at the bottom of the window. It should move into
+   a normal listening/processing state instead of showing a provider error.
 3. Join a Zoom meeting and wait for someone to speak. Subtitle lines should
    appear within a few seconds.
-4. Press **M** to open the metrics panel. The STT row shows the current
-   provider and response time.
+4. Press **M** to open the metrics panel and watch the latency, CPU, and RAM
+   values while a real call or audio fixture is running.
 
 ---
 
@@ -394,8 +394,9 @@ What each setting does:
 | 16 GB or more | `ggml-tiny.bin` | Current releases still load `tiny`; larger models need a future model-selection setting |
 
 > **RAM pressure on 8 GB machines:** If TUI Translator shows a RAM warning or
-> subtitles start lagging, switch to `ggml-tiny.bin`, or return to Google Cloud
-> STT (`stt_provider: "google"`).
+> subtitles start lagging, close memory-heavy apps, raise `ram_budget_mb` only
+> if it was set too low, or return to Google Cloud STT
+> (`stt_provider: "google"`).
 
 ---
 
@@ -425,3 +426,8 @@ back to `"google"`.
 | Very high CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to `70.0` or `80.0` |
 | RAM warning in the status bar | Model + Zoom are using too much RAM | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or use `stt_provider: "google"` |
 | No translation output | Local MT is not yet implemented | Keep `mt_provider: "google"` and supply a valid Google API key |
+
+> **Model license note:** The GGML Whisper files are downloaded from the
+> external whisper.cpp/Hugging Face source, not from this repository. Review the
+> model license and Hugging Face terms before downloading, sharing, or
+> redistributing model files.
