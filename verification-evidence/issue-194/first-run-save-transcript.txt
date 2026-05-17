@@ -1,0 +1,32 @@
+**********************
+PowerShell transcript start
+Start time: 20260517094219
+Username: <DOMAIN>\<USER>
+RunAs User: <DOMAIN>\<USER>
+Configuration Name: 
+Machine: <HOSTNAME> (Microsoft Windows NT 10.0.22631.0)
+Host Application: C:\Program Files\PowerShell\7\pwsh.dll -NoProfile -NoLogo -NoExit -Command try { Set-PSReadLineOption -PredictionSource None -BellStyle None -HistorySaveStyle SaveNothing -MaximumHistoryCount 0 } catch { try { Set-PSReadLineOption -HistorySaveStyle SaveNothing } catch {} }
+Process ID: 35808
+PSVersion: 7.5.4
+PSEdition: Core
+GitCommitId: 7.5.4
+OS: Microsoft Windows 10.0.22631
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+
+─── TUI Translator — Session Summary ───
+  Duration:        0:42
+  Subtitle pairs:  0
+  Audio processed: 0s
+  MT input chars:  0
+  Estimated cost:  no charges
+  TTS output:      off
+──────────────────────────────────────────
+**********************
+PowerShell transcript end
+End time: 20260517094302
+**********************

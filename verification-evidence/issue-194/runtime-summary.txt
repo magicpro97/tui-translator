@@ -1,0 +1,39 @@
+Issue #194 runtime evidence — home-directory config bootstrap
+
+Home directory used for proof: %REPO%\verification-evidence\issue-194\runtime-home-save-reload
+Expected saved config path: %REPO%\verification-evidence\issue-194\runtime-home-save-reload\.tui-translator\config.json
+Saved config exists: True
+Saved config JSON valid: True
+Saved config target_language: vi
+
+First-run save proof:
+- runtime-first-run-screen-stdout.txt captures a fresh first-run launch using a temp USERPROFILE.
+- First-Run Setup visible on fresh launch: True
+- Home config path visible on fresh launch: True
+- Pressing Enter in an interactive first-run launch created the config file under .tui-translator/config.json.
+- first-run-save-transcript.txt captures the completed interactive session summary after save and quit.
+
+Relaunch proof using saved home config:
+- Process exited on its own before 4s kill: False
+- First-Run Setup visible after relaunch: False
+- Saved language pair visible (ja-JP -> vi): True
+- Panic/abort observed: False
+- Stdout: verification-evidence\issue-194\runtime-reload-home-config-stdout.txt
+- Stderr: verification-evidence\issue-194\runtime-reload-home-config-stderr.txt
+
+TUI_TRANSLATOR_CONFIG override proof:
+- Override config path: verification-evidence\issue-194\runtime-override-config.json
+- Process exited on its own before 4s kill: False
+- First-Run Setup visible with explicit override: False
+- Override language pair visible (ja-JP -> en): True
+- Panic/abort observed: False
+- Stdout: verification-evidence\issue-194\runtime-config-override-stdout.txt
+- Stderr: verification-evidence\issue-194\runtime-config-override-stderr.txt
+
+Local verification commands:
+- cargo fmt --all -- --check: PASS
+- cargo test config_json_path: PASS
+- cargo test default_config_path_uses_home_directory: PASS
+- cargo test write_config_creates_parent_directory: PASS
+- cargo test config_save_persists_home_style_config: PASS
+- cargo clippy --all-targets -- -D warnings: PASS
