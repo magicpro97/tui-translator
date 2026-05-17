@@ -37,6 +37,8 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
+    ffi::{OsStr, OsString},
+    fs,
     io::{self, Write as IoWrite},
     path::{Path, PathBuf},
     sync::{
@@ -89,6 +91,36 @@ struct FinishMainArgs<'a> {
     cpu_gate: Arc<pipeline::cpu_gate::CpuGate>,
     /// RAM budget guard shared with the metrics publisher.
     memory_guard: Arc<MemoryGuard>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionExportFormat {
+    Srt,
+    Txt,
+}
+
+impl SessionExportFormat {
+    fn parse(value: &str) -> Result<Self> {
+        match value {
+            "srt" => Ok(Self::Srt),
+            "txt" => Ok(Self::Txt),
+            other => bail!("--export-format must be \"srt\" or \"txt\", got {other:?}"),
+        }
+    }
+
+    fn render(self, segments: &[session::TranscriptSegment]) -> String {
+        match self {
+            Self::Srt => session::export_srt(segments),
+            Self::Txt => session::export_txt(segments),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionExportArgs {
+    input: PathBuf,
+    output: PathBuf,
+    format: SessionExportFormat,
 }
 
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
@@ -431,6 +463,94 @@ fn write_audio_devices(
     Ok(())
 }
 
+fn parse_session_export_args_from<I>(args: I) -> Result<Option<SessionExportArgs>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut saw_export_arg = false;
+    let mut input = None;
+    let mut output = None;
+    let mut format = None;
+    let mut iter = args.into_iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--export-session") {
+            saw_export_arg = true;
+            input = Some(PathBuf::from(next_export_arg(
+                &mut iter,
+                "--export-session",
+            )?));
+        } else if arg == OsStr::new("--export-output") {
+            saw_export_arg = true;
+            output = Some(PathBuf::from(next_export_arg(
+                &mut iter,
+                "--export-output",
+            )?));
+        } else if arg == OsStr::new("--export-format") {
+            saw_export_arg = true;
+            let value = next_export_arg(&mut iter, "--export-format")?;
+            let value = value
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("--export-format must be valid UTF-8"))?;
+            format = Some(SessionExportFormat::parse(&value)?);
+        } else if saw_export_arg {
+            bail!("unknown session export argument {:?}", arg);
+        }
+    }
+
+    if !saw_export_arg {
+        return Ok(None);
+    }
+
+    Ok(Some(SessionExportArgs {
+        input: input.context("missing --export-session <session.jsonl>")?,
+        output: output.context("missing --export-output <path>")?,
+        format: format.context("missing --export-format <srt|txt>")?,
+    }))
+}
+
+fn next_export_arg(
+    iter: &mut impl Iterator<Item = OsString>,
+    flag: &'static str,
+) -> Result<OsString> {
+    let value = iter
+        .next()
+        .with_context(|| format!("missing value after {flag}"))?;
+    if value.to_string_lossy().starts_with("--") {
+        bail!("missing value after {flag}");
+    }
+    Ok(value)
+}
+
+fn run_session_export(args: &SessionExportArgs) -> Result<()> {
+    let contents = fs::read_to_string(&args.input)
+        .with_context(|| format!("failed to read session log {}", args.input.display()))?;
+    let segments = session::transcript_segments_from_jsonl(&contents)
+        .with_context(|| format!("failed to parse session log {}", args.input.display()))?;
+    let rendered = args.format.render(&segments);
+
+    if let Some(parent) = args
+        .output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create export directory {}", parent.display()))?;
+    }
+    fs::write(&args.output, rendered)
+        .with_context(|| format!("failed to write export {}", args.output.display()))?;
+
+    let mut stdout = io::stdout();
+    writeln!(
+        stdout,
+        "Exported {} transcript segment(s) to {}",
+        segments.len(),
+        args.output.display()
+    )
+    .context("failed to write export summary")?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     init_tracing();
 
@@ -438,6 +558,11 @@ fn main() -> Result<()> {
 
     if should_list_audio_devices() {
         print_audio_devices_to_stdout()?;
+        return Ok(());
+    }
+
+    if let Some(export_args) = parse_session_export_args_from(std::env::args_os().skip(1))? {
+        run_session_export(&export_args)?;
         return Ok(());
     }
 
@@ -2055,6 +2180,62 @@ mod tests {
         assert!(rendered.contains("leave capture_device blank"));
         assert!(rendered.contains("Speakers (Realtek Audio) (current Windows default)"));
         assert!(rendered.contains("Headphones (USB Audio)"));
+    }
+
+    #[test]
+    fn parse_session_export_args_accepts_required_flags() {
+        let parsed = parse_session_export_args_from(vec![
+            OsString::from("--export-session"),
+            OsString::from(r"C:\sessions\meeting.jsonl"),
+            OsString::from("--export-format"),
+            OsString::from("srt"),
+            OsString::from("--export-output"),
+            OsString::from(r"C:\exports\meeting.srt"),
+        ])
+        .unwrap()
+        .expect("export args should be detected");
+
+        assert_eq!(parsed.input, PathBuf::from(r"C:\sessions\meeting.jsonl"));
+        assert_eq!(parsed.output, PathBuf::from(r"C:\exports\meeting.srt"));
+        assert_eq!(parsed.format, SessionExportFormat::Srt);
+    }
+
+    #[test]
+    fn parse_session_export_args_requires_output_path() {
+        let error = parse_session_export_args_from(vec![
+            OsString::from("--export-session"),
+            OsString::from("meeting.jsonl"),
+            OsString::from("--export-format"),
+            OsString::from("txt"),
+        ])
+        .expect_err("missing output path should be rejected");
+
+        assert!(error.to_string().contains("--export-output"));
+    }
+
+    #[test]
+    fn run_session_export_writes_srt_from_jsonl() {
+        let temp = TempDir::new().unwrap();
+        let input = temp.path().join("meeting.jsonl");
+        let output = temp.path().join("meeting.srt");
+        fs::write(
+            &input,
+            include_str!("../tests/fixtures/session_log_v1.jsonl"),
+        )
+        .unwrap();
+
+        run_session_export(&SessionExportArgs {
+            input,
+            output: output.clone(),
+            format: SessionExportFormat::Srt,
+        })
+        .unwrap();
+
+        let exported = fs::read_to_string(output).unwrap();
+        assert!(exported.starts_with("1\n"));
+        assert!(exported.contains("00:00:00,500 --> 00:00:02,000"));
+        assert!(exported.contains("おはようございます"));
+        assert!(exported.contains("Xin chào buổi sáng"));
     }
 
     #[test]

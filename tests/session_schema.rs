@@ -1,11 +1,12 @@
 //! Contract tests for the versioned session JSONL schema (issue #224).
+//! Export tests for SRT and TXT output (issue #227).
 
 #[path = "../src/session/mod.rs"]
 mod session;
 
 use session::{
-    is_supported_schema_version, SessionHeader, SessionLogRecord, TranscriptSegment,
-    SESSION_LOG_SCHEMA_VERSION,
+    export_srt, export_txt, is_supported_schema_version, transcript_segments_from_jsonl,
+    SessionHeader, SessionLogRecord, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION,
 };
 
 const FIXTURE: &str = include_str!("fixtures/session_log_v1.jsonl");
@@ -35,6 +36,16 @@ fn fixture_jsonl_deserializes_into_header_and_segment() {
     assert_eq!(segment.stt_latency_ms, Some(900));
     assert_eq!(segment.mt_latency_ms, Some(260));
     assert_eq!(segment.end_to_end_latency_ms, Some(1300));
+}
+
+#[test]
+fn transcript_segments_from_jsonl_extracts_segments_only() {
+    let segments = transcript_segments_from_jsonl(FIXTURE).expect("fixture must export");
+
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].segment_id, 1);
+    assert_eq!(segments[0].source_text, "おはようございます");
+    assert_eq!(segments[0].target_text, "Xin chào buổi sáng");
 }
 
 #[test]
@@ -130,5 +141,169 @@ fn records_round_trip_with_expected_tagging_and_optional_omission() {
         serde_json::from_str::<SessionLogRecord>(&encoded_segment)
             .expect("segment must round-trip"),
         segment
+    );
+}
+
+// ── Export tests (issue #227) ─────────────────────────────────────────────────
+
+fn make_segment(
+    segment_id: u64,
+    start_ms: u64,
+    end_ms: u64,
+    src: &str,
+    tgt: &str,
+) -> TranscriptSegment {
+    TranscriptSegment {
+        schema_version: SESSION_LOG_SCHEMA_VERSION,
+        session_id: "test-session".to_string(),
+        segment_id,
+        sequence_number: segment_id,
+        finalized_at_unix_ms: 1_710_000_000_000 + segment_id,
+        audio_start_ms: start_ms,
+        audio_end_ms: end_ms,
+        source_text: src.to_string(),
+        target_text: tgt.to_string(),
+        source_language: "ja-JP".to_string(),
+        detected_source_language: None,
+        target_language: "vi".to_string(),
+        stt_provider: "google".to_string(),
+        mt_provider: "google".to_string(),
+        stt_confidence: None,
+        stt_is_final: true,
+        stt_latency_ms: None,
+        mt_latency_ms: None,
+        end_to_end_latency_ms: None,
+        audio_seconds_sent: 1.0,
+        chars_translated: 5,
+        estimated_cost_usd: 0.001,
+    }
+}
+
+#[test]
+fn export_srt_empty_session_produces_empty_string() {
+    let srt = export_srt(&[]);
+    assert!(
+        srt.is_empty(),
+        "empty session must produce empty SRT string, got: {srt:?}"
+    );
+}
+
+#[test]
+fn export_txt_empty_session_produces_empty_string() {
+    let txt = export_txt(&[]);
+    assert!(
+        txt.is_empty(),
+        "empty session must produce empty TXT string, got: {txt:?}"
+    );
+}
+
+#[test]
+fn export_srt_two_segments_have_indexes_one_and_two() {
+    let segments = vec![
+        make_segment(1, 500, 2_000, "おはようございます", "Xin chào buổi sáng"),
+        make_segment(2, 2_100, 4_000, "ありがとう", "Cảm ơn"),
+    ];
+    let srt = export_srt(&segments);
+
+    // Both indexes present
+    assert!(
+        srt.contains("\n1\n") || srt.starts_with("1\n"),
+        "index 1 missing:\n{srt}"
+    );
+    assert!(srt.contains("\n2\n"), "index 2 missing:\n{srt}");
+}
+
+#[test]
+fn export_srt_timestamps_are_valid_hh_mm_ss_mmm() {
+    // audio_start_ms=500 → 00:00:00,500, audio_end_ms=2000 → 00:00:02,000
+    let segments = vec![make_segment(1, 500, 2_000, "Hello", "Xin chào")];
+    let srt = export_srt(&segments);
+
+    assert!(
+        srt.contains("00:00:00,500 --> 00:00:02,000"),
+        "expected SRT timestamp line not found:\n{srt}"
+    );
+}
+
+#[test]
+fn export_srt_timestamp_wraps_hours_correctly() {
+    // 3_661_500 ms = 1h 1m 1s 500ms
+    let segments = vec![make_segment(1, 3_661_500, 3_662_000, "A", "B")];
+    let srt = export_srt(&segments);
+    assert!(
+        srt.contains("01:01:01,500 --> 01:01:02,000"),
+        "hour-wrapping timestamp wrong:\n{srt}"
+    );
+}
+
+#[test]
+fn export_srt_two_segments_contain_source_and_target_text() {
+    let segments = vec![
+        make_segment(1, 500, 2_000, "おはようございます", "Xin chào buổi sáng"),
+        make_segment(2, 2_100, 4_000, "ありがとう", "Cảm ơn"),
+    ];
+    let srt = export_srt(&segments);
+
+    assert!(
+        srt.contains("おはようございます"),
+        "first source text missing"
+    );
+    assert!(
+        srt.contains("Xin chào buổi sáng"),
+        "first target text missing"
+    );
+    assert!(srt.contains("ありがとう"), "second source text missing");
+    assert!(srt.contains("Cảm ơn"), "second target text missing");
+}
+
+#[test]
+fn export_txt_two_segments_contain_src_and_tgt_blocks() {
+    let segments = vec![
+        make_segment(1, 500, 2_000, "おはようございます", "Xin chào buổi sáng"),
+        make_segment(2, 2_100, 4_000, "ありがとう", "Cảm ơn"),
+    ];
+    let txt = export_txt(&segments);
+
+    assert!(
+        txt.contains("[SRC] おはようございます"),
+        "[SRC] first segment missing:\n{txt}"
+    );
+    assert!(
+        txt.contains("[TGT] Xin chào buổi sáng"),
+        "[TGT] first segment missing:\n{txt}"
+    );
+    assert!(
+        txt.contains("[SRC] ありがとう"),
+        "[SRC] second segment missing:\n{txt}"
+    );
+    assert!(
+        txt.contains("[TGT] Cảm ơn"),
+        "[TGT] second segment missing:\n{txt}"
+    );
+}
+
+#[test]
+fn export_txt_uses_src_and_tgt_prefixes() {
+    let segments = vec![make_segment(1, 0, 1_000, "Source text", "Target text")];
+    let txt = export_txt(&segments);
+
+    assert!(txt.contains("[SRC]"), "TXT must contain [SRC] prefix");
+    assert!(txt.contains("[TGT]"), "TXT must contain [TGT] prefix");
+}
+
+#[test]
+fn export_srt_fixture_segment_has_correct_timestamp() {
+    // Reproduce the fixture values: audio_start_ms=500, audio_end_ms=2000
+    let fixture_json = r#"{"record_type":"transcript_segment","schema_version":1,"session_id":"fixture-session-001","segment_id":1,"sequence_number":42,"finalized_at_unix_ms":1710000002100,"audio_start_ms":500,"audio_end_ms":2000,"source_text":"おはようございます","target_text":"Xin chào buổi sáng","source_language":"ja-JP","detected_source_language":"ja","target_language":"vi","stt_provider":"google","mt_provider":"google","stt_confidence":0.94,"stt_is_final":true,"stt_latency_ms":900,"mt_latency_ms":260,"end_to_end_latency_ms":1300,"audio_seconds_sent":2.0,"chars_translated":9,"estimated_cost_usd":0.00098}"#;
+    let record: SessionLogRecord = serde_json::from_str(fixture_json).unwrap();
+    let SessionLogRecord::TranscriptSegment(seg) = record else {
+        panic!("must be segment")
+    };
+
+    let srt = export_srt(&[seg]);
+    assert!(srt.starts_with("1\n"), "SRT index must start at 1");
+    assert!(
+        srt.contains("00:00:00,500 --> 00:00:02,000"),
+        "fixture SRT timestamp wrong:\n{srt}"
     );
 }
