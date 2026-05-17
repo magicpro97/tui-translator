@@ -1,10 +1,10 @@
 **********************
 PowerShell transcript start
 Start time: 20260517094219
-Username: FSOFT.FPT.VN\linhnt102
-RunAs User: FSOFT.FPT.VN\linhnt102
+Username: <DOMAIN>\<USER>
+RunAs User: <DOMAIN>\<USER>
 Configuration Name: 
-Machine: CPP00213593D (Microsoft Windows NT 10.0.22631.0)
+Machine: <HOSTNAME> (Microsoft Windows NT 10.0.22631.0)
 Host Application: C:\Program Files\PowerShell\7\pwsh.dll -NoProfile -NoLogo -NoExit -Command try { Set-PSReadLineOption -PredictionSource None -BellStyle None -HistorySaveStyle SaveNothing -MaximumHistoryCount 0 } catch { try { Set-PSReadLineOption -HistorySaveStyle SaveNothing } catch {} }
 Process ID: 35808
 PSVersion: 7.5.4

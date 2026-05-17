@@ -1,7 +1,7 @@
 Issue #194 runtime evidence — home-directory config bootstrap
 
-Home directory used for proof: C:\Users\linhnt102\tt-wt-194-config-bootstrap\verification-evidence\issue-194\runtime-home-save-reload
-Expected saved config path: C:\Users\linhnt102\tt-wt-194-config-bootstrap\verification-evidence\issue-194\runtime-home-save-reload\.tui-translator\config.json
+Home directory used for proof: %REPO%\verification-evidence\issue-194\runtime-home-save-reload
+Expected saved config path: %REPO%\verification-evidence\issue-194\runtime-home-save-reload\.tui-translator\config.json
 Saved config exists: True
 Saved config JSON valid: True
 Saved config target_language: vi
