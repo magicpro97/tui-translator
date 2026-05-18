@@ -20,6 +20,32 @@ use std::sync::{
 use std::time::Duration;
 use tokio::sync::watch;
 
+mod paths;
+
+#[allow(dead_code)]
+pub const CONFIG_DIR_OVERRIDE_ENV: &str = paths::CONFIG_DIR_OVERRIDE_ENV;
+
+/// Return the user's home directory.
+pub fn home_dir() -> Result<PathBuf> {
+    paths::home_dir()
+}
+
+/// Return the default configuration file path under the per-user config directory.
+pub fn default_config_path() -> Result<PathBuf> {
+    paths::default_config_path()
+}
+
+/// Return the default transcript session directory under the per-user config directory.
+pub fn default_sessions_dir() -> Result<PathBuf> {
+    paths::default_sessions_dir()
+}
+
+/// Return the default audio archive directory under the per-user config directory.
+#[allow(dead_code)]
+pub fn default_audio_archive_dir() -> Result<PathBuf> {
+    paths::default_audio_archive_dir()
+}
+
 const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
 const DEFAULT_MIN_SPEECH_MS: u32 = 100;
 const DEFAULT_SPEECH_PAD_MS: u32 = 300;
@@ -39,14 +65,6 @@ pub const DEFAULT_PIPELINE_IDLE_MIN_MS: u32 = 500;
 /// Maximum time (ms) a partial sentence fragment is held before force-flush.
 pub const DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS: u64 = 4_000;
 static CONFIG_TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
-const APP_CONFIG_DIR_NAME: &str = "tui-translator";
-
-/// Environment override for the default config directory.
-///
-/// `TUI_TRANSLATOR_CONFIG` still takes precedence for a full file-path override;
-/// this lower-level directory override exists for tests and managed deployments
-/// that need first-run/onboarding semantics without touching the real profile.
-pub const CONFIG_DIR_OVERRIDE_ENV: &str = "TUI_TRANSLATOR_CONFIG_DIR";
 
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,7 +220,7 @@ pub struct SessionStoreConfig {
 
     /// Directory where JSONL logs are written.
     ///
-    /// `None` uses `%USERPROFILE%\.tui-translator\sessions\`.
+    /// `None` uses the `sessions/` subdirectory under the per-user config directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directory: Option<String>,
 }
@@ -253,7 +271,7 @@ pub struct AudioArchiveConfig {
 
     /// Directory where per-session WAV files are written.
     ///
-    /// `None` uses `%USERPROFILE%\.tui-translator\audio-archive\`.
+    /// `None` uses the `audio-archive/` subdirectory under the per-user config directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directory: Option<String>,
 
@@ -768,50 +786,6 @@ pub fn apply_editor_defaults(config_path: &Path, cfg: &mut AppConfig) -> Result<
         );
     }
     Ok(())
-}
-
-/// Return the user's home directory.
-pub fn home_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-    if let Some(path) = std::env::var_os("HOME").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-    bail!("could not resolve a home directory from USERPROFILE or HOME");
-}
-
-/// Return the default configuration directory for this application.
-///
-/// The path is derived with the `directories` crate so it follows OS
-/// conventions (`%APPDATA%` on Windows, XDG config on Linux, and
-/// `Library/Application Support` on macOS) instead of hand-rolling a home-dir
-/// path. `TUI_TRANSLATOR_CONFIG_DIR` can override the directory while preserving
-/// the existing full-path `TUI_TRANSLATOR_CONFIG` startup hook in `main`.
-pub fn default_config_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV).filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-
-    let base_dirs =
-        directories::BaseDirs::new().context("could not resolve an OS config directory")?;
-    Ok(base_dirs.config_dir().join(APP_CONFIG_DIR_NAME))
-}
-
-/// Return the default configuration file path under the user's home directory.
-pub fn default_config_path() -> Result<PathBuf> {
-    Ok(default_config_dir()?.join("config.json"))
-}
-
-/// Return the default transcript session directory under the user's config directory.
-pub fn default_sessions_dir() -> Result<PathBuf> {
-    Ok(default_config_dir()?.join("sessions"))
-}
-
-/// Return the default audio archive directory under the user's config directory.
-#[allow(dead_code)]
-pub fn default_audio_archive_dir() -> Result<PathBuf> {
-    Ok(default_config_dir()?.join("audio-archive"))
 }
 
 /// Load configuration from `path` and report whether the file existed.
@@ -1755,7 +1729,7 @@ mod tests {
         let expected = directories::BaseDirs::new()
             .expect("test host must expose an OS config directory")
             .config_dir()
-            .join(APP_CONFIG_DIR_NAME)
+            .join("tui-translator")
             .join("config.json");
 
         let path = default_config_path().unwrap();

@@ -1306,7 +1306,7 @@ fn main() -> Result<()> {
         overwrite_device_name(&state.device_name, "first-run setup required");
         tracing::info!(
             path = %cfg_path.display(),
-            "home config missing; opening first-run setup"
+            "per-user config missing; opening first-run setup"
         );
     }
     if config_recovery_required {
@@ -1920,11 +1920,12 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 /// Resolution order:
 /// 1. `TUI_TRANSLATOR_CONFIG` environment variable — allows the soak runner
 ///    (and other callers) to inject a temporary configuration without touching
-///    the user's home directory.
-/// 2. `~/.tui-translator/config.json`.
+///    the user's profile.
+/// 2. The OS-specific per-user config directory from `directories::BaseDirs`
+///    (or `TUI_TRANSLATOR_CONFIG_DIR`) joined with `config.json`.
 /// 3. The directory that contains the running executable joined with
-///    `config.json` as a legacy fallback when the home directory cannot be
-///    resolved.
+///    `config.json` as a legacy fallback when the OS config directory cannot
+///    be resolved.
 /// 4. The literal string `"config.json"` in the current working directory as a
 ///    last resort.
 fn config_json_path() -> PathBuf {
@@ -2001,7 +2002,7 @@ fn bootstrap_legacy_config_if_needed(target_path: &Path) -> Result<()> {
     tracing::info!(
         from = %legacy_path.display(),
         to = %target_path.display(),
-        "migrated executable-side config to home directory"
+        "migrated executable-side config to per-user config directory"
     );
     Ok(())
 }

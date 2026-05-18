@@ -76,7 +76,7 @@ fn quit_onboarding(session: &mut PtySession) {
 }
 
 #[test]
-fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
+fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
     let fake_home = TempDir::new().expect("temp home");
     let home_str = fake_home
         .path()
