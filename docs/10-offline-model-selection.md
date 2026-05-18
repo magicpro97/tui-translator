@@ -213,11 +213,13 @@ For a user starting from scratch:
    runtime fallback.  For no-cloud-key offline use, leave local MT disabled
    until OPUS-MT is implemented and the §4 gates pass.
 
-3. **Enable local MT only after the gates in §4 pass:**
-   When issue #218 ships model download/checksum/version management for the
-   `LocalOpusMtProvider`, the first-run experience will offer a model download
-   prompt.  Do not manually drop ONNX files into the model directory until the
-   integration is implemented.
+3. **Install local MT from a verified manifest:**
+   Use `tui-translator.exe --install-local-mt-model <manifest.json>` first to
+   review the model name, version, license, source URL, size, and destination.
+   Re-run with `--yes` to download.  The installer resumes `<file>.part`
+   downloads, checks free disk space, verifies every SHA-256, quarantines
+   corrupt files, and writes the installed `manifest.json` for version/upgrade
+   checks.
 
 4. **On 8 GB machines — watch Task Manager:**
    If system RAM drops below ~1 GB free while Zoom is running, switch back to

@@ -1,7 +1,8 @@
 //! Local on-device provider infrastructure.
 //!
-//! This module contains the **model-cache layer** (issue #212) and local
-//! Whisper STT backend (issue #213), and local OPUS-MT backend (issue #217).
+//! This module contains the **model-cache layer** (issue #212), local
+//! Whisper STT backend (issue #213), local OPUS-MT backend (issue #217), and
+//! manifest-driven local model installation (issue #218).
 //!
 //! # Responsibilities (issue #212)
 //!
@@ -24,12 +25,11 @@
 //!   compiled with `local-stt`; otherwise a phase-gate stub.
 //! * [`LocalOpusMtProvider`] — on-device OPUS-MT implementation when compiled
 //!   with `local-mt`; otherwise a phase-gate stub.
+//! * [`install_model_bundle`] — resumable, checksum-verified model bundle
+//!   installer for exported ONNX bundles.
 //!
 //! # Non-goals
 //!
-//! * **No model downloading** — the cache layer only manages and verifies
-//!   files already present on disk.  A dedicated download command (outside
-//!   this module) will call the download URL from [`ModelSpec`].
 //! * **No model binaries** — model `.bin` files are never committed to the
 //!   repository.
 
@@ -45,8 +45,14 @@ use crate::config::home_dir;
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
 mod inference_priority;
+mod model_download;
 mod mt;
 
+#[allow(unused_imports)]
+pub use model_download::{
+    install_model_bundle, ModelBundleFile, ModelBundleManifest, ModelDownloadError,
+    ModelInstallReport, INSTALLED_MANIFEST_FILE,
+};
 #[allow(unused_imports)]
 pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
 
