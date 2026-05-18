@@ -1,7 +1,7 @@
 //! Local on-device provider infrastructure.
 //!
 //! This module contains the **model-cache layer** (issue #212) and local
-//! Whisper STT backend (issue #213).
+//! Whisper STT backend (issue #213), and local OPUS-MT backend (issue #217).
 //!
 //! # Responsibilities (issue #212)
 //!
@@ -22,6 +22,8 @@
 //!   [`ModelCacheError::MissingModel`] when the file is absent.
 //! * [`LocalWhisperSttProvider`] — on-device Whisper STT implementation when
 //!   compiled with `local-stt`; otherwise a phase-gate stub.
+//! * [`LocalOpusMtProvider`] — on-device OPUS-MT implementation when compiled
+//!   with `local-mt`; otherwise a phase-gate stub.
 //!
 //! # Non-goals
 //!
@@ -43,6 +45,10 @@ use crate::config::home_dir;
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
 mod inference_priority;
+mod mt;
+
+#[allow(unused_imports)]
+pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
 
 // ── Model identifier ─────────────────────────────────────────────────────────
 
