@@ -15,6 +15,8 @@ use sysinfo::Disks;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
+use super::ModelSpec;
+
 /// File name written after a successful bundle installation.
 pub const INSTALLED_MANIFEST_FILE: &str = "manifest.json";
 
@@ -128,6 +130,27 @@ pub struct ModelBundleFile {
     pub size_bytes: u64,
     /// Expected lower-case SHA-256 hex digest.
     pub sha256: String,
+}
+
+/// Build a downloadable bundle manifest for a built-in Whisper STT model.
+///
+/// The manifest installs into the model cache root, matching the path expected
+/// by [`super::model_file_path`]. The installed `manifest.json` records the
+/// verified model file and SHA for packaging/prefetch evidence.
+pub fn stt_model_bundle_manifest(spec: &ModelSpec) -> ModelBundleManifest {
+    ModelBundleManifest {
+        id: format!("whisper-{}", spec.id.display_name()),
+        display_name: format!("Whisper {} STT model", spec.id.display_name()),
+        version: spec.sha256[..12].to_string(),
+        license: "MIT".to_string(),
+        source_url: spec.download_url.to_string(),
+        files: vec![ModelBundleFile {
+            relative_path: spec.file_name.to_string(),
+            download_url: spec.download_url.to_string(),
+            size_bytes: spec.size_bytes,
+            sha256: spec.sha256.to_string(),
+        }],
+    }
 }
 
 impl ModelBundleFile {
@@ -769,6 +792,26 @@ mod tests {
         assert!(preview.contains("Apache-2.0"));
         assert!(preview.contains("Download size"));
         assert!(preview.contains("OPUS-MT ja->vi"));
+    }
+
+    #[test]
+    fn stt_model_bundle_manifest_targets_cache_file() {
+        let spec = ModelSpec {
+            id: super::super::ModelId::Tiny,
+            file_name: "ggml-tiny.bin",
+            download_url: "https://example.com/ggml-tiny.bin",
+            sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            size_bytes: 42,
+        };
+
+        let manifest = stt_model_bundle_manifest(&spec);
+
+        assert_eq!(manifest.id, "whisper-tiny");
+        assert_eq!(manifest.version, "0123456789ab");
+        assert_eq!(manifest.files[0].relative_path, "ggml-tiny.bin");
+        assert_eq!(manifest.files[0].sha256, spec.sha256);
+        assert_eq!(manifest.total_size_bytes(), spec.size_bytes);
+        manifest.validate().unwrap();
     }
 
     #[test]

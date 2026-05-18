@@ -26,7 +26,7 @@
 //! * [`LocalOpusMtProvider`] — on-device OPUS-MT implementation when compiled
 //!   with `local-mt`; otherwise a phase-gate stub.
 //! * [`install_model_bundle`] — resumable, checksum-verified model bundle
-//!   installer for exported ONNX bundles.
+//!   installer for local STT and exported ONNX MT bundles.
 //!
 //! # Non-goals
 //!
@@ -50,8 +50,8 @@ mod mt;
 
 #[allow(unused_imports)]
 pub use model_download::{
-    install_model_bundle, ModelBundleFile, ModelBundleManifest, ModelDownloadError,
-    ModelInstallReport, INSTALLED_MANIFEST_FILE,
+    install_model_bundle, stt_model_bundle_manifest, ModelBundleFile, ModelBundleManifest,
+    ModelDownloadError, ModelInstallReport, INSTALLED_MANIFEST_FILE,
 };
 #[allow(unused_imports)]
 pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
@@ -85,6 +85,18 @@ pub enum ModelId {
 }
 
 impl ModelId {
+    /// Built-in Whisper model identifiers accepted by local STT configuration.
+    pub const ALL: [Self; 8] = [
+        ModelId::TinyEn,
+        ModelId::Tiny,
+        ModelId::BaseEn,
+        ModelId::Base,
+        ModelId::SmallEn,
+        ModelId::Small,
+        ModelId::MediumEn,
+        ModelId::Medium,
+    ];
+
     /// Human-readable name used in log messages and error diagnostics.
     pub fn display_name(self) -> &'static str {
         match self {
@@ -96,6 +108,21 @@ impl ModelId {
             ModelId::Small => "small",
             ModelId::MediumEn => "medium.en",
             ModelId::Medium => "medium",
+        }
+    }
+
+    /// Parse a model identifier accepted by local STT prefetch commands.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "tiny.en" => Some(ModelId::TinyEn),
+            "tiny" => Some(ModelId::Tiny),
+            "base.en" => Some(ModelId::BaseEn),
+            "base" => Some(ModelId::Base),
+            "small.en" => Some(ModelId::SmallEn),
+            "small" => Some(ModelId::Small),
+            "medium.en" => Some(ModelId::MediumEn),
+            "medium" => Some(ModelId::Medium),
+            _ => None,
         }
     }
 }
@@ -815,6 +842,14 @@ mod tests {
         assert_eq!(ModelId::TinyEn.display_name(), "tiny.en");
         assert_eq!(ModelId::Base.display_name(), "base");
         assert_eq!(ModelId::MediumEn.display_name(), "medium.en");
+    }
+
+    #[test]
+    fn model_id_parse_accepts_builtin_ids() {
+        assert_eq!(ModelId::parse("tiny.en"), Some(ModelId::TinyEn));
+        assert_eq!(ModelId::parse("base"), Some(ModelId::Base));
+        assert_eq!(ModelId::parse("medium"), Some(ModelId::Medium));
+        assert_eq!(ModelId::parse("large"), None);
     }
 
     #[test]
