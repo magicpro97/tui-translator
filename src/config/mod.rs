@@ -9,14 +9,14 @@
 use anyhow::{bail, Context, Result};
 use notify::{recommended_watcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::io::Write as _;
+use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::watch;
 
 const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
@@ -37,6 +37,7 @@ pub const DEFAULT_PIPELINE_IDLE_FLUSH_MS: u64 = 600;
 pub const DEFAULT_PIPELINE_IDLE_MIN_MS: u32 = 500;
 /// Maximum time (ms) a partial sentence fragment is held before force-flush.
 pub const DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS: u64 = 4_000;
+static CONFIG_TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -902,13 +903,8 @@ pub fn write_config(path: &Path, cfg: &AppConfig) -> Result<()> {
 
     let payload =
         serde_json::to_string_pretty(cfg).context("failed to serialize config as JSON")? + "\n";
-    let tmp_path = temporary_config_path(path, parent)?;
+    let (tmp_path, mut tmp_file) = create_temporary_config_file(path, parent)?;
     let write_result = (|| -> Result<()> {
-        let mut tmp_file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp_path)
-            .with_context(|| format!("failed to create temporary config {}", tmp_path.display()))?;
         tmp_file
             .write_all(payload.as_bytes())
             .with_context(|| format!("failed to write temporary config {}", tmp_path.display()))?;
@@ -916,17 +912,11 @@ pub fn write_config(path: &Path, cfg: &AppConfig) -> Result<()> {
             .sync_all()
             .with_context(|| format!("failed to flush temporary config {}", tmp_path.display()))?;
         drop(tmp_file);
-        replace_config_file(&tmp_path, path)
+        replace_config_file(&tmp_path, path, parent)
     })();
 
     if let Err(error) = write_result {
-        if let Err(cleanup_error) = std::fs::remove_file(&tmp_path) {
-            tracing::warn!(
-                path = %tmp_path.display(),
-                error = %cleanup_error,
-                "failed to remove temporary config after write failure"
-            );
-        }
+        cleanup_temporary_config(&tmp_path);
         return Err(error);
     }
 
@@ -934,21 +924,56 @@ pub fn write_config(path: &Path, cfg: &AppConfig) -> Result<()> {
     Ok(())
 }
 
+fn create_temporary_config_file(path: &Path, parent: &Path) -> Result<(PathBuf, std::fs::File)> {
+    const MAX_ATTEMPTS: usize = 128;
+
+    for _ in 0..MAX_ATTEMPTS {
+        let tmp_path = temporary_config_path(path, parent)?;
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+        {
+            Ok(file) => return Ok((tmp_path, file)),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("failed to create temporary config {}", tmp_path.display())
+                });
+            }
+        }
+    }
+
+    bail!(
+        "failed to create unique temporary config next to {} after {MAX_ATTEMPTS} attempts",
+        path.display()
+    )
+}
+
+fn cleanup_temporary_config(tmp_path: &Path) {
+    if tmp_path.exists() {
+        if let Err(cleanup_error) = std::fs::remove_file(tmp_path) {
+            tracing::warn!(
+                path = %tmp_path.display(),
+                error = %cleanup_error,
+                "failed to remove temporary config after write failure"
+            );
+        }
+    }
+}
+
 fn temporary_config_path(path: &Path, parent: &Path) -> Result<PathBuf> {
     let mut file_name = path
         .file_name()
         .context("config path must include a file name")?
         .to_os_string();
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
+    let suffix = CONFIG_TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
     file_name.push(format!(".{}.{}.tmp", std::process::id(), suffix));
     Ok(parent.join(file_name))
 }
 
 #[cfg(windows)]
-fn replace_config_file(tmp_path: &Path, target_path: &Path) -> Result<()> {
+fn replace_config_file(tmp_path: &Path, target_path: &Path, _parent: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
@@ -983,14 +1008,20 @@ fn replace_config_file(tmp_path: &Path, target_path: &Path) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn replace_config_file(tmp_path: &Path, target_path: &Path) -> Result<()> {
+fn replace_config_file(tmp_path: &Path, target_path: &Path, parent: &Path) -> Result<()> {
     std::fs::rename(tmp_path, target_path).with_context(|| {
         format!(
             "failed to replace {} with {}",
             target_path.display(),
             tmp_path.display()
         )
-    })
+    })?;
+    let parent_dir = std::fs::File::open(parent)
+        .with_context(|| format!("failed to open config directory {}", parent.display()))?;
+    parent_dir
+        .sync_all()
+        .with_context(|| format!("failed to flush config directory {}", parent.display()))?;
+    Ok(())
 }
 
 /// Start a background thread that watches `path` for file-system changes.
