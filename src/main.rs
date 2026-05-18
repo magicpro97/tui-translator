@@ -241,6 +241,7 @@ enum RuntimeMtProvider {
 }
 
 impl providers::MtProvider for RuntimeMtProvider {
+    #[tracing::instrument(skip_all, level = "trace", fields(provider = "runtime-mt"))]
     async fn translate(
         &self,
         text: &str,
@@ -266,6 +267,7 @@ enum RuntimeTtsProvider {
 }
 
 impl providers::TtsProvider for RuntimeTtsProvider {
+    #[tracing::instrument(skip_all, level = "trace", fields(provider = "runtime-tts"))]
     async fn synthesise(
         &self,
         text: &str,
@@ -286,6 +288,7 @@ impl providers::TtsProvider for RuntimeTtsProvider {
 struct DisabledTtsProvider;
 
 impl providers::TtsProvider for DisabledTtsProvider {
+    #[tracing::instrument(skip_all, level = "trace", fields(provider = "disabled-tts"))]
     async fn synthesise(
         &self,
         _text: &str,
@@ -1199,12 +1202,12 @@ fn main() -> Result<()> {
                 let google_api_key = cfg_snapshot.google_api_key.as_deref();
                 let source_language = Arc::clone(&state.source_language);
 
-                // Issue #230 + #214: shared flag read by the CPU gate. It starts
-                // true only for configured local STT, then flips true if Google
-                // falls back to local Whisper at runtime.
-                let provider_is_local = Arc::new(AtomicBool::new(
-                    cfg_snapshot.stt_provider == "local" || cfg_snapshot.mt_provider == "local",
-                ));
+                // Issue #230 + #214: shared STT-local flag read by the CPU gate.
+                // It starts true only for configured local STT, then flips true
+                // if Google falls back to local Whisper at runtime. Local MT does
+                // not drop audio before Google STT has a chance to transcribe it.
+                let provider_is_local =
+                    Arc::new(AtomicBool::new(cfg_snapshot.stt_provider == "local"));
                 let local_unavailable_is_fatal = cfg_snapshot.stt_provider == "google"
                     && cfg_snapshot.stt_fallback_policy == "local";
 
@@ -1251,6 +1254,13 @@ fn main() -> Result<()> {
                     Ok(p) => p,
                     Err(err) => {
                         tracing::error!("failed to create MT provider: {err}");
+                        let provider_msg = format!("Machine translation unavailable: {err}");
+                        *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                            metrics::SttState::Error(provider_msg.clone());
+                        *state
+                            .pipeline_error_msg
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
                         spawn_metrics_only_audio_task(&rt, stream, &state);
                         orchestrator_join = None;
                         return finish_main(
@@ -1912,9 +1922,33 @@ fn missing_google_api_key_error(cfg: &config::AppConfig) -> Option<String> {
     }
 
     (!requires_key.is_empty()).then(|| {
+        let verb = if requires_key.len() == 1 {
+            "requires"
+        } else {
+            "require"
+        };
+        let mut actions = vec!["add google_api_key".to_string()];
+        let mut local_switches = Vec::new();
+        if cfg.stt_provider == "google" {
+            local_switches.push("stt_provider");
+        }
+        if cfg.mt_provider == "google" {
+            local_switches.push("mt_provider");
+        }
+        if !local_switches.is_empty() {
+            actions.push(format!(
+                "switch {} to \"local\"",
+                local_switches.join(" and ")
+            ));
+        }
+        if cfg.tts_enabled {
+            actions.push("disable translated audio".to_string());
+        }
+
         format!(
-            "{} require google_api_key. Add google_api_key, switch those providers to \"local\", or disable translated audio, then save and restart.",
-            requires_key.join(" and ")
+            "{} {verb} google_api_key. {}, then save and restart.",
+            requires_key.join(" and "),
+            actions.join(", or ")
         )
     })
 }
@@ -3148,7 +3182,22 @@ mod tests {
             .expect("local STT with Google MT/TTS should require google_api_key");
 
         assert!(msg.contains("Google Translation"));
+        assert!(msg.contains("Google Translation requires google_api_key"));
+        assert!(msg.contains("switch mt_provider to \"local\""));
         assert!(msg.contains("google_api_key"));
+    }
+
+    #[test]
+    fn missing_google_api_key_error_gives_tts_specific_action() {
+        let mut cfg = config::AppConfig::default();
+        cfg.tts_enabled = true;
+
+        let msg = missing_google_api_key_error(&cfg)
+            .expect("Google providers with TTS should require google_api_key");
+
+        assert!(msg.contains("Google STT and Google Translation and Google TTS require"));
+        assert!(msg.contains("switch stt_provider and mt_provider to \"local\""));
+        assert!(msg.contains("disable translated audio"));
     }
 
     #[test]

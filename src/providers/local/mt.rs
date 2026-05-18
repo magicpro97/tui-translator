@@ -231,6 +231,7 @@ impl MtProvider for LocalOpusMtProvider {
     /// translation.  This intentionally differs from Google MT, because the
     /// local provider should not spin up model calls for empty subtitle
     /// fragments.
+    #[tracing::instrument(skip_all, level = "trace", fields(provider = "local-opus-mt"))]
     async fn translate(
         &self,
         text: &str,
@@ -295,13 +296,13 @@ fn missing_model_file(path: &Path, hint: &str) -> ProviderError {
 #[cfg(feature = "local-mt")]
 impl LocalOpusMtEngine {
     fn load(pair: OpusMtLanguagePair, model_dir: &Path) -> Result<Self, ProviderError> {
-        ensure_ort_initialized(model_dir)?;
-
         let encoder_path = required_file(model_dir, ENCODER_ONNX)?;
         let decoder_path = required_file(model_dir, DECODER_ONNX)?;
         let source_spm_path = required_file(model_dir, SOURCE_SPM)?;
         let target_spm_path = required_file(model_dir, TARGET_SPM)?;
         let vocab_path = required_file(model_dir, VOCAB_JSON)?;
+
+        ensure_ort_initialized(model_dir)?;
 
         let source_tokenizer = SentencePieceProcessor::open(&source_spm_path).map_err(|e| {
             ProviderError::ServiceUnavailable(format!(
