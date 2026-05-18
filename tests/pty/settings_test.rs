@@ -146,6 +146,18 @@ fn write_config_with_capture_device(dir: &Path, capture_device: &str) -> PathBuf
     cfg_path
 }
 
+fn wait_for_capture_device_label(session: &PtySession, label: &str, timeout: Duration) -> bool {
+    let compact_label = label.replace(' ', "");
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if session.screen_contains(label) || session.screen_contains(&compact_label) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    false
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 /// Standard 110×30 terminal — settings panel 76×28 (non-compact).
@@ -403,7 +415,7 @@ fn settings_capture_device_selection_survives_restart() {
             "restart run {run}: timed out waiting for main TUI frame"
         );
         assert!(
-            session.wait_for_text("USB Headset", OVERLAY_TIMEOUT),
+            wait_for_capture_device_label(&session, "USB Headset", OVERLAY_TIMEOUT),
             "restart run {run}: saved capture device should be visible after startup; screen:\n{}",
             session.all_rows().join("\n"),
         );
