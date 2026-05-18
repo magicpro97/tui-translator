@@ -2785,6 +2785,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_config_editor_shows_first_run_entry_point() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Onboarding,
+        );
+
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("First-Run Setup"),
+            "first-run editor title should be visible; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("Save your initial config"),
+            "first-run editor should show an onboarding action; got: {rendered:?}"
+        );
+    }
+
     // ── config_editor selector cycling ──────────────────────────────────────
 
     #[test]
