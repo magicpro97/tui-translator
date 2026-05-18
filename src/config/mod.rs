@@ -1097,24 +1097,19 @@ fn validate_language_tag(field_name: &str, value: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    };
-    use tempfile::{NamedTempFile, TempDir};
+pub(crate) mod test_env {
+    use std::ffi::{OsStr, OsString};
+    use std::sync::Mutex;
 
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    struct EnvVarGuard {
+    pub(crate) struct EnvVarGuard {
         key: &'static str,
-        previous: Option<std::ffi::OsString>,
+        previous: Option<OsString>,
     }
 
     impl EnvVarGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        pub(crate) fn set(key: &'static str, value: impl AsRef<OsStr>) -> Self {
             let previous = std::env::var_os(key);
             // SAFETY: tests hold ENV_LOCK while mutating process-wide env vars.
             unsafe {
@@ -1123,7 +1118,7 @@ mod tests {
             Self { key, previous }
         }
 
-        fn remove(key: &'static str) -> Self {
+        pub(crate) fn remove(key: &'static str) -> Self {
             let previous = std::env::var_os(key);
             // SAFETY: tests hold ENV_LOCK while mutating process-wide env vars.
             unsafe {
@@ -1144,6 +1139,18 @@ mod tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_env::{EnvVarGuard, ENV_LOCK};
+    use super::*;
+    use std::io::Write;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use tempfile::{NamedTempFile, TempDir};
 
     #[test]
     fn default_config_is_valid() {
@@ -2189,5 +2196,82 @@ mod tests {
         );
         assert_eq!(cfg.pipeline.idle_flush_ms, DEFAULT_PIPELINE_IDLE_FLUSH_MS);
         assert_eq!(cfg.pipeline.idle_min_ms, DEFAULT_PIPELINE_IDLE_MIN_MS);
+    }
+
+    // ── config path resolution — cross-platform rules (issue #182) ─────────
+
+    /// `home_dir` must use `HOME` as the fallback when `USERPROFILE` is absent.
+    /// This covers POSIX-style runners (Linux CI, macOS CI) where `USERPROFILE`
+    /// is not set.
+    #[test]
+    fn home_dir_falls_back_to_home_env_var() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let home = TempDir::new().unwrap();
+        let _userprofile = EnvVarGuard::remove("USERPROFILE");
+        let _home = EnvVarGuard::set("HOME", home.path());
+
+        let dir = home_dir().expect("home_dir must succeed when HOME is set");
+
+        assert_eq!(
+            dir,
+            home.path(),
+            "home_dir must use HOME when USERPROFILE is absent"
+        );
+    }
+
+    /// `home_dir` must prefer `USERPROFILE` over `HOME` when both are present.
+    /// This is the Windows convention and must hold regardless of CI runner.
+    #[test]
+    fn home_dir_prefers_userprofile_over_home() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let userprofile_dir = TempDir::new().unwrap();
+        let home_dir_tmp = TempDir::new().unwrap();
+        let _userprofile = EnvVarGuard::set("USERPROFILE", userprofile_dir.path());
+        let _home = EnvVarGuard::set("HOME", home_dir_tmp.path());
+
+        let dir = home_dir().expect("home_dir must succeed when both vars are set");
+
+        assert_eq!(
+            dir,
+            userprofile_dir.path(),
+            "home_dir must prefer USERPROFILE over HOME"
+        );
+    }
+
+    /// `home_dir` must return an error when neither `USERPROFILE` nor `HOME`
+    /// is present in the environment.
+    #[test]
+    fn home_dir_returns_error_when_neither_env_var_set() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _userprofile = EnvVarGuard::remove("USERPROFILE");
+        let _home = EnvVarGuard::remove("HOME");
+
+        let result = home_dir();
+
+        assert!(
+            result.is_err(),
+            "home_dir must return an error when USERPROFILE and HOME are both absent"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("USERPROFILE") || msg.contains("HOME"),
+            "error message must mention the missing env vars; got: {msg}"
+        );
+    }
+
+    /// `default_config_path` must propagate the `home_dir` error when neither
+    /// `USERPROFILE` nor `HOME` is set.
+    #[test]
+    fn default_config_path_returns_error_when_home_unavailable() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _userprofile = EnvVarGuard::remove("USERPROFILE");
+        let _home = EnvVarGuard::remove("HOME");
+
+        let result = default_config_path();
+
+        assert!(
+            result.is_err(),
+            "default_config_path must fail when home directory cannot be resolved"
+        );
     }
 }
