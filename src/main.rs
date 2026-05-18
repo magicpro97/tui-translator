@@ -2958,7 +2958,7 @@ fn handle_action(
             ) {
                 tracing::warn!("config save requested from UI failed: {err:#}");
                 let _ = state.with_config_editor_mut(|editor| {
-                    editor.set_status_message(format!(" Save failed: {err}"))
+                    editor.set_status_message(config_save_error_status(&err))
                 });
             }
         }
@@ -2992,6 +2992,24 @@ fn handle_action(
 
         // Quit is handled in the outer loop, not here.
         UserAction::Quit => {}
+    }
+}
+
+fn config_save_error_status(err: &anyhow::Error) -> String {
+    format!(" Save failed: {}", single_line_error_chain(err))
+}
+
+fn single_line_error_chain(err: &anyhow::Error) -> String {
+    let parts: Vec<String> = err
+        .chain()
+        .map(|cause| cause.to_string())
+        .map(|part| part.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        "unknown error".to_string()
+    } else {
+        parts.join(": ")
     }
 }
 
@@ -4293,6 +4311,67 @@ mod tests {
             "status should mention the invalid TTS field: {status}"
         );
         assert!(!cfg_path.exists(), "invalid config must not be written");
+    }
+
+    #[test]
+    fn config_save_error_status_flattens_error_chain_for_tui_line() {
+        let err = anyhow::anyhow!("leaf\nfield detail").context("top\ncontext");
+        let status = config_save_error_status(&err);
+
+        assert!(!status.contains('\n'));
+        assert!(status.contains("top context"));
+        assert!(status.contains("leaf field detail"));
+    }
+
+    #[test]
+    fn config_save_rejects_invalid_settings_without_overwriting_existing_file() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let mut existing = config::AppConfig::default();
+        existing.google_api_key = Some("old-key".to_string());
+        existing.target_language = "vi".to_string();
+        config::write_config(&cfg_path, &existing).unwrap();
+
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(existing.clone()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(ConfigEditorMode::Settings, &existing, &cfg_path);
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.audio_source = "bogus".to_string();
+            editor.target_language = "en".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        assert!(state.config_editor_active.load(Ordering::Relaxed));
+        let editor = state.config_editor_snapshot().expect("editor snapshot");
+        let status = editor.status_message.expect("save failure message");
+        assert!(
+            status.contains("Save failed") && status.contains("audio_source"),
+            "status should name the invalid field: {status}"
+        );
+        assert!(
+            !status.contains('\n'),
+            "status line must not contain embedded newlines: {status:?}"
+        );
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(
+            persisted.google_api_key.as_deref(),
+            Some("old-key"),
+            "invalid settings save must preserve existing config file"
+        );
+        assert_eq!(persisted.target_language, "vi");
+        assert_eq!(*current_config.lock().unwrap(), existing);
+        assert!(!restart_required.load(Ordering::Relaxed));
     }
 
     #[test]
