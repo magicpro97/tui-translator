@@ -303,7 +303,9 @@ fn capture_device_info(
 
 fn default_render_identity() -> (Option<String>, Option<String>) {
     let default_device = get_default_device(&Direction::Render).ok();
-    let default_id = default_device.as_ref().and_then(|device| device.get_id().ok());
+    let default_id = default_device
+        .as_ref()
+        .and_then(|device| device.get_id().ok());
     let default_name = default_device
         .as_ref()
         .and_then(|device| device.get_friendlyname().ok());

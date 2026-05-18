@@ -13,7 +13,9 @@
 
 #[cfg(windows)]
 mod wasapi_probe {
-    use wasapi::{get_default_device, initialize_mta, Device, DeviceCollection, DeviceState, Direction};
+    use wasapi::{
+        get_default_device, initialize_mta, Device, DeviceCollection, DeviceState, Direction,
+    };
 
     fn initialize_or_skip() -> bool {
         match initialize_mta() {
