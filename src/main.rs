@@ -1951,6 +1951,10 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 ///    be resolved.
 /// 5. The literal string `"config.json"` in the current working directory as a
 ///    last resort.
+///
+/// Startup calls [`migrate_legacy_config_to_per_user_if_needed`] before this
+/// lookup so legacy side-by-side configs are copied to the per-user path once
+/// without changing portable-mode precedence.
 fn config_json_path() -> PathBuf {
     let per_user_config = config::default_config_path();
     if let Err(error) = &per_user_config {
@@ -2091,7 +2095,7 @@ fn copy_legacy_config_if_needed(
         from: legacy_path.to_path_buf(),
         to: target_path.to_path_buf(),
     };
-    tracing::warn!(
+    tracing::info!(
         from = %notice.from.display(),
         to = %notice.to.display(),
         notice = %notice.user_message(),
