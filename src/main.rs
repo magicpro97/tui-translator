@@ -1253,6 +1253,20 @@ fn main() -> Result<()> {
     // enters alternate-screen mode so a forced close triggers our cleanup.
     windows_signal::install();
 
+    // Copy legacy executable-side config into the per-user location before path
+    // selection. The original file stays in place so portable installs keep
+    // working; the copy gives installed users a safe per-user migration path.
+    let legacy_migration_notice = match migrate_legacy_config_to_per_user_if_needed() {
+        Ok(notice) => notice,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "legacy config migration skipped; continuing with startup config lookup"
+            );
+            None
+        }
+    };
+
     // Load configuration from the selected startup path unless a test or caller
     // explicitly overrides it through TUI_TRANSLATOR_CONFIG.
     let cfg_path = config_json_path();
@@ -1279,6 +1293,12 @@ fn main() -> Result<()> {
     };
 
     let state = AppState::new();
+    if let Some(notice) = legacy_migration_notice {
+        *state
+            .startup_notice_msg
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(notice.user_message());
+    }
     let loaded_config = current_config
         .lock()
         .unwrap_or_else(|p| p.into_inner())
@@ -1931,6 +1951,10 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 ///    be resolved.
 /// 5. The literal string `"config.json"` in the current working directory as a
 ///    last resort.
+///
+/// Startup calls [`migrate_legacy_config_to_per_user_if_needed`] before this
+/// lookup so legacy side-by-side configs are copied to the per-user path once
+/// without changing portable-mode precedence.
 fn config_json_path() -> PathBuf {
     let per_user_config = config::default_config_path();
     if let Err(error) = &per_user_config {
@@ -1993,6 +2017,91 @@ fn select_config_json_path(
 
 fn has_explicit_config_override() -> bool {
     explicit_config_json_path().is_some()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LegacyConfigMigrationNotice {
+    from: PathBuf,
+    to: PathBuf,
+}
+
+impl LegacyConfigMigrationNotice {
+    fn user_message(&self) -> String {
+        "Config copied to per-user folder; old executable-side config left unchanged.".to_string()
+    }
+}
+
+fn migrate_legacy_config_to_per_user_if_needed() -> Result<Option<LegacyConfigMigrationNotice>> {
+    if has_explicit_config_override() {
+        return Ok(None);
+    }
+
+    let Some(legacy_path) = legacy_config_json_path() else {
+        return Ok(None);
+    };
+    let per_user_path = match config::default_config_path() {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "failed to resolve per-user config path; skipping legacy config migration"
+            );
+            return Ok(None);
+        }
+    };
+
+    copy_legacy_config_if_needed(&legacy_path, &per_user_path)
+}
+
+fn copy_legacy_config_if_needed(
+    legacy_path: &Path,
+    target_path: &Path,
+) -> Result<Option<LegacyConfigMigrationNotice>> {
+    if legacy_path == target_path {
+        return Ok(None);
+    }
+    if !legacy_path
+        .try_exists()
+        .with_context(|| format!("failed to access {}", legacy_path.display()))?
+    {
+        return Ok(None);
+    }
+    if target_path
+        .try_exists()
+        .with_context(|| format!("failed to access {}", target_path.display()))?
+    {
+        return Ok(None);
+    }
+
+    let parent = target_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .context("per-user config path must have a parent directory")?;
+    fs::create_dir_all(parent).with_context(|| {
+        format!(
+            "failed to create per-user config directory {}",
+            parent.display()
+        )
+    })?;
+    fs::copy(legacy_path, target_path).with_context(|| {
+        format!(
+            "failed to copy legacy config from {} to {}",
+            legacy_path.display(),
+            target_path.display()
+        )
+    })?;
+
+    let notice = LegacyConfigMigrationNotice {
+        from: legacy_path.to_path_buf(),
+        to: target_path.to_path_buf(),
+    };
+    tracing::info!(
+        from = %notice.from.display(),
+        to = %notice.to.display(),
+        notice = %notice.user_message(),
+        "legacy executable-side config copied to per-user config location"
+    );
+    Ok(Some(notice))
 }
 
 fn prepare_per_user_config_dir_for_startup(config_path: &Path) -> Result<()> {
@@ -2083,14 +2192,7 @@ fn bootstrap_legacy_config_if_needed(target_path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let legacy_cfg = config::load(&legacy_path)?;
-    config::write_config(target_path, &legacy_cfg)?;
-    tracing::info!(
-        from = %legacy_path.display(),
-        to = %target_path.display(),
-        "migrated executable-side config to per-user config directory"
-    );
-    Ok(())
+    copy_legacy_config_if_needed(&legacy_path, target_path).map(|_| ())
 }
 
 fn overwrite_device_name(slot: &Arc<std::sync::Mutex<String>>, next_name: &str) {
@@ -4933,6 +5035,61 @@ mod tests {
         assert!(
             message.contains("failed to create per-user config directory"),
             "error should explain which startup directory creation failed; got: {message}"
+        );
+    }
+
+    #[test]
+    fn copy_legacy_config_if_needed_copies_raw_config_and_keeps_legacy_file() {
+        let temp = TempDir::new().unwrap();
+        let legacy_path = temp.path().join("portable").join("config.json");
+        let target_path = temp.path().join("per-user").join("config.json");
+        let raw_config = br#"{"source_language":"ja-JP","target_language":"vi","unknown":"kept"}
+"#;
+        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+        fs::write(&legacy_path, raw_config).unwrap();
+
+        let notice = copy_legacy_config_if_needed(&legacy_path, &target_path)
+            .unwrap()
+            .expect("migration should copy existing legacy config");
+
+        assert_eq!(notice.from, legacy_path);
+        assert_eq!(notice.to, target_path);
+        assert_eq!(
+            fs::read(&notice.from).unwrap(),
+            raw_config,
+            "migration must leave the executable-side config unchanged"
+        );
+        assert_eq!(
+            fs::read(&notice.to).unwrap(),
+            raw_config,
+            "migration must copy raw JSON without reserializing or dropping fields"
+        );
+        assert!(
+            notice.user_message().contains("left unchanged"),
+            "notice should make the non-destructive migration explicit"
+        );
+    }
+
+    #[test]
+    fn copy_legacy_config_if_needed_does_not_overwrite_existing_target() {
+        let temp = TempDir::new().unwrap();
+        let legacy_path = temp.path().join("portable").join("config.json");
+        let target_path = temp.path().join("per-user").join("config.json");
+        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+        fs::write(&legacy_path, br#"{"target_language":"legacy"}"#).unwrap();
+        fs::write(&target_path, br#"{"target_language":"existing"}"#).unwrap();
+
+        let notice = copy_legacy_config_if_needed(&legacy_path, &target_path).unwrap();
+
+        assert!(
+            notice.is_none(),
+            "migration should skip when the per-user config already exists"
+        );
+        assert_eq!(
+            fs::read(&target_path).unwrap(),
+            br#"{"target_language":"existing"}"#,
+            "migration must not overwrite an existing per-user config"
         );
     }
 
