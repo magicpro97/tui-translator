@@ -13,7 +13,7 @@
 
 #[cfg(windows)]
 mod wasapi_probe {
-    use wasapi::{get_default_device, initialize_mta, Device, Direction};
+    use wasapi::{get_default_device, initialize_mta, Device, DeviceCollection, DeviceState, Direction};
 
     fn initialize_or_skip() -> bool {
         match initialize_mta() {
@@ -54,9 +54,56 @@ mod wasapi_probe {
         let name = device
             .get_friendlyname()
             .unwrap_or_else(|_| "unknown".into());
+        let id = device
+            .get_id()
+            .expect("default render device must expose a stable endpoint id");
 
-        eprintln!("[wasapi-probe] default render device: {name}");
+        eprintln!("[wasapi-probe] default render device: {name} ({id})");
         assert!(!name.is_empty(), "device name must not be empty");
+        assert!(!id.is_empty(), "device endpoint id must not be empty");
+    }
+
+    /// Verify active render endpoint enumeration exposes stable identity and
+    /// user-facing display names while filtering devices that cannot be opened.
+    #[test]
+    fn active_render_endpoint_enumeration_exposes_stable_ids() {
+        if !initialize_or_skip() {
+            return;
+        }
+
+        let collection = DeviceCollection::new(&Direction::Render)
+            .expect("active render endpoint enumeration must succeed");
+        let count = collection
+            .get_nbr_devices()
+            .expect("active render endpoint count must be readable");
+        if count == 0 {
+            eprintln!("[wasapi-probe] skipping: no active render endpoints were reported");
+            return;
+        }
+
+        for index in 0..count {
+            let device = collection
+                .get_device_at_index(index)
+                .expect("active render endpoint must be readable");
+            let state = device
+                .get_state()
+                .expect("active render endpoint state must be readable");
+            let name = device
+                .get_friendlyname()
+                .expect("active render endpoint display name must be readable");
+            let id = device
+                .get_id()
+                .expect("active render endpoint stable id must be readable");
+            device
+                .get_iaudioclient()
+                .and_then(|client| client.get_mixformat().map(|_| ()))
+                .expect("active render endpoint must expose a queryable mix format");
+
+            eprintln!("[wasapi-probe] active render endpoint {index}: {name} ({id})");
+            assert_eq!(state, DeviceState::Active, "endpoint must be active");
+            assert!(!name.is_empty(), "endpoint display name must not be empty");
+            assert!(!id.is_empty(), "endpoint stable id must not be empty");
+        }
     }
 
     /// Verify that the mix format (native PCM geometry) can be queried.

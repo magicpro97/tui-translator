@@ -45,8 +45,8 @@ use rubato::{
 };
 use tokio::sync::mpsc;
 use wasapi::{
-    get_default_device, initialize_mta, AudioCaptureClient, Device, DeviceCollection, Direction,
-    ShareMode,
+    get_default_device, initialize_mta, AudioCaptureClient, Device, DeviceCollection, DeviceState,
+    Direction, ShareMode,
 };
 
 use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
@@ -231,18 +231,83 @@ fn capture_loop(
 
 pub(super) fn list_loopback_devices() -> Result<Vec<CaptureDeviceInfo>> {
     initialize_mta().map_err(|e| anyhow!("initialize COM MTA: {e}"))?;
-    let default_name = get_default_device(&Direction::Render)
-        .ok()
-        .and_then(|device| device.get_friendlyname().ok());
-    let names = active_render_device_names()?;
+    let (default_id, default_name) = default_render_identity();
+    active_render_devices(default_id.as_deref(), default_name.as_deref())
+}
 
-    Ok(names
-        .into_iter()
-        .map(|name| CaptureDeviceInfo {
-            is_default: default_name.as_deref() == Some(name.as_str()),
-            name,
-        })
-        .collect())
+fn active_render_devices(
+    default_id: Option<&str>,
+    default_name: Option<&str>,
+) -> Result<Vec<CaptureDeviceInfo>> {
+    let collection = DeviceCollection::new(&Direction::Render)
+        .map_err(|e| anyhow!("enumerate active render devices: {e}"))?;
+    let count = collection
+        .get_nbr_devices()
+        .map_err(|e| anyhow!("count active render devices: {e}"))?;
+    let mut devices = Vec::with_capacity(count as usize);
+
+    for index in 0..count {
+        let device = match collection.get_device_at_index(index) {
+            Ok(device) => device,
+            Err(err) => {
+                tracing::warn!(index, error = %err, "skipping unreadable render device");
+                continue;
+            }
+        };
+        match capture_device_info(&device, index, default_id, default_name) {
+            Ok(info) => devices.push(info),
+            Err(err) => {
+                tracing::warn!(index, error = %err, "skipping unusable render device");
+            }
+        }
+    }
+
+    Ok(devices)
+}
+
+fn capture_device_info(
+    device: &Device,
+    index: u32,
+    default_id: Option<&str>,
+    default_name: Option<&str>,
+) -> Result<CaptureDeviceInfo> {
+    let state = device
+        .get_state()
+        .map_err(|e| anyhow!("read render device {index} state: {e}"))?;
+    if state != DeviceState::Active {
+        return Err(anyhow!(
+            "render device {index} is not active (state: {state:?})"
+        ));
+    }
+
+    let id = device
+        .get_id()
+        .map_err(|e| anyhow!("read render device {index} stable id: {e}"))?;
+    let name = device
+        .get_friendlyname()
+        .map_err(|e| anyhow!("read render device {index} name: {e}"))?;
+    device
+        .get_iaudioclient()
+        .and_then(|client| client.get_mixformat().map(|_| ()))
+        .map_err(|e| anyhow!("query render device {index} mix format: {e}"))?;
+
+    let is_default = default_id == Some(id.as_str())
+        || (default_id.is_none() && default_name == Some(name.as_str()));
+
+    Ok(CaptureDeviceInfo {
+        id,
+        name,
+        is_default,
+    })
+}
+
+fn default_render_identity() -> (Option<String>, Option<String>) {
+    let default_device = get_default_device(&Direction::Render).ok();
+    let default_id = default_device.as_ref().and_then(|device| device.get_id().ok());
+    let default_name = default_device
+        .as_ref()
+        .and_then(|device| device.get_friendlyname().ok());
+    (default_id, default_name)
 }
 
 /// Normalise the operator-supplied `capture_device` config value.
@@ -293,19 +358,33 @@ fn find_render_device_by_name(name: &str) -> Result<(Device, String)> {
     let count = collection
         .get_nbr_devices()
         .map_err(|e| anyhow!("count active render devices: {e}"))?;
+    let (default_id, default_name) = default_render_identity();
     let mut names = Vec::with_capacity(count as usize);
 
     for index in 0..count {
-        let device = collection
-            .get_device_at_index(index)
-            .map_err(|e| anyhow!("read render device {index}: {e}"))?;
-        let device_name = device
-            .get_friendlyname()
-            .map_err(|e| anyhow!("read render device {index} name: {e}"))?;
-        if device_name == name {
-            return Ok((device, device_name));
+        let device = match collection.get_device_at_index(index) {
+            Ok(device) => device,
+            Err(err) => {
+                tracing::warn!(index, error = %err, "skipping unreadable render device");
+                continue;
+            }
+        };
+        let info = match capture_device_info(
+            &device,
+            index,
+            default_id.as_deref(),
+            default_name.as_deref(),
+        ) {
+            Ok(info) => info,
+            Err(err) => {
+                tracing::warn!(index, error = %err, "skipping unusable render device");
+                continue;
+            }
+        };
+        if info.name == name {
+            return Ok((device, info.name));
         }
-        names.push(device_name);
+        names.push(info.name);
     }
 
     Err(anyhow!(
@@ -313,28 +392,6 @@ fn find_render_device_by_name(name: &str) -> Result<(Device, String)> {
          Capture device to choose one of: {}",
         format_device_names(&names)
     ))
-}
-
-fn active_render_device_names() -> Result<Vec<String>> {
-    let collection = DeviceCollection::new(&Direction::Render)
-        .map_err(|e| anyhow!("enumerate active render devices: {e}"))?;
-    let count = collection
-        .get_nbr_devices()
-        .map_err(|e| anyhow!("count active render devices: {e}"))?;
-    let mut names = Vec::with_capacity(count as usize);
-
-    for index in 0..count {
-        let device = collection
-            .get_device_at_index(index)
-            .map_err(|e| anyhow!("read render device {index}: {e}"))?;
-        names.push(
-            device
-                .get_friendlyname()
-                .map_err(|e| anyhow!("read render device {index} name: {e}"))?,
-        );
-    }
-
-    Ok(names)
 }
 
 fn read_available_packets(

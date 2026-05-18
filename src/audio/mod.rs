@@ -114,7 +114,9 @@ pub struct CaptureInfo {
 /// A Windows playback endpoint that can be captured through WASAPI loopback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaptureDeviceInfo {
-    /// Human-readable Windows device name. Use this value in `capture_device`.
+    /// Stable Windows endpoint ID for diagnostics and future selection flows.
+    pub id: String,
+    /// Human-readable Windows endpoint name. Use this value in `capture_device`.
     pub name: String,
     /// Whether Windows currently reports this device as the default playback endpoint.
     pub is_default: bool,
@@ -306,6 +308,7 @@ pub fn list_capture_devices() -> Result<Vec<CaptureDeviceInfo>> {
     #[cfg(not(windows))]
     {
         Ok(vec![CaptureDeviceInfo {
+            id: "silent-stub".to_string(),
             name: "silent (stub)".to_string(),
             is_default: true,
         }])
