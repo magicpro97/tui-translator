@@ -2625,21 +2625,30 @@ mod tests {
         terminal
             .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
             .unwrap();
-        let rendered: String = terminal
-            .backend()
-            .buffer()
-            .content()
+        let buffer = terminal.backend().buffer();
+        let rows = (0..24)
+            .map(|y| {
+                (0..80)
+                    .map(|x| buffer.get(x, y).symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        let settings_line = rows
             .iter()
-            .map(|c| c.symbol().to_string())
-            .collect();
+            .find(|line| line.contains("Settings"))
+            .unwrap_or_else(|| panic!("help overlay should list Settings; rows:\n{rows:#?}"));
+        let normalized = settings_line
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
 
         assert!(
-            rendered.contains("S          Settings"),
-            "help overlay should document the settings shortcut; got: {rendered:?}"
+            normalized.contains("S Settings"),
+            "help overlay should document the settings shortcut; row: {settings_line:?}"
         );
         assert!(
-            rendered.contains("F2/Ctrl+D"),
-            "help overlay should mention settings value cycling; got: {rendered:?}"
+            normalized.contains("F2/Ctrl+D"),
+            "help overlay should mention settings value cycling; row: {settings_line:?}"
         );
     }
 
