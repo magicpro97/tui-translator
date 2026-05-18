@@ -25,6 +25,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, Paragraph, Widget, Wrap},
 };
 use tracing::warn;
+use tui_input::{Input, InputRequest};
 use unicode_width::UnicodeWidthChar;
 
 use crate::config::AppConfig;
@@ -78,6 +79,9 @@ const MIN_USABLE_ROWS: u16 = 3   // title bar
 /// Preset BCP-47 language codes offered by F2/Ctrl+D when the source or
 /// target language field is active in the settings editor.
 const LANGUAGE_PRESETS: [&str; 5] = ["ja-JP", "vi", "en-US", "zh-CN", "ko"];
+const CONFIG_EDITOR_FIELD_COUNT: usize = 16;
+const CONFIG_EDITOR_LABEL_WIDTH: usize = 16;
+const CONFIG_EDITOR_MIN_VALUE_WIDTH: usize = 8;
 
 // ── UserAction ───────────────────────────────────────────────────────────────
 
@@ -106,6 +110,8 @@ pub enum UserAction {
     ConfigChar(char),
     /// Backspace while the config editor is active.
     ConfigBackspace,
+    /// Text-editing request handled by the reusable config input primitive.
+    ConfigInput(InputRequest),
     /// Move to the next config-editor field.
     ConfigNextField,
     /// Move to the previous config-editor field.
@@ -173,7 +179,7 @@ enum ConfigEditorField {
 }
 
 impl ConfigEditorField {
-    const ALL: [Self; 16] = [
+    const ALL: [Self; CONFIG_EDITOR_FIELD_COUNT] = [
         Self::SourceLanguage,
         Self::TargetLanguage,
         Self::GoogleApiKey,
@@ -210,6 +216,27 @@ impl ConfigEditorField {
             Self::PipelineIdleFlushMs => "Idle flush ms",
             Self::PipelineIdleMinMs => "Idle min ms",
             Self::PipelineSentenceMaxAgeMs => "Sentence max ms",
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Self::SourceLanguage => 0,
+            Self::TargetLanguage => 1,
+            Self::GoogleApiKey => 2,
+            Self::AudioSource => 3,
+            Self::CaptureDevice => 4,
+            Self::AudioFilePath => 5,
+            Self::SttProvider => 6,
+            Self::MtProvider => 7,
+            Self::TtsEnabled => 8,
+            Self::SttFallbackPolicy => 9,
+            Self::VadPreRollMs => 10,
+            Self::PipelineMaxWindowMs => 11,
+            Self::PipelineEarlyFlushOnVadEnd => 12,
+            Self::PipelineIdleFlushMs => 13,
+            Self::PipelineIdleMinMs => 14,
+            Self::PipelineSentenceMaxAgeMs => 15,
         }
     }
 }
@@ -249,11 +276,12 @@ pub struct ConfigEditorState {
     pub config_path: String,
     pub status_message: Option<String>,
     pub capture_device_options: Vec<String>,
+    field_cursors: [usize; CONFIG_EDITOR_FIELD_COUNT],
 }
 
 impl ConfigEditorState {
     pub fn from_config(config: &AppConfig, config_path: &Path, mode: ConfigEditorMode) -> Self {
-        Self {
+        let mut editor = Self {
             mode,
             selected_field: 0,
             source_language: config.source_language.clone(),
@@ -283,11 +311,83 @@ impl ConfigEditorState {
             config_path: config_path.display().to_string(),
             status_message: None,
             capture_device_options: Vec::new(),
-        }
+            field_cursors: [0; CONFIG_EDITOR_FIELD_COUNT],
+        };
+        editor.reset_field_cursors_to_end();
+        editor
     }
 
     fn active_field(&self) -> ConfigEditorField {
         ConfigEditorField::ALL[self.selected_field.min(ConfigEditorField::ALL.len() - 1)]
+    }
+
+    fn field_value(&self, field: ConfigEditorField) -> &str {
+        match field {
+            ConfigEditorField::SourceLanguage => &self.source_language,
+            ConfigEditorField::TargetLanguage => &self.target_language,
+            ConfigEditorField::GoogleApiKey => &self.google_api_key,
+            ConfigEditorField::AudioSource => &self.audio_source,
+            ConfigEditorField::CaptureDevice => &self.capture_device,
+            ConfigEditorField::AudioFilePath => &self.audio_file_path,
+            ConfigEditorField::SttProvider => &self.stt_provider,
+            ConfigEditorField::MtProvider => &self.mt_provider,
+            ConfigEditorField::TtsEnabled => &self.tts_enabled,
+            ConfigEditorField::SttFallbackPolicy => &self.stt_fallback_policy,
+            ConfigEditorField::VadPreRollMs => &self.vad_pre_roll_ms,
+            ConfigEditorField::PipelineMaxWindowMs => &self.pipeline_max_window_ms,
+            ConfigEditorField::PipelineEarlyFlushOnVadEnd => &self.pipeline_early_flush_on_vad_end,
+            ConfigEditorField::PipelineIdleFlushMs => &self.pipeline_idle_flush_ms,
+            ConfigEditorField::PipelineIdleMinMs => &self.pipeline_idle_min_ms,
+            ConfigEditorField::PipelineSentenceMaxAgeMs => &self.pipeline_sentence_max_age_ms,
+        }
+    }
+
+    fn replace_field_value(&mut self, field: ConfigEditorField, value: String) {
+        match field {
+            ConfigEditorField::SourceLanguage => self.source_language = value,
+            ConfigEditorField::TargetLanguage => self.target_language = value,
+            ConfigEditorField::GoogleApiKey => self.google_api_key = value,
+            ConfigEditorField::AudioSource => self.audio_source = value,
+            ConfigEditorField::CaptureDevice => self.capture_device = value,
+            ConfigEditorField::AudioFilePath => self.audio_file_path = value,
+            ConfigEditorField::SttProvider => self.stt_provider = value,
+            ConfigEditorField::MtProvider => self.mt_provider = value,
+            ConfigEditorField::TtsEnabled => self.tts_enabled = value,
+            ConfigEditorField::SttFallbackPolicy => self.stt_fallback_policy = value,
+            ConfigEditorField::VadPreRollMs => self.vad_pre_roll_ms = value,
+            ConfigEditorField::PipelineMaxWindowMs => self.pipeline_max_window_ms = value,
+            ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
+                self.pipeline_early_flush_on_vad_end = value;
+            }
+            ConfigEditorField::PipelineIdleFlushMs => self.pipeline_idle_flush_ms = value,
+            ConfigEditorField::PipelineIdleMinMs => self.pipeline_idle_min_ms = value,
+            ConfigEditorField::PipelineSentenceMaxAgeMs => {
+                self.pipeline_sentence_max_age_ms = value
+            }
+        }
+    }
+
+    fn set_field_value(&mut self, field: ConfigEditorField, value: String) {
+        self.replace_field_value(field, value);
+        self.set_field_cursor_to_end(field);
+    }
+
+    fn set_active_field_value(&mut self, value: String) {
+        self.set_field_value(self.active_field(), value);
+    }
+
+    fn field_cursor(&self, field: ConfigEditorField) -> usize {
+        self.field_cursors[field.index()].min(self.field_value(field).chars().count())
+    }
+
+    fn set_field_cursor_to_end(&mut self, field: ConfigEditorField) {
+        self.field_cursors[field.index()] = self.field_value(field).chars().count();
+    }
+
+    fn reset_field_cursors_to_end(&mut self) {
+        for field in ConfigEditorField::ALL {
+            self.set_field_cursor_to_end(field);
+        }
     }
 
     fn active_field_mut(&mut self) -> &mut String {
@@ -314,13 +414,22 @@ impl ConfigEditorState {
     }
 
     pub fn push_char(&mut self, c: char) {
-        self.active_field_mut().push(c);
-        self.status_message = None;
+        self.handle_input_request(InputRequest::InsertChar(c));
     }
 
     pub fn backspace(&mut self) {
-        self.active_field_mut().pop();
-        self.status_message = None;
+        self.handle_input_request(InputRequest::DeletePrevChar);
+    }
+
+    pub fn handle_input_request(&mut self, request: InputRequest) {
+        let field = self.active_field();
+        let mut input =
+            Input::new(self.field_value(field).to_string()).with_cursor(self.field_cursor(field));
+        if input.handle(request).is_some() {
+            self.replace_field_value(field, input.value().to_string());
+            self.field_cursors[field.index()] = input.cursor();
+            self.status_message = None;
+        }
     }
 
     pub fn next_field(&mut self) {
@@ -358,16 +467,16 @@ impl ConfigEditorState {
         }
 
         let mut choices = Vec::with_capacity(self.capture_device_options.len() + 1);
-        choices.push("");
-        choices.extend(self.capture_device_options.iter().map(String::as_str));
+        choices.push(String::new());
+        choices.extend(self.capture_device_options.iter().cloned());
 
         let current = self.capture_device.trim();
         let current_index = choices
             .iter()
-            .position(|candidate| *candidate == current)
+            .position(|candidate| candidate == current)
             .unwrap_or(0);
-        let next = choices[(current_index + 1) % choices.len()];
-        self.capture_device = next.to_string();
+        let next = choices[(current_index + 1) % choices.len()].clone();
+        self.set_field_value(ConfigEditorField::CaptureDevice, next.clone());
 
         if next.is_empty() {
             self.set_status_message(" Capture device: Windows default playback device.");
@@ -441,7 +550,7 @@ impl ConfigEditorState {
             idx + 1
         };
         let next = LANGUAGE_PRESETS[next_idx];
-        *self.active_field_mut() = next.to_string();
+        self.set_active_field_value(next.to_string());
         self.status_message = Some(format!(
             " {} set to \"{next}\". Press Enter to save.",
             field.label(),
@@ -456,7 +565,7 @@ impl ConfigEditorState {
             .position(|&c| c == current.as_str())
             .unwrap_or(0);
         let next = choices[(idx + 1) % choices.len()];
-        *self.active_field_mut() = next.to_string();
+        self.set_active_field_value(next.to_string());
         self.status_message = Some(format!(" {} set to \"{next}\"{save_hint}", field.label(),));
     }
 }
@@ -2149,6 +2258,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     let masked_key = mask_api_key(&editor.google_api_key);
 
     let active = editor.active_field();
+    let value_width = config_editor_value_width(panel.width);
     let mut lines = Vec::new();
     if !is_compact_editor {
         lines.push(Line::from(Span::styled(
@@ -2168,62 +2278,116 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             ConfigEditorField::SourceLanguage,
             &editor.source_language,
             active,
+            editor.field_cursor(ConfigEditorField::SourceLanguage),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::TargetLanguage,
             &editor.target_language,
             active,
+            editor.field_cursor(ConfigEditorField::TargetLanguage),
+            value_width,
         ),
-        config_editor_field_line(ConfigEditorField::GoogleApiKey, &masked_key, active),
-        config_editor_field_line(ConfigEditorField::AudioSource, &editor.audio_source, active),
+        config_editor_field_line(
+            ConfigEditorField::GoogleApiKey,
+            &masked_key,
+            active,
+            editor
+                .field_cursor(ConfigEditorField::GoogleApiKey)
+                .min(masked_key.chars().count()),
+            value_width,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::AudioSource,
+            &editor.audio_source,
+            active,
+            editor.field_cursor(ConfigEditorField::AudioSource),
+            value_width,
+        ),
         config_editor_field_line(
             ConfigEditorField::CaptureDevice,
             &editor.capture_device,
             active,
+            editor.field_cursor(ConfigEditorField::CaptureDevice),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::AudioFilePath,
             &editor.audio_file_path,
             active,
+            editor.field_cursor(ConfigEditorField::AudioFilePath),
+            value_width,
         ),
-        config_editor_field_line(ConfigEditorField::SttProvider, &editor.stt_provider, active),
-        config_editor_field_line(ConfigEditorField::MtProvider, &editor.mt_provider, active),
-        config_editor_field_line(ConfigEditorField::TtsEnabled, &editor.tts_enabled, active),
+        config_editor_field_line(
+            ConfigEditorField::SttProvider,
+            &editor.stt_provider,
+            active,
+            editor.field_cursor(ConfigEditorField::SttProvider),
+            value_width,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::MtProvider,
+            &editor.mt_provider,
+            active,
+            editor.field_cursor(ConfigEditorField::MtProvider),
+            value_width,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::TtsEnabled,
+            &editor.tts_enabled,
+            active,
+            editor.field_cursor(ConfigEditorField::TtsEnabled),
+            value_width,
+        ),
         config_editor_field_line(
             ConfigEditorField::SttFallbackPolicy,
             &editor.stt_fallback_policy,
             active,
+            editor.field_cursor(ConfigEditorField::SttFallbackPolicy),
+            value_width,
         ),
         // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4).
         config_editor_field_line(
             ConfigEditorField::VadPreRollMs,
             &editor.vad_pre_roll_ms,
             active,
+            editor.field_cursor(ConfigEditorField::VadPreRollMs),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::PipelineMaxWindowMs,
             &editor.pipeline_max_window_ms,
             active,
+            editor.field_cursor(ConfigEditorField::PipelineMaxWindowMs),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::PipelineEarlyFlushOnVadEnd,
             &editor.pipeline_early_flush_on_vad_end,
             active,
+            editor.field_cursor(ConfigEditorField::PipelineEarlyFlushOnVadEnd),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::PipelineIdleFlushMs,
             &editor.pipeline_idle_flush_ms,
             active,
+            editor.field_cursor(ConfigEditorField::PipelineIdleFlushMs),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::PipelineIdleMinMs,
             &editor.pipeline_idle_min_ms,
             active,
+            editor.field_cursor(ConfigEditorField::PipelineIdleMinMs),
+            value_width,
         ),
         config_editor_field_line(
             ConfigEditorField::PipelineSentenceMaxAgeMs,
             &editor.pipeline_sentence_max_age_ms,
             active,
+            editor.field_cursor(ConfigEditorField::PipelineSentenceMaxAgeMs),
+            value_width,
         ),
     ]);
 
@@ -2276,10 +2440,12 @@ fn config_editor_field_line(
     field: ConfigEditorField,
     value: &str,
     active_field: ConfigEditorField,
+    cursor: usize,
+    value_width: usize,
 ) -> Line<'static> {
     let is_active = field == active_field;
     let prefix = if is_active { "> " } else { "  " };
-    let display_value = if value.is_empty() {
+    let display_value = if value.is_empty() && !is_active {
         match field {
             ConfigEditorField::CaptureDevice => "Windows default playback".to_string(),
             _ => "\u{2014}".to_string(),
@@ -2295,13 +2461,65 @@ fn config_editor_field_line(
         Style::default().fg(Color::White)
     };
 
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(prefix, style),
-        Span::styled(format!("{:<16}", field.label()), style),
+        Span::styled(
+            format!(
+                "{:<width$}",
+                field.label(),
+                width = CONFIG_EDITOR_LABEL_WIDTH
+            ),
+            style,
+        ),
         Span::raw(": "),
-        Span::styled(display_value, style),
-        Span::styled(if is_active { "_" } else { "" }, style),
-    ])
+    ];
+    if is_active {
+        spans.extend(config_editor_active_value_spans(
+            &display_value,
+            cursor,
+            value_width,
+            style,
+        ));
+    } else {
+        spans.push(Span::styled(
+            truncate_device_name(&display_value, value_width),
+            style,
+        ));
+    }
+    Line::from(spans)
+}
+
+fn config_editor_value_width(panel_width: u16) -> usize {
+    let content_width = panel_width.saturating_sub(2) as usize;
+    content_width
+        .saturating_sub(2 + CONFIG_EDITOR_LABEL_WIDTH + 2)
+        .max(CONFIG_EDITOR_MIN_VALUE_WIDTH)
+}
+
+fn config_editor_active_value_spans(
+    value: &str,
+    cursor: usize,
+    value_width: usize,
+    style: Style,
+) -> Vec<Span<'static>> {
+    let chars: Vec<char> = value.chars().collect();
+    let cursor = cursor.min(chars.len());
+    let visible_width = value_width.max(1);
+    let text_width = visible_width.saturating_sub(1);
+    let start = cursor.saturating_sub(text_width);
+    let end = (start + text_width).min(chars.len());
+    let before: String = chars[start..cursor].iter().collect();
+    let after: String = if cursor <= end {
+        chars[cursor..end].iter().collect()
+    } else {
+        String::new()
+    };
+
+    vec![
+        Span::styled(before, style),
+        Span::styled("_", style),
+        Span::styled(after, style),
+    ]
 }
 
 /// Render a persistent auth-error banner as a floating overlay (#86).
@@ -2759,6 +2977,28 @@ mod tests {
     }
 
     #[test]
+    fn config_editor_input_requests_edit_at_cursor() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = 0;
+
+        editor.handle_input_request(InputRequest::GoToStart);
+        editor.handle_input_request(InputRequest::InsertChar('x'));
+        assert_eq!(editor.source_language, "xja-JP");
+
+        editor.handle_input_request(InputRequest::GoToEnd);
+        editor.handle_input_request(InputRequest::DeletePrevChar);
+        assert_eq!(editor.source_language, "xja-J");
+
+        editor.handle_input_request(InputRequest::GoToStart);
+        editor.handle_input_request(InputRequest::DeleteNextChar);
+        assert_eq!(editor.source_language, "ja-J");
+    }
+
+    #[test]
     fn config_editor_state_loads_provider_fields() {
         let mut cfg = AppConfig::default();
         cfg.stt_provider = "local".to_string();
@@ -2819,6 +3059,40 @@ mod tests {
             rendered.contains("MT provider"),
             "editor should render MT provider field; got: {rendered:?}"
         );
+    }
+
+    #[test]
+    fn render_config_editor_shows_all_fields_at_standard_size() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        for field in ConfigEditorField::ALL {
+            let label = field.label();
+            assert!(
+                rendered.contains(label),
+                "standard 80x24 settings editor should show {label:?}; got: {rendered:?}"
+            );
+        }
     }
 
     #[test]
