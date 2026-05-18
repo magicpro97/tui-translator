@@ -85,14 +85,54 @@ When recording is enabled, each session log contains **transcript text only**:
 - Provider names, latency measurements, and estimated cost figures.
 - Session metadata: app version, languages, capture-device label.
 
-**Raw audio is never saved to disk.**  No audio file is created by any
-configuration option in the current release.
+**Raw audio is never saved to disk by default.**  No audio file is created by any
+configuration option unless you explicitly enable the audio archive and confirm
+consent (see §3.2 below).
 
 ### Retention
 
 Session logs are plain JSONL files in the sessions directory.  The application
 does not automatically delete them.  You are responsible for managing and
 deleting these files if retention is a concern.
+
+---
+
+## 3.2. Raw audio archive (opt-in, issue #228)
+
+Raw audio archiving is **disabled by default** and requires two explicit opt-in
+signals in `config.json`:
+
+```json
+"audio_archive": {
+  "store_audio": true,
+  "consent_given": true
+}
+```
+
+If either `store_audio` or `consent_given` is absent or `false`, no audio file
+is ever created.  The application also emits a visible warning on startup when
+archiving is active.
+
+### What is archived
+
+A single WAV file per session is written to
+`%USERPROFILE%\.tui-translator\audio-archive\` (or a custom directory).  The
+WAV contains **every sound that played through your speakers or headphones**
+during the session — meeting audio, system sounds, notification chimes, music.
+It does **not** capture your microphone.
+
+| Setting | Default | Effect |
+|---------|---------|--------|
+| `audio_archive.store_audio` | `false` | Master switch; must be `true` to enable. |
+| `audio_archive.consent_given` | `false` | Consent confirmation; must be `true` to enable. |
+| `audio_archive.directory` | `null` | Custom archive directory; omit for default. |
+| `audio_archive.max_size_mb` | `0` | Soft per-file quota in MiB; `0` = unlimited. |
+
+### Retention
+
+WAV files are plain files in the archive directory.  The application does not
+automatically delete them.  Enable `max_size_mb` to cap the size of each
+session file.  You are responsible for managing and deleting archive files.
 
 ---
 

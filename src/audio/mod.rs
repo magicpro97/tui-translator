@@ -45,6 +45,11 @@ pub mod vad;
 #[allow(unused_imports)]
 pub use vad::{VadConfig, VadDecision, VadGate};
 
+// Audio archive writer — EP-F.3 (issue #228)
+pub mod archive;
+#[allow(unused_imports)]
+pub use archive::{AudioArchiveWriter, AudioArchiveWriterConfig};
+
 /// Soak-proof evidence types and Issue #32 pass-fail thresholds.
 pub mod probe;
 
