@@ -9,13 +9,14 @@
 use anyhow::{bail, Context, Result};
 use notify::{recommended_watcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
@@ -901,28 +902,95 @@ pub fn write_config(path: &Path, cfg: &AppConfig) -> Result<()> {
 
     let payload =
         serde_json::to_string_pretty(cfg).context("failed to serialize config as JSON")? + "\n";
-    let tmp_path = parent.join("config.json.tmp");
-    std::fs::write(&tmp_path, payload)
-        .with_context(|| format!("failed to write temporary config {}", tmp_path.display()))?;
+    let tmp_path = temporary_config_path(path, parent)?;
+    let write_result = (|| -> Result<()> {
+        let mut tmp_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .with_context(|| format!("failed to create temporary config {}", tmp_path.display()))?;
+        tmp_file
+            .write_all(payload.as_bytes())
+            .with_context(|| format!("failed to write temporary config {}", tmp_path.display()))?;
+        tmp_file
+            .sync_all()
+            .with_context(|| format!("failed to flush temporary config {}", tmp_path.display()))?;
+        drop(tmp_file);
+        replace_config_file(&tmp_path, path)
+    })();
 
-    if path
-        .try_exists()
-        .with_context(|| format!("failed to access {}", path.display()))?
-    {
-        std::fs::remove_file(path)
-            .with_context(|| format!("failed to replace {}", path.display()))?;
+    if let Err(error) = write_result {
+        if let Err(cleanup_error) = std::fs::remove_file(&tmp_path) {
+            tracing::warn!(
+                path = %tmp_path.display(),
+                error = %cleanup_error,
+                "failed to remove temporary config after write failure"
+            );
+        }
+        return Err(error);
     }
-
-    std::fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "failed to move temporary config {} into {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
 
     tracing::info!(path = %path.display(), "configuration written");
     Ok(())
+}
+
+fn temporary_config_path(path: &Path, parent: &Path) -> Result<PathBuf> {
+    let mut file_name = path
+        .file_name()
+        .context("config path must include a file name")?
+        .to_os_string();
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    file_name.push(format!(".{}.{}.tmp", std::process::id(), suffix));
+    Ok(parent.join(file_name))
+}
+
+#[cfg(windows)]
+fn replace_config_file(tmp_path: &Path, target_path: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let from = tmp_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let to = target_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let replaced = unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        let error = std::io::Error::last_os_error();
+        bail!(
+            "failed to replace {} with {}: {error}",
+            target_path.display(),
+            tmp_path.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_config_file(tmp_path: &Path, target_path: &Path) -> Result<()> {
+    std::fs::rename(tmp_path, target_path).with_context(|| {
+        format!(
+            "failed to replace {} with {}",
+            target_path.display(),
+            tmp_path.display()
+        )
+    })
 }
 
 /// Start a background thread that watches `path` for file-system changes.
@@ -1603,6 +1671,32 @@ mod tests {
     }
 
     #[test]
+    fn write_config_replaces_existing_config_without_fixed_temp_artifact() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join(".tui-translator").join("config.json");
+        let initial = AppConfig {
+            google_api_key: Some("old-key".to_string()),
+            ..AppConfig::default()
+        };
+        write_config(&path, &initial).unwrap();
+
+        let next = AppConfig {
+            google_api_key: Some("new-key".to_string()),
+            target_language: "en".to_string(),
+            ..AppConfig::default()
+        };
+        write_config(&path, &next).unwrap();
+
+        let persisted = load(&path).unwrap();
+        assert_eq!(persisted.google_api_key.as_deref(), Some("new-key"));
+        assert_eq!(persisted.target_language, "en");
+        assert!(
+            !path.with_file_name("config.json.tmp").exists(),
+            "supported config writes must not depend on the old fixed temp path"
+        );
+    }
+
+    #[test]
     fn editor_defaults_file_audio_path_next_to_config() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join(".tui-translator").join("config.json");
@@ -1706,6 +1800,42 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         panic!("hot-reload did not apply target_language change within 5 seconds");
+    }
+
+    #[tokio::test]
+    async fn hot_reload_observes_write_config_atomic_replace() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let initial = AppConfig {
+            google_api_key: Some("OLD_KEY".to_string()),
+            ..AppConfig::default()
+        };
+        write_config(&path, &initial).unwrap();
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let rx = start_watcher(&path, load(&path).unwrap(), restart_required.clone()).unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let next = AppConfig {
+            google_api_key: Some("NEW_KEY".to_string()),
+            target_language: "en".to_string(),
+            ..AppConfig::default()
+        };
+        write_config(&path, &next).unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if rx.borrow().target_language == "en" {
+                assert!(
+                    restart_required.load(Ordering::Relaxed),
+                    "credential changes written through write_config must signal restart"
+                );
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!("hot-reload did not observe write_config atomic replace within 5 seconds");
     }
 
     #[tokio::test]

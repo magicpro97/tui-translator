@@ -3897,8 +3897,8 @@ mod tests {
             &cfg_path,
         );
         let _ = state.with_config_editor_mut(|editor| {
-            editor.source_language = "ja-JP".to_string();
-            editor.target_language = "vi".to_string();
+            editor.source_language = "en-US".to_string();
+            editor.target_language = "fr".to_string();
             editor.google_api_key = "saved-key".to_string();
         });
 
@@ -3914,6 +3914,18 @@ mod tests {
 
         let persisted = config::load(&cfg_path).unwrap();
         assert_eq!(persisted.google_api_key.as_deref(), Some("saved-key"));
+        assert_eq!(persisted.source_language, "en-US");
+        assert_eq!(persisted.target_language, "fr");
+        let runtime = current_config.lock().unwrap().clone();
+        assert_eq!(runtime.google_api_key.as_deref(), Some("saved-key"));
+        assert_eq!(runtime.source_language, "en-US");
+        assert_eq!(runtime.target_language, "fr");
+        assert_eq!(state.source_language(), "en-US");
+        assert_eq!(state.target_language(), "fr");
+        assert!(
+            restart_required.load(Ordering::Relaxed),
+            "onboarding save should signal restart for provider credential changes"
+        );
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
     }
 
