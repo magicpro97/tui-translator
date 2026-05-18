@@ -1921,20 +1921,35 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 /// 1. `TUI_TRANSLATOR_CONFIG` environment variable — allows the soak runner
 ///    (and other callers) to inject a temporary configuration without touching
 ///    the user's profile.
-/// 2. The OS-specific per-user config directory from `directories::BaseDirs`
+/// 2. An existing `config.json` next to the executable, preserving portable ZIP
+///    usage.
+/// 3. The OS-specific per-user config directory from `directories::BaseDirs`
 ///    (or `TUI_TRANSLATOR_CONFIG_DIR`) joined with `config.json`.
-/// 3. The directory that contains the running executable joined with
+/// 4. The directory that contains the running executable joined with
 ///    `config.json` as a legacy fallback when the OS config directory cannot
 ///    be resolved.
-/// 4. The literal string `"config.json"` in the current working directory as a
+/// 5. The literal string `"config.json"` in the current working directory as a
 ///    last resort.
 fn config_json_path() -> PathBuf {
-    if let Ok(path) = std::env::var("TUI_TRANSLATOR_CONFIG") {
-        return PathBuf::from(path);
+    let per_user_config = config::default_config_path();
+    if let Err(error) = &per_user_config {
+        tracing::warn!(
+            error = %error,
+            "failed to resolve per-user config path; falling back to portable config path"
+        );
     }
-    config::default_config_path().unwrap_or_else(|_| {
-        legacy_config_json_path().unwrap_or_else(|| PathBuf::from("config.json"))
-    })
+    select_config_json_path(
+        explicit_config_json_path(),
+        existing_legacy_config_json_path(),
+        per_user_config,
+        legacy_config_json_path(),
+    )
+}
+
+fn explicit_config_json_path() -> Option<PathBuf> {
+    std::env::var_os("TUI_TRANSLATOR_CONFIG")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 fn legacy_config_json_path() -> Option<PathBuf> {
@@ -1943,8 +1958,40 @@ fn legacy_config_json_path() -> Option<PathBuf> {
         .and_then(|exe| exe.parent().map(|dir| dir.join("config.json")))
 }
 
+fn existing_legacy_config_json_path() -> Option<PathBuf> {
+    let path = legacy_config_json_path()?;
+    match path.try_exists() {
+        Ok(true) => Some(path),
+        Ok(false) => None,
+        Err(err) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %err,
+                "failed to check portable config path"
+            );
+            None
+        }
+    }
+}
+
+fn select_config_json_path(
+    explicit_override: Option<PathBuf>,
+    portable_config: Option<PathBuf>,
+    per_user_config: Result<PathBuf>,
+    fallback_config: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(path) = explicit_override {
+        return path;
+    }
+    if let Some(path) = portable_config {
+        return path;
+    }
+    per_user_config
+        .unwrap_or_else(|_| fallback_config.unwrap_or_else(|| PathBuf::from("config.json")))
+}
+
 fn has_explicit_config_override() -> bool {
-    std::env::var_os("TUI_TRANSLATOR_CONFIG").is_some()
+    explicit_config_json_path().is_some()
 }
 
 fn skip_onboarding() -> bool {
@@ -4785,6 +4832,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn empty_config_env_var_is_not_an_explicit_override() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _config = EnvVarGuard::set("TUI_TRANSLATOR_CONFIG", "");
+
+        assert!(
+            !has_explicit_config_override(),
+            "empty TUI_TRANSLATOR_CONFIG must behave like no override"
+        );
+        assert!(
+            explicit_config_json_path().is_none(),
+            "empty TUI_TRANSLATOR_CONFIG must not produce a path"
+        );
+    }
+
     /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` uses the default
     /// per-user config directory.
     #[test]
@@ -4799,6 +4861,54 @@ mod tests {
             config_dir.path().join("config.json"),
             "fallback path must use the default config location; got {path:?}"
         );
+    }
+
+    #[test]
+    fn select_config_json_path_explicit_override_wins() {
+        let selected = select_config_json_path(
+            Some(PathBuf::from("override.json")),
+            Some(PathBuf::from("portable.json")),
+            Ok(PathBuf::from("per-user.json")),
+            Some(PathBuf::from("fallback.json")),
+        );
+
+        assert_eq!(selected, PathBuf::from("override.json"));
+    }
+
+    #[test]
+    fn select_config_json_path_prefers_portable_config_over_per_user() {
+        let selected = select_config_json_path(
+            None,
+            Some(PathBuf::from("portable.json")),
+            Ok(PathBuf::from("per-user.json")),
+            Some(PathBuf::from("fallback.json")),
+        );
+
+        assert_eq!(selected, PathBuf::from("portable.json"));
+    }
+
+    #[test]
+    fn select_config_json_path_uses_per_user_when_no_portable_config_exists() {
+        let selected = select_config_json_path(
+            None,
+            None,
+            Ok(PathBuf::from("per-user.json")),
+            Some(PathBuf::from("fallback.json")),
+        );
+
+        assert_eq!(selected, PathBuf::from("per-user.json"));
+    }
+
+    #[test]
+    fn select_config_json_path_falls_back_when_per_user_path_is_unavailable() {
+        let selected = select_config_json_path(
+            None,
+            None,
+            Err(anyhow::anyhow!("no OS config directory")),
+            Some(PathBuf::from("fallback.json")),
+        );
+
+        assert_eq!(selected, PathBuf::from("fallback.json"));
     }
 
     // ── build_config_from_editor — new fields ─────────────────────────────────
@@ -4959,7 +5069,7 @@ mod tests {
         assert_eq!(
             path.file_name(),
             Some(std::ffi::OsStr::new("config.json")),
-            "config_json_path must resolve to a config.json file when home dir is unavailable; \
+            "config_json_path must resolve to a config.json file without overrides; \
              got {path:?}"
         );
     }
