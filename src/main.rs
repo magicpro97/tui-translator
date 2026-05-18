@@ -4314,6 +4314,10 @@ mod tests {
             Some("Headphones (USB Audio)")
         );
         assert!(restart_required.load(Ordering::Relaxed));
+        assert_eq!(state.capture_device_label(), "Headphones (USB Audio)");
+        let reopened =
+            tui::ConfigEditorState::from_config(&persisted, &cfg_path, ConfigEditorMode::Settings);
+        assert_eq!(reopened.capture_device, "Headphones (USB Audio)");
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
     }
 

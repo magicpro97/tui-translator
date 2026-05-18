@@ -23,7 +23,9 @@
 //! user config or WASAPI devices on the host.
 
 use super::harness::{PtySession, EXIT_TIMEOUT, STARTUP_TIMEOUT};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 // ── Timeouts ──────────────────────────────────────────────────────────────────
 
@@ -115,6 +117,33 @@ fn check_settings_layout(session: &PtySession, cols: u16, rows: u16) {
         "settings panel title leaked into last terminal row {} at {cols}×{rows}: {last_row:?}",
         rows - 1,
     );
+}
+
+fn write_config_with_capture_device(dir: &Path, capture_device: &str) -> PathBuf {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("soak")
+        .join("soak_audio.wav")
+        .canonicalize()
+        .expect("canonicalize soak fixture");
+    let cfg_path = dir.join("config.json");
+    let payload = format!(
+        concat!(
+            "{{\n",
+            "  \"google_api_key\": \"pty-test-key\",\n",
+            "  \"source_language\": \"ja-JP\",\n",
+            "  \"target_language\": \"vi\",\n",
+            "  \"tts_enabled\": false,\n",
+            "  \"audio_source\": \"file\",\n",
+            "  \"audio_file_path\": \"{}\",\n",
+            "  \"capture_device\": \"{}\"\n",
+            "}}\n"
+        ),
+        fixture.display().to_string().replace('\\', "\\\\"),
+        capture_device
+    );
+    std::fs::write(&cfg_path, payload).expect("write capture-device PTY config");
+    cfg_path
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -354,4 +383,37 @@ fn settings_capture_device_field_shows_picker() {
         Some(0),
         "settings_capture_device_field_shows_picker: expected exit 0; got {code:?}"
     );
+}
+
+#[test]
+fn settings_capture_device_selection_survives_restart() {
+    let temp = TempDir::new().expect("temp config dir");
+    let cfg_path = write_config_with_capture_device(temp.path(), "USB Headset");
+    let cfg_path_string = cfg_path.to_string_lossy().into_owned();
+
+    for run in 1..=2 {
+        let mut session = PtySession::spawn(
+            110,
+            30,
+            &[("TUI_TRANSLATOR_CONFIG", cfg_path_string.as_str())],
+        )
+        .unwrap_or_else(|err| panic!("spawn tui-translator restart run {run}: {err}"));
+        assert!(
+            session.wait_for_text("Q quit", STARTUP_TIMEOUT),
+            "restart run {run}: timed out waiting for main TUI frame"
+        );
+        assert!(
+            session.wait_for_text("USB Headset", OVERLAY_TIMEOUT),
+            "restart run {run}: saved capture device should be visible after startup; screen:\n{}",
+            session.all_rows().join("\n"),
+        );
+
+        session.quit_cleanly().expect("send quit");
+        let code = session.wait_exit(EXIT_TIMEOUT);
+        assert_eq!(
+            code,
+            Some(0),
+            "settings_capture_device_selection_survives_restart run {run}: expected exit 0; got {code:?}"
+        );
+    }
 }
