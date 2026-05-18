@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use reqwest::header::{CONTENT_LENGTH, RANGE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
+use sysinfo::Disks;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
@@ -204,6 +205,24 @@ pub enum ModelDownloadError {
         /// Quarantine path containing the corrupt data.
         quarantine_path: PathBuf,
     },
+    /// Destination disk does not have enough free space for the remaining download.
+    #[error(
+        "not enough free disk space at {path}: need {required_bytes} bytes, available {available_bytes} bytes"
+    )]
+    InsufficientDiskSpace {
+        /// Destination directory.
+        path: PathBuf,
+        /// Remaining bytes that must be downloaded.
+        required_bytes: u64,
+        /// Free bytes reported by the operating system.
+        available_bytes: u64,
+    },
+    /// Available disk space could not be determined for the destination.
+    #[error("could not determine free disk space for {path}")]
+    DiskSpaceUnavailable {
+        /// Destination directory.
+        path: PathBuf,
+    },
     /// Filesystem operation failed.
     #[error("I/O error at {path}: {source}")]
     Io {
@@ -236,6 +255,7 @@ pub async fn install_model_bundle(
             path: model_dir.to_owned(),
             source,
         })?;
+    ensure_model_dir_has_space(manifest, model_dir).await?;
 
     let mut report = ModelInstallReport {
         model_dir: model_dir.to_owned(),
@@ -276,6 +296,85 @@ pub async fn install_model_bundle(
 
     write_installed_manifest(model_dir, manifest).await?;
     Ok(report)
+}
+
+async fn ensure_model_dir_has_space(
+    manifest: &ModelBundleManifest,
+    model_dir: &Path,
+) -> Result<(), ModelDownloadError> {
+    let required_bytes = remaining_download_bytes(manifest, model_dir).await?;
+    validate_available_space(
+        model_dir,
+        required_bytes,
+        available_space_for_path(model_dir),
+    )
+}
+
+async fn remaining_download_bytes(
+    manifest: &ModelBundleManifest,
+    model_dir: &Path,
+) -> Result<u64, ModelDownloadError> {
+    let mut total = 0_u64;
+    for file in &manifest.files {
+        let target = safe_join(model_dir, &file.relative_path)?;
+        if target
+            .try_exists()
+            .map_err(|source| ModelDownloadError::Io {
+                path: target.clone(),
+                source,
+            })?
+        {
+            continue;
+        }
+
+        let part_len = existing_len(&partial_path(&target)).await?;
+        total = total.saturating_add(if part_len == 0 || part_len >= file.size_bytes {
+            file.size_bytes
+        } else {
+            file.size_bytes - part_len
+        });
+    }
+    Ok(total)
+}
+
+fn validate_available_space(
+    model_dir: &Path,
+    required_bytes: u64,
+    available_bytes: Option<u64>,
+) -> Result<(), ModelDownloadError> {
+    if required_bytes == 0 {
+        return Ok(());
+    }
+
+    let Some(available_bytes) = available_bytes else {
+        return Err(ModelDownloadError::DiskSpaceUnavailable {
+            path: model_dir.to_owned(),
+        });
+    };
+
+    if available_bytes < required_bytes {
+        return Err(ModelDownloadError::InsufficientDiskSpace {
+            path: model_dir.to_owned(),
+            required_bytes,
+            available_bytes,
+        });
+    }
+    Ok(())
+}
+
+fn available_space_for_path(path: &Path) -> Option<u64> {
+    let absolute = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    let disks = Disks::new_with_refreshed_list();
+    disks
+        .list()
+        .iter()
+        .filter(|disk| absolute.starts_with(disk.mount_point()))
+        .max_by_key(|disk| disk.mount_point().components().count())
+        .map(|disk| disk.available_space())
 }
 
 async fn download_file(
@@ -666,6 +765,46 @@ mod tests {
         assert_eq!(tokio::fs::read(&target).await.unwrap(), b"hello world");
         assert!(!partial_path(&target).exists());
         assert!(temp.path().join(INSTALLED_MANIFEST_FILE).exists());
+    }
+
+    #[tokio::test]
+    async fn remaining_download_bytes_uses_partial_file_for_quota() {
+        let temp = TempDir::new().unwrap();
+        let target = temp.path().join("encoder_model.onnx");
+        tokio::fs::write(partial_path(&target), b"hello")
+            .await
+            .unwrap();
+        let mut manifest = sample_manifest();
+        manifest.files[0].size_bytes = 11;
+
+        let remaining = remaining_download_bytes(&manifest, temp.path())
+            .await
+            .unwrap();
+
+        assert_eq!(remaining, 6);
+    }
+
+    #[test]
+    fn disk_space_gate_rejects_insufficient_space() {
+        let temp = TempDir::new().unwrap();
+
+        let err = validate_available_space(temp.path(), 11, Some(10)).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ModelDownloadError::InsufficientDiskSpace {
+                required_bytes: 11,
+                available_bytes: 10,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn disk_space_gate_allows_reused_model_without_space_probe() {
+        let temp = TempDir::new().unwrap();
+
+        validate_available_space(temp.path(), 0, None).unwrap();
     }
 
     #[tokio::test]

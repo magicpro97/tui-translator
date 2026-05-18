@@ -277,6 +277,8 @@ models/
 - Without `--yes`, the command only prints the model name, version, license, source URL,
   download size, file count, and destination path.
 - Downloads use `<file>.part` files and resume with HTTP `Range` when a partial file exists.
+- Before downloading, the installer checks that the destination disk has enough free space for
+  the remaining bytes after reusable partial files are counted.
 - Each file must match the manifest SHA-256 before it is renamed into place; corrupt files are
   quarantined as `<file>.corrupt` and the bundle is not marked installed.
 - The manifest `version` field is persisted as `manifest.json`, so future release tooling can

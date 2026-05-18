@@ -217,8 +217,9 @@ For a user starting from scratch:
    Use `tui-translator.exe --install-local-mt-model <manifest.json>` first to
    review the model name, version, license, source URL, size, and destination.
    Re-run with `--yes` to download.  The installer resumes `<file>.part`
-   downloads, verifies every SHA-256, quarantines corrupt files, and writes the
-   installed `manifest.json` for version/upgrade checks.
+   downloads, checks free disk space, verifies every SHA-256, quarantines
+   corrupt files, and writes the installed `manifest.json` for version/upgrade
+   checks.
 
 4. **On 8 GB machines — watch Task Manager:**
    If system RAM drops below ~1 GB free while Zoom is running, switch back to
