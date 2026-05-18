@@ -60,13 +60,13 @@ self-contained.
 The app writes your settings to:
 
 ```text
-%USERPROFILE%\.tui-translator\config.json
+%APPDATA%\tui-translator\config.json
 ```
 
 If you prefer to edit JSON manually, you can still copy `config.example.json`
 and create that file yourself in the same folder.
 
-> **Security reminder:** `%USERPROFILE%\.tui-translator\config.json` contains your API key.
+> **Security reminder:** `%APPDATA%\tui-translator\config.json` contains your API key.
 > Do not share it, do not upload it, and do not email it.
 
 ---
@@ -113,13 +113,19 @@ A terminal window opens showing the subtitle area and a status bar at the bottom
 > | Priority | Path | When used |
 > |----------|------|-----------|
 > | 1 | Value of the `TUI_TRANSLATOR_CONFIG` environment variable | When that variable is set — overrides everything else |
-> | 2 | `%USERPROFILE%\.tui-translator\config.json` | **Default for all normal interactive runs** |
-> | 3 | `<folder containing tui-translator.exe>\config.json` | Legacy fallback — only reached when `USERPROFILE` and `HOME` are both absent (not typical on Windows) |
-> | 4 | `config.json` in the current working directory | Last resort |
+> | 2 | `<folder containing tui-translator.exe>\config.json` | Portable ZIP mode, or a legacy side-by-side config from older builds |
+> | 3 | `%APPDATA%\tui-translator\config.json` | Default per-user location when no executable-side config is present |
+> | 4 | `<folder containing tui-translator.exe>\config.json` | Fallback path when the OS per-user config directory cannot be resolved |
+> | 5 | `config.json` in the current working directory | Last resort |
 >
-> On a standard Windows install `USERPROFILE` is always set, so **priority 2 is always
-> used in practice**.  A `config.json` placed beside the `.exe` is **not** read during
-> normal runs.
+> If an older build left `config.json` beside `tui-translator.exe` and the per-user
+> config file does not exist yet, the app copies that file to
+> `%APPDATA%\tui-translator\config.json` on startup. The original executable-side
+> file is left unchanged. While that original file remains beside the `.exe`, it is
+> still treated as the portable-mode config and continues to win lookup order.
+> Remove or rename it only after you have confirmed the per-user copy is correct.
+> A migration notice appears in the title bar and is written to
+> `%TEMP%\tui-translator.log`.
 >
 > **Portable / custom-path setup:** To run with a config file at a path of your choosing,
 > set `TUI_TRANSLATOR_CONFIG` before launching:
@@ -173,7 +179,7 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 >
 > **API key display:** The `google_api_key` field is masked in the TUI settings editor
 > (shown as `••••••••`) to prevent accidental screen exposure.  The actual key is stored
-> in plain text in `%USERPROFILE%\.tui-translator\config.json` — keep that file private
+> in plain text in `%APPDATA%\tui-translator\config.json` — keep that file private
 > and do not share it.
 
 ---
@@ -254,7 +260,7 @@ Audio stream (time flows right)
 ### VAD configuration reference
 
 All fields live inside the `"vad"` block of
-`%USERPROFILE%\.tui-translator\config.json`.  Set `"enabled": true` to
+`%APPDATA%\tui-translator\config.json`.  Set `"enabled": true` to
 activate VAD.  All other sub-fields are optional and fall back to the defaults
 shown below.
 
@@ -376,7 +382,7 @@ and flood the STT API with silent chunks.
 
 **"API key not valid" or no subtitles appear**
 
-- Open `%USERPROFILE%\.tui-translator\config.json` in Notepad and check the `google_api_key` value.
+- Open `%APPDATA%\tui-translator\config.json` in Notepad and check the `google_api_key` value.
   Make sure there are no extra spaces, quotation marks, or line breaks inside the key.
 - Confirm all three APIs are enabled in the Google Cloud Console (Step 3).
 - Check that your Google Cloud project has a billing account attached.
@@ -397,7 +403,7 @@ and flood the STT API with silent chunks.
 - Press Space to pause translation whenever the meeting goes quiet or you do not need subtitles.
   Billing only accumulates while the application is actively sending audio to Google.
 - Press M to open the cost panel and see the live estimate for the current session.
-- Set a lower `cost_warning_usd` value in `%USERPROFILE%\.tui-translator\config.json` to get an earlier on-screen warning.
+- Set a lower `cost_warning_usd` value in `%APPDATA%\tui-translator\config.json` to get an earlier on-screen warning.
 
 ---
 
@@ -427,7 +433,7 @@ Note the exact name of the device Zoom audio is playing through.
 
 **Step 2 — Set `capture_device` in config.json**
 
-Open `%USERPROFILE%\.tui-translator\config.json` and set:
+Open `%APPDATA%\tui-translator\config.json` and set:
 
 ```json
 "capture_device": "Speakers (Realtek High Definition Audio)"
@@ -609,7 +615,7 @@ If the hash does not match, delete the `.bin` file and download it again.
 Open your settings file in Notepad:
 
 ```text
-%USERPROFILE%\.tui-translator\config.json
+%APPDATA%\tui-translator\config.json
 ```
 
 Or press **S** inside the running application to open the settings editor.

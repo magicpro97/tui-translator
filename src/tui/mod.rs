@@ -1310,6 +1310,10 @@ pub struct AppState {
     /// succeeded.  Shown in the status/metrics strip.
     pub pipeline_error_msg: Arc<Mutex<Option<String>>>,
 
+    /// One-shot startup notice for non-error configuration events that the
+    /// operator should see, such as a legacy config migration.
+    pub startup_notice_msg: Arc<Mutex<Option<String>>>,
+
     /// Operator-facing recovery hint for audio capture startup failures.
     ///
     /// This is intentionally separate from [`pipeline_error_msg`] because
@@ -1356,6 +1360,7 @@ impl AppState {
             metrics_tx: Arc::new(metrics_tx),
             metrics_rx,
             pipeline_error_msg: Arc::new(Mutex::new(None)),
+            startup_notice_msg: Arc::new(Mutex::new(None)),
             capture_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
@@ -1928,6 +1933,11 @@ pub fn draw_ui(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
+    let startup_notice = state
+        .startup_notice_msg
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     let capture_err = state
         .capture_error_msg
         .lock()
@@ -1983,6 +1993,14 @@ pub fn draw_ui(
     if paused {
         title_spans.push(Span::styled(
             "   \u{23f8} PAUSED",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    if let Some(ref msg) = startup_notice {
+        title_spans.push(Span::styled(
+            format!("   {msg}"),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -3050,6 +3068,32 @@ mod tests {
         assert!(
             rendered.contains('\u{2192}'),
             "title bar should contain → arrow; got: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn draw_ui_title_bar_contains_startup_notice() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(160, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new();
+        *state.startup_notice_msg.lock().unwrap() =
+            Some("Config copied to per-user folder; old config left unchanged.".to_string());
+
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("Config copied to per-user folder"),
+            "title bar should show startup notice; got: {rendered:?}"
         );
     }
 
