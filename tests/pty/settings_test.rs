@@ -312,3 +312,46 @@ fn settings_tab_navigation_changes_active_field() {
         "settings_tab_navigation_changes_active_field: expected exit 0; got {code:?}"
     );
 }
+
+#[test]
+fn settings_capture_device_field_shows_picker() {
+    let mut session = PtySession::spawn(110, 30, &[])
+        .expect("spawn tui-translator for settings_capture_device_field_shows_picker");
+    assert!(
+        session.wait_for_text("Q quit", STARTUP_TIMEOUT),
+        "110×30: timed out waiting for main TUI frame"
+    );
+
+    open_settings(&mut session, 110, 30);
+
+    for _ in 0..4 {
+        session.send(b"\t").expect("send Tab to advance field");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    assert!(
+        session.wait_for_text("> Capture device", OVERLAY_TIMEOUT),
+        "capture-device field should become active after four Tabs; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+    assert!(
+        session.wait_for_text("Capture device picker", OVERLAY_TIMEOUT),
+        "active capture-device field should show the picker list; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+    assert!(
+        session.screen_contains("Windows default playback")
+            || session.screen_contains("No active playback devices"),
+        "picker should show either default selection or no-device recovery text; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    close_settings_esc(&mut session, 110, 30);
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "settings_capture_device_field_shows_picker: expected exit 0; got {code:?}"
+    );
+}
