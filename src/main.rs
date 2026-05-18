@@ -2329,9 +2329,6 @@ fn save_config_editor(
         next
     };
 
-    next_cfg
-        .validate()
-        .context("config validation failed before saving settings")?;
     config::write_config(cfg_path, &next_cfg)?;
     apply_runtime_config(
         current_config,
@@ -2961,7 +2958,7 @@ fn handle_action(
             ) {
                 tracing::warn!("config save requested from UI failed: {err:#}");
                 let _ = state.with_config_editor_mut(|editor| {
-                    editor.set_status_message(format!(" Save failed: {err:#}"))
+                    editor.set_status_message(config_save_error_status(&err))
                 });
             }
         }
@@ -2995,6 +2992,24 @@ fn handle_action(
 
         // Quit is handled in the outer loop, not here.
         UserAction::Quit => {}
+    }
+}
+
+fn config_save_error_status(err: &anyhow::Error) -> String {
+    format!(" Save failed: {}", single_line_error_chain(err))
+}
+
+fn single_line_error_chain(err: &anyhow::Error) -> String {
+    let parts: Vec<String> = err
+        .chain()
+        .map(|cause| cause.to_string())
+        .map(|part| part.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        "unknown error".to_string()
+    } else {
+        parts.join(": ")
     }
 }
 
@@ -4299,6 +4314,16 @@ mod tests {
     }
 
     #[test]
+    fn config_save_error_status_flattens_error_chain_for_tui_line() {
+        let err = anyhow::anyhow!("leaf\nfield detail").context("top\ncontext");
+        let status = config_save_error_status(&err);
+
+        assert!(!status.contains('\n'));
+        assert!(status.contains("top context"));
+        assert!(status.contains("leaf field detail"));
+    }
+
+    #[test]
     fn config_save_rejects_invalid_settings_without_overwriting_existing_file() {
         let temp = TempDir::new().unwrap();
         let cfg_path = temp.path().join(".tui-translator").join("config.json");
@@ -4333,6 +4358,10 @@ mod tests {
         assert!(
             status.contains("Save failed") && status.contains("audio_source"),
             "status should name the invalid field: {status}"
+        );
+        assert!(
+            !status.contains('\n'),
+            "status line must not contain embedded newlines: {status:?}"
         );
         let persisted = config::load(&cfg_path).unwrap();
         assert_eq!(
