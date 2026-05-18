@@ -2790,10 +2790,13 @@ mod tests {
         use ratatui::{backend::TestBackend, Terminal};
         let backend = TestBackend::new(120, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let editor = ConfigEditorState::from_config(
+        let mut editor = ConfigEditorState::from_config(
             &AppConfig::default(),
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Onboarding,
+        );
+        editor.set_status_message(
+            " Required: source language, target language, and Google API key. Ctrl+C quits so you can edit config manually.",
         );
 
         terminal
@@ -2817,6 +2820,10 @@ mod tests {
         assert!(
             rendered.contains("Save your initial config"),
             "first-run editor should show an onboarding action; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("edit config manually"),
+            "first-run editor should show a manual configuration escape hatch; got: {rendered:?}"
         );
     }
 
