@@ -1256,10 +1256,13 @@ fn main() -> Result<()> {
     let cfg_path = config_json_path();
     bootstrap_legacy_config_if_needed(&cfg_path)?;
     let (cfg, load_state, load_error) = config::load_for_startup(&cfg_path)?;
-    let onboarding_required = load_state == config::LoadState::Missing
-        && !has_explicit_config_override()
-        && !skip_onboarding();
-    let config_recovery_required = load_state == config::LoadState::Invalid && !skip_onboarding();
+    let startup_config_mode = startup_config_mode(
+        load_state,
+        has_explicit_config_override(),
+        skip_onboarding(),
+    );
+    let onboarding_required = startup_config_mode == StartupConfigMode::OnboardingRequired;
+    let config_recovery_required = startup_config_mode == StartupConfigMode::ConfigRecoveryRequired;
     let current_config = Arc::new(Mutex::new(cfg.clone()));
     let restart_required = Arc::new(AtomicBool::new(false));
 
@@ -1943,6 +1946,27 @@ fn skip_onboarding() -> bool {
         std::env::var("TUI_TRANSLATOR_SKIP_ONBOARDING"),
         Ok(value) if value == "1" || value.eq_ignore_ascii_case("true")
     )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupConfigMode {
+    Normal,
+    OnboardingRequired,
+    ConfigRecoveryRequired,
+}
+
+fn startup_config_mode(
+    load_state: config::LoadState,
+    explicit_config_override: bool,
+    skip_onboarding: bool,
+) -> StartupConfigMode {
+    match load_state {
+        config::LoadState::Missing if !explicit_config_override && !skip_onboarding => {
+            StartupConfigMode::OnboardingRequired
+        }
+        config::LoadState::Invalid if !skip_onboarding => StartupConfigMode::ConfigRecoveryRequired,
+        _ => StartupConfigMode::Normal,
+    }
 }
 
 fn bootstrap_legacy_config_if_needed(target_path: &Path) -> Result<()> {
@@ -3006,6 +3030,42 @@ mod tests {
         assert!(
             !metrics_warning_row_active(false, 0.0, &metrics),
             "compact layout height must stay fixed even when RAM warning is active"
+        );
+    }
+
+    #[test]
+    fn startup_config_mode_missing_home_config_requires_onboarding() {
+        assert_eq!(
+            startup_config_mode(config::LoadState::Missing, false, false),
+            StartupConfigMode::OnboardingRequired
+        );
+    }
+
+    #[test]
+    fn startup_config_mode_explicit_config_override_bypasses_onboarding() {
+        assert_eq!(
+            startup_config_mode(config::LoadState::Missing, true, false),
+            StartupConfigMode::Normal
+        );
+    }
+
+    #[test]
+    fn startup_config_mode_invalid_config_requires_repair() {
+        assert_eq!(
+            startup_config_mode(config::LoadState::Invalid, false, false),
+            StartupConfigMode::ConfigRecoveryRequired
+        );
+    }
+
+    #[test]
+    fn startup_config_mode_skip_flag_bypasses_interactive_startup() {
+        assert_eq!(
+            startup_config_mode(config::LoadState::Missing, false, true),
+            StartupConfigMode::Normal
+        );
+        assert_eq!(
+            startup_config_mode(config::LoadState::Invalid, false, true),
+            StartupConfigMode::Normal
         );
     }
 
