@@ -3594,6 +3594,18 @@ mod tests {
     }
 
     #[test]
+    fn settings_shortcut_opens_settings_outside_text_overlays() {
+        for key_code in [KeyCode::Char('s'), KeyCode::Char('S')] {
+            let key = KeyEvent::new(key_code, KeyModifiers::NONE);
+
+            assert_eq!(
+                key_to_action(&key, false, false),
+                Some(UserAction::OpenSettings)
+            );
+        }
+    }
+
+    #[test]
     fn prompt_language_hides_help_overlay() {
         let state = AppState::new();
         state.show_help.store(true, Ordering::Relaxed);
