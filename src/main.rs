@@ -3967,6 +3967,94 @@ mod tests {
     }
 
     #[test]
+    fn config_save_applies_hot_reloadable_language_changes_without_restart() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let mut starting_config = config::AppConfig::default();
+        starting_config.source_language = "ja-JP".to_string();
+        starting_config.target_language = "vi".to_string();
+        let current_config = Arc::new(Mutex::new(starting_config.clone()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(ConfigEditorMode::Settings, &starting_config, &cfg_path);
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.source_language = "en-US".to_string();
+            editor.target_language = "fr".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(persisted.source_language, "en-US");
+        assert_eq!(persisted.target_language, "fr");
+        assert_eq!(current_config.lock().unwrap().source_language, "en-US");
+        assert_eq!(current_config.lock().unwrap().target_language, "fr");
+        assert_eq!(state.source_language(), "en-US");
+        assert_eq!(state.target_language(), "fr");
+        assert!(
+            !restart_required.load(Ordering::Relaxed),
+            "source/target language changes are hot-reloadable and must not signal restart"
+        );
+        assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn watcher_replay_after_hot_reloadable_config_save_is_noop_for_restart_flag() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.target_language = "en".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let saved = config::load(&cfg_path).unwrap();
+        apply_runtime_config(
+            &current_config,
+            &state.target_language,
+            &state.source_language,
+            &state.capture_device_label,
+            &state.tts_enabled,
+            &restart_required,
+            &playback_service,
+            saved,
+        );
+
+        assert_eq!(state.target_language(), "en");
+        assert_eq!(current_config.lock().unwrap().target_language, "en");
+        assert!(
+            !restart_required.load(Ordering::Relaxed),
+            "watcher replay of the just-saved hot-reloadable config must not create a restart loop"
+        );
+    }
+
+    #[test]
     fn config_save_persists_home_style_config() {
         let temp = TempDir::new().unwrap();
         let cfg_path = temp.path().join(".tui-translator").join("config.json");
