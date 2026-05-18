@@ -82,6 +82,7 @@ whisper-rs = { version = "0.12", optional = true }
 # Optional so default CI/release builds stay lightweight until local MT is enabled.
 ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic"], optional = true }
 sentencepiece-rs = { version = "0.2.1", optional = true }
+tui-input = { version = "0.15.3", default-features = false }
 
 [features]
 # Enable the local Whisper STT backend (requires whisper.cpp build toolchain).

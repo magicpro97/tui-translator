@@ -47,6 +47,7 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
+use tui_input::InputRequest;
 
 mod audio;
 mod config;
@@ -2430,6 +2431,7 @@ impl TuiInteractionMode {
                 UserAction::OpenSettings
                     | UserAction::ConfigChar(_)
                     | UserAction::ConfigBackspace
+                    | UserAction::ConfigInput(_)
                     | UserAction::ConfigNextField
                     | UserAction::ConfigPrevField
                     | UserAction::ConfigSave
@@ -2586,6 +2588,17 @@ fn key_to_action(
             KeyCode::Enter => Some(UserAction::ConfigSave),
             KeyCode::Esc => Some(UserAction::DismissOverlay),
             KeyCode::Backspace => Some(UserAction::ConfigBackspace),
+            KeyCode::Delete => Some(UserAction::ConfigInput(InputRequest::DeleteNextChar)),
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::GoToPrevWord))
+            }
+            KeyCode::Left => Some(UserAction::ConfigInput(InputRequest::GoToPrevChar)),
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::GoToNextWord))
+            }
+            KeyCode::Right => Some(UserAction::ConfigInput(InputRequest::GoToNextChar)),
+            KeyCode::Home => Some(UserAction::ConfigInput(InputRequest::GoToStart)),
+            KeyCode::End => Some(UserAction::ConfigInput(InputRequest::GoToEnd)),
             KeyCode::Tab | KeyCode::Down => Some(UserAction::ConfigNextField),
             KeyCode::BackTab | KeyCode::Up => Some(UserAction::ConfigPrevField),
             KeyCode::F(2) => Some(UserAction::ConfigCycleCaptureDevice),
@@ -2594,6 +2607,27 @@ fn key_to_action(
             }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::ConfigSave)
+            }
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::GoToStart))
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::GoToEnd))
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::GoToPrevChar))
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::GoToNextChar))
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::DeleteLine))
+            }
+            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::DeleteTillEnd))
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::ConfigInput(InputRequest::DeletePrevWord))
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::ConfigChar(c))
@@ -2901,6 +2935,9 @@ fn handle_action(
         }
         UserAction::ConfigBackspace => {
             let _ = state.with_config_editor_mut(|editor| editor.backspace());
+        }
+        UserAction::ConfigInput(request) => {
+            let _ = state.with_config_editor_mut(|editor| editor.handle_input_request(*request));
         }
         UserAction::ConfigNextField => {
             let _ = state.with_config_editor_mut(|editor| editor.next_field());
@@ -3673,6 +3710,22 @@ mod tests {
                 true
             ),
             Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+                false,
+                true
+            ),
+            Some(UserAction::ConfigInput(InputRequest::GoToPrevChar))
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
+                false,
+                true
+            ),
+            Some(UserAction::ConfigInput(InputRequest::DeleteNextChar))
         );
     }
 
