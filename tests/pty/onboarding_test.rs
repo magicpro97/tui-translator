@@ -2,6 +2,79 @@ use super::harness::{PtySession, EXIT_TIMEOUT, STARTUP_TIMEOUT};
 use std::time::Duration;
 use tempfile::TempDir;
 
+// ── Onboarding layout helpers ─────────────────────────────────────────────────
+
+/// Spawn a PTY session that will trigger the first-run onboarding overlay.
+///
+/// Uses an isolated temporary directory as `USERPROFILE` so no pre-existing
+/// config is found and the binary opens the "First-Run Setup" overlay.
+fn spawn_onboarding_session(cols: u16, rows: u16) -> (PtySession, TempDir) {
+    let fake_home = TempDir::new().expect("temp home for onboarding layout test");
+    let home_str = fake_home
+        .path()
+        .to_str()
+        .expect("temp home path must be valid UTF-8")
+        .to_string();
+    let session = PtySession::spawn(
+        cols,
+        rows,
+        &[
+            ("TUI_TRANSLATOR_SKIP_ONBOARDING", "0"),
+            ("USERPROFILE", home_str.as_str()),
+        ],
+    )
+    .unwrap_or_else(|e| panic!("spawn onboarding session {cols}×{rows}: {e}"));
+    (session, fake_home)
+}
+
+/// Assert that the onboarding overlay is visible and structurally readable.
+///
+/// Checks that:
+/// 1. The "First-Run Setup" border title is present.
+/// 2. Key field labels visible at every supported size are rendered.
+/// 3. No obvious row overflow: the overlay title must not bleed into the
+///    very last terminal row (the TUI background row).
+///
+/// Keyboard-hint assertions are size-dependent (the hint line may be clipped
+/// at small panel heights) and are performed in the individual test functions.
+fn check_onboarding_layout(session: &PtySession, cols: u16, rows: u16) {
+    // Title must be present (border title of the overlay panel).
+    assert!(
+        session.screen_contains("First-Run Setup"),
+        "onboarding panel title 'First-Run Setup' not found at {cols}×{rows}; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    // Core field labels always visible (Source language is the first field,
+    // always active/highlighted on startup, and present at all sizes).
+    assert!(
+        session.screen_contains("Source language"),
+        "'Source language' field label not found at {cols}×{rows}; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+    assert!(
+        session.screen_contains("Google API key"),
+        "'Google API key' field label not found at {cols}×{rows}; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    // The panel title must not appear in the very last row of the terminal
+    // (that would indicate overflow / widget bleeding).
+    let last_row = session.row_text(rows - 1);
+    assert!(
+        !last_row.contains("First-Run Setup"),
+        "onboarding panel title leaked into last terminal row {}: {last_row:?}",
+        rows - 1,
+    );
+}
+
+/// Quit cleanly from the onboarding overlay via two Ctrl+C presses.
+fn quit_onboarding(session: &mut PtySession) {
+    session.send(&[0x03]).expect("Ctrl+C to quit onboarding");
+    std::thread::sleep(Duration::from_millis(300));
+    session.send(&[0x03]).expect("Ctrl+C to dismiss summary");
+}
+
 #[test]
 fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
     let fake_home = TempDir::new().expect("temp home");
@@ -255,4 +328,120 @@ fn invalid_startup_config_opens_repair_settings_instead_of_exiting() {
         .wait_exit(EXIT_TIMEOUT)
         .expect("invalid-config session exit");
     assert_eq!(exit, 0, "invalid-config session should exit cleanly");
+}
+
+// ── Onboarding layout tests (issue #165) ─────────────────────────────────────
+
+/// Standard 110×30 terminal — full panel (76×28, non-compact).
+///
+/// Verifies the onboarding overlay is readable and all structural elements
+/// (border title, core field labels, keyboard hints) are present without
+/// overflow into the background rows.
+///
+/// The full panel (76×28, inner area 74×26) fits all content lines including
+/// the keyboard hint row, so extended hint text ("Tab/Down next") is assertable.
+#[test]
+fn onboarding_layout_standard_110x30() {
+    let (mut session, _home) = spawn_onboarding_session(110, 30);
+    assert!(
+        session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
+        "110×30: timed out waiting for onboarding overlay"
+    );
+    check_onboarding_layout(&session, 110, 30);
+
+    // Full panel (76×28) is not compact: extended hint variant must be visible.
+    assert!(
+        session.screen_contains("Tab/Down next"),
+        "110×30: full panel should show extended key hints with 'Tab/Down next'; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+    assert!(
+        session.screen_contains("Enter save"),
+        "110×30: full panel keyboard hint must contain 'Enter save'; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    quit_onboarding(&mut session);
+    let exit = session
+        .wait_exit(EXIT_TIMEOUT)
+        .expect("110×30 onboarding exit");
+    assert_eq!(
+        exit, 0,
+        "onboarding_layout_standard_110x30: expected exit 0"
+    );
+}
+
+/// Minimum standard terminal (80×24) — panel 76×24, non-compact.
+///
+/// At 80 columns the panel width equals the compact threshold (76, not < 76)
+/// so non-compact rendering is used.  The panel height (24 rows, inner 22)
+/// is too small to fit every content line, but the critical structural elements
+/// — border title and field labels — are always in the first visible rows.
+#[test]
+fn onboarding_layout_standard_80x24() {
+    let (mut session, _home) = spawn_onboarding_session(80, 24);
+    assert!(
+        session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
+        "80×24: timed out waiting for onboarding overlay"
+    );
+    check_onboarding_layout(&session, 80, 24);
+
+    // At 80×24 the panel is non-compact (width == 76, height == 24 > 16).
+    // The intro blurb appears in non-compact mode and is always in the first
+    // visible content row, so we assert it as a compact/non-compact discriminator.
+    assert!(
+        session.screen_contains("Save your initial config"),
+        "80×24: non-compact panel should show intro blurb; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    quit_onboarding(&mut session);
+    let exit = session
+        .wait_exit(EXIT_TIMEOUT)
+        .expect("80×24 onboarding exit");
+    assert_eq!(exit, 0, "onboarding_layout_standard_80x24: expected exit 0");
+}
+
+/// Constrained 60×22 terminal — panel 60×22, compact mode.
+///
+/// Panel width 60 < 76 triggers compact rendering: the intro blurb and extra
+/// blank lines are omitted, and the shorter key-hint line is used.  The panel
+/// inner area (58×20) is just large enough to fit all 19 compact content lines,
+/// so "Enter save" and "Tab/Shift+Tab" are assertable.
+#[test]
+fn onboarding_layout_compact_60x22() {
+    let (mut session, _home) = spawn_onboarding_session(60, 22);
+    assert!(
+        session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
+        "60×22: timed out waiting for onboarding overlay"
+    );
+    check_onboarding_layout(&session, 60, 22);
+
+    // Compact mode uses the shorter hint variant ("Tab/Shift+Tab move …").
+    assert!(
+        session.screen_contains("Tab/Shift+Tab"),
+        "60×22: compact panel should show short key hints with 'Tab/Shift+Tab'; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+    assert!(
+        session.screen_contains("Enter save"),
+        "60×22: compact panel keyboard hint must contain 'Enter save'; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+    // Full-panel hints must NOT appear in compact mode.
+    assert!(
+        !session.screen_contains("Tab/Down next"),
+        "60×22: compact panel must not show extended hint 'Tab/Down next'",
+    );
+    // Non-compact intro blurb must be absent in compact mode.
+    assert!(
+        !session.screen_contains("Save your initial config"),
+        "60×22: compact panel must not show the intro blurb",
+    );
+
+    quit_onboarding(&mut session);
+    let exit = session
+        .wait_exit(EXIT_TIMEOUT)
+        .expect("60×22 onboarding exit");
+    assert_eq!(exit, 0, "onboarding_layout_compact_60x22: expected exit 0");
 }
