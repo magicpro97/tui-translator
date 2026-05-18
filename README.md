@@ -149,11 +149,24 @@ cargo fmt --check   # no formatting issues
 
 ## Configuration file reference
 
-Normal interactive runs use:
+Normal interactive runs use the **per-user config** at:
 
 ```text
 %USERPROFILE%\.tui-translator\config.json
 ```
+
+**Full lookup order** (first match wins):
+
+| Priority | Path |
+|----------|------|
+| 1 | `TUI_TRANSLATOR_CONFIG` environment variable — set to override all other paths |
+| 2 | `%USERPROFILE%\.tui-translator\config.json` — the default for all interactive runs |
+| 3 | `<exe folder>\config.json` — legacy fallback when `USERPROFILE`/`HOME` is unavailable |
+| 4 | `config.json` in the current working directory — last resort |
+
+On standard Windows machines `USERPROFILE` is always set, so **priority 2 is used
+in practice**. A `config.json` placed next to the `.exe` is **not** read during
+normal runs.
 
 On first launch, the app opens a setup overlay and can create this file for
 you. Advanced users can still copy `config.example.json` manually and edit it

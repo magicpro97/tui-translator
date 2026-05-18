@@ -108,9 +108,26 @@ Follow these steps in the [Google Cloud Console](https://console.cloud.google.co
 
 A terminal window opens showing the subtitle area and a status bar at the bottom.
 
-> The application can be placed in any folder and run from there.
-> Normal interactive runs look for `%USERPROFILE%\.tui-translator\config.json`,
-> not for a config file beside the `.exe`.
+> **Where the app looks for your config (resolution order):**
+>
+> | Priority | Path | When used |
+> |----------|------|-----------|
+> | 1 | Value of the `TUI_TRANSLATOR_CONFIG` environment variable | When that variable is set — overrides everything else |
+> | 2 | `%USERPROFILE%\.tui-translator\config.json` | **Default for all normal interactive runs** |
+> | 3 | `<folder containing tui-translator.exe>\config.json` | Legacy fallback — only reached when `USERPROFILE` and `HOME` are both absent (not typical on Windows) |
+> | 4 | `config.json` in the current working directory | Last resort |
+>
+> On a standard Windows install `USERPROFILE` is always set, so **priority 2 is always
+> used in practice**.  A `config.json` placed beside the `.exe` is **not** read during
+> normal runs.
+>
+> **Portable / custom-path setup:** To run with a config file at a path of your choosing,
+> set `TUI_TRANSLATOR_CONFIG` before launching:
+>
+> ```text
+> set TUI_TRANSLATOR_CONFIG=C:\path\to\my-config.json
+> .\tui-translator.exe
+> ```
 
 To see the exact playback device names Windows exposes for capture, run:
 
