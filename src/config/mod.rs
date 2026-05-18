@@ -312,7 +312,8 @@ pub struct AppConfig {
 
     /// Machine-translation provider backend.  Accepted values:
     /// - `"google"` *(default)* — Google Cloud Translation.
-    /// - `"local"` — CPU-local MT (reserved for Phase 6+; not yet implemented).
+    /// - `"local"` — CPU-local OPUS-MT when built with `local-mt` and
+    ///   ONNX Runtime 1.20.x is available.
     #[serde(default = "default_mt_provider")]
     pub mt_provider: String,
 

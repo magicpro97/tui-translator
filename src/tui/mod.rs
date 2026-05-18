@@ -227,7 +227,7 @@ pub struct ConfigEditorState {
     pub audio_file_path: String,
     /// STT backend name saved in config (`google` now, `local` for offline mode).
     pub stt_provider: String,
-    /// MT backend name saved in config (`google` is the only implemented option).
+    /// MT backend name saved in config (`google` or feature-gated `local`).
     pub mt_provider: String,
     /// Whether TTS audio output is enabled, stored as `"true"` or `"false"`.
     pub tts_enabled: String,
@@ -397,10 +397,7 @@ impl ConfigEditorState {
                 self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
             }
             ConfigEditorField::MtProvider => {
-                self.mt_provider = "google".to_string();
-                self.set_status_message(
-                    " MT provider: Google only. Local translation is not implemented yet.",
-                );
+                self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
             }
             ConfigEditorField::TtsEnabled => {
                 self.cycle_choice_field(&["false", "true"], ". Save to apply.");
@@ -2888,14 +2885,14 @@ mod tests {
         assert_eq!(editor.mt_provider, "google");
 
         editor.cycle_active_field();
-        assert_eq!(editor.mt_provider, "google");
+        assert_eq!(editor.mt_provider, "local");
         assert!(
             editor
                 .status_message
                 .as_deref()
                 .unwrap_or("")
-                .contains("not implemented"),
-            "cycling MT provider should explain that local MT is unavailable"
+                .contains("restart"),
+            "cycling MT provider should hint that restart is required"
         );
         editor.mt_provider = "local".to_string();
         editor.cycle_active_field();

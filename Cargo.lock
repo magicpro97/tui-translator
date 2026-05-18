@@ -1419,6 +1419,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "ort"
+version = "2.0.0-rc.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52afb44b6b0cffa9bf45e4d37e5a4935b0334a51570658e279e9e3e6cf324aa5"
+dependencies = [
+ "libloading",
+ "ort-sys",
+ "tracing",
+]
+
+[[package]]
+name = "ort-sys"
+version = "2.0.0-rc.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c41d7757331aef2d04b9cb09b45583a59217628beaf91895b7e76187b6e8c088"
+dependencies = [
+ "pkg-config",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1915,6 +1935,12 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+
+[[package]]
+name = "sentencepiece-rs"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be5ce0b95398c78e7045405088f0db39377847e9a288453279fe0f7e1da9d241"
 
 [[package]]
 name = "serde"
@@ -2577,11 +2603,13 @@ dependencies = [
  "hex",
  "insta",
  "notify",
+ "ort",
  "portable-pty",
  "ratatui",
  "reqwest",
  "rodio",
  "rubato",
+ "sentencepiece-rs",
  "serde",
  "serde_json",
  "sha2",
