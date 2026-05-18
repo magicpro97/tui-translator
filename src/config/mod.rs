@@ -586,11 +586,8 @@ impl AppConfig {
                  supply a device name or omit the field entirely"
             );
         }
-        if matches!(&self.capture_device, Some(device) if device.trim().is_empty()) {
-            bail!(
-                "`capture_device` must not be empty — \
-                 supply a playback device name or omit the field entirely"
-            );
+        if let Some(device) = &self.capture_device {
+            validate_capture_device_name(device)?;
         }
         if matches!(&self.session_store.directory, Some(path) if path.trim().is_empty()) {
             bail!(
@@ -1196,6 +1193,29 @@ fn validate_language_tag(field_name: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_capture_device_name(value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!(
+            "`capture_device` must not be empty — \
+             supply a playback device name or omit the field entirely"
+        );
+    }
+    if trimmed != value {
+        bail!(
+            "`capture_device` must not include leading or trailing whitespace — \
+             use the exact playback device name or omit the field entirely"
+        );
+    }
+    if value.chars().any(char::is_control) {
+        bail!(
+            "`capture_device` must not contain control characters — \
+             use the playback device name shown by --list-audio-devices"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod test_env {
     use std::ffi::{OsStr, OsString};
@@ -1258,6 +1278,7 @@ mod tests {
         assert_eq!(cfg.source_language, "ja-JP");
         assert_eq!(cfg.target_language, "vi");
         assert!(!cfg.tts_enabled);
+        assert!(cfg.capture_device.is_none());
         // T1: provider fields must default to "google"
         assert_eq!(cfg.stt_provider, "google");
         assert_eq!(cfg.mt_provider, "google");
@@ -1338,6 +1359,33 @@ mod tests {
             cfg.mt_provider, "google",
             "mt_provider should default to google"
         );
+    }
+
+    #[test]
+    fn capture_device_defaults_to_none_when_absent() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+
+        let cfg = load(f.path()).unwrap();
+
+        assert!(cfg.capture_device.is_none());
+    }
+
+    #[test]
+    fn capture_device_roundtrips_stable_playback_name() {
+        let original = AppConfig {
+            capture_device: Some("Speakers (USB Audio)".to_string()),
+            ..AppConfig::default()
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(
+            restored.capture_device.as_deref(),
+            Some("Speakers (USB Audio)")
+        );
+        restored.validate().expect("capture device config is valid");
     }
 
     // T2: explicit "local" provider values serialize and deserialize correctly
@@ -1511,18 +1559,26 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_empty_capture_device() {
-        let cfg = AppConfig {
-            capture_device: Some("   ".to_string()),
-            ..AppConfig::default()
-        };
+    fn validate_rejects_malformed_capture_device() {
+        for value in [
+            "   ",
+            " Speakers",
+            "Speakers ",
+            "Speakers\nHD",
+            "Speakers\0HD",
+        ] {
+            let cfg = AppConfig {
+                capture_device: Some(value.to_string()),
+                ..AppConfig::default()
+            };
 
-        let err = cfg.validate().unwrap_err();
+            let err = cfg.validate().unwrap_err();
 
-        assert!(
-            err.to_string().contains("capture_device"),
-            "error should mention capture_device; got: {err}"
-        );
+            assert!(
+                err.to_string().contains("capture_device"),
+                "error should mention capture_device for {value:?}; got: {err}"
+            );
+        }
     }
 
     #[test]
