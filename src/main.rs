@@ -687,6 +687,7 @@ fn write_audio_devices(
                 ""
             };
             writeln!(writer, "  - {}{}", device.name, marker)?;
+            writeln!(writer, "      endpoint_id: {}", device.id)?;
         }
     }
     Ok(())
@@ -3192,10 +3193,12 @@ mod tests {
     fn write_audio_devices_shows_default_and_detected_devices() {
         let devices = vec![
             audio::CaptureDeviceInfo {
+                id: "{0.0.0.00000000}.{speakers}".to_string(),
                 name: "Speakers (Realtek Audio)".to_string(),
                 is_default: true,
             },
             audio::CaptureDeviceInfo {
+                id: "{0.0.0.00000000}.{headphones}".to_string(),
                 name: "Headphones (USB Audio)".to_string(),
                 is_default: false,
             },
@@ -3207,7 +3210,9 @@ mod tests {
 
         assert!(rendered.contains("leave capture_device blank"));
         assert!(rendered.contains("Speakers (Realtek Audio) (current Windows default)"));
+        assert!(rendered.contains("endpoint_id: {0.0.0.00000000}.{speakers}"));
         assert!(rendered.contains("Headphones (USB Audio)"));
+        assert!(rendered.contains("endpoint_id: {0.0.0.00000000}.{headphones}"));
     }
 
     #[test]
