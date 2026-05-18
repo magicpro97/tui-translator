@@ -123,6 +123,13 @@ struct SessionExportArgs {
     format: SessionExportFormat,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalMtModelInstallArgs {
+    manifest: PathBuf,
+    model_dir: Option<PathBuf>,
+    yes: bool,
+}
+
 /// Arguments for `--replay-session`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayArgs {
@@ -671,6 +678,107 @@ fn write_audio_devices(
     Ok(())
 }
 
+fn parse_local_mt_model_install_args_from<I>(args: I) -> Result<Option<LocalMtModelInstallArgs>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut saw_install_arg = false;
+    let mut manifest = None;
+    let mut model_dir = None;
+    let mut yes = false;
+    let mut iter = args.into_iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--install-local-mt-model") {
+            saw_install_arg = true;
+            manifest = Some(PathBuf::from(next_cli_arg(
+                &mut iter,
+                "--install-local-mt-model",
+            )?));
+        } else if arg == OsStr::new("--local-mt-model-dir") {
+            model_dir = Some(PathBuf::from(next_cli_arg(
+                &mut iter,
+                "--local-mt-model-dir",
+            )?));
+        } else if arg == OsStr::new("--yes") || arg == OsStr::new("-y") {
+            yes = true;
+        } else if saw_install_arg {
+            bail!("unknown local MT model install argument {:?}", arg);
+        }
+    }
+
+    if !saw_install_arg {
+        return Ok(None);
+    }
+
+    Ok(Some(LocalMtModelInstallArgs {
+        manifest: manifest.context("missing --install-local-mt-model <manifest.json>")?,
+        model_dir,
+        yes,
+    }))
+}
+
+fn next_cli_arg(iter: &mut impl Iterator<Item = OsString>, flag: &'static str) -> Result<OsString> {
+    let value = iter
+        .next()
+        .with_context(|| format!("missing value after {flag}"))?;
+    if value.to_string_lossy().starts_with("--") {
+        bail!("missing value after {flag}");
+    }
+    Ok(value)
+}
+
+fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
+    let raw = fs::read_to_string(&args.manifest)
+        .with_context(|| format!("failed to read model manifest {}", args.manifest.display()))?;
+    let manifest = providers::local::ModelBundleManifest::from_json(&raw)
+        .with_context(|| format!("failed to parse model manifest {}", args.manifest.display()))?;
+    let model_dir = match &args.model_dir {
+        Some(path) => path.clone(),
+        None => providers::local::model_cache_dir()
+            .context("failed to resolve local model cache directory")?
+            .join("mt")
+            .join(&manifest.id),
+    };
+
+    let mut stdout = io::stdout();
+    writeln!(stdout, "{}", manifest.preview_text()).context("failed to write model preview")?;
+    writeln!(stdout, "Destination: {}", model_dir.display())
+        .context("failed to write model destination")?;
+
+    if !args.yes {
+        writeln!(
+            stdout,
+            "No files were downloaded. Re-run with --yes after reviewing the model license and size."
+        )
+        .context("failed to write model confirmation hint")?;
+        return Ok(());
+    }
+
+    let client = reqwest::Client::builder()
+        .build()
+        .context("failed to create HTTP client for model download")?;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to create model download runtime")?;
+    let report = rt
+        .block_on(providers::local::install_model_bundle(
+            &client, &manifest, &model_dir,
+        ))
+        .context("failed to install local MT model")?;
+
+    writeln!(
+        stdout,
+        "Installed model bundle to {} (downloaded {}, reused {}).",
+        report.model_dir.display(),
+        report.downloaded_files,
+        report.reused_files
+    )
+    .context("failed to write model install summary")?;
+    Ok(())
+}
+
 fn parse_session_export_args_from<I>(args: I) -> Result<Option<SessionExportArgs>>
 where
     I: IntoIterator<Item = OsString>,
@@ -935,6 +1043,12 @@ fn main() -> Result<()> {
 
     if should_list_audio_devices() {
         print_audio_devices_to_stdout()?;
+        return Ok(());
+    }
+
+    if let Some(install_args) = parse_local_mt_model_install_args_from(std::env::args_os().skip(1))?
+    {
+        run_local_mt_model_install(&install_args)?;
         return Ok(());
     }
 
@@ -2762,6 +2876,50 @@ mod tests {
         assert!(rendered.contains("leave capture_device blank"));
         assert!(rendered.contains("Speakers (Realtek Audio) (current Windows default)"));
         assert!(rendered.contains("Headphones (USB Audio)"));
+    }
+
+    #[test]
+    fn parse_local_mt_model_install_args_accepts_manifest_directory_and_yes() {
+        let parsed = parse_local_mt_model_install_args_from(vec![
+            OsString::from("--install-local-mt-model"),
+            OsString::from(r"C:\models\manifest.json"),
+            OsString::from("--local-mt-model-dir"),
+            OsString::from(r"C:\models\opus-mt-ja-vi"),
+            OsString::from("--yes"),
+        ])
+        .unwrap()
+        .expect("install args should be detected");
+
+        assert_eq!(parsed.manifest, PathBuf::from(r"C:\models\manifest.json"));
+        assert_eq!(
+            parsed.model_dir,
+            Some(PathBuf::from(r"C:\models\opus-mt-ja-vi"))
+        );
+        assert!(parsed.yes);
+    }
+
+    #[test]
+    fn parse_local_mt_model_install_args_requires_manifest_path() {
+        let error = parse_local_mt_model_install_args_from(vec![
+            OsString::from("--install-local-mt-model"),
+            OsString::from("--yes"),
+        ])
+        .expect_err("missing manifest path should be rejected");
+
+        assert!(error.to_string().contains("--install-local-mt-model"));
+    }
+
+    #[test]
+    fn parse_local_mt_model_install_args_ignores_auxiliary_flag_without_install_command() {
+        let parsed = parse_local_mt_model_install_args_from(vec![
+            OsString::from("--local-mt-model-dir"),
+            OsString::from(r"C:\models\opus-mt-ja-vi"),
+            OsString::from("--replay-session"),
+            OsString::from("meeting.jsonl"),
+        ])
+        .unwrap();
+
+        assert!(parsed.is_none());
     }
 
     #[test]

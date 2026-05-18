@@ -256,10 +256,12 @@ the `Helsinki-NLP/opus-mt-ja-vi` model for direct translation.
 models/
   mt/
     opus-mt-ja-vi/
-      model.onnx          # ONNX-exported encoder-decoder
+      encoder_model.onnx  # ONNX-exported encoder
+      decoder_model.onnx  # ONNX-exported decoder
       source.spm          # SentencePiece vocab (source lang)
       target.spm          # SentencePiece vocab (target lang)
-      checksum.sha256     # File integrity; validated at startup
+      vocab.json          # Marian token-id mapping
+      manifest.json       # Installed bundle metadata and checksums
 ```
 
 - Export step: one-time, pre-release, using Python + HuggingFace Optimum (not in CI).
@@ -269,7 +271,18 @@ models/
   strategy; a future pivot option can switch to `ja→en→vi` at the cost of double inference
   and extra disk.
 
-**Pivot strategy (deferred, issue #218 scope):**  
+**Model installation path (issue #218):**
+
+- Install from a JSON manifest with `--install-local-mt-model <manifest.json> --yes`.
+- Without `--yes`, the command only prints the model name, version, license, source URL,
+  download size, file count, and destination path.
+- Downloads use `<file>.part` files and resume with HTTP `Range` when a partial file exists.
+- Each file must match the manifest SHA-256 before it is renamed into place; corrupt files are
+  quarantined as `<file>.corrupt` and the bundle is not marked installed.
+- The manifest `version` field is persisted as `manifest.json`, so future release tooling can
+  detect upgrades without guessing from file timestamps.
+
+**Pivot strategy (future scope):**  
 Implement `ja→en→vi` pivot as a second-tier option. Evaluate only after direct strategy has
 quality measurements on domain-specific (meeting/subtitle) text.
 
