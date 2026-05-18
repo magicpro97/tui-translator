@@ -2513,14 +2513,11 @@ impl Drop for TerminalGuard {
 mod tests {
     use super::*;
     use crate::audio::AudioChunk;
+    use crate::config::test_env::{EnvVarGuard, ENV_LOCK};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Rect;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
-
-    /// Serialises any test that reads or writes `TUI_TRANSLATOR_CONFIG` so
-    /// parallel test threads cannot observe each other's mutations.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn metrics_warning_row_active_for_ram_warning() {
@@ -3630,10 +3627,8 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let var = "TUI_TRANSLATOR_CONFIG";
         let expected = r"C:\tmp\soak-config.json";
-        // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
-        unsafe { std::env::set_var(var, expected) };
+        let _config = EnvVarGuard::set(var, expected);
         let path = config_json_path();
-        unsafe { std::env::remove_var(var) };
         assert_eq!(
             path,
             std::path::PathBuf::from(expected),
@@ -3647,13 +3642,9 @@ mod tests {
     fn config_json_path_fallback_uses_home_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let home = TempDir::new().unwrap();
-        // SAFETY: serialised by ENV_LOCK — no concurrent test mutates this var.
-        unsafe {
-            std::env::remove_var("TUI_TRANSLATOR_CONFIG");
-            std::env::set_var("USERPROFILE", home.path());
-        };
+        let _config = EnvVarGuard::remove("TUI_TRANSLATOR_CONFIG");
+        let _userprofile = EnvVarGuard::set("USERPROFILE", home.path());
         let path = config_json_path();
-        unsafe { std::env::remove_var("USERPROFILE") };
         assert_eq!(
             path,
             home.path().join(".tui-translator").join("config.json"),
@@ -3797,6 +3788,99 @@ mod tests {
         assert!(
             result.is_none(),
             "no args must not trigger replay mode; audio/provider startup proceeds normally"
+        );
+    }
+
+    // ── config_json_path / bootstrap — path lookup and migration rules (issue #182) ──
+
+    /// When `TUI_TRANSLATOR_CONFIG` is absent and neither `USERPROFILE` nor
+    /// `HOME` is set, `config_json_path` must fall back to the portable
+    /// (executable-adjacent) path or the bare CWD `"config.json"`.
+    /// The file name must always be `"config.json"`.
+    #[test]
+    fn config_json_path_falls_back_to_portable_or_cwd_when_no_home() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _config = EnvVarGuard::remove("TUI_TRANSLATOR_CONFIG");
+        let _userprofile = EnvVarGuard::remove("USERPROFILE");
+        let _home = EnvVarGuard::remove("HOME");
+
+        let path = config_json_path();
+
+        assert_eq!(
+            path.file_name(),
+            Some(std::ffi::OsStr::new("config.json")),
+            "config_json_path must resolve to a config.json file when home dir is unavailable; \
+             got {path:?}"
+        );
+    }
+
+    /// When `TUI_TRANSLATOR_CONFIG` is set, `bootstrap_legacy_config_if_needed`
+    /// must return `Ok(())` immediately without creating or touching any file.
+    #[test]
+    fn bootstrap_skips_migration_when_override_active() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _config = EnvVarGuard::set("TUI_TRANSLATOR_CONFIG", "irrelevant.json");
+
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("should-not-be-created.json");
+
+        let result = bootstrap_legacy_config_if_needed(&target);
+
+        assert!(
+            result.is_ok(),
+            "bootstrap must succeed when TUI_TRANSLATOR_CONFIG override is active"
+        );
+        assert!(
+            !target.exists(),
+            "bootstrap must not create the target when TUI_TRANSLATOR_CONFIG is set"
+        );
+    }
+
+    /// When the target config file already exists, `bootstrap_legacy_config_if_needed`
+    /// must be a no-op — it must not overwrite an existing user config.
+    #[test]
+    fn bootstrap_skips_migration_when_target_already_exists() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _config = EnvVarGuard::remove("TUI_TRANSLATOR_CONFIG");
+
+        let mut target = NamedTempFile::new().unwrap();
+        // Write a sentinel value that must survive the bootstrap call unchanged.
+        let sentinel = br#"{"source_language":"ja-JP","target_language":"sentinel"}"#;
+        target.write_all(sentinel).unwrap();
+        target.flush().unwrap();
+
+        bootstrap_legacy_config_if_needed(target.path()).unwrap();
+
+        let content = std::fs::read(target.path()).unwrap();
+        assert_eq!(
+            content, sentinel,
+            "bootstrap must not modify the target when it already exists"
+        );
+    }
+
+    /// When there is no legacy config next to the executable (the common case
+    /// in per-user installs), `bootstrap_legacy_config_if_needed` must return
+    /// `Ok(())` without creating the target.
+    #[test]
+    fn bootstrap_skips_migration_when_no_legacy_present() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _config = EnvVarGuard::remove("TUI_TRANSLATOR_CONFIG");
+
+        let dir = TempDir::new().unwrap();
+        // Use a path inside a fresh temp dir so it definitely does not exist.
+        let target = dir.path().join("new-home-config.json");
+
+        // The test binary typically has no config.json next to it, so the
+        // legacy path does not exist — bootstrap should skip migration silently.
+        let result = bootstrap_legacy_config_if_needed(&target);
+
+        assert!(
+            result.is_ok(),
+            "bootstrap must succeed when there is nothing to migrate"
+        );
+        assert!(
+            !target.exists(),
+            "bootstrap must not create the target when there is no legacy config"
         );
     }
 }
