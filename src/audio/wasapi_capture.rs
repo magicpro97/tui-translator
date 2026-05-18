@@ -533,6 +533,62 @@ mod tests {
         );
     }
 
+    fn default_render_device_name_or_skip() -> Option<String> {
+        // Best-effort COM initialisation: skip rather than fail if unavailable.
+        if initialize_mta().is_err() {
+            return None;
+        }
+        match get_default_device(&Direction::Render) {
+            Ok(device) => device.get_friendlyname().ok(),
+            Err(_) => None,
+        }
+    }
+
+    /// No `capture_device` selection must preserve the existing Windows default
+    /// render endpoint behavior.
+    #[test]
+    fn select_render_device_none_uses_windows_default() {
+        let Some(default_name) = default_render_device_name_or_skip() else {
+            return;
+        };
+
+        let result = select_render_device(None);
+        assert!(result.is_ok(), "default device selection should succeed");
+        let (_device, selected_name) = result.unwrap();
+        eprintln!("[wasapi-selection] default selection: {selected_name}");
+        assert_eq!(selected_name, default_name);
+    }
+
+    /// Blank `capture_device` config values must also fall back to the Windows
+    /// default render endpoint.
+    #[test]
+    fn select_render_device_blank_uses_windows_default() {
+        let Some(default_name) = default_render_device_name_or_skip() else {
+            return;
+        };
+
+        let result = select_render_device(Some("   "));
+        assert!(result.is_ok(), "blank device selection should use default");
+        let (_device, selected_name) = result.unwrap();
+        eprintln!("[wasapi-selection] blank selection fallback: {selected_name}");
+        assert_eq!(selected_name, default_name);
+    }
+
+    /// A valid explicit playback-device name must be honored instead of always
+    /// opening the Windows default path.
+    #[test]
+    fn select_render_device_explicit_name_uses_requested_endpoint() {
+        let Some(default_name) = default_render_device_name_or_skip() else {
+            return;
+        };
+
+        let result = select_render_device(Some(&default_name));
+        assert!(result.is_ok(), "explicit device selection should succeed");
+        let (_device, selected_name) = result.unwrap();
+        eprintln!("[wasapi-selection] explicit selection: {selected_name}");
+        assert_eq!(selected_name, default_name);
+    }
+
     // ── format_device_names — label formatting ────────────────────────────────
 
     /// A single device name is returned verbatim (no trailing comma or separator).
@@ -634,6 +690,10 @@ mod tests {
         assert!(
             msg.contains("was not found"),
             "error should report the device was not found; got: {msg}"
+        );
+        assert!(
+            msg.contains("Capture device"),
+            "error should point operators to the capture-device setting; got: {msg}"
         );
     }
 }
