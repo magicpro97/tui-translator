@@ -2128,7 +2128,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     };
     let intro = match editor.mode {
         ConfigEditorMode::Onboarding => {
-            " Save your initial config to the home folder, then restart if prompted."
+            " Save your initial config: source, target, Google API key. Ctrl+C quits for manual config."
         }
         ConfigEditorMode::Settings => " Edit the saved config and press Enter to persist changes.",
     };
@@ -2790,13 +2790,10 @@ mod tests {
         use ratatui::{backend::TestBackend, Terminal};
         let backend = TestBackend::new(120, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let mut editor = ConfigEditorState::from_config(
+        let editor = ConfigEditorState::from_config(
             &AppConfig::default(),
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Onboarding,
-        );
-        editor.set_status_message(
-            " Required: source language, target language, and Google API key. Ctrl+C quits so you can edit config manually.",
         );
 
         terminal
@@ -2822,7 +2819,7 @@ mod tests {
             "first-run editor should show an onboarding action; got: {rendered:?}"
         );
         assert!(
-            rendered.contains("edit config manually"),
+            rendered.contains("manual config"),
             "first-run editor should show a manual configuration escape hatch; got: {rendered:?}"
         );
     }
