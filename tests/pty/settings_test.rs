@@ -127,21 +127,17 @@ fn write_config_with_capture_device(dir: &Path, capture_device: &str) -> PathBuf
         .canonicalize()
         .expect("canonicalize soak fixture");
     let cfg_path = dir.join("config.json");
-    let payload = format!(
-        concat!(
-            "{{\n",
-            "  \"google_api_key\": \"pty-test-key\",\n",
-            "  \"source_language\": \"ja-JP\",\n",
-            "  \"target_language\": \"vi\",\n",
-            "  \"tts_enabled\": false,\n",
-            "  \"audio_source\": \"file\",\n",
-            "  \"audio_file_path\": \"{}\",\n",
-            "  \"capture_device\": \"{}\"\n",
-            "}}\n"
-        ),
-        fixture.display().to_string().replace('\\', "\\\\"),
-        capture_device
-    );
+    let payload = serde_json::to_string_pretty(&serde_json::json!({
+        "google_api_key": "pty-test-key",
+        "source_language": "ja-JP",
+        "target_language": "vi",
+        "tts_enabled": false,
+        "audio_source": "file",
+        "audio_file_path": fixture,
+        "capture_device": capture_device,
+    }))
+    .expect("serialize capture-device PTY config")
+        + "\n";
     std::fs::write(&cfg_path, payload).expect("write capture-device PTY config");
     cfg_path
 }
