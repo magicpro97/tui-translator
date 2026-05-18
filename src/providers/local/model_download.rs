@@ -8,7 +8,7 @@
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
-use reqwest::header::{CONTENT_LENGTH, RANGE};
+use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, RANGE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use sysinfo::Disks;
@@ -59,6 +59,11 @@ impl ModelBundleManifest {
                 "model id must not be empty".to_string(),
             ));
         }
+        if self.display_name.trim().is_empty() {
+            return Err(ModelDownloadError::InvalidManifest(
+                "model display_name must not be empty".to_string(),
+            ));
+        }
         if self.version.trim().is_empty() {
             return Err(ModelDownloadError::InvalidManifest(
                 "model version must not be empty".to_string(),
@@ -67,6 +72,11 @@ impl ModelBundleManifest {
         if self.license.trim().is_empty() {
             return Err(ModelDownloadError::InvalidManifest(
                 "model license must not be empty".to_string(),
+            ));
+        }
+        if self.source_url.trim().is_empty() {
+            return Err(ModelDownloadError::InvalidManifest(
+                "model source_url must not be empty".to_string(),
             ));
         }
         if self.files.is_empty() {
@@ -186,6 +196,14 @@ pub enum ModelDownloadError {
     /// Server returned an invalid or unsupported content length.
     #[error("invalid content length for {url}: {message}")]
     InvalidContentLength {
+        /// URL being downloaded.
+        url: String,
+        /// Human-readable detail.
+        message: String,
+    },
+    /// Server returned an invalid content range for a resumed download.
+    #[error("invalid content range for {url}: {message}")]
+    InvalidContentRange {
         /// URL being downloaded.
         url: String,
         /// Human-readable detail.
@@ -412,6 +430,7 @@ async fn download_file(
     let status = response.status();
 
     let append = if resume_from > 0 && status == reqwest::StatusCode::PARTIAL_CONTENT {
+        validate_content_range(file, resume_from, &response)?;
         true
     } else if status == reqwest::StatusCode::OK {
         resume_from = 0;
@@ -465,6 +484,45 @@ async fn download_file(
     drop(output);
 
     finalize_downloaded_file(&part, target, file).await
+}
+
+fn validate_content_range(
+    file: &ModelBundleFile,
+    resume_from: u64,
+    response: &reqwest::Response,
+) -> Result<(), ModelDownloadError> {
+    let Some(value) = response.headers().get(CONTENT_RANGE) else {
+        return Err(ModelDownloadError::InvalidContentRange {
+            url: file.download_url.clone(),
+            message: "server returned 206 without a Content-Range header".to_string(),
+        });
+    };
+    let raw = value
+        .to_str()
+        .map_err(|_| ModelDownloadError::InvalidContentRange {
+            url: file.download_url.clone(),
+            message: "server returned a non-UTF-8 Content-Range header".to_string(),
+        })?;
+    let start =
+        parse_content_range_start(raw).ok_or_else(|| ModelDownloadError::InvalidContentRange {
+            url: file.download_url.clone(),
+            message: format!("server returned malformed Content-Range {raw:?}"),
+        })?;
+
+    if start != resume_from {
+        return Err(ModelDownloadError::InvalidContentRange {
+            url: file.download_url.clone(),
+            message: format!("server resumed at byte {start}, expected {resume_from}"),
+        });
+    }
+    Ok(())
+}
+
+fn parse_content_range_start(raw: &str) -> Option<u64> {
+    let range = raw.strip_prefix("bytes ")?;
+    let (span, _) = range.split_once('/')?;
+    let (start, _) = span.split_once('-')?;
+    start.parse().ok()
 }
 
 fn validate_content_length(
@@ -721,6 +779,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_content_range_start_reads_resume_offset() {
+        assert_eq!(parse_content_range_start("bytes 5-10/11"), Some(5));
+        assert_eq!(parse_content_range_start("items 5-10/11"), None);
+        assert_eq!(parse_content_range_start("bytes */11"), None);
+    }
+
+    #[test]
+    fn manifest_rejects_missing_preview_metadata() {
+        let mut manifest = sample_manifest();
+        manifest.display_name = "   ".to_string();
+
+        let err = manifest.validate().unwrap_err();
+
+        assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
+
+        let mut manifest = sample_manifest();
+        manifest.source_url = String::new();
+
+        let err = manifest.validate().unwrap_err();
+
+        assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
+    }
+
+    #[test]
     fn manifest_rejects_parent_directory_paths() {
         let mut manifest = sample_manifest();
         manifest.files[0].relative_path = "..\\escape.onnx".to_string();
@@ -870,9 +952,18 @@ mod tests {
             } else {
                 ("200 OK", contents.as_slice())
             };
+            let content_range = if status.starts_with("206") {
+                format!(
+                    "Content-Range: bytes 5-{}/{}\r\n",
+                    contents.len() - 1,
+                    contents.len()
+                )
+            } else {
+                String::new()
+            };
             write!(
                 stream,
-                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 {status}\r\nContent-Length: {}\r\n{content_range}Connection: close\r\n\r\n",
                 body.len()
             )
             .unwrap();

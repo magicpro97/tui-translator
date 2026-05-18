@@ -756,6 +756,8 @@ fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
     }
 
     let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60 * 60))
         .build()
         .context("failed to create HTTP client for model download")?;
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -792,19 +794,13 @@ where
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--export-session") {
             saw_export_arg = true;
-            input = Some(PathBuf::from(next_export_arg(
-                &mut iter,
-                "--export-session",
-            )?));
+            input = Some(PathBuf::from(next_cli_arg(&mut iter, "--export-session")?));
         } else if arg == OsStr::new("--export-output") {
             saw_export_arg = true;
-            output = Some(PathBuf::from(next_export_arg(
-                &mut iter,
-                "--export-output",
-            )?));
+            output = Some(PathBuf::from(next_cli_arg(&mut iter, "--export-output")?));
         } else if arg == OsStr::new("--export-format") {
             saw_export_arg = true;
-            let value = next_export_arg(&mut iter, "--export-format")?;
+            let value = next_cli_arg(&mut iter, "--export-format")?;
             let value = value
                 .into_string()
                 .map_err(|_| anyhow::anyhow!("--export-format must be valid UTF-8"))?;
@@ -823,19 +819,6 @@ where
         output: output.context("missing --export-output <path>")?,
         format: format.context("missing --export-format <srt|txt>")?,
     }))
-}
-
-fn next_export_arg(
-    iter: &mut impl Iterator<Item = OsString>,
-    flag: &'static str,
-) -> Result<OsString> {
-    let value = iter
-        .next()
-        .with_context(|| format!("missing value after {flag}"))?;
-    if value.to_string_lossy().starts_with("--") {
-        bail!("missing value after {flag}");
-    }
-    Ok(value)
 }
 
 fn run_session_export(args: &SessionExportArgs) -> Result<()> {
