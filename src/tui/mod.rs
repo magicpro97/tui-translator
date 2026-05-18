@@ -2617,6 +2617,33 @@ mod tests {
     }
 
     #[test]
+    fn help_overlay_lists_settings_shortcut() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("S          Settings"),
+            "help overlay should document the settings shortcut; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("F2/Ctrl+D"),
+            "help overlay should mention settings value cycling; got: {rendered:?}"
+        );
+    }
+
+    #[test]
     fn draw_ui_audio_gauge_shows_default_device_label() {
         use ratatui::{backend::TestBackend, Terminal};
         let backend = TestBackend::new(120, 20);
