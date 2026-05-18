@@ -45,3 +45,6 @@ mod replay_test;
 
 #[path = "pty/audio_archive_test.rs"]
 mod audio_archive_test;
+
+#[path = "pty/settings_test.rs"]
+mod settings_test;
