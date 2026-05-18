@@ -83,6 +83,7 @@ mod wasapi_probe {
             return;
         }
 
+        let mut usable_count = 0;
         for index in 0..count {
             let device = collection
                 .get_device_at_index(index)
@@ -96,15 +97,25 @@ mod wasapi_probe {
             let id = device
                 .get_id()
                 .expect("active render endpoint stable id must be readable");
-            device
+            if let Err(err) = device
                 .get_iaudioclient()
                 .and_then(|client| client.get_mixformat().map(|_| ()))
-                .expect("active render endpoint must expose a queryable mix format");
+            {
+                eprintln!("[wasapi-probe] skipping unusable active render endpoint {index}: {err}");
+                continue;
+            }
 
             eprintln!("[wasapi-probe] active render endpoint {index}: {name} ({id})");
             assert_eq!(state, DeviceState::Active, "endpoint must be active");
             assert!(!name.is_empty(), "endpoint display name must not be empty");
             assert!(!id.is_empty(), "endpoint stable id must not be empty");
+            usable_count += 1;
+        }
+
+        if usable_count == 0 {
+            eprintln!(
+                "[wasapi-probe] skipping: no active render endpoint had a queryable mix format"
+            );
         }
     }
 
