@@ -401,6 +401,68 @@ and flood the STT API with silent chunks.
 
 ---
 
+## Capture-device selection — real-machine proof path
+
+The steps below are a **manual operator checklist** to confirm that
+capture-device selection works end-to-end on a real Windows machine.
+Hardware interaction is required; this cannot be replaced by automated tests.
+
+**Step 1 — List the devices Windows exposes**
+
+```text
+.\tui-translator.exe --list-audio-devices
+```
+
+The command exits immediately and prints every active render endpoint, for example:
+
+```text
+Audio capture devices for WASAPI loopback (Windows playback endpoints):
+  [default] Windows default playback device (leave capture_device blank)
+  - Speakers (Realtek High Definition Audio) (current Windows default)
+  - Headphones (USB Audio Device)
+  - CABLE Input (VB-Audio Virtual Cable)
+```
+
+Note the exact name of the device Zoom audio is playing through.
+
+**Step 2 — Set `capture_device` in config.json**
+
+Open `%USERPROFILE%\.tui-translator\config.json` and set:
+
+```json
+"capture_device": "Speakers (Realtek High Definition Audio)"
+```
+
+The value must match the name from Step 1 exactly (case-sensitive).
+To revert to the Windows default, set the value to `""` (empty string).
+
+Alternatively, open the settings editor (press **S**), navigate to the
+`capture_device` row, and press **F2** or **Ctrl+D** to cycle through
+detected devices without typing.
+
+**Step 3 — Start the application and confirm these three indicators**
+
+| Indicator | Expected | Where |
+|-----------|----------|-------|
+| Startup log | `WASAPI loopback opened device="Speakers (…)"` — matches the name you set | `%TEMP%\tui-translator.log` |
+| Subtitles | Lines appear within a few seconds of speech in the Zoom meeting | TUI main panel |
+| Audio-level bar | Energy bar rises above the silence gate when audio plays | TUI metrics panel (press **M**) |
+
+The app writes tracing output to `tui-translator.log` in the Windows temp
+directory so diagnostics do not pollute the terminal UI. If that file cannot be
+opened, tracing falls back to terminal stderr.
+
+If the log shows `render device "…" was not found`, re-run Step 1 to get the
+current device list and correct the name in Step 2.
+
+**Step 4 — Verify the blank-name fallback**
+
+Set `capture_device` to `""` in `config.json`, restart, and confirm the startup
+log says `WASAPI loopback opened` with the Windows default device name.
+This proves the blank-means-default fallback path is active.
+
+---
+
 ## Fallback for older audio setups (VB-CABLE)
 
 On some older machines or with certain audio hardware, Windows system loopback may not capture

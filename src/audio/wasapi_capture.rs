@@ -245,8 +245,19 @@ pub(super) fn list_loopback_devices() -> Result<Vec<CaptureDeviceInfo>> {
         .collect())
 }
 
+/// Normalise the operator-supplied `capture_device` config value.
+///
+/// Returns `Some(trimmed_name)` when a non-blank device name is provided,
+/// or `None` when the caller should fall back to the Windows default
+/// render endpoint (i.e. the value was absent, `""`, or all whitespace).
+///
+/// This function is pure (no I/O) so it can be unit-tested without WASAPI.
+fn resolve_capture_device_name(requested: Option<&str>) -> Option<&str> {
+    requested.map(str::trim).filter(|s| !s.is_empty())
+}
+
 fn select_render_device(requested: Option<&str>) -> Result<(Device, String)> {
-    match requested.map(str::trim).filter(|device| !device.is_empty()) {
+    match resolve_capture_device_name(requested) {
         Some(name) => find_render_device_by_name(name),
         None => {
             let device = get_default_device(&Direction::Render)
@@ -420,6 +431,73 @@ fn raw_bytes_to_mono_f32(data: &VecDeque<u8>, channels: usize, bits: u16) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── resolve_capture_device_name — selection / fallback logic ─────────────
+
+    /// `None` input (no `capture_device` key in config) must map to `None` so
+    /// the caller opens the Windows default render endpoint.
+    #[test]
+    fn resolve_device_name_none_uses_default() {
+        assert_eq!(resolve_capture_device_name(None), None);
+    }
+
+    /// A blank string (user cleared the field) must also map to `None` so the
+    /// blank-means-default contract is upheld.
+    #[test]
+    fn resolve_device_name_empty_string_uses_default() {
+        assert_eq!(resolve_capture_device_name(Some("")), None);
+    }
+
+    /// A whitespace-only string (e.g. accidental space in config.json) must
+    /// also be treated as absent and fall back to the default device.
+    #[test]
+    fn resolve_device_name_whitespace_uses_default() {
+        assert_eq!(resolve_capture_device_name(Some("   ")), None);
+    }
+
+    /// A name surrounded by whitespace must be trimmed and returned so the
+    /// downstream lookup matches the exact Windows device name.
+    #[test]
+    fn resolve_device_name_trims_surrounding_whitespace() {
+        assert_eq!(
+            resolve_capture_device_name(Some("  Speakers (HDA Audio)  ")),
+            Some("Speakers (HDA Audio)"),
+        );
+    }
+
+    /// A name with no surrounding whitespace is returned verbatim.
+    #[test]
+    fn resolve_device_name_exact_name_is_returned_unchanged() {
+        assert_eq!(
+            resolve_capture_device_name(Some("Headphones (USB Audio)")),
+            Some("Headphones (USB Audio)"),
+        );
+    }
+
+    // ── format_device_names — label formatting ────────────────────────────────
+
+    /// A single device name is returned verbatim (no trailing comma or separator).
+    #[test]
+    fn format_device_names_single_entry() {
+        assert_eq!(
+            format_device_names(&["Speakers (Realtek High Definition Audio)".into()]),
+            "Speakers (Realtek High Definition Audio)",
+        );
+    }
+
+    /// Multiple device names are joined by `", "`.
+    #[test]
+    fn format_device_names_multiple_entries_are_comma_separated() {
+        let names = vec![
+            "Speakers (Realtek HD Audio)".to_string(),
+            "Headphones (USB Audio Device)".to_string(),
+            "CABLE Input (VB-Audio Virtual Cable)".to_string(),
+        ];
+        assert_eq!(
+            format_device_names(&names),
+            "Speakers (Realtek HD Audio), Headphones (USB Audio Device), CABLE Input (VB-Audio Virtual Cable)",
+        );
+    }
 
     #[test]
     fn unsupported_pcm_depth_zero_fills_once_per_chunk() {
