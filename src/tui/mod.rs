@@ -278,6 +278,7 @@ pub struct ConfigEditorState {
     pub config_path: String,
     pub status_message: Option<String>,
     pub capture_device_options: Vec<String>,
+    capture_device_filter_active: bool,
     field_cursors: [usize; CONFIG_EDITOR_FIELD_COUNT],
 }
 
@@ -313,6 +314,7 @@ impl ConfigEditorState {
             config_path: config_path.display().to_string(),
             status_message: None,
             capture_device_options: Vec::new(),
+            capture_device_filter_active: false,
             field_cursors: [0; CONFIG_EDITOR_FIELD_COUNT],
         };
         editor.reset_field_cursors_to_end();
@@ -430,6 +432,9 @@ impl ConfigEditorState {
         if input.handle(request).is_some() {
             self.replace_field_value(field, input.value().to_string());
             self.field_cursors[field.index()] = input.cursor();
+            if field == ConfigEditorField::CaptureDevice {
+                self.capture_device_filter_active = true;
+            }
             self.status_message = None;
         }
     }
@@ -468,7 +473,7 @@ impl ConfigEditorState {
             return;
         }
 
-        let choices = capture_device_picker_choices(self);
+        let choices = visible_capture_device_picker_choices(self);
         if choices.is_empty() {
             let filter = self.capture_device.trim();
             self.set_status_message(format!(
@@ -489,6 +494,7 @@ impl ConfigEditorState {
         };
         let next = &choices[next_index];
         self.set_field_value(ConfigEditorField::CaptureDevice, next.value.clone());
+        self.capture_device_filter_active = false;
 
         if next.value.is_empty() {
             self.set_status_message(" Capture device: Windows default playback device.");
@@ -2473,7 +2479,8 @@ fn capture_device_matches_filter(device: &str, filter: &str) -> bool {
 
 fn capture_device_picker_filter(editor: &ConfigEditorState) -> Option<&str> {
     let current = editor.capture_device.trim();
-    if current.is_empty()
+    if !editor.capture_device_filter_active
+        || current.is_empty()
         || editor
             .capture_device_options
             .iter()
@@ -2517,6 +2524,30 @@ fn capture_device_picker_choices(editor: &ConfigEditorState) -> Vec<CaptureDevic
     choices
 }
 
+fn visible_capture_device_picker_choices(editor: &ConfigEditorState) -> Vec<CaptureDeviceChoice> {
+    let choices = capture_device_picker_choices(editor);
+    if choices.len() <= CAPTURE_DEVICE_PICKER_MAX_CHOICES {
+        return choices;
+    }
+
+    if let Some(selected_index) = choices.iter().position(|choice| choice.selected) {
+        if selected_index >= CAPTURE_DEVICE_PICKER_MAX_CHOICES {
+            let mut visible: Vec<CaptureDeviceChoice> = choices
+                .iter()
+                .take(CAPTURE_DEVICE_PICKER_MAX_CHOICES - 1)
+                .cloned()
+                .collect();
+            visible.push(choices[selected_index].clone());
+            return visible;
+        }
+    }
+
+    choices
+        .into_iter()
+        .take(CAPTURE_DEVICE_PICKER_MAX_CHOICES)
+        .collect()
+}
+
 fn capture_device_picker_lines(
     editor: &ConfigEditorState,
     panel_width: u16,
@@ -2527,6 +2558,7 @@ fn capture_device_picker_lines(
         .saturating_sub(5)
         .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
     let choices = capture_device_picker_choices(editor);
+    let visible_choices = visible_capture_device_picker_choices(editor);
     let mut lines = vec![Line::from(Span::styled(
         if is_compact_editor {
             " Device picker: type filter, F2 selects"
@@ -2545,6 +2577,19 @@ fn capture_device_picker_lines(
                 truncate_device_name(filter, label_width)
             ),
             Style::default().fg(Color::DarkGray),
+        )));
+    } else if !editor.capture_device.trim().is_empty()
+        && !editor
+            .capture_device_options
+            .iter()
+            .any(|device| device == editor.capture_device.trim())
+    {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "   Saved device unavailable: {}",
+                truncate_device_name(editor.capture_device.trim(), label_width)
+            ),
+            Style::default().fg(Color::Yellow),
         )));
     }
 
@@ -2567,12 +2612,10 @@ fn capture_device_picker_lines(
         return lines;
     }
 
-    for choice in choices.iter().take(CAPTURE_DEVICE_PICKER_MAX_CHOICES) {
+    for choice in &visible_choices {
         lines.push(capture_device_choice_line(choice, label_width));
     }
-    let remaining = choices
-        .len()
-        .saturating_sub(CAPTURE_DEVICE_PICKER_MAX_CHOICES);
+    let remaining = choices.len().saturating_sub(visible_choices.len());
     if remaining > 0 {
         lines.push(Line::from(Span::styled(
             format!("    +{remaining} more device(s); type to filter."),
@@ -3177,7 +3220,10 @@ mod tests {
             "Speakers (Realtek Audio)".to_string(),
             "Headphones (USB Audio)".to_string(),
         ]);
-        editor.capture_device = "usb".to_string();
+        editor.selected_field = 4;
+        editor.handle_input_request(InputRequest::InsertChar('u'));
+        editor.handle_input_request(InputRequest::InsertChar('s'));
+        editor.handle_input_request(InputRequest::InsertChar('b'));
 
         let choices = capture_device_picker_choices(&editor);
 
@@ -3205,7 +3251,10 @@ mod tests {
             "Speakers (Realtek Audio)".to_string(),
             "Headphones (USB Audio)".to_string(),
         ]);
-        editor.capture_device = "usb".to_string();
+        editor.selected_field = 4;
+        editor.handle_input_request(InputRequest::InsertChar('u'));
+        editor.handle_input_request(InputRequest::InsertChar('s'));
+        editor.handle_input_request(InputRequest::InsertChar('b'));
 
         editor.cycle_capture_device();
 
@@ -3347,6 +3396,84 @@ mod tests {
         assert!(
             rendered.contains("> Headphones (USB Audio)"),
             "picker should highlight the selected device; got: {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn capture_device_picker_stale_saved_device_keeps_default_and_detected_choices() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.set_capture_device_options(vec![
+            "Speakers (Realtek Audio)".to_string(),
+            "Headphones (USB Audio)".to_string(),
+        ]);
+        editor.capture_device = "Unplugged USB Headset".to_string();
+
+        let choices = capture_device_picker_choices(&editor);
+
+        assert_eq!(choices.len(), 3);
+        assert_eq!(choices[0].label, CAPTURE_DEVICE_DEFAULT_LABEL);
+        assert!(choices
+            .iter()
+            .any(|choice| choice.label == "Speakers (Realtek Audio)"));
+        assert!(choices
+            .iter()
+            .any(|choice| choice.label == "Headphones (USB Audio)"));
+        assert!(!choices.iter().any(|choice| choice.selected));
+    }
+
+    #[test]
+    fn visible_capture_device_choices_keep_selected_device_rendered() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.set_capture_device_options(vec![
+            "Speakers (Realtek Audio)".to_string(),
+            "Headphones (USB Audio)".to_string(),
+            "Monitor Audio".to_string(),
+            "Conference Speakerphone".to_string(),
+        ]);
+        editor.capture_device = "Conference Speakerphone".to_string();
+
+        let choices = visible_capture_device_picker_choices(&editor);
+
+        assert_eq!(choices.len(), CAPTURE_DEVICE_PICKER_MAX_CHOICES);
+        assert!(
+            choices
+                .iter()
+                .any(|choice| choice.label == "Conference Speakerphone" && choice.selected),
+            "selected device should stay visible even when it is beyond the first rendered page"
+        );
+    }
+
+    #[test]
+    fn cycle_capture_device_only_selects_visible_choices() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.set_capture_device_options(vec![
+            "Speakers (Realtek Audio)".to_string(),
+            "Headphones (USB Audio)".to_string(),
+            "Monitor Audio".to_string(),
+            "Conference Speakerphone".to_string(),
+        ]);
+        editor.capture_device = "Headphones (USB Audio)".to_string();
+
+        editor.cycle_capture_device();
+
+        assert_eq!(editor.capture_device, "");
+        assert!(
+            visible_capture_device_picker_choices(&editor)
+                .iter()
+                .any(|choice| choice.value == editor.capture_device),
+            "F2/Ctrl+D must not select a hidden picker row"
         );
     }
 
