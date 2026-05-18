@@ -2128,7 +2128,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     };
     let intro = match editor.mode {
         ConfigEditorMode::Onboarding => {
-            " Save your initial config to the home folder, then restart if prompted."
+            " Save your initial config: source, target, Google API key. Ctrl+C quits for manual config."
         }
         ConfigEditorMode::Settings => " Edit the saved config and press Enter to persist changes.",
     };
@@ -2817,6 +2817,10 @@ mod tests {
         assert!(
             rendered.contains("Save your initial config"),
             "first-run editor should show an onboarding action; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("manual config"),
+            "first-run editor should show a manual configuration escape hatch; got: {rendered:?}"
         );
     }
 

@@ -3,7 +3,8 @@ source: tests/snapshot.rs
 expression: "render_config_editor(&editor, 90, 20)"
 ---
        ┌ First-Run Setup ─────────────────────────────────────────────────────────┐
-       │ Save your initial config to the home folder, then restart if prompted.   │
+       │ Save your initial config: source, target, Google API key. Ctrl+C quits   │
+       │for manual config.                                                        │
        │ Path: C:\Users\demo\.tui-translator\config.json                          │
        │                                                                          │
        │> Source language : ja-JP_                                                │
@@ -20,5 +21,4 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  Max window ms   : 3000                                                  │
        │  Early VAD flush : true                                                  │
        │  Idle flush ms   : 600                                                   │
-       │  Idle min ms     : 500                                                   │
        └──────────────────────────────────────────────────────────────────────────┘

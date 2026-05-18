@@ -1298,6 +1298,9 @@ fn main() -> Result<()> {
     if onboarding_required {
         state.open_config_editor(ConfigEditorMode::Onboarding, &cfg, &cfg_path);
         populate_capture_device_options(&state);
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.set_status_message(" Fill required fields, then press Enter to save.");
+        });
         overwrite_device_name(&state.device_name, "first-run setup required");
         tracing::info!(
             path = %cfg_path.display(),
@@ -2127,6 +2130,35 @@ fn normalize_optional_field(value: &str) -> Option<String> {
     }
 }
 
+fn onboarding_status_message() -> &'static str {
+    "Press Ctrl+C to quit and edit config manually."
+}
+
+fn validate_onboarding_editor(editor: &tui::ConfigEditorState) -> Result<()> {
+    if editor.mode != ConfigEditorMode::Onboarding {
+        return Ok(());
+    }
+    if editor.source_language.trim().is_empty() {
+        bail!(
+            "onboarding requires a source language. {}",
+            onboarding_status_message()
+        );
+    }
+    if editor.target_language.trim().is_empty() {
+        bail!(
+            "onboarding requires a target language. {}",
+            onboarding_status_message()
+        );
+    }
+    if editor.google_api_key.trim().is_empty() {
+        bail!(
+            "onboarding requires a Google API key. {}",
+            onboarding_status_message()
+        );
+    }
+    Ok(())
+}
+
 fn parse_editor_bool(field_name: &str, value: &str) -> Result<bool> {
     match value.trim() {
         "true" => Ok(true),
@@ -2285,6 +2317,7 @@ fn save_config_editor(
     let editor = state
         .config_editor_snapshot()
         .context("config editor save requested with no active editor")?;
+    validate_onboarding_editor(&editor)?;
     let next_cfg = {
         let current = current_config
             .lock()
@@ -3882,6 +3915,134 @@ mod tests {
         let persisted = config::load(&cfg_path).unwrap();
         assert_eq!(persisted.google_api_key.as_deref(), Some("saved-key"));
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn onboarding_save_rejects_empty_google_api_key_and_keeps_editor_open() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Onboarding,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let editor = state.config_editor_snapshot().expect("editor remains open");
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .is_some_and(|message| message.contains("Google API key")
+                    && message.contains("edit config manually")),
+            "save feedback should explain missing Google API key and manual fallback: {:?}",
+            editor.status_message
+        );
+        assert!(
+            !cfg_path.exists(),
+            "invalid onboarding input must not write config"
+        );
+    }
+
+    #[test]
+    fn onboarding_save_rejects_empty_source_language_and_keeps_editor_open() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Onboarding,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.source_language.clear();
+            editor.google_api_key = "saved-key".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let editor = state.config_editor_snapshot().expect("editor remains open");
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .is_some_and(|message| message.contains("source language")
+                    && message.contains("edit config manually")),
+            "save feedback should explain missing source language and manual fallback: {:?}",
+            editor.status_message
+        );
+        assert!(
+            !cfg_path.exists(),
+            "invalid onboarding input must not write config"
+        );
+    }
+
+    #[test]
+    fn onboarding_save_rejects_empty_target_language_and_keeps_editor_open() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(
+            ConfigEditorMode::Onboarding,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.target_language.clear();
+            editor.google_api_key = "saved-key".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let editor = state.config_editor_snapshot().expect("editor remains open");
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .is_some_and(|message| message.contains("target language")
+                    && message.contains("edit config manually")),
+            "save feedback should explain missing target language and manual fallback: {:?}",
+            editor.status_message
+        );
+        assert!(
+            !cfg_path.exists(),
+            "invalid onboarding input must not write config"
+        );
     }
 
     #[test]
