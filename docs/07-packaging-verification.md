@@ -184,8 +184,8 @@ only `tui-translator.exe`, `config.example.json`, and docs. Operators who need
 offline/local STT should prefetch models after install:
 
 ```powershell
-.\tui-translator.exe --prefetch-local-stt-model base
-.\tui-translator.exe --prefetch-local-stt-model base --yes
+.\tui-translator.exe --prefetch-local-stt-model tiny
+.\tui-translator.exe --prefetch-local-stt-model tiny --yes
 ```
 
 By default the verified model cache is `%USERPROFILE%\.tui-translator\models`.
@@ -193,8 +193,9 @@ For a portable ZIP or managed installer staging layout, run the same command
 with `--model-cache-dir <dir>` and copy that verified cache into the user's
 model cache during install. If the package uses a pinned vendor manifest, use
 `--prefetch-local-stt-manifest <manifest.json>` with the same cache flag. The
-command resumes interrupted `.part` downloads, verifies SHA-256 before writing
-`manifest.json`, and reuses already verified files on repeat runs.
+manifest must match one of the built-in Whisper files that local STT can load.
+The command resumes interrupted `.part` downloads, verifies SHA-256 before
+writing `manifest.json`, and reuses already verified files on repeat runs.
 
 ---
 

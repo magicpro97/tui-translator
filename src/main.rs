@@ -735,7 +735,15 @@ fn parse_local_stt_model_prefetch_args_from<I>(args: I) -> Result<Option<LocalSt
 where
     I: IntoIterator<Item = OsString>,
 {
-    let mut saw_prefetch_arg = false;
+    let args = args.into_iter().collect::<Vec<_>>();
+    let is_prefetch_command = args.iter().any(|arg| {
+        arg == OsStr::new("--prefetch-local-stt-model")
+            || arg == OsStr::new("--prefetch-local-stt-manifest")
+    });
+    if !is_prefetch_command {
+        return Ok(None);
+    }
+
     let mut source = None;
     let mut model_cache_dir = None;
     let mut yes = false;
@@ -743,7 +751,6 @@ where
 
     while let Some(arg) = iter.next() {
         if arg == OsStr::new("--prefetch-local-stt-model") {
-            saw_prefetch_arg = true;
             let raw = next_cli_arg(&mut iter, "--prefetch-local-stt-model")?;
             let raw = raw.to_string_lossy();
             set_local_stt_prefetch_source(
@@ -751,7 +758,6 @@ where
                 LocalSttModelPrefetchSource::BuiltinModel(parse_local_stt_model_id(&raw)?),
             )?;
         } else if arg == OsStr::new("--prefetch-local-stt-manifest") {
-            saw_prefetch_arg = true;
             set_local_stt_prefetch_source(
                 &mut source,
                 LocalSttModelPrefetchSource::Manifest(PathBuf::from(next_cli_arg(
@@ -763,13 +769,9 @@ where
             model_cache_dir = Some(PathBuf::from(next_cli_arg(&mut iter, "--model-cache-dir")?));
         } else if arg == OsStr::new("--yes") || arg == OsStr::new("-y") {
             yes = true;
-        } else if saw_prefetch_arg {
+        } else {
             bail!("unknown local STT model prefetch argument {:?}", arg);
         }
-    }
-
-    if !saw_prefetch_arg {
-        return Ok(None);
     }
 
     Ok(Some(LocalSttModelPrefetchArgs {
@@ -834,6 +836,30 @@ fn read_model_bundle_manifest(path: &Path) -> Result<providers::local::ModelBund
         .with_context(|| format!("failed to parse model manifest {}", path.display()))
 }
 
+fn validate_local_stt_bundle_manifest(
+    manifest: &providers::local::ModelBundleManifest,
+) -> Result<()> {
+    let [file] = manifest.files.as_slice() else {
+        bail!("local STT manifest must contain exactly one Whisper model file");
+    };
+    let Some(spec) = providers::local::ModelManifest::builtin()
+        .iter()
+        .find(|spec| spec.file_name == file.relative_path)
+    else {
+        bail!(
+            "local STT manifest file {:?} is not one of the built-in Whisper model files",
+            file.relative_path
+        );
+    };
+    if spec.sha256 != file.sha256 || spec.size_bytes != file.size_bytes {
+        bail!(
+            "local STT manifest metadata for {} does not match the built-in Whisper checksum and size",
+            file.relative_path
+        );
+    }
+    Ok(())
+}
+
 fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
     let manifest = read_model_bundle_manifest(&args.manifest)?;
     let model_dir = match &args.model_dir {
@@ -889,7 +915,11 @@ fn run_local_stt_model_prefetch(args: &LocalSttModelPrefetchArgs) -> Result<()> 
                 .with_context(|| format!("local STT model {model_id} is not available"))?;
             providers::local::stt_model_bundle_manifest(spec)
         }
-        LocalSttModelPrefetchSource::Manifest(path) => read_model_bundle_manifest(path)?,
+        LocalSttModelPrefetchSource::Manifest(path) => {
+            let manifest = read_model_bundle_manifest(path)?;
+            validate_local_stt_bundle_manifest(&manifest)?;
+            manifest
+        }
     };
     let model_cache_dir = match &args.model_cache_dir {
         Some(path) => path.clone(),
@@ -3143,6 +3173,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_local_stt_model_prefetch_args_rejects_unknown_flag_before_source() {
+        let error = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--model-cache-dri"),
+            OsString::from(r"C:\models\wrong"),
+            OsString::from("--prefetch-local-stt-model"),
+            OsString::from("tiny"),
+        ])
+        .expect_err("unknown prefetch flag before source should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("unknown local STT model prefetch argument"));
+    }
+
+    #[test]
     fn parse_local_stt_model_prefetch_args_ignores_auxiliary_flag_without_command() {
         let parsed = parse_local_stt_model_prefetch_args_from(vec![
             OsString::from("--model-cache-dir"),
@@ -3153,6 +3198,31 @@ mod tests {
         .unwrap();
 
         assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn validate_local_stt_bundle_manifest_accepts_builtin_tiny_manifest() {
+        let spec = providers::local::ModelManifest::builtin()
+            .find(providers::local::ModelId::Tiny)
+            .unwrap();
+        let manifest = providers::local::stt_model_bundle_manifest(spec);
+
+        validate_local_stt_bundle_manifest(&manifest).unwrap();
+    }
+
+    #[test]
+    fn validate_local_stt_bundle_manifest_rejects_checksum_mismatch() {
+        let spec = providers::local::ModelManifest::builtin()
+            .find(providers::local::ModelId::Tiny)
+            .unwrap();
+        let mut manifest = providers::local::stt_model_bundle_manifest(spec);
+        manifest.files[0].sha256 =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
+
+        let error = validate_local_stt_bundle_manifest(&manifest)
+            .expect_err("mismatched STT manifest checksum should be rejected");
+
+        assert!(error.to_string().contains("does not match"));
     }
 
     #[test]

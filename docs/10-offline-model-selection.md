@@ -204,15 +204,16 @@ your release checklist.
 For a user starting from scratch:
 
 1. **Download the STT model once:**
-   Run `tui-translator.exe --prefetch-local-stt-model base` to preview the
+   Run `tui-translator.exe --prefetch-local-stt-model tiny` to preview the
    model name, license, source URL, size, cache path, and verified marker.  Re-run
    with `--yes` to download into `%USERPROFILE%\.tui-translator\models` (or add
    `--model-cache-dir <dir>` for a portable cache).  The prefetcher resumes
    `<file>.part` downloads, verifies SHA-256 before marking the model ready, and
    writes `manifest.json` in the cache.  Managed installs can use
    `--prefetch-local-stt-manifest <manifest.json>` with the same cache flag when
-   a pinned model manifest is supplied.  On 16 GB machines with confirmed CPU
-   headroom, substitute `small`.
+   a pinned model manifest is supplied.  `tiny` matches the current runtime
+   default; use `base` or `small` only after runtime model selection supports
+   those IDs.
 
 2. **Do not enable offline MT until measured:**
    If you have a Google API key, `mt_provider = "google"` remains the current

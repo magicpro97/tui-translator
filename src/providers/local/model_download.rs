@@ -141,7 +141,7 @@ pub fn stt_model_bundle_manifest(spec: &ModelSpec) -> ModelBundleManifest {
     ModelBundleManifest {
         id: format!("whisper-{}", spec.id.display_name()),
         display_name: format!("Whisper {} STT model", spec.id.display_name()),
-        version: spec.sha256[..12].to_string(),
+        version: spec.sha256.chars().take(12).collect(),
         license: "MIT".to_string(),
         source_url: spec.download_url.to_string(),
         files: vec![ModelBundleFile {
@@ -812,6 +812,21 @@ mod tests {
         assert_eq!(manifest.files[0].sha256, spec.sha256);
         assert_eq!(manifest.total_size_bytes(), spec.size_bytes);
         manifest.validate().unwrap();
+    }
+
+    #[test]
+    fn stt_model_bundle_manifest_does_not_panic_on_short_sha() {
+        let spec = ModelSpec {
+            id: super::super::ModelId::Tiny,
+            file_name: "ggml-tiny.bin",
+            download_url: "https://example.com/ggml-tiny.bin",
+            sha256: "abc",
+            size_bytes: 42,
+        };
+
+        let manifest = stt_model_bundle_manifest(&spec);
+
+        assert_eq!(manifest.version, "abc");
     }
 
     #[test]
