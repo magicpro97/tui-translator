@@ -4,30 +4,11 @@
 //! - Google Cloud STT + Google Cloud MT
 //! - local Whisper STT + Google Cloud MT
 //!
-//! The runner reads `google_api_key` from `%USERPROFILE%\.tui-translator\config.json`
-//! unless `GOOGLE_API_KEY` is set. It never prints the key.
+//! The runner reads `google_api_key` from the OS-specific per-user config
+//! directory unless `GOOGLE_API_KEY` is set. It never prints the key.
 
-mod config {
-    use anyhow::{bail, Result};
-    use std::path::PathBuf;
-
-    /// Return the user's home directory from the standard Windows/Unix environment variables.
-    pub(crate) fn home_dir() -> Result<PathBuf> {
-        if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
-            return Ok(PathBuf::from(path));
-        }
-        if let Some(path) = std::env::var_os("HOME").filter(|p| !p.is_empty()) {
-            return Ok(PathBuf::from(path));
-        }
-        bail!("could not resolve a home directory from USERPROFILE or HOME");
-    }
-
-    /// Return the default benchmark config path under the user's home directory.
-    pub(crate) fn default_config_path() -> Result<PathBuf> {
-        Ok(home_dir()?.join(".tui-translator").join("config.json"))
-    }
-}
-
+#[path = "../config/paths.rs"]
+mod config;
 #[path = "../providers/mod.rs"]
 mod providers;
 

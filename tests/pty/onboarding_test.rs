@@ -76,7 +76,7 @@ fn quit_onboarding(session: &mut PtySession) {
 }
 
 #[test]
-fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
+fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
     let fake_home = TempDir::new().expect("temp home");
     let home_str = fake_home
         .path()
@@ -91,7 +91,12 @@ fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
         .to_str()
         .expect("fixture path must be valid UTF-8")
         .to_string();
-    let config_path = fake_home.path().join(".tui-translator").join("config.json");
+    let config_dir = fake_home.path().join("tui-config");
+    let config_dir_str = config_dir
+        .to_str()
+        .expect("config dir path must be valid UTF-8")
+        .to_string();
+    let config_path = config_dir.join("config.json");
 
     {
         let mut session = PtySession::spawn(
@@ -99,6 +104,7 @@ fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
             30,
             &[
                 ("TUI_TRANSLATOR_SKIP_ONBOARDING", "0"),
+                ("TUI_TRANSLATOR_CONFIG_DIR", config_dir_str.as_str()),
                 ("USERPROFILE", home_str.as_str()),
             ],
         )
@@ -119,7 +125,7 @@ fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
 
         assert!(
             config_path.exists(),
-            "saving onboarding must create a home config"
+            "saving onboarding must create a per-user config"
         );
         session.quit_cleanly().expect("quit first session");
         let exit = session.wait_exit(EXIT_TIMEOUT).expect("first session exit");
@@ -150,6 +156,7 @@ fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
             30,
             &[
                 ("TUI_TRANSLATOR_SKIP_ONBOARDING", "0"),
+                ("TUI_TRANSLATOR_CONFIG_DIR", config_dir_str.as_str()),
                 ("USERPROFILE", home_str.as_str()),
             ],
         )
@@ -160,7 +167,7 @@ fn first_run_setup_creates_home_config_and_stays_gone_after_restart() {
         );
         assert!(
             !session.screen_contains("First-Run Setup"),
-            "relaunch should use the saved home config instead of reopening onboarding"
+            "relaunch should use the saved per-user config instead of reopening onboarding"
         );
         session.quit_cleanly().expect("quit relaunch session");
         let exit = session.wait_exit(EXIT_TIMEOUT).expect("relaunch exit");

@@ -1306,7 +1306,7 @@ fn main() -> Result<()> {
         overwrite_device_name(&state.device_name, "first-run setup required");
         tracing::info!(
             path = %cfg_path.display(),
-            "home config missing; opening first-run setup"
+            "per-user config missing; opening first-run setup"
         );
     }
     if config_recovery_required {
@@ -1920,11 +1920,12 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
 /// Resolution order:
 /// 1. `TUI_TRANSLATOR_CONFIG` environment variable — allows the soak runner
 ///    (and other callers) to inject a temporary configuration without touching
-///    the user's home directory.
-/// 2. `~/.tui-translator/config.json`.
+///    the user's profile.
+/// 2. The OS-specific per-user config directory from `directories::BaseDirs`
+///    (or `TUI_TRANSLATOR_CONFIG_DIR`) joined with `config.json`.
 /// 3. The directory that contains the running executable joined with
-///    `config.json` as a legacy fallback when the home directory cannot be
-///    resolved.
+///    `config.json` as a legacy fallback when the OS config directory cannot
+///    be resolved.
 /// 4. The literal string `"config.json"` in the current working directory as a
 ///    last resort.
 fn config_json_path() -> PathBuf {
@@ -2001,7 +2002,7 @@ fn bootstrap_legacy_config_if_needed(target_path: &Path) -> Result<()> {
     tracing::info!(
         from = %legacy_path.display(),
         to = %target_path.display(),
-        "migrated executable-side config to home directory"
+        "migrated executable-side config to per-user config directory"
     );
     Ok(())
 }
@@ -4774,6 +4775,8 @@ mod tests {
         let var = "TUI_TRANSLATOR_CONFIG";
         let expected = r"C:\tmp\soak-config.json";
         let _config = EnvVarGuard::set(var, expected);
+        let config_dir = TempDir::new().unwrap();
+        let _config_dir = EnvVarGuard::set(config::CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
         let path = config_json_path();
         assert_eq!(
             path,
@@ -4782,19 +4785,19 @@ mod tests {
         );
     }
 
-    /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` prefers the user's
-    /// home config location.
+    /// Without `TUI_TRANSLATOR_CONFIG`, `config_json_path` uses the default
+    /// per-user config directory.
     #[test]
-    fn config_json_path_fallback_uses_home_directory() {
+    fn config_json_path_fallback_uses_default_config_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let home = TempDir::new().unwrap();
+        let config_dir = TempDir::new().unwrap();
         let _config = EnvVarGuard::remove("TUI_TRANSLATOR_CONFIG");
-        let _userprofile = EnvVarGuard::set("USERPROFILE", home.path());
+        let _config_dir = EnvVarGuard::set(config::CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
         let path = config_json_path();
         assert_eq!(
             path,
-            home.path().join(".tui-translator").join("config.json"),
-            "fallback path must use the home config location; got {path:?}"
+            config_dir.path().join("config.json"),
+            "fallback path must use the default config location; got {path:?}"
         );
     }
 
@@ -4939,14 +4942,15 @@ mod tests {
 
     // ── config_json_path / bootstrap — path lookup and migration rules (issue #182) ──
 
-    /// When `TUI_TRANSLATOR_CONFIG` is absent and neither `USERPROFILE` nor
-    /// `HOME` is set, `config_json_path` must fall back to the portable
-    /// (executable-adjacent) path or the bare CWD `"config.json"`.
-    /// The file name must always be `"config.json"`.
+    /// When all config overrides are absent, `config_json_path` must still
+    /// resolve to a `config.json` file. On hosts where the OS config directory
+    /// is unavailable it may fall back to the portable executable-adjacent path
+    /// or the bare CWD `"config.json"`.
     #[test]
-    fn config_json_path_falls_back_to_portable_or_cwd_when_no_home() {
+    fn config_json_path_without_overrides_resolves_config_json_file() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let _config = EnvVarGuard::remove("TUI_TRANSLATOR_CONFIG");
+        let _config_dir = EnvVarGuard::remove(config::CONFIG_DIR_OVERRIDE_ENV);
         let _userprofile = EnvVarGuard::remove("USERPROFILE");
         let _home = EnvVarGuard::remove("HOME");
 

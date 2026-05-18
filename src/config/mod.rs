@@ -1,7 +1,8 @@
 //! Configuration loading and live-reload support.
 //!
-//! The application reads a `config.json` file from the user's home directory by
-//! default (`~/.tui-translator/config.json` on Windows).
+//! The application reads `config.json` from the OS-specific per-user config
+//! directory by default (for example, `%APPDATA%\tui-translator\config.json`
+//! on Windows).
 //! This module owns all parsing, validation, persistence, and hot-reload logic.
 //! See `config.example.json` in the repository root for the full list of
 //! supported keys and per-field documentation.
@@ -18,6 +19,32 @@ use std::sync::{
 };
 use std::time::Duration;
 use tokio::sync::watch;
+
+mod paths;
+
+#[allow(dead_code)]
+pub const CONFIG_DIR_OVERRIDE_ENV: &str = paths::CONFIG_DIR_OVERRIDE_ENV;
+
+/// Return the user's home directory.
+pub fn home_dir() -> Result<PathBuf> {
+    paths::home_dir()
+}
+
+/// Return the default configuration file path under the per-user config directory.
+pub fn default_config_path() -> Result<PathBuf> {
+    paths::default_config_path()
+}
+
+/// Return the default transcript session directory under the per-user config directory.
+pub fn default_sessions_dir() -> Result<PathBuf> {
+    paths::default_sessions_dir()
+}
+
+/// Return the default audio archive directory under the per-user config directory.
+#[allow(dead_code)]
+pub fn default_audio_archive_dir() -> Result<PathBuf> {
+    paths::default_audio_archive_dir()
+}
 
 const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
 const DEFAULT_MIN_SPEECH_MS: u32 = 100;
@@ -193,7 +220,7 @@ pub struct SessionStoreConfig {
 
     /// Directory where JSONL logs are written.
     ///
-    /// `None` uses `%USERPROFILE%\.tui-translator\sessions\`.
+    /// `None` uses the `sessions/` subdirectory under the per-user config directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directory: Option<String>,
 }
@@ -244,7 +271,7 @@ pub struct AudioArchiveConfig {
 
     /// Directory where per-session WAV files are written.
     ///
-    /// `None` uses `%USERPROFILE%\.tui-translator\audio-archive\`.
+    /// `None` uses the `audio-archive/` subdirectory under the per-user config directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directory: Option<String>,
 
@@ -759,38 +786,6 @@ pub fn apply_editor_defaults(config_path: &Path, cfg: &mut AppConfig) -> Result<
         );
     }
     Ok(())
-}
-
-/// Return the user's home directory.
-pub fn home_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-    if let Some(path) = std::env::var_os("HOME").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(path));
-    }
-    bail!("could not resolve a home directory from USERPROFILE or HOME");
-}
-
-/// Return the default configuration directory under the user's home directory.
-pub fn default_config_dir() -> Result<PathBuf> {
-    Ok(home_dir()?.join(".tui-translator"))
-}
-
-/// Return the default configuration file path under the user's home directory.
-pub fn default_config_path() -> Result<PathBuf> {
-    Ok(default_config_dir()?.join("config.json"))
-}
-
-/// Return the default transcript session directory under the user's config directory.
-pub fn default_sessions_dir() -> Result<PathBuf> {
-    Ok(default_config_dir()?.join("sessions"))
-}
-
-/// Return the default audio archive directory under the user's config directory.
-#[allow(dead_code)]
-pub fn default_audio_archive_dir() -> Result<PathBuf> {
-    Ok(default_config_dir()?.join("audio-archive"))
 }
 
 /// Load configuration from `path` and report whether the file existed.
@@ -1716,30 +1711,41 @@ mod tests {
     }
 
     #[test]
-    fn default_config_path_uses_home_directory() {
+    fn default_config_path_uses_config_dir_override() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let home = TempDir::new().unwrap();
-        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
-        let _home_guard = EnvVarGuard::remove("HOME");
+        let config_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
 
         let path = default_config_path().unwrap();
 
-        assert_eq!(
-            path,
-            home.path().join(".tui-translator").join("config.json")
-        );
+        assert_eq!(path, config_dir.path().join("config.json"));
     }
 
     #[test]
-    fn default_sessions_dir_uses_home_config_directory() {
+    fn default_config_path_uses_platform_config_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let home = TempDir::new().unwrap();
-        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
-        let _home_guard = EnvVarGuard::remove("HOME");
+        let _override = EnvVarGuard::remove(CONFIG_DIR_OVERRIDE_ENV);
+
+        let expected = directories::BaseDirs::new()
+            .expect("test host must expose an OS config directory")
+            .config_dir()
+            .join("tui-translator")
+            .join("config.json");
+
+        let path = default_config_path().unwrap();
+
+        assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn default_sessions_dir_uses_default_config_directory() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let config_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
 
         let path = default_sessions_dir().unwrap();
 
-        assert_eq!(path, home.path().join(".tui-translator").join("sessions"));
+        assert_eq!(path, config_dir.path().join("sessions"));
     }
 
     #[test]
@@ -2477,19 +2483,19 @@ mod tests {
         );
     }
 
-    /// `default_config_path` must propagate the `home_dir` error when neither
-    /// `USERPROFILE` nor `HOME` is set.
+    /// `default_config_path` must still support a managed config-directory
+    /// override when traditional home-directory environment variables are
+    /// missing.
     #[test]
-    fn default_config_path_returns_error_when_home_unavailable() {
+    fn default_config_path_override_does_not_need_home_env() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let config_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
         let _userprofile = EnvVarGuard::remove("USERPROFILE");
         let _home = EnvVarGuard::remove("HOME");
 
-        let result = default_config_path();
+        let path = default_config_path().unwrap();
 
-        assert!(
-            result.is_err(),
-            "default_config_path must fail when home directory cannot be resolved"
-        );
+        assert_eq!(path, config_dir.path().join("config.json"));
     }
 }
