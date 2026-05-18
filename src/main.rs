@@ -1253,9 +1253,10 @@ fn main() -> Result<()> {
     // enters alternate-screen mode so a forced close triggers our cleanup.
     windows_signal::install();
 
-    // Load configuration from the home-directory default unless a test or caller
+    // Load configuration from the selected startup path unless a test or caller
     // explicitly overrides it through TUI_TRANSLATOR_CONFIG.
     let cfg_path = config_json_path();
+    prepare_per_user_config_dir_for_startup(&cfg_path)?;
     bootstrap_legacy_config_if_needed(&cfg_path)?;
     let (cfg, load_state, load_error) = config::load_for_startup(&cfg_path)?;
     let startup_config_mode = startup_config_mode(
@@ -1992,6 +1993,44 @@ fn select_config_json_path(
 
 fn has_explicit_config_override() -> bool {
     explicit_config_json_path().is_some()
+}
+
+fn prepare_per_user_config_dir_for_startup(config_path: &Path) -> Result<()> {
+    if !should_prepare_per_user_config_dir(
+        has_explicit_config_override(),
+        config_path,
+        config::default_config_path(),
+    ) {
+        return Ok(());
+    }
+
+    create_config_parent_dir(config_path)
+}
+
+fn should_prepare_per_user_config_dir(
+    explicit_override: bool,
+    selected_path: &Path,
+    per_user_config: Result<PathBuf>,
+) -> bool {
+    if explicit_override {
+        return false;
+    }
+    per_user_config
+        .map(|path| path == selected_path)
+        .unwrap_or(false)
+}
+
+fn create_config_parent_dir(config_path: &Path) -> Result<()> {
+    let parent = config_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .context("per-user config path must have a parent directory")?;
+    fs::create_dir_all(parent).with_context(|| {
+        format!(
+            "failed to create per-user config directory {}",
+            parent.display()
+        )
+    })
 }
 
 fn skip_onboarding() -> bool {
@@ -4844,6 +4883,56 @@ mod tests {
         assert!(
             explicit_config_json_path().is_none(),
             "empty TUI_TRANSLATOR_CONFIG must not produce a path"
+        );
+    }
+
+    #[test]
+    fn should_prepare_per_user_config_dir_only_for_selected_per_user_path() {
+        let per_user = PathBuf::from(r"C:\Users\demo\AppData\Roaming\tui-translator\config.json");
+        let portable = PathBuf::from(r"C:\tools\tui-translator\config.json");
+
+        assert!(should_prepare_per_user_config_dir(
+            false,
+            &per_user,
+            Ok(per_user.clone())
+        ));
+        assert!(!should_prepare_per_user_config_dir(
+            true,
+            &per_user,
+            Ok(per_user.clone())
+        ));
+        assert!(!should_prepare_per_user_config_dir(
+            false,
+            &portable,
+            Ok(per_user)
+        ));
+    }
+
+    #[test]
+    fn create_config_parent_dir_creates_missing_parent_directory() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp
+            .path()
+            .join("missing")
+            .join("config-root")
+            .join("config.json");
+
+        create_config_parent_dir(&cfg_path).unwrap();
+
+        assert!(cfg_path.parent().unwrap().is_dir());
+    }
+
+    #[test]
+    fn create_config_parent_dir_surfaces_create_errors() {
+        let parent_file = NamedTempFile::new().unwrap();
+        let cfg_path = parent_file.path().join("config.json");
+
+        let error = create_config_parent_dir(&cfg_path).unwrap_err();
+        let message = format!("{error:#}");
+
+        assert!(
+            message.contains("failed to create per-user config directory"),
+            "error should explain which startup directory creation failed; got: {message}"
         );
     }
 
