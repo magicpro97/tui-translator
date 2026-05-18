@@ -533,60 +533,96 @@ mod tests {
         );
     }
 
-    fn default_render_device_name_or_skip() -> Option<String> {
-        // Best-effort COM initialisation: skip rather than fail if unavailable.
-        if initialize_mta().is_err() {
-            return None;
+    fn loopback_devices_or_skip() -> Option<Vec<CaptureDeviceInfo>> {
+        match list_loopback_devices() {
+            Ok(devices) if !devices.is_empty() => Some(devices),
+            _ => None,
         }
-        match get_default_device(&Direction::Render) {
-            Ok(device) => device.get_friendlyname().ok(),
-            Err(_) => None,
-        }
+    }
+
+    fn default_loopback_device_or_skip() -> Option<CaptureDeviceInfo> {
+        loopback_devices_or_skip()?
+            .into_iter()
+            .find(|device| device.is_default)
+    }
+
+    fn non_default_loopback_device_or_skip() -> Option<CaptureDeviceInfo> {
+        loopback_devices_or_skip()?
+            .into_iter()
+            .find(|device| !device.is_default)
+    }
+
+    fn assert_selects_endpoint(requested: Option<&str>, expected: &CaptureDeviceInfo) {
+        let (device, selected_name) =
+            select_render_device(requested).expect("render device selection should succeed");
+        let selected_id = device
+            .get_id()
+            .expect("selected render device must expose a stable endpoint id");
+        assert_eq!(selected_name, expected.name);
+        assert_eq!(selected_id, expected.id);
     }
 
     /// No `capture_device` selection must preserve the existing Windows default
     /// render endpoint behavior.
     #[test]
     fn select_render_device_none_uses_windows_default() {
-        let Some(default_name) = default_render_device_name_or_skip() else {
+        let Some(default_device) = default_loopback_device_or_skip() else {
             return;
         };
 
-        let result = select_render_device(None);
-        assert!(result.is_ok(), "default device selection should succeed");
-        let (_device, selected_name) = result.unwrap();
-        eprintln!("[wasapi-selection] default selection: {selected_name}");
-        assert_eq!(selected_name, default_name);
+        assert_selects_endpoint(None, &default_device);
+        eprintln!(
+            "[wasapi-selection] default selection: {}",
+            default_device.name
+        );
     }
 
     /// Blank `capture_device` config values must also fall back to the Windows
     /// default render endpoint.
     #[test]
     fn select_render_device_blank_uses_windows_default() {
-        let Some(default_name) = default_render_device_name_or_skip() else {
+        let Some(default_device) = default_loopback_device_or_skip() else {
             return;
         };
 
-        let result = select_render_device(Some("   "));
-        assert!(result.is_ok(), "blank device selection should use default");
-        let (_device, selected_name) = result.unwrap();
-        eprintln!("[wasapi-selection] blank selection fallback: {selected_name}");
-        assert_eq!(selected_name, default_name);
+        assert_selects_endpoint(Some("   "), &default_device);
+        eprintln!(
+            "[wasapi-selection] blank selection fallback: {}",
+            default_device.name
+        );
     }
 
-    /// A valid explicit playback-device name must be honored instead of always
-    /// opening the Windows default path.
+    /// A valid explicit playback-device name must return that exact stable
+    /// endpoint, not just any endpoint with a matching display label.
     #[test]
     fn select_render_device_explicit_name_uses_requested_endpoint() {
-        let Some(default_name) = default_render_device_name_or_skip() else {
+        let Some(default_device) = default_loopback_device_or_skip() else {
             return;
         };
 
-        let result = select_render_device(Some(&default_name));
-        assert!(result.is_ok(), "explicit device selection should succeed");
-        let (_device, selected_name) = result.unwrap();
-        eprintln!("[wasapi-selection] explicit selection: {selected_name}");
-        assert_eq!(selected_name, default_name);
+        assert_selects_endpoint(Some(&default_device.name), &default_device);
+        eprintln!(
+            "[wasapi-selection] explicit selection: {}",
+            default_device.name
+        );
+    }
+
+    /// When a non-default endpoint exists, explicit selection must not silently
+    /// fall back to the Windows default device.
+    #[test]
+    fn select_render_device_non_default_explicit_name_does_not_use_default() {
+        let Some(non_default_device) = non_default_loopback_device_or_skip() else {
+            eprintln!(
+                "[wasapi-selection] skipping non-default selection proof: only default endpoint is active"
+            );
+            return;
+        };
+
+        assert_selects_endpoint(Some(&non_default_device.name), &non_default_device);
+        eprintln!(
+            "[wasapi-selection] explicit non-default selection: {}",
+            non_default_device.name
+        );
     }
 
     // ── format_device_names — label formatting ────────────────────────────────
