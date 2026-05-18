@@ -23,7 +23,9 @@
 //! user config or WASAPI devices on the host.
 
 use super::harness::{PtySession, EXIT_TIMEOUT, STARTUP_TIMEOUT};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tempfile::TempDir;
 
 // ── Timeouts ──────────────────────────────────────────────────────────────────
 
@@ -115,6 +117,41 @@ fn check_settings_layout(session: &PtySession, cols: u16, rows: u16) {
         "settings panel title leaked into last terminal row {} at {cols}×{rows}: {last_row:?}",
         rows - 1,
     );
+}
+
+fn write_config_with_capture_device(dir: &Path, capture_device: &str) -> PathBuf {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("soak")
+        .join("soak_audio.wav")
+        .canonicalize()
+        .expect("canonicalize soak fixture");
+    let cfg_path = dir.join("config.json");
+    let payload = serde_json::to_string_pretty(&serde_json::json!({
+        "google_api_key": "pty-test-key",
+        "source_language": "ja-JP",
+        "target_language": "vi",
+        "tts_enabled": false,
+        "audio_source": "file",
+        "audio_file_path": fixture,
+        "capture_device": capture_device,
+    }))
+    .expect("serialize capture-device PTY config")
+        + "\n";
+    std::fs::write(&cfg_path, payload).expect("write capture-device PTY config");
+    cfg_path
+}
+
+fn wait_for_capture_device_label(session: &PtySession, label: &str, timeout: Duration) -> bool {
+    let compact_label = label.replace(' ', "");
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if session.screen_contains(label) || session.screen_contains(&compact_label) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    false
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -354,4 +391,37 @@ fn settings_capture_device_field_shows_picker() {
         Some(0),
         "settings_capture_device_field_shows_picker: expected exit 0; got {code:?}"
     );
+}
+
+#[test]
+fn settings_capture_device_selection_survives_restart() {
+    let temp = TempDir::new().expect("temp config dir");
+    let cfg_path = write_config_with_capture_device(temp.path(), "USB Headset");
+    let cfg_path_string = cfg_path.to_string_lossy().into_owned();
+
+    for run in 1..=2 {
+        let mut session = PtySession::spawn(
+            110,
+            30,
+            &[("TUI_TRANSLATOR_CONFIG", cfg_path_string.as_str())],
+        )
+        .unwrap_or_else(|err| panic!("spawn tui-translator restart run {run}: {err}"));
+        assert!(
+            session.wait_for_text("Q quit", STARTUP_TIMEOUT),
+            "restart run {run}: timed out waiting for main TUI frame"
+        );
+        assert!(
+            wait_for_capture_device_label(&session, "USB Headset", OVERLAY_TIMEOUT),
+            "restart run {run}: saved capture device should be visible after startup; screen:\n{}",
+            session.all_rows().join("\n"),
+        );
+
+        session.quit_cleanly().expect("send quit");
+        let code = session.wait_exit(EXIT_TIMEOUT);
+        assert_eq!(
+            code,
+            Some(0),
+            "settings_capture_device_selection_survives_restart run {run}: expected exit 0; got {code:?}"
+        );
+    }
 }

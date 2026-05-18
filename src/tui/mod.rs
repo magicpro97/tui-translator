@@ -2438,7 +2438,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     if !is_compact_editor {
         lines.push(Line::from(Span::styled(
-            " Providers: Google MT only; restart after provider changes.",
+            " Save writes config. Restart when prompted for restart-required changes.",
             Style::default().fg(Color::DarkGray),
         )));
     }
@@ -2569,6 +2569,14 @@ fn capture_device_picker_lines(
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     ))];
+    lines.push(Line::from(Span::styled(
+        if is_compact_editor {
+            " Save, then restart to use device changes."
+        } else {
+            " Capture-device changes require Save, then app restart to use."
+        },
+        Style::default().fg(Color::Yellow),
+    )));
 
     if let Some(filter) = capture_device_picker_filter(editor) {
         lines.push(Line::from(Span::styled(
@@ -3474,6 +3482,62 @@ mod tests {
                 .iter()
                 .any(|choice| choice.value == editor.capture_device),
             "F2/Ctrl+D must not select a hidden picker row"
+        );
+    }
+
+    #[test]
+    fn render_config_editor_explains_capture_device_restart_semantics() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(110, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("Restart when prompted"),
+            "settings editor should not list an incomplete subset of restart-required fields; got: {rendered:?}"
+        );
+
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::CaptureDevice.index();
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("Capture-device changes require"),
+            "capture-device restart guidance should stay visible while the picker is open; got: {rendered:?}"
         );
     }
 
