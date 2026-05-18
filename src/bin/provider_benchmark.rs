@@ -4,14 +4,17 @@
 //! - Google Cloud STT + Google Cloud MT
 //! - local Whisper STT + Google Cloud MT
 //!
-//! The runner reads `google_api_key` from `%USERPROFILE%\.tui-translator\config.json`
-//! unless `GOOGLE_API_KEY` is set. It never prints the key.
+//! The runner reads `google_api_key` from the OS-specific per-user config
+//! directory unless `GOOGLE_API_KEY` is set. It never prints the key.
 
 mod config {
-    use anyhow::{bail, Result};
+    use anyhow::{bail, Context, Result};
     use std::path::PathBuf;
 
-    /// Return the user's home directory from the standard Windows/Unix environment variables.
+    const APP_CONFIG_DIR_NAME: &str = "tui-translator";
+    const CONFIG_DIR_OVERRIDE_ENV: &str = "TUI_TRANSLATOR_CONFIG_DIR";
+
+    /// Return the user's home directory for legacy local model-cache lookup.
     pub(crate) fn home_dir() -> Result<PathBuf> {
         if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
             return Ok(PathBuf::from(path));
@@ -22,9 +25,20 @@ mod config {
         bail!("could not resolve a home directory from USERPROFILE or HOME");
     }
 
-    /// Return the default benchmark config path under the user's home directory.
+    /// Return the per-user config directory used by the main app.
+    pub(crate) fn default_config_dir() -> Result<PathBuf> {
+        if let Some(path) = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV).filter(|p| !p.is_empty()) {
+            return Ok(PathBuf::from(path));
+        }
+
+        let base_dirs =
+            directories::BaseDirs::new().context("could not resolve an OS config directory")?;
+        Ok(base_dirs.config_dir().join(APP_CONFIG_DIR_NAME))
+    }
+
+    /// Return the default benchmark config path under the per-user config directory.
     pub(crate) fn default_config_path() -> Result<PathBuf> {
-        Ok(home_dir()?.join(".tui-translator").join("config.json"))
+        Ok(default_config_dir()?.join("config.json"))
     }
 }
 

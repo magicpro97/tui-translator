@@ -1,7 +1,8 @@
 //! Configuration loading and live-reload support.
 //!
-//! The application reads a `config.json` file from the user's home directory by
-//! default (`~/.tui-translator/config.json` on Windows).
+//! The application reads `config.json` from the OS-specific per-user config
+//! directory by default (for example, `%APPDATA%\tui-translator\config.json`
+//! on Windows).
 //! This module owns all parsing, validation, persistence, and hot-reload logic.
 //! See `config.example.json` in the repository root for the full list of
 //! supported keys and per-field documentation.
@@ -38,6 +39,14 @@ pub const DEFAULT_PIPELINE_IDLE_MIN_MS: u32 = 500;
 /// Maximum time (ms) a partial sentence fragment is held before force-flush.
 pub const DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS: u64 = 4_000;
 static CONFIG_TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+const APP_CONFIG_DIR_NAME: &str = "tui-translator";
+
+/// Environment override for the default config directory.
+///
+/// `TUI_TRANSLATOR_CONFIG` still takes precedence for a full file-path override;
+/// this lower-level directory override exists for tests and managed deployments
+/// that need first-run/onboarding semantics without touching the real profile.
+pub const CONFIG_DIR_OVERRIDE_ENV: &str = "TUI_TRANSLATOR_CONFIG_DIR";
 
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -772,9 +781,21 @@ pub fn home_dir() -> Result<PathBuf> {
     bail!("could not resolve a home directory from USERPROFILE or HOME");
 }
 
-/// Return the default configuration directory under the user's home directory.
+/// Return the default configuration directory for this application.
+///
+/// The path is derived with the `directories` crate so it follows OS
+/// conventions (`%APPDATA%` on Windows, XDG config on Linux, and
+/// `Library/Application Support` on macOS) instead of hand-rolling a home-dir
+/// path. `TUI_TRANSLATOR_CONFIG_DIR` can override the directory while preserving
+/// the existing full-path `TUI_TRANSLATOR_CONFIG` startup hook in `main`.
 pub fn default_config_dir() -> Result<PathBuf> {
-    Ok(home_dir()?.join(".tui-translator"))
+    if let Some(path) = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV).filter(|p| !p.is_empty()) {
+        return Ok(PathBuf::from(path));
+    }
+
+    let base_dirs =
+        directories::BaseDirs::new().context("could not resolve an OS config directory")?;
+    Ok(base_dirs.config_dir().join(APP_CONFIG_DIR_NAME))
 }
 
 /// Return the default configuration file path under the user's home directory.
@@ -1716,30 +1737,41 @@ mod tests {
     }
 
     #[test]
-    fn default_config_path_uses_home_directory() {
+    fn default_config_path_uses_config_dir_override() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let home = TempDir::new().unwrap();
-        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
-        let _home_guard = EnvVarGuard::remove("HOME");
+        let config_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
 
         let path = default_config_path().unwrap();
 
-        assert_eq!(
-            path,
-            home.path().join(".tui-translator").join("config.json")
-        );
+        assert_eq!(path, config_dir.path().join("config.json"));
     }
 
     #[test]
-    fn default_sessions_dir_uses_home_config_directory() {
+    fn default_config_path_uses_platform_config_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let home = TempDir::new().unwrap();
-        let _userprofile_guard = EnvVarGuard::set("USERPROFILE", home.path());
-        let _home_guard = EnvVarGuard::remove("HOME");
+        let _override = EnvVarGuard::remove(CONFIG_DIR_OVERRIDE_ENV);
+
+        let expected = directories::BaseDirs::new()
+            .expect("test host must expose an OS config directory")
+            .config_dir()
+            .join(APP_CONFIG_DIR_NAME)
+            .join("config.json");
+
+        let path = default_config_path().unwrap();
+
+        assert_eq!(path, expected);
+    }
+
+    #[test]
+    fn default_sessions_dir_uses_default_config_directory() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let config_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
 
         let path = default_sessions_dir().unwrap();
 
-        assert_eq!(path, home.path().join(".tui-translator").join("sessions"));
+        assert_eq!(path, config_dir.path().join("sessions"));
     }
 
     #[test]
@@ -2477,19 +2509,19 @@ mod tests {
         );
     }
 
-    /// `default_config_path` must propagate the `home_dir` error when neither
-    /// `USERPROFILE` nor `HOME` is set.
+    /// `default_config_path` must still support a managed config-directory
+    /// override when traditional home-directory environment variables are
+    /// missing.
     #[test]
-    fn default_config_path_returns_error_when_home_unavailable() {
+    fn default_config_path_override_does_not_need_home_env() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let config_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
         let _userprofile = EnvVarGuard::remove("USERPROFILE");
         let _home = EnvVarGuard::remove("HOME");
 
-        let result = default_config_path();
+        let path = default_config_path().unwrap();
 
-        assert!(
-            result.is_err(),
-            "default_config_path must fail when home directory cannot be resolved"
-        );
+        assert_eq!(path, config_dir.path().join("config.json"));
     }
 }
