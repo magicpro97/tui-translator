@@ -130,6 +130,19 @@ struct LocalMtModelInstallArgs {
     yes: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalSttModelPrefetchArgs {
+    source: LocalSttModelPrefetchSource,
+    model_cache_dir: Option<PathBuf>,
+    yes: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalSttModelPrefetchSource {
+    BuiltinModel(providers::local::ModelId),
+    Manifest(PathBuf),
+}
+
 /// Arguments for `--replay-session`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayArgs {
@@ -718,6 +731,86 @@ where
     }))
 }
 
+fn parse_local_stt_model_prefetch_args_from<I>(args: I) -> Result<Option<LocalSttModelPrefetchArgs>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let args = args.into_iter().collect::<Vec<_>>();
+    let is_prefetch_command = args.iter().any(|arg| {
+        arg == OsStr::new("--prefetch-local-stt-model")
+            || arg == OsStr::new("--prefetch-local-stt-manifest")
+    });
+    if !is_prefetch_command {
+        return Ok(None);
+    }
+
+    let mut source = None;
+    let mut model_cache_dir = None;
+    let mut yes = false;
+    let mut iter = args.into_iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--prefetch-local-stt-model") {
+            let raw = next_cli_arg(&mut iter, "--prefetch-local-stt-model")?;
+            let raw = raw.to_string_lossy();
+            set_local_stt_prefetch_source(
+                &mut source,
+                LocalSttModelPrefetchSource::BuiltinModel(parse_local_stt_model_id(&raw)?),
+            )?;
+        } else if arg == OsStr::new("--prefetch-local-stt-manifest") {
+            set_local_stt_prefetch_source(
+                &mut source,
+                LocalSttModelPrefetchSource::Manifest(PathBuf::from(next_cli_arg(
+                    &mut iter,
+                    "--prefetch-local-stt-manifest",
+                )?)),
+            )?;
+        } else if arg == OsStr::new("--model-cache-dir") {
+            model_cache_dir = Some(PathBuf::from(next_cli_arg(&mut iter, "--model-cache-dir")?));
+        } else if arg == OsStr::new("--yes") || arg == OsStr::new("-y") {
+            yes = true;
+        } else {
+            bail!("unknown local STT model prefetch argument {:?}", arg);
+        }
+    }
+
+    Ok(Some(LocalSttModelPrefetchArgs {
+        source: source
+            .context("missing --prefetch-local-stt-model <model-id> or --prefetch-local-stt-manifest <manifest.json>")?,
+        model_cache_dir,
+        yes,
+    }))
+}
+
+fn set_local_stt_prefetch_source(
+    current: &mut Option<LocalSttModelPrefetchSource>,
+    next: LocalSttModelPrefetchSource,
+) -> Result<()> {
+    if current.replace(next).is_some() {
+        bail!(
+            "use only one local STT prefetch source: --prefetch-local-stt-model or --prefetch-local-stt-manifest"
+        );
+    }
+    Ok(())
+}
+
+fn parse_local_stt_model_id(raw: &str) -> Result<providers::local::ModelId> {
+    providers::local::ModelId::parse(raw).with_context(|| {
+        format!(
+            "unknown local STT model {raw:?}; supported values: {}",
+            supported_local_stt_model_ids()
+        )
+    })
+}
+
+fn supported_local_stt_model_ids() -> String {
+    providers::local::ModelId::ALL
+        .iter()
+        .map(|id| id.display_name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn next_cli_arg(iter: &mut impl Iterator<Item = OsString>, flag: &'static str) -> Result<OsString> {
     let value = iter
         .next()
@@ -728,11 +821,47 @@ fn next_cli_arg(iter: &mut impl Iterator<Item = OsString>, flag: &'static str) -
     Ok(value)
 }
 
+fn model_download_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60 * 60))
+        .build()
+        .context("failed to create HTTP client for model download")
+}
+
+fn read_model_bundle_manifest(path: &Path) -> Result<providers::local::ModelBundleManifest> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read model manifest {}", path.display()))?;
+    providers::local::ModelBundleManifest::from_json(&raw)
+        .with_context(|| format!("failed to parse model manifest {}", path.display()))
+}
+
+fn validate_local_stt_bundle_manifest(
+    manifest: &providers::local::ModelBundleManifest,
+) -> Result<()> {
+    let [file] = manifest.files.as_slice() else {
+        bail!("local STT manifest must contain exactly one Whisper model file");
+    };
+    let Some(spec) = providers::local::ModelManifest::builtin()
+        .iter()
+        .find(|spec| spec.file_name == file.relative_path)
+    else {
+        bail!(
+            "local STT manifest file {:?} is not one of the built-in Whisper model files",
+            file.relative_path
+        );
+    };
+    if spec.sha256 != file.sha256 || spec.size_bytes != file.size_bytes {
+        bail!(
+            "local STT manifest metadata for {} does not match the built-in Whisper checksum and size",
+            file.relative_path
+        );
+    }
+    Ok(())
+}
+
 fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
-    let raw = fs::read_to_string(&args.manifest)
-        .with_context(|| format!("failed to read model manifest {}", args.manifest.display()))?;
-    let manifest = providers::local::ModelBundleManifest::from_json(&raw)
-        .with_context(|| format!("failed to parse model manifest {}", args.manifest.display()))?;
+    let manifest = read_model_bundle_manifest(&args.manifest)?;
     let model_dir = match &args.model_dir {
         Some(path) => path.clone(),
         None => providers::local::model_cache_dir()
@@ -755,11 +884,7 @@ fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
         return Ok(());
     }
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(60 * 60))
-        .build()
-        .context("failed to create HTTP client for model download")?;
+    let client = model_download_client()?;
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -778,6 +903,75 @@ fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
         report.reused_files
     )
     .context("failed to write model install summary")?;
+    Ok(())
+}
+
+fn run_local_stt_model_prefetch(args: &LocalSttModelPrefetchArgs) -> Result<()> {
+    let bundle = match &args.source {
+        LocalSttModelPrefetchSource::BuiltinModel(model_id) => {
+            let manifest = providers::local::ModelManifest::builtin();
+            let spec = manifest
+                .find(*model_id)
+                .with_context(|| format!("local STT model {model_id} is not available"))?;
+            providers::local::stt_model_bundle_manifest(spec)
+        }
+        LocalSttModelPrefetchSource::Manifest(path) => {
+            let manifest = read_model_bundle_manifest(path)?;
+            validate_local_stt_bundle_manifest(&manifest)?;
+            manifest
+        }
+    };
+    let model_cache_dir = match &args.model_cache_dir {
+        Some(path) => path.clone(),
+        None => {
+            providers::local::model_cache_dir().context("failed to resolve local model cache")?
+        }
+    };
+
+    let mut stdout = io::stdout();
+    writeln!(stdout, "{}", bundle.preview_text()).context("failed to write model preview")?;
+    writeln!(stdout, "Model cache: {}", model_cache_dir.display())
+        .context("failed to write model cache path")?;
+    writeln!(
+        stdout,
+        "Verified marker: {}",
+        model_cache_dir
+            .join(providers::local::INSTALLED_MANIFEST_FILE)
+            .display()
+    )
+    .context("failed to write verified marker path")?;
+
+    if !args.yes {
+        writeln!(
+            stdout,
+            "No files were downloaded. Re-run with --yes after reviewing the model license and size."
+        )
+        .context("failed to write model confirmation hint")?;
+        return Ok(());
+    }
+
+    let client = model_download_client()?;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to create model download runtime")?;
+    let report = rt
+        .block_on(providers::local::install_model_bundle(
+            &client,
+            &bundle,
+            &model_cache_dir,
+        ))
+        .context("failed to prefetch local STT model")?;
+
+    writeln!(
+        stdout,
+        "Prefetched local STT model bundle {} into {} (downloaded {}, reused {}).",
+        bundle.display_name,
+        report.model_dir.display(),
+        report.downloaded_files,
+        report.reused_files
+    )
+    .context("failed to write model prefetch summary")?;
     Ok(())
 }
 
@@ -1032,6 +1226,13 @@ fn main() -> Result<()> {
     if let Some(install_args) = parse_local_mt_model_install_args_from(std::env::args_os().skip(1))?
     {
         run_local_mt_model_install(&install_args)?;
+        return Ok(());
+    }
+
+    if let Some(prefetch_args) =
+        parse_local_stt_model_prefetch_args_from(std::env::args_os().skip(1))?
+    {
+        run_local_stt_model_prefetch(&prefetch_args)?;
         return Ok(());
     }
 
@@ -2903,6 +3104,125 @@ mod tests {
         .unwrap();
 
         assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn parse_local_stt_model_prefetch_args_accepts_model_cache_and_yes() {
+        let parsed = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--prefetch-local-stt-model"),
+            OsString::from("tiny"),
+            OsString::from("--model-cache-dir"),
+            OsString::from(r"C:\models\whisper"),
+            OsString::from("-y"),
+        ])
+        .unwrap()
+        .expect("prefetch args should be detected");
+
+        assert_eq!(
+            parsed.source,
+            LocalSttModelPrefetchSource::BuiltinModel(providers::local::ModelId::Tiny)
+        );
+        assert_eq!(
+            parsed.model_cache_dir,
+            Some(PathBuf::from(r"C:\models\whisper"))
+        );
+        assert!(parsed.yes);
+    }
+
+    #[test]
+    fn parse_local_stt_model_prefetch_args_rejects_unknown_model() {
+        let error = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--prefetch-local-stt-model"),
+            OsString::from("large"),
+        ])
+        .expect_err("unknown local STT model should be rejected");
+
+        assert!(error.to_string().contains("supported values"));
+    }
+
+    #[test]
+    fn parse_local_stt_model_prefetch_args_accepts_manifest_source() {
+        let parsed = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--prefetch-local-stt-manifest"),
+            OsString::from(r"C:\models\whisper-manifest.json"),
+            OsString::from("--yes"),
+        ])
+        .unwrap()
+        .expect("prefetch args should be detected");
+
+        assert_eq!(
+            parsed.source,
+            LocalSttModelPrefetchSource::Manifest(PathBuf::from(
+                r"C:\models\whisper-manifest.json"
+            ))
+        );
+        assert!(parsed.yes);
+    }
+
+    #[test]
+    fn parse_local_stt_model_prefetch_args_rejects_duplicate_sources() {
+        let error = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--prefetch-local-stt-model"),
+            OsString::from("tiny"),
+            OsString::from("--prefetch-local-stt-manifest"),
+            OsString::from(r"C:\models\whisper-manifest.json"),
+        ])
+        .expect_err("duplicate local STT source should be rejected");
+
+        assert!(error.to_string().contains("use only one"));
+    }
+
+    #[test]
+    fn parse_local_stt_model_prefetch_args_rejects_unknown_flag_before_source() {
+        let error = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--model-cache-dri"),
+            OsString::from(r"C:\models\wrong"),
+            OsString::from("--prefetch-local-stt-model"),
+            OsString::from("tiny"),
+        ])
+        .expect_err("unknown prefetch flag before source should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("unknown local STT model prefetch argument"));
+    }
+
+    #[test]
+    fn parse_local_stt_model_prefetch_args_ignores_auxiliary_flag_without_command() {
+        let parsed = parse_local_stt_model_prefetch_args_from(vec![
+            OsString::from("--model-cache-dir"),
+            OsString::from(r"C:\models\whisper"),
+            OsString::from("--replay-session"),
+            OsString::from("meeting.jsonl"),
+        ])
+        .unwrap();
+
+        assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn validate_local_stt_bundle_manifest_accepts_builtin_tiny_manifest() {
+        let spec = providers::local::ModelManifest::builtin()
+            .find(providers::local::ModelId::Tiny)
+            .unwrap();
+        let manifest = providers::local::stt_model_bundle_manifest(spec);
+
+        validate_local_stt_bundle_manifest(&manifest).unwrap();
+    }
+
+    #[test]
+    fn validate_local_stt_bundle_manifest_rejects_checksum_mismatch() {
+        let spec = providers::local::ModelManifest::builtin()
+            .find(providers::local::ModelId::Tiny)
+            .unwrap();
+        let mut manifest = providers::local::stt_model_bundle_manifest(spec);
+        manifest.files[0].sha256 =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
+
+        let error = validate_local_stt_bundle_manifest(&manifest)
+            .expect_err("mismatched STT manifest checksum should be rejected");
+
+        assert!(error.to_string().contains("does not match"));
     }
 
     #[test]

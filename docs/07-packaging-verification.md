@@ -177,6 +177,28 @@ the end-user guide documents.
 
 ---
 
+## Local Model Packaging Notes (Issue #236)
+
+ZIP and Inno Setup packages must not include Whisper or MT model binaries. Ship
+only `tui-translator.exe`, `config.example.json`, and docs. Operators who need
+offline/local STT should prefetch models after install:
+
+```powershell
+.\tui-translator.exe --prefetch-local-stt-model tiny
+.\tui-translator.exe --prefetch-local-stt-model tiny --yes
+```
+
+By default the verified model cache is `%USERPROFILE%\.tui-translator\models`.
+For a portable ZIP or managed installer staging layout, run the same command
+with `--model-cache-dir <dir>` and copy that verified cache into the user's
+model cache during install. If the package uses a pinned vendor manifest, use
+`--prefetch-local-stt-manifest <manifest.json>` with the same cache flag. The
+manifest must match one of the built-in Whisper files that local STT can load.
+The command resumes interrupted `.part` downloads, verifies SHA-256 before
+writing `manifest.json`, and reuses already verified files on repeat runs.
+
+---
+
 ## Checklist
 
 | Check | Status |
@@ -191,3 +213,4 @@ the end-user guide documents.
 | `config_json_path()` uses `current_exe().parent()` | ✅ Confirmed portable |
 | No absolute paths found in source | ✅ Audited clean |
 | USAGE.md documents run-from-any-folder behaviour | ✅ Done |
+| ZIP/Inno packages exclude large model binaries and document post-install prefetch | ✅ Done |
