@@ -142,6 +142,30 @@ fn write_config_with_capture_device(dir: &Path, capture_device: &str) -> PathBuf
     cfg_path
 }
 
+fn write_config_with_virtual_mic_device(dir: &Path, virtual_mic_device: &str) -> PathBuf {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("soak")
+        .join("soak_audio.wav")
+        .canonicalize()
+        .expect("canonicalize soak fixture");
+    let cfg_path = dir.join("config.json");
+    let payload = serde_json::to_string_pretty(&serde_json::json!({
+        "google_api_key": "pty-test-key",
+        "source_language": "ja-JP",
+        "target_language": "vi",
+        "tts_enabled": false,
+        "tts_routing": "speakers",
+        "virtual_mic_device": virtual_mic_device,
+        "audio_source": "file",
+        "audio_file_path": fixture,
+    }))
+    .expect("serialize virtual-mic PTY config")
+        + "\n";
+    std::fs::write(&cfg_path, payload).expect("write virtual-mic PTY config");
+    cfg_path
+}
+
 fn wait_for_capture_device_label(session: &PtySession, label: &str, timeout: Duration) -> bool {
     let compact_label = label.replace(' ', "");
     let start = Instant::now();
@@ -152,6 +176,18 @@ fn wait_for_capture_device_label(session: &PtySession, label: &str, timeout: Dur
         std::thread::sleep(Duration::from_millis(150));
     }
     false
+}
+
+fn tab_to_field(session: &mut PtySession, label: &str, tabs: usize) {
+    for _ in 0..tabs {
+        session.send(b"\t").expect("send Tab to advance field");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        session.wait_for_text(&format!("> {label}"), OVERLAY_TIMEOUT),
+        "{label} field should become active after {tabs} Tabs; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -218,7 +254,7 @@ fn settings_layout_standard_110x30() {
 /// Compact mode is triggered because panel width (60) < 76.
 ///
 /// The inner panel area is 58×20 (60−2 × 22−2).  The compact content list
-/// nominally has 19 lines (1 path + 16 fields + 1 status + 1 hint), but the
+/// nominally has 20 lines in its default state (1 path + 18 fields + 1 hint), but the
 /// fixture-backed config supplies a long absolute `audio_file_path` that wraps
 /// across extra rows inside the `Paragraph { wrap }` widget, consuming 20 of
 /// the 20 available inner rows with field + status content and leaving no room
@@ -424,4 +460,69 @@ fn settings_capture_device_selection_survives_restart() {
             "settings_capture_device_selection_survives_restart run {run}: expected exit 0; got {code:?}"
         );
     }
+}
+
+#[test]
+fn settings_tts_route_selection_persists_keyboard_only() {
+    let temp = TempDir::new().expect("temp config dir");
+    let cfg_path =
+        write_config_with_virtual_mic_device(temp.path(), "CABLE Input (VB-Audio Virtual Cable)");
+    let cfg_path_string = cfg_path.to_string_lossy().into_owned();
+
+    let mut session = PtySession::spawn(
+        110,
+        30,
+        &[("TUI_TRANSLATOR_CONFIG", cfg_path_string.as_str())],
+    )
+    .expect("spawn tui-translator for settings_tts_route_selection_persists_keyboard_only");
+    assert!(
+        session.wait_for_text("Q quit", STARTUP_TIMEOUT),
+        "110x30: timed out waiting for main TUI frame"
+    );
+
+    open_settings(&mut session, 110, 30);
+    tab_to_field(&mut session, "TTS routing", 9);
+
+    // Ctrl+D is the same cycle action as F2 and is stable across PTY encodings.
+    session
+        .send(b"\x04")
+        .expect("send Ctrl+D to cycle TTS routing");
+    assert!(
+        session.wait_for_text("virtual_mic", OVERLAY_TIMEOUT),
+        "TTS routing should cycle from speakers to virtual_mic; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    session.send(b"\r").expect("send Enter to save settings");
+    assert!(
+        !session.screen_contains("Save failed"),
+        "route/device save should not fail; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && session.screen_contains("Settings") {
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    assert!(
+        !session.screen_contains("Settings"),
+        "settings overlay should close after saving route/device; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    session.quit_cleanly().expect("send quit");
+    let code = session.wait_exit(EXIT_TIMEOUT);
+    assert_eq!(
+        code,
+        Some(0),
+        "settings_tts_route_selection_persists_keyboard_only: expected exit 0; got {code:?}"
+    );
+
+    let persisted: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&cfg_path).expect("read saved config"))
+            .expect("parse saved config");
+    assert_eq!(persisted["tts_routing"], "virtual_mic");
+    assert_eq!(
+        persisted["virtual_mic_device"],
+        "CABLE Input (VB-Audio Virtual Cable)"
+    );
 }
