@@ -174,6 +174,48 @@ jobs:
           name: vmic-a6-vbcable-ci-report
           path: verification-evidence\vmic\VMIC-A6-vbcable-ci-report.json
 
+  # VMIC-B4 production sink round-trip
+  # Proves the selected OEM/commercial virtual-cable sink contract without
+  # requiring Zoom, Teams, a live meeting, manual listening, or an installed
+  # vendor cable on the hosted runner.
+  vmic-production-sink:
+    name: VMIC-B4 production sink round-trip
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-vmic-b4-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run VMIC-B4 production sink round-trip
+        run: cargo test --features production-audio production_sink_roundtrip -- --nocapture
+      - name: Validate VMIC-B4 committed evidence
+        shell: pwsh
+        run: |
+          $path = "verification-evidence\vmic\VMIC-B4-production-sink-roundtrip.json"
+          if (-not (Test-Path $path)) { throw "VMIC-B4 report not found at $path" }
+          $report = Get-Content $path -Raw | ConvertFrom-Json
+          if ($report.schema_version -ne 1) { throw "unexpected schema_version: $($report.schema_version)" }
+          if ($report.issue -ne "#324") { throw "unexpected issue: $($report.issue)" }
+          if ($report.status -ne "pass") { throw "VMIC-B4 report did not pass" }
+          if ($report.sink -ne "OemCableSink") { throw "unexpected sink: $($report.sink)" }
+          if ($report.dropped_frames -ne 0) { throw "dropped_frames must be zero" }
+          if ($report.latency.p95_ms -gt $report.p95_gate_ms) {
+            throw "p95 latency $($report.latency.p95_ms) exceeds gate $($report.p95_gate_ms)"
+          }
+          Write-Host ($report | ConvertTo-Json -Depth 8)
+      - name: Upload VMIC-B4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmic-b4-production-sink-roundtrip
+          path: verification-evidence\vmic\VMIC-B4-production-sink-roundtrip.json
+
   # VMIC-A8 MVP readiness checkpoint
   # Aggregates all VMIC MVP evidence and proves the release smoke path without
   # Zoom, Teams, live meetings, manual audio checks, or human acceptance.

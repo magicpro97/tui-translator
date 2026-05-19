@@ -101,6 +101,9 @@ local-mt = ["ort", "sentencepiece-rs"]
 # Enable the VMIC-A6 automated virtual-cable integration tests. The tests are
 # skip-safe on runners without VB-CABLE/VAC and write explicit JSON evidence.
 audio-integration = []
+# Enable VMIC-B4 production virtual-cable sink contract tests. The mandatory
+# tier is hardware-free; optional real-cable probing remains skip-safe.
+production-audio = []
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)

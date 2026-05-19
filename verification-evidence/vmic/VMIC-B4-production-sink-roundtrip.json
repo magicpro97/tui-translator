@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "issue": "#324",
+  "status": "pass",
+  "selected_path": "oem_commercial_virtual_cable",
+  "sink": "OemCableSink",
+  "tier": "memory_pcm_roundtrip",
+  "p95_gate_ms": 10.0,
+  "source_format": {
+    "sample_rate_hz": 24000,
+    "channels": 1,
+    "bits_per_sample": 16
+  },
+  "target_format": {
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "bits_per_sample": 16
+  },
+  "write": {
+    "chunk_count": 1,
+    "sample_count": 12000,
+    "sample_rate_hz": 24000,
+    "rms": 0.3536,
+    "peak": 0.5
+  },
+  "capture": {
+    "chunk_count": 1,
+    "sample_count": 48000,
+    "sample_rate_hz": 48000,
+    "rms": 0.3536,
+    "peak": 0.5
+  },
+  "latency": {
+    "sample_count": 1,
+    "p50_ms": 0.0,
+    "p95_ms": 0.0,
+    "max_ms": 0.0
+  },
+  "dropped_frames": 0,
+  "failure_modes": [
+    "empty virtual mic device name is rejected",
+    "malformed PCM payload is rejected",
+    "unsupported PCM format is surfaced",
+    "endpoint write failure is logged by AudioSink and returned by try_play_bytes"
+  ],
+  "automation": {
+    "contract_tests": [
+      "audio_sink_contract_mock_records_bytes",
+      "audio_sink_contract_oem_cable_sink_writes_pcm"
+    ],
+    "roundtrip_test": "production_sink_roundtrip_memory_passes_latency_rms_gate",
+    "ci_command": "cargo test --features production-audio production_sink_roundtrip -- --nocapture",
+    "human_acceptance_required": false,
+    "zoom_or_teams_required": false
+  }
+}
