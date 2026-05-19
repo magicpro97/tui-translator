@@ -3,7 +3,7 @@ source: tests/snapshot.rs
 expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
-│STT: idle   TTS: off                                                          │
+│STT: idle   TTS: off   Route: Speakers                                        │
 │Target: vi   Pairs: 0   Cost: no charges                                      │
 │Elapsed: 0:00                                                                 │
 │CPU:0%  RAM:0MB  Net:↑0/↓0 kbps  E2E:—  Loss:0.0%                             │

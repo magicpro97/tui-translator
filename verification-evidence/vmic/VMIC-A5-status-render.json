@@ -1,0 +1,47 @@
+{
+  "issue": 317,
+  "title": "[VMIC-A5] Status bar routing indicator",
+  "status": "pass",
+  "scope": "Render TTS routing state in the compact and expanded status/metrics strip",
+  "acceptance": {
+    "status_bar_shows_route": true,
+    "virtual_mic_device_name_is_visible": true,
+    "missing_virtual_mic_warning_is_visible": true,
+    "text_fits_80x24_layout": true,
+    "no_new_shortcut_added": true,
+    "no_production_println_added": true
+  },
+  "test_cases": {
+    "status_bar_speakers_indicator": "pass - compact strip includes Route:spk",
+    "status_bar_virtual_mic_indicator": "pass - compact strip includes vmic route and truncated virtual device name",
+    "status_bar_missing_virtual_mic_warning": "pass - compact strip surfaces missing virtual mic warning",
+    "layout_80x24": "pass - PTY layout remains readable at 80x24",
+    "layout_120x40": "pass - PTY layout remains readable at 120x40",
+    "layout_200x50": "pass - PTY layout remains readable at 200x50"
+  },
+  "commands": [
+    {
+      "name": "focused-status-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- status_bar_speakers_indicator && cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- status_bar_virtual_mic_indicator && cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- status_bar_missing_virtual_mic_warning",
+      "result": "pass"
+    },
+    {
+      "name": "snapshot-tests",
+      "command": "INSTA_UPDATE=always cargo +stable-x86_64-pc-windows-gnu test --test snapshot",
+      "result": "pass",
+      "summary": "324 passed; snapshots updated for route indicators"
+    },
+    {
+      "name": "pty-layout-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --test pty -- layout_80x24 layout_120x40 layout_200x50",
+      "result": "pass",
+      "summary": "3 passed; 0 failed"
+    }
+  ],
+  "notes": [
+    "TtsRouteStatus is derived from AppConfig at draw time, so config reloads are reflected without adding persistent AppState fields.",
+    "Compact status uses short labels (spk, vmic, both) and truncates virtual device names to keep the strip readable.",
+    "Expanded status shows a fuller route label while preserving existing metrics rows.",
+    "The existing T shortcut behavior and help text are unchanged."
+  ]
+}

@@ -23,6 +23,6 @@ expression: rendered
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ STT: idle │ Lang:vi │ TTS:off │ 0 pairs │ no charges │ 0:00                  │
+│ STT: idle │ Lang:vi │ TTS:off │ Route:spk │ 0 pairs │ no charges │ 0:00      │
 └──────────────────────────────────────────────────────────────────────────────┘
  ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit
