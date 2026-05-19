@@ -8,7 +8,7 @@
 //!
 //! | Type | Platform | Purpose |
 //! |------|----------|---------|
-//! | [`RodioSink`] | Windows only | Default speaker output via rodio |
+//! | `RodioSink` | Windows only | Default speaker output via rodio |
 //! | [`MockAudioSink`] | All | Test double; records submitted chunks |
 //!
 //! ## Why `RodioSink` does not implement `AudioSink`
@@ -20,7 +20,7 @@
 //!
 //! Instead, [`PlaybackService::new`] constructs a `RodioSink` *inside* the
 //! playback thread (so the OutputStream is always pinned to one OS thread),
-//! and calls [`RodioSink::play_bytes`] directly.
+//! and calls `RodioSink::play_bytes` directly.
 //!
 //! [`PlaybackService::new`]: super::playback::PlaybackService::new
 

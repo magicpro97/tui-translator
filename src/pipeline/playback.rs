@@ -1,6 +1,6 @@
 //! TTS playback service.
 //!
-//! On Windows this module owns a dedicated playback thread backed by [`RodioSink`].
+//! On Windows this module owns a dedicated playback thread backed by `RodioSink`.
 //! On other platforms it provides a lightweight stub so Linux CI can build and
 //! test the project without optional system audio libraries such as ALSA.
 //!
@@ -10,7 +10,6 @@
 //! on every platform.
 //!
 //! [`AudioSink`]: super::audio_sink::AudioSink
-//! [`RodioSink`]: super::audio_sink::RodioSink
 //! [`MockAudioSink`]: super::audio_sink::MockAudioSink
 
 // ── Windows implementation ───────────────────────────────────────────────────
