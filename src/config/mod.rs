@@ -287,6 +287,45 @@ fn audio_archive_is_default(v: &AudioArchiveConfig) -> bool {
     !v.store_audio && !v.consent_given && v.directory.is_none() && v.max_size_mb == 0
 }
 
+// ─── TTS routing (VMIC-A2, issue #314) ───────────────────────────────────────
+
+/// Controls where synthesised TTS audio is sent.
+///
+/// The default (`Speakers`) preserves pre-VMIC behaviour: TTS plays through
+/// the device named by `tts_output_device`, or the system default when that
+/// field is omitted.
+///
+/// `VirtualMic` and `Both` require `virtual_mic_device` to be configured;
+/// omitting that field while using either variant is a validation error.
+///
+/// Serde representation uses lowercase snake_case strings:
+/// `"speakers"`, `"virtual_mic"`, `"both"`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsRouting {
+    /// Route TTS audio to the device named by `tts_output_device` (or the
+    /// system default when omitted).  This is the pre-VMIC default and
+    /// maintains full backwards compatibility with existing configs.
+    #[default]
+    Speakers,
+
+    /// Route TTS audio exclusively to the virtual microphone device named by
+    /// `virtual_mic_device`.  Requires `virtual_mic_device` to be configured;
+    /// missing it is a validation error.
+    VirtualMic,
+
+    /// Route TTS audio to both `tts_output_device` (or system default)
+    /// **and** `virtual_mic_device` simultaneously.  Requires
+    /// `virtual_mic_device` to be configured.
+    Both,
+}
+
+/// `skip_serializing_if` predicate: omit `tts_routing` when it is the default
+/// (`Speakers`) to keep existing config files clean and avoid schema breaks.
+fn tts_routing_is_default(r: &TtsRouting) -> bool {
+    *r == TtsRouting::Speakers
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -322,6 +361,28 @@ pub struct AppConfig {
     /// device.  The application must be restarted when this value changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_output_device: Option<String>,
+
+    /// TTS output routing mode (VMIC-A2, issue #314).
+    ///
+    /// Controls where synthesised TTS audio is sent:
+    /// - `"speakers"` *(default)* — plays through `tts_output_device` (or the
+    ///   system default).  Preserves pre-VMIC behaviour; existing configs that
+    ///   omit this field continue to work unchanged.
+    /// - `"virtual_mic"` — routes TTS exclusively to `virtual_mic_device`.
+    ///   Requires `virtual_mic_device` to be configured.
+    /// - `"both"` — routes TTS to both `tts_output_device` and
+    ///   `virtual_mic_device` simultaneously.  Requires `virtual_mic_device`.
+    #[serde(default, skip_serializing_if = "tts_routing_is_default")]
+    pub tts_routing: TtsRouting,
+
+    /// Name of the virtual microphone device for TTS routing (VMIC-A2, issue #314).
+    ///
+    /// Required when `tts_routing` is `"virtual_mic"` or `"both"`.  Must
+    /// exactly match a virtual audio device name as reported by the OS (see
+    /// `--list-audio-devices` output; virtual devices are marked `[VIRTUAL]`).
+    /// `None` means "not configured".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_mic_device: Option<String>,
 
     /// Name of the Windows playback endpoint to capture through WASAPI
     /// loopback.
@@ -482,6 +543,8 @@ impl Default for AppConfig {
             google_api_key: None,
             tts_enabled: false,
             tts_output_device: None,
+            tts_routing: TtsRouting::default(),
+            virtual_mic_device: None,
             capture_device: None,
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
@@ -613,6 +676,27 @@ impl AppConfig {
                  supply a device name or omit the field entirely"
             );
         }
+        if let Some(device) = &self.virtual_mic_device {
+            validate_virtual_mic_device_name(device)?;
+        }
+        // ── TTS routing validation (VMIC-A2, issue #314) ──────────────────
+        match self.tts_routing {
+            TtsRouting::Speakers => {}
+            TtsRouting::VirtualMic | TtsRouting::Both => {
+                let routing_name = match self.tts_routing {
+                    TtsRouting::VirtualMic => "virtual_mic",
+                    TtsRouting::Both => "both",
+                    TtsRouting::Speakers => unreachable!(),
+                };
+                if self.virtual_mic_device.is_none() {
+                    bail!(
+                        "`tts_routing` is \"{routing_name}\" but `virtual_mic_device` is not \
+                         configured — set `virtual_mic_device` to the name of a virtual audio \
+                         device or switch `tts_routing` to \"speakers\""
+                    );
+                }
+            }
+        }
         if let Some(device) = &self.capture_device {
             validate_capture_device_name(device)?;
         }
@@ -734,6 +818,8 @@ impl AppConfig {
     pub fn requires_restart(&self, next: &AppConfig) -> bool {
         self.google_api_key != next.google_api_key
             || self.tts_output_device != next.tts_output_device
+            || self.tts_routing != next.tts_routing
+            || self.virtual_mic_device != next.virtual_mic_device
             || self.capture_device != next.capture_device
             || self.audio_source != next.audio_source
             || self.audio_file_path != next.audio_file_path
@@ -1196,6 +1282,7 @@ fn validate_capture_device_name(value: &str) -> Result<()> {
              supply a playback device name or omit the field entirely"
         );
     }
+
     if trimmed != value {
         bail!(
             "`capture_device` must not include leading or trailing whitespace — \
@@ -1206,6 +1293,29 @@ fn validate_capture_device_name(value: &str) -> Result<()> {
         bail!(
             "`capture_device` must not contain control characters — \
              use the playback device name shown by --list-audio-devices"
+        );
+    }
+    Ok(())
+}
+
+fn validate_virtual_mic_device_name(value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!(
+            "`virtual_mic_device` must not be empty — \
+             supply a virtual audio device name or omit the field entirely"
+        );
+    }
+    if trimmed != value {
+        bail!(
+            "`virtual_mic_device` must not include leading or trailing whitespace — \
+             use the exact virtual audio device name shown by --list-audio-devices"
+        );
+    }
+    if value.chars().any(char::is_control) {
+        bail!(
+            "`virtual_mic_device` must not contain control characters — \
+             use the virtual audio device name shown by --list-audio-devices"
         );
     }
     Ok(())
@@ -2497,5 +2607,123 @@ mod tests {
         let path = default_config_path().unwrap();
 
         assert_eq!(path, config_dir.path().join("config.json"));
+    }
+
+    // ── VMIC-A2 (issue #314): TtsRouting config enum + virtual_mic_device ──
+
+    /// AC: Old configs that only have `tts_output_device` still load; the
+    /// routing field defaults to `Speakers`, preserving legacy behaviour.
+    #[test]
+    fn config_legacy_tts_output_device_loads() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(
+            f,
+            r#"{{"source_language":"ja-JP","target_language":"vi","tts_enabled":true,"tts_output_device":"Speakers (Realtek Audio)"}}"#
+        )
+        .unwrap();
+
+        let cfg = load(f.path()).expect("legacy config with tts_output_device must load");
+
+        assert_eq!(
+            cfg.tts_routing,
+            TtsRouting::Speakers,
+            "legacy config without tts_routing must default to Speakers"
+        );
+        assert_eq!(
+            cfg.tts_output_device.as_deref(),
+            Some("Speakers (Realtek Audio)")
+        );
+        assert!(cfg.virtual_mic_device.is_none());
+        cfg.validate()
+            .expect("legacy tts_output_device config must pass validation");
+    }
+
+    /// AC: `tts_routing = "virtual_mic"` without a `virtual_mic_device` is a
+    /// clear validation error that mentions `virtual_mic_device`.
+    #[test]
+    fn config_virtual_mic_requires_device() {
+        let cfg = AppConfig {
+            tts_routing: TtsRouting::VirtualMic,
+            virtual_mic_device: None,
+            ..AppConfig::default()
+        };
+
+        let err = cfg
+            .validate()
+            .expect_err("VirtualMic routing without virtual_mic_device must fail validation");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("virtual_mic_device"),
+            "error must mention virtual_mic_device; got: {msg}"
+        );
+        assert!(
+            msg.contains("tts_routing"),
+            "error must mention tts_routing; got: {msg}"
+        );
+    }
+
+    /// AC: A configured virtual mic target must be an exact, non-empty device
+    /// name even before virtual-mic routing is enabled.
+    #[test]
+    fn config_virtual_mic_device_rejects_malformed_name() {
+        for value in [
+            "   ",
+            " CABLE Input (VB-Audio Virtual Cable)",
+            "CABLE Input (VB-Audio Virtual Cable) ",
+            "CABLE\nInput (VB-Audio Virtual Cable)",
+            "CABLE\0Input (VB-Audio Virtual Cable)",
+        ] {
+            let cfg = AppConfig {
+                virtual_mic_device: Some(value.to_string()),
+                ..AppConfig::default()
+            };
+
+            let err = cfg.validate().unwrap_err();
+
+            assert!(
+                err.to_string().contains("virtual_mic_device"),
+                "error should mention virtual_mic_device for {value:?}; got: {err}"
+            );
+        }
+    }
+
+    /// AC: `tts_routing = "both"` with a device round-trips through
+    /// serialisation with identical JSON output.
+    #[test]
+    fn tts_routing_both_roundtrips() {
+        let original = AppConfig {
+            tts_routing: TtsRouting::Both,
+            virtual_mic_device: Some("CABLE Input (VB-Audio Virtual Cable)".to_string()),
+            tts_output_device: Some("Speakers (Realtek Audio)".to_string()),
+            tts_enabled: true,
+            ..AppConfig::default()
+        };
+
+        original
+            .validate()
+            .expect("Both routing with device must be valid");
+
+        let json = serde_json::to_string(&original).expect("serialize");
+
+        // Verify serde name "both" is used (not "Both" or "BOTH")
+        assert!(
+            json.contains("\"tts_routing\":\"both\""),
+            "tts_routing must serialise as \"both\" (snake_case); got: {json}"
+        );
+        assert!(
+            json.contains("virtual_mic_device"),
+            "virtual_mic_device must appear in serialised config; got: {json}"
+        );
+
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.tts_routing, TtsRouting::Both);
+        assert_eq!(
+            restored.virtual_mic_device.as_deref(),
+            Some("CABLE Input (VB-Audio Virtual Cable)")
+        );
+        restored
+            .validate()
+            .expect("restored Both config must be valid");
     }
 }
