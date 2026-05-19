@@ -1,0 +1,55 @@
+{
+  "issue": 312,
+  "title": "[VMIC-00] AudioSink abstraction trait + RodioSink + MockAudioSink",
+  "status": "pass",
+  "scope": "AudioSink abstraction seam for current speaker playback and future virtual microphone sinks",
+  "acceptance": {
+    "audio_sink_trait_added": true,
+    "rodio_playback_behavior_preserved": true,
+    "output_stream_owned_on_playback_thread": true,
+    "mock_audio_sink_records_bytes": true,
+    "playback_service_accepts_injected_sink": true,
+    "production_driver_logic_added": false
+  },
+  "commands": [
+    {
+      "name": "format",
+      "command": "cargo +stable-x86_64-pc-windows-gnu fmt --check",
+      "result": "pass"
+    },
+    {
+      "name": "issue-test-cases",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- mock_sink_records_play_calls playback_service_routes_to_mock_sink disabled_playback_service_drops_audio set_enabled_gates_subsequent_play",
+      "result": "pass",
+      "summary": "4 passed; 0 failed"
+    },
+    {
+      "name": "pipeline-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- pipeline",
+      "result": "pass",
+      "summary": "116 passed; 0 failed; 490 filtered out"
+    },
+    {
+      "name": "clippy-all-targets",
+      "command": "cargo +stable-x86_64-pc-windows-gnu clippy --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "name": "windows-release-build",
+      "command": "cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator",
+      "result": "pass"
+    }
+  ],
+  "review": {
+    "tool": "code-review agent",
+    "model": "claude-opus-4.6",
+    "initial_result": "found interruptibility regression in Rodio playback loop",
+    "final_result": "CLEAN after restoring shutdown and disable interruption during current clip playback",
+    "follow_up_required": false
+  },
+  "notes": [
+    "RodioSink is intentionally constructed inside the playback thread because rodio OutputStream is thread-bound.",
+    "Injected sinks use Box<dyn AudioSink> for deterministic tests and future virtual microphone output sinks.",
+    "The enable gate uses SeqCst atomics so a just-disabled service cannot route subsequent queued audio."
+  ]
+}
