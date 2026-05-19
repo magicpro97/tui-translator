@@ -121,6 +121,6 @@ No-human automated evidence lives in the repository:
 
 Related user documentation:
 
-- `../USAGE.md`
-- `../PRIVACY.md`
-- `../config.example.json`
+- [USAGE.md](../USAGE.md)
+- [PRIVACY.md](../PRIVACY.md)
+- [config.example.json](../config.example.json)

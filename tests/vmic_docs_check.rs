@@ -83,6 +83,7 @@ fn vmic_a7_documentation_contract_is_present() {
 
     for needle in [
         "VB-CABLE/VAC MVP vs production driver distinction",
+        "project-owned signed virtual microphone driver",
         "Zoom Original Sound",
         "Teams Noise Suppression",
         "AI-generated translated voice",
@@ -90,9 +91,18 @@ fn vmic_a7_documentation_contract_is_present() {
         "inaccurate or delayed",
         "verification-evidence/vmic/VMIC-A6-vbcable-ci-report.json",
         "verification-evidence/vmic/VMIC-A7-docs-check.json",
+        "tests/vmic_docs_check.rs",
         "does not claim that Zoom or Teams were manually tested",
     ] {
         assert_contains("docs/12-virtual-mic-setup.md", &guide, needle);
+    }
+
+    for link in [
+        "[USAGE.md](../USAGE.md)",
+        "[PRIVACY.md](../PRIVACY.md)",
+        "[config.example.json](../config.example.json)",
+    ] {
+        assert_contains("docs/12-virtual-mic-setup.md", &guide, link);
     }
 
     assert_contains(
@@ -111,6 +121,19 @@ fn vmic_a7_documentation_contract_is_present() {
     assert_contains("VMIC-A7 evidence", &evidence, "\"T1\"");
     assert_contains("VMIC-A7 evidence", &evidence, "\"T2\"");
     assert_contains("VMIC-A7 evidence", &evidence, "\"T3\"");
+    assert_contains(
+        "VMIC-A7 evidence",
+        &evidence,
+        "\"project-owned signed virtual microphone driver\"",
+    );
+    assert_contains(
+        "VMIC-A7 evidence",
+        &evidence,
+        "\"tests/vmic_docs_check.rs\"",
+    );
+    assert_contains("VMIC-A7 evidence", &evidence, "\"../USAGE.md\"");
+    assert_contains("VMIC-A7 evidence", &evidence, "\"../PRIVACY.md\"");
+    assert_contains("VMIC-A7 evidence", &evidence, "\"../config.example.json\"");
 }
 
 #[test]
