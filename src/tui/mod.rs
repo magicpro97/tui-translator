@@ -28,7 +28,7 @@ use tracing::warn;
 use tui_input::{Input, InputRequest};
 use unicode_width::UnicodeWidthChar;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, TtsRouting};
 
 pub use crate::metrics::{
     format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttState,
@@ -1550,6 +1550,63 @@ impl Default for AppState {
 
 // ── StatusMetricsStrip ────────────────────────────────────────────────────────
 
+/// Runtime TTS routing summary rendered in the status strip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TtsRouteStatus {
+    routing: TtsRouting,
+    virtual_mic_device: Option<String>,
+}
+
+impl TtsRouteStatus {
+    /// Build a status summary from the active configuration.
+    pub fn from_config(config: &AppConfig) -> Self {
+        Self {
+            routing: config.tts_routing,
+            virtual_mic_device: config.virtual_mic_device.clone(),
+        }
+    }
+
+    fn compact_label(&self, max_device_cols: usize) -> String {
+        match self.routing {
+            TtsRouting::Speakers => "spk".to_string(),
+            TtsRouting::VirtualMic => self.virtual_label("vmic", max_device_cols),
+            TtsRouting::Both => self.virtual_label("both", max_device_cols),
+        }
+    }
+
+    fn expanded_label(&self, max_device_cols: usize) -> String {
+        match self.routing {
+            TtsRouting::Speakers => "Speakers".to_string(),
+            TtsRouting::VirtualMic => self.virtual_label("Virtual mic", max_device_cols),
+            TtsRouting::Both => self.virtual_label("Both", max_device_cols),
+        }
+    }
+
+    fn virtual_label(&self, prefix: &str, max_device_cols: usize) -> String {
+        match self.virtual_mic_device.as_deref() {
+            Some(device) if max_device_cols > 0 => {
+                format!("{prefix}:{}", truncate_device_name(device, max_device_cols))
+            }
+            Some(_) => prefix.to_string(),
+            None => format!("{prefix}:missing"),
+        }
+    }
+
+    fn missing_virtual_mic(&self) -> bool {
+        matches!(self.routing, TtsRouting::VirtualMic | TtsRouting::Both)
+            && self.virtual_mic_device.is_none()
+    }
+}
+
+impl Default for TtsRouteStatus {
+    fn default() -> Self {
+        Self {
+            routing: TtsRouting::Speakers,
+            virtual_mic_device: None,
+        }
+    }
+}
+
 /// Compact (3-row) or expanded (7-row) metrics strip rendered below the
 /// subtitle pane.
 ///
@@ -1559,6 +1616,7 @@ impl Default for AppState {
 pub struct StatusMetricsStrip<'a> {
     pub stt: &'a SttState,
     pub tts_on: bool,
+    pub tts_route: TtsRouteStatus,
     pub target_language: String,
     pub pairs: u64,
     pub audio_secs: f64,
@@ -1639,6 +1697,13 @@ impl StatusMetricsStrip<'_> {
         //  ≥ 120  cols → full labels (adds audio seconds)
         let tts_str = if self.tts_on { "on" } else { "off" };
         let cost_str = format_cost_or_zero_state(self.cost_usd);
+        let route_str = if area.width < 80 {
+            self.tts_route.compact_label(0)
+        } else if area.width < 120 {
+            self.tts_route.compact_label(12)
+        } else {
+            self.tts_route.expanded_label(28)
+        };
 
         let main_text = if area.width < 48 {
             format!(
@@ -1649,20 +1714,22 @@ impl StatusMetricsStrip<'_> {
             )
         } else if area.width < 80 {
             format!(
-                " {} | Lang:{} | TTS:{} | {}p | {} | {}",
+                " {} | Lang:{} | TTS:{}/{} | {}p | {} | {}",
                 self.stt_abbrev(),
                 self.target_language,
                 tts_str,
+                route_str,
                 self.pairs,
                 cost_str,
                 self.elapsed,
             )
         } else if area.width >= 120 {
             format!(
-                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} Audio:{:.0}s \u{2502} {} \u{2502} {}",
+                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} Route:{} \u{2502} {} pairs \u{2502} Audio:{:.0}s \u{2502} {} \u{2502} {}",
                 self.stt.label(),
                 self.target_language,
                 tts_str,
+                route_str,
                 self.pairs,
                 self.audio_secs,
                 cost_str,
@@ -1670,10 +1737,11 @@ impl StatusMetricsStrip<'_> {
             )
         } else {
             format!(
-                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} {} pairs \u{2502} {} \u{2502} {}",
+                " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} Route:{} \u{2502} {} pairs \u{2502} {} \u{2502} {}",
                 self.stt.label(),
                 self.target_language,
                 tts_str,
+                route_str,
                 self.pairs,
                 cost_str,
                 self.elapsed,
@@ -1706,6 +1774,15 @@ impl StatusMetricsStrip<'_> {
             ));
         }
 
+        if self.tts_route.missing_virtual_mic() {
+            spans.push(Span::styled(
+                " \u{2502} \u{26a0} missing virtual mic",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         if self.show_restart {
             spans.push(Span::styled(
                 " \u{2502} \u{26a0} restart required",
@@ -1723,6 +1800,11 @@ impl StatusMetricsStrip<'_> {
         let stt_color = stt_color(self.stt);
         let tts_color = if self.tts_on {
             Color::Green
+        } else {
+            Color::DarkGray
+        };
+        let route_color = if self.tts_route.missing_virtual_mic() {
+            Color::Yellow
         } else {
             Color::DarkGray
         };
@@ -1765,6 +1847,13 @@ impl StatusMetricsStrip<'_> {
                 Span::styled(
                     if self.tts_on { "on" } else { "off" },
                     Style::default().fg(tts_color),
+                ),
+                Span::raw("   "),
+                Span::styled("Route: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    self.tts_route
+                        .expanded_label(if area.width >= 120 { 36 } else { 18 }),
+                    Style::default().fg(route_color),
                 ),
             ]),
             metrics_line,
@@ -1896,6 +1985,25 @@ pub fn draw_ui(
     audio_level: f64,
     show_restart_notice: bool,
     cost_warning_usd: f64,
+) {
+    draw_ui_with_route(
+        frame,
+        state,
+        audio_level,
+        show_restart_notice,
+        cost_warning_usd,
+        TtsRouteStatus::default(),
+    );
+}
+
+/// Render the full application UI with an explicit TTS route summary.
+pub fn draw_ui_with_route(
+    frame: &mut ratatui::Frame,
+    state: &AppState,
+    audio_level: f64,
+    show_restart_notice: bool,
+    cost_warning_usd: f64,
+    tts_route: TtsRouteStatus,
 ) {
     let area = frame.size();
 
@@ -2066,6 +2174,7 @@ pub fn draw_ui(
     let strip = StatusMetricsStrip {
         stt: &stt,
         tts_on,
+        tts_route,
         target_language,
         pairs: metrics.line_pairs_shown,
         audio_secs: metrics.audio_seconds_sent,
@@ -2984,6 +3093,61 @@ mod tests {
         pane
     }
 
+    fn render_status_strip(route: TtsRouteStatus, width: u16) -> String {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let backend = TestBackend::new(width, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let stt = SttState::Listening;
+        terminal
+            .draw(|frame| {
+                let strip = StatusMetricsStrip {
+                    stt: &stt,
+                    tts_on: true,
+                    tts_route: route.clone(),
+                    target_language: "vi".to_string(),
+                    pairs: 0,
+                    audio_secs: 0.0,
+                    cost_usd: 0.0,
+                    elapsed: "00:00".to_string(),
+                    show_restart: false,
+                    expanded: false,
+                    cost_warning_usd: 0.0,
+                    cpu_pct: 0.0,
+                    ram_bytes: 0,
+                    net_kbps_tx: 0.0,
+                    net_kbps_rx: 0.0,
+                    e2e_latency_ms: None,
+                    loss_pct: 0.0,
+                    ram_warning: false,
+                    truncation_rate: 0.0,
+                    flicker_count: 0,
+                    mt_call_count: 0,
+                };
+                frame.render_widget(&strip, frame.size());
+            })
+            .unwrap();
+
+        let area = terminal.backend().buffer().area;
+        let mut rows = Vec::with_capacity(area.height as usize);
+        for y in 0..area.height {
+            let row: String = (0..area.width)
+                .map(|x| {
+                    terminal
+                        .backend()
+                        .buffer()
+                        .get(x, y)
+                        .symbol()
+                        .chars()
+                        .next()
+                        .unwrap_or(' ')
+                })
+                .collect();
+            rows.push(row);
+        }
+        rows.join("\n")
+    }
+
     // ── AppState ────────────────────────────────────────────────────────────
 
     #[test]
@@ -3035,6 +3199,48 @@ mod tests {
         let state = AppState::new();
         *state.capture_device_label.lock().unwrap() = "Speakers (Realtek Audio)".to_string();
         assert_eq!(state.capture_device_label(), "Speakers (Realtek Audio)");
+    }
+
+    #[test]
+    fn status_bar_speakers_indicator() {
+        let rendered = render_status_strip(TtsRouteStatus::default(), 100);
+
+        assert!(
+            rendered.contains("Route:spk"),
+            "speakers route should be visible in compact status strip; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn status_bar_virtual_mic_indicator() {
+        let rendered = render_status_strip(
+            TtsRouteStatus {
+                routing: TtsRouting::VirtualMic,
+                virtual_mic_device: Some("CABLE Input (VB-Audio Virtual Cable)".to_string()),
+            },
+            100,
+        );
+
+        assert!(
+            rendered.contains("Route:vmic:CABLE Input"),
+            "virtual mic route and device should be visible; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn status_bar_missing_virtual_mic_warning() {
+        let rendered = render_status_strip(
+            TtsRouteStatus {
+                routing: TtsRouting::VirtualMic,
+                virtual_mic_device: None,
+            },
+            160,
+        );
+
+        assert!(
+            rendered.contains("missing virtual mic"),
+            "missing virtual mic warning should be visible; got:\n{rendered}"
+        );
     }
 
     #[test]

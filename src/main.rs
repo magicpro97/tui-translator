@@ -63,8 +63,8 @@ use metrics::{
     NetworkMetrics, ProcessSnapshot,
 };
 use tui::{
-    draw_session_summary, draw_ui, help_overlay_max_scroll, subtitle_inner_area, AppState,
-    ConfigEditorMode, UserAction, AUDIO_LEVEL_SCALE,
+    draw_session_summary, draw_ui_with_route, help_overlay_max_scroll, subtitle_inner_area,
+    AppState, ConfigEditorMode, TtsRouteStatus, UserAction, AUDIO_LEVEL_SCALE,
 };
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
@@ -2710,11 +2710,13 @@ fn event_loop(
 
         let expanded = state.metrics_expanded.load(Ordering::Relaxed);
         let show_restart = context.restart_required.load(Ordering::Relaxed);
-        let cost_warning_usd = context
-            .current_config
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .cost_warning_usd;
+        let (cost_warning_usd, tts_route) = {
+            let cfg = context
+                .current_config
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            (cfg.cost_warning_usd, TtsRouteStatus::from_config(&cfg))
+        };
         let metrics_snap = state.metrics_snapshot();
         let over_threshold = metrics_warning_row_active(expanded, cost_warning_usd, &metrics_snap);
         let pane_area = subtitle_inner_area(terminal.size()?, expanded, over_threshold);
@@ -2729,7 +2731,14 @@ fn event_loop(
 
         let level = state.level_ratio();
         terminal.draw(|frame| {
-            draw_ui(frame, state, level, show_restart, cost_warning_usd);
+            draw_ui_with_route(
+                frame,
+                state,
+                level,
+                show_restart,
+                cost_warning_usd,
+                tts_route.clone(),
+            );
         })?;
 
         // Drain all pending key actions without blocking.
