@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "issue": "#321",
+  "status": "pass",
+  "phase": "production",
+  "scope": "PCM format negotiation reusable across Rodio, VAC, and driver sinks",
+  "source_format": {
+    "sample_rate_hz": 24000,
+    "channels": 1,
+    "bits_per_sample": 16
+  },
+  "target_formats": [
+    {
+      "name": "mono_virtual_cable",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "bits_per_sample": 16
+    },
+    {
+      "name": "stereo_speaker_or_cable",
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "bits_per_sample": 16
+    }
+  ],
+  "helpers": [
+    "negotiate_device_format",
+    "DeviceFormatProvider",
+    "MockDeviceFormatProvider",
+    "CpalDeviceFormatProvider",
+    "convert_i16_pcm",
+    "f32_to_i16_clamped",
+    "rms_i16"
+  ],
+  "acceptance": {
+    "device_mix_format_can_be_queried_or_mocked": true,
+    "decoded_tts_pcm_converts_to_target_format": true,
+    "near_clipping_samples_clamp_safely": true,
+    "reusable_by_future_oem_or_driver_sinks": true
+  },
+  "tests": [
+    {
+      "id": "T1",
+      "name": "negotiate_mock_device_format",
+      "command": "cargo test negotiate_mock_device_format",
+      "expected": "mock device format is returned as the negotiated target"
+    },
+    {
+      "id": "T2",
+      "name": "resample_tts_to_device_format",
+      "command": "cargo test resample_tts_to_device_format",
+      "expected": "24 kHz mono PCM resamples to 48 kHz mono/stereo with non-zero RMS"
+    },
+    {
+      "id": "T3",
+      "name": "pcm_conversion_clamps",
+      "command": "cargo test pcm_conversion_clamps",
+      "expected": "near-clipping normalized and stereo-mono samples clamp without overflow"
+    }
+  ]
+}
