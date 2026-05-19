@@ -117,7 +117,8 @@ impl RodioSink {
         }
     }
 
-    fn start_sink(&self, audio_bytes: Vec<u8>) -> Option<rodio::Sink> {
+    /// Decode `audio_bytes` and start a rodio sink without waiting for it to finish.
+    pub(crate) fn start_sink(&self, audio_bytes: Vec<u8>) -> Option<rodio::Sink> {
         use std::io::Cursor;
 
         let cursor = Cursor::new(audio_bytes);

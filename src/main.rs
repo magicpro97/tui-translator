@@ -2560,15 +2560,32 @@ fn sync_playback_service_state(
         return true;
     }
 
-    match pipeline::playback::PlaybackService::new(enabled, config.tts_output_device.as_deref()) {
+    match pipeline::playback::PlaybackService::new_for_config(
+        enabled,
+        config.tts_routing,
+        config.tts_output_device.as_deref(),
+        config.virtual_mic_device.as_deref(),
+    ) {
         Ok(service) => {
+            tracing::info!(route = service.route_label(), "TTS playback service ready");
             *service_slot = Some(service);
             true
         }
         Err(err) => {
-            tracing::warn!("TTS playback unavailable: {err}");
+            tracing::warn!(
+                route = playback_route_label(config.tts_routing),
+                "TTS playback unavailable: {err}"
+            );
             false
         }
+    }
+}
+
+fn playback_route_label(route: config::TtsRouting) -> &'static str {
+    match route {
+        config::TtsRouting::Speakers => "speakers",
+        config::TtsRouting::VirtualMic => "virtual_mic",
+        config::TtsRouting::Both => "both",
     }
 }
 
@@ -3015,7 +3032,11 @@ fn handle_action(
             let service_ok = sync_playback_service_state(playback_service, &current, want_enabled);
             let actual = want_enabled && service_ok;
             state.tts_enabled.store(actual, Ordering::Relaxed);
-            tracing::info!("TTS toggled: {}", if actual { "on" } else { "off" });
+            tracing::info!(
+                route = playback_route_label(current.tts_routing),
+                "TTS toggled: {}",
+                if actual { "on" } else { "off" }
+            );
         }
 
         // M — expand / collapse metrics (issue #41)
