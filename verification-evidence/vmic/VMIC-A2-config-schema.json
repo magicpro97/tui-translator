@@ -1,0 +1,91 @@
+{
+  "issue": 314,
+  "title": "[VMIC-A2] TtsRouting config enum + virtual_mic_device field",
+  "status": "pass",
+  "scope": "TtsRouting enum (Speakers|VirtualMic|Both), virtual_mic_device field, backwards-compatible config migration, validation errors for invalid route/device combos",
+  "acceptance": {
+    "old_configs_using_tts_output_device_still_load": true,
+    "new_route_virtual_mic_requires_configured_device_or_clear_error": true,
+    "both_mode_is_representable_without_schema_break": true,
+    "config_example_json_documents_all_routing_modes": true
+  },
+  "test_cases": {
+    "config_legacy_tts_output_device_loads": "pass — route defaults to Speakers; tts_output_device preserved; validates OK",
+    "config_virtual_mic_requires_device": "pass — typed validation error mentioning tts_routing and virtual_mic_device",
+    "config_virtual_mic_device_rejects_malformed_name": "pass — blank, padded, and control-character device names are rejected",
+    "tts_routing_both_roundtrips": "pass — serde uses snake_case \"both\"; roundtrip equals original"
+  },
+  "new_types": [
+    {
+      "name": "TtsRouting",
+      "kind": "enum",
+      "file": "src/config/mod.rs",
+      "variants": [
+        { "rust": "Speakers", "serde": "speakers", "default": true },
+        { "rust": "VirtualMic", "serde": "virtual_mic" },
+        { "rust": "Both", "serde": "both" }
+      ]
+    }
+  ],
+  "changed_fields": [
+    {
+      "struct": "AppConfig",
+      "field": "tts_routing",
+      "type": "TtsRouting",
+      "serde": "default, skip_serializing_if = tts_routing_is_default",
+      "default": "Speakers"
+    },
+    {
+      "struct": "AppConfig",
+      "field": "virtual_mic_device",
+      "type": "Option<String>",
+      "serde": "default, skip_serializing_if = Option::is_none",
+      "default": "None"
+    }
+  ],
+  "changed_files": [
+    "src/config/mod.rs",
+    "config.example.json"
+  ],
+  "commands": [
+    {
+      "name": "fmt-check",
+      "command": "cargo +stable-x86_64-pc-windows-gnu fmt --check",
+      "result": "pass"
+    },
+    {
+      "name": "acceptance-test-cases",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- config_legacy_tts_output_device_loads && cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- config_virtual_mic_requires_device && cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- config_virtual_mic_device_rejects_malformed_name && cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- tts_routing_both_roundtrips",
+      "result": "pass",
+      "summary": "4 focused tests passed; 0 failed"
+    },
+    {
+      "name": "all-config-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- config",
+      "result": "pass",
+      "summary": "151 passed; 0 failed"
+    },
+    {
+      "name": "clippy-all-targets",
+      "command": "cargo +stable-x86_64-pc-windows-gnu clippy --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "name": "windows-release-build",
+      "command": "cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator",
+      "result": "pass"
+    }
+  ],
+  "notes": [
+    "TtsRouting uses #[serde(rename_all = \"snake_case\")] matching existing config style.",
+    "tts_routing is omitted from serialized JSON when it equals the default (Speakers), preserving config file cleanliness.",
+    "virtual_mic_device is omitted from serialized JSON when None, matching existing Option<String> field patterns.",
+    "validate() returns a typed bail! error mentioning both tts_routing and virtual_mic_device when VirtualMic/Both is used without a device.",
+    "virtual_mic_device rejects blank, leading/trailing whitespace, and control-character values even before virtual-mic routing is enabled.",
+    "Legacy configs with only tts_output_device deserialize with tts_routing=Speakers via #[serde(default)].",
+    "requires_restart() updated to include tts_routing and virtual_mic_device changes.",
+    "config.example.json documents tts_routing and virtual_mic_device in the _comment block and exposes safe default example values.",
+    "No new crate dependencies added.",
+    "All 151 config-filtered tests continue to pass."
+  ]
+}
