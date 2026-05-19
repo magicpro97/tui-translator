@@ -7,6 +7,7 @@
 //! See `config.example.json` in the repository root for the full list of
 //! supported keys and per-field documentation.
 
+use crate::audio;
 use anyhow::{bail, Context, Result};
 use notify::{recommended_watcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -384,6 +385,14 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub virtual_mic_device: Option<String>,
 
+    /// Additional virtual-device regex patterns for OEM or custom cable names (VMIC-B2).
+    ///
+    /// Custom patterns are evaluated before the built-in VB-CABLE, VAC,
+    /// Voicemeeter, and Generic/OEM patterns so deployments can override or add
+    /// endpoint names without changing code.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub virtual_device_patterns: Vec<audio::VirtualDevicePatternConfig>,
+
     /// Name of the Windows playback endpoint to capture through WASAPI
     /// loopback.
     ///
@@ -545,6 +554,7 @@ impl Default for AppConfig {
             tts_output_device: None,
             tts_routing: TtsRouting::default(),
             virtual_mic_device: None,
+            virtual_device_patterns: Vec::new(),
             capture_device: None,
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
@@ -679,6 +689,8 @@ impl AppConfig {
         if let Some(device) = &self.virtual_mic_device {
             validate_virtual_mic_device_name(device)?;
         }
+        audio::VirtualDevicePatternRegistry::with_custom_patterns(&self.virtual_device_patterns)
+            .context("`virtual_device_patterns` failed validation")?;
         // ── TTS routing validation (VMIC-A2, issue #314) ──────────────────
         match self.tts_routing {
             TtsRouting::Speakers => {}
@@ -820,6 +832,7 @@ impl AppConfig {
             || self.tts_output_device != next.tts_output_device
             || self.tts_routing != next.tts_routing
             || self.virtual_mic_device != next.virtual_mic_device
+            || self.virtual_device_patterns != next.virtual_device_patterns
             || self.capture_device != next.capture_device
             || self.audio_source != next.audio_source
             || self.audio_file_path != next.audio_file_path
@@ -1491,6 +1504,63 @@ mod tests {
             Some("Speakers (USB Audio)")
         );
         restored.validate().expect("capture device config is valid");
+    }
+
+    #[test]
+    fn virtual_device_patterns_roundtrip_custom_oem_registry() {
+        let original = AppConfig {
+            virtual_device_patterns: vec![audio::VirtualDevicePatternConfig::labeled(
+                r"\bAcme Translation Cable\b",
+                audio::VirtualDeviceKind::GenericOem,
+                "Acme OEM",
+            )],
+            ..AppConfig::default()
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize");
+
+        let registry = audio::VirtualDevicePatternRegistry::with_custom_patterns(
+            &restored.virtual_device_patterns,
+        )
+        .expect("custom registry should compile");
+        let kind =
+            audio::classify_virtual_device_with_registry("Acme Translation Cable Input", &registry);
+
+        assert_eq!(kind, Some(audio::VirtualDeviceKind::GenericOem));
+        restored.validate().expect("custom pattern config is valid");
+    }
+
+    #[test]
+    fn invalid_device_pattern_is_config_error() {
+        let cfg = AppConfig {
+            virtual_device_patterns: vec![audio::VirtualDevicePatternConfig::new(
+                "(",
+                audio::VirtualDeviceKind::GenericOem,
+            )],
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("virtual_device_patterns"),
+            "error should mention virtual_device_patterns; got: {err:#}"
+        );
+    }
+
+    #[test]
+    fn virtual_device_pattern_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            virtual_device_patterns: vec![audio::VirtualDevicePatternConfig::new(
+                r"\bAcme Translation Cable\b",
+                audio::VirtualDeviceKind::GenericOem,
+            )],
+            ..AppConfig::default()
+        };
+
+        assert!(current.requires_restart(&next));
     }
 
     // T2: explicit "local" provider values serialize and deserialize correctly

@@ -15,6 +15,9 @@
 #[path = "../src/metrics/mod.rs"]
 mod metrics;
 
+#[path = "../src/audio/mod.rs"]
+mod audio;
+
 #[path = "../src/config/mod.rs"]
 mod config;
 

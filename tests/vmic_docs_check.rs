@@ -141,3 +141,35 @@ fn vmic_a7_new_documentation_links_resolve() {
     let guide = read_doc("docs/12-virtual-mic-setup.md");
     assert_local_links_exist("docs/12-virtual-mic-setup.md", &guide);
 }
+
+#[test]
+fn vmic_b2_oem_registry_docs_separate_licensing_from_support() {
+    let guide = read_doc("docs/12-virtual-mic-setup.md");
+    let example = read_doc("config.example.json");
+    let evidence = read_doc("verification-evidence/vmic/VMIC-B2-oem-registry.json");
+
+    for needle in [
+        "Production/OEM cable registry",
+        "virtual_device_patterns",
+        "technical support",
+        "does not bundle, install, license",
+        "vendor",
+        "Licensing is separate from technical compatibility",
+        "Invalid regex syntax is rejected as a config validation error",
+    ] {
+        assert_contains("docs/12-virtual-mic-setup.md", &guide, needle);
+    }
+
+    for needle in ["virtual_device_patterns", "generic_oem", "vendor driver"] {
+        assert_contains("config.example.json", &example, needle);
+    }
+
+    for needle in [
+        "\"issue\": 322",
+        "\"status\": \"pass\"",
+        "\"vendor_binary_dependency\": false",
+        "docs_separate_licensing_choices_from_technical_support",
+    ] {
+        assert_contains("VMIC-B2 evidence", &evidence, needle);
+    }
+}

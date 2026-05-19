@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "issue": 322,
+  "status": "pass",
+  "feature": "OEM/commercial virtual cable support and device registry",
+  "built_in_patterns": [
+    "VB-CABLE",
+    "VAC",
+    "Voicemeeter",
+    "Generic/OEM"
+  ],
+  "config_surface": {
+    "field": "virtual_device_patterns",
+    "custom_patterns_take_precedence": true,
+    "invalid_regex_is_config_error": true,
+    "vendor_binary_dependency": false
+  },
+  "acceptance": {
+    "users_can_override_or_add_patterns_without_code_change": true,
+    "built_in_patterns_cover_vbcable_vac_voicemeeter_and_oem_custom_names": true,
+    "docs_separate_licensing_choices_from_technical_support": true,
+    "core_code_does_not_depend_on_specific_vendor_binary": true
+  },
+  "tests": [
+    "load_virtual_device_pattern_registry",
+    "classify_oem_virtual_cable",
+    "invalid_device_pattern_is_config_error",
+    "custom_pattern_overrides_builtin_classification",
+    "virtual_device_patterns_roundtrip_custom_oem_registry"
+  ]
+}

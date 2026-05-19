@@ -16,6 +16,9 @@
 #[path = "../src/providers/mod.rs"]
 mod providers;
 
+#[path = "../src/audio/mod.rs"]
+mod audio;
+
 #[path = "../src/config/mod.rs"]
 mod config;
 

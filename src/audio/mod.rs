@@ -63,7 +63,10 @@ pub mod pcm_format;
 pub mod virtual_device;
 #[allow(unused_imports)]
 pub use virtual_device::{
-    classify_virtual_device, probe_virtual_audio_devices, VirtualAudioDeviceInfo, VirtualDeviceKind,
+    classify_virtual_device, classify_virtual_device_with_registry, probe_virtual_audio_devices,
+    probe_virtual_audio_devices_with_registry, VirtualAudioDeviceInfo, VirtualDeviceKind,
+    VirtualDevicePatternConfig, VirtualDevicePatternError, VirtualDevicePatternMatch,
+    VirtualDevicePatternRegistry,
 };
 
 // ─── Core types ──────────────────────────────────────────────────────────────
