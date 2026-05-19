@@ -24,6 +24,8 @@ While a Zoom meeting plays on your Windows computer, this program:
 
 Optional: the program can also read the translated line aloud through your
 speakers.
+With an installed virtual audio cable, translated speech can also be routed to a
+virtual microphone so meeting apps can receive the AI-translated voice.
 
 > **Current status: Phase 4 feature set merged.**
 > WASAPI audio capture, Google Speech-to-Text, Google Translation,
@@ -368,6 +370,7 @@ Full details: [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadm
 |----------|---------------|
 | [`USAGE.md`](USAGE.md) | End-user setup guide: download, configure, run |
 | [`PRIVACY.md`](PRIVACY.md) | Data flows, recording defaults, offline mode, and consent |
+| [`docs/12-virtual-mic-setup.md`](docs/12-virtual-mic-setup.md) | Virtual microphone setup, Zoom/Teams caveats, consent text, and VMIC evidence |
 | [`docs/01-business-requirements.md`](docs/01-business-requirements.md) | What the product does and who it is for |
 | [`docs/02-google-first-provider.md`](docs/02-google-first-provider.md) | Why Google Cloud is the first provider |
 | [`docs/03-system-design.md`](docs/03-system-design.md) | How the components fit together |

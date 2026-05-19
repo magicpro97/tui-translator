@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "issue": "#319",
+  "harness": "tests/vmic_docs_check.rs",
+  "command": "cargo test --test vmic_docs_check",
+  "status": "pass",
+  "documents": [
+    "README.md",
+    "USAGE.md",
+    "PRIVACY.md",
+    "docs/12-virtual-mic-setup.md"
+  ],
+  "checks": [
+    {
+      "id": "T1",
+      "name": "Docs mention routing modes",
+      "status": "pass",
+      "required_terms": [
+        "Speakers",
+        "VirtualMic",
+        "Both",
+        "tts_routing: \"speakers\"",
+        "tts_routing: \"virtual_mic\"",
+        "tts_routing: \"both\""
+      ]
+    },
+    {
+      "id": "T2",
+      "name": "Docs mention consent notice",
+      "status": "pass",
+      "required_terms": [
+        "AI-generated translated voice",
+        "consent",
+        "inaccurate or delayed"
+      ]
+    },
+    {
+      "id": "T3",
+      "name": "Docs links validated",
+      "status": "pass",
+      "required_links": [
+        "../USAGE.md",
+        "../PRIVACY.md",
+        "../config.example.json"
+      ]
+    },
+    {
+      "id": "A1",
+      "name": "MVP versus production distinction",
+      "status": "pass",
+      "required_terms": [
+        "VB-CABLE/VAC MVP vs production driver distinction",
+        "project-owned signed virtual microphone driver"
+      ]
+    },
+    {
+      "id": "A2",
+      "name": "No-human automated evidence location",
+      "status": "pass",
+      "required_paths": [
+        "verification-evidence/vmic/VMIC-A6-vbcable-ci-report.json",
+        "verification-evidence/vmic/VMIC-A7-docs-check.json",
+        "tests/vmic_docs_check.rs"
+      ]
+    },
+    {
+      "id": "A3",
+      "name": "No unproven manual Zoom or Teams claim",
+      "status": "pass",
+      "required_terms": [
+        "does not claim that Zoom or Teams were manually tested"
+      ]
+    }
+  ],
+  "notes": [
+    "This artifact records the deterministic documentation contract for VMIC-A7.",
+    "The test does not require Zoom, Teams, live meetings, manual audio checks, or human acceptance."
+  ]
+}

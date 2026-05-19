@@ -191,6 +191,10 @@ No other network connections are made.
   application.
 - This program does not implement a consent mechanism on behalf of meeting
   participants.
+- If `tts_routing` is `virtual_mic` or `both` and a meeting app uses the paired
+  virtual cable as its microphone, other participants may hear an
+  **AI-generated translated voice**. Tell participants before enabling this
+  route. The translated voice can be delayed, incomplete, or inaccurate.
 - Applicable regulations (GDPR, local recording laws, etc.) are your
   responsibility to comply with.
 
