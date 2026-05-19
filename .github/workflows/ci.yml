@@ -62,6 +62,8 @@ jobs:
           "$clangBin" >> $env:GITHUB_PATH
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run all-features binary tests
+        run: cargo test --all-features --bins -- --nocapture --skip real_api
 
   # ── Build & Test ─────────────────────────────────────────────────────────────
   test:
@@ -166,6 +168,59 @@ jobs:
         with:
           name: vmic-a6-vbcable-ci-report
           path: verification-evidence\vmic\VMIC-A6-vbcable-ci-report.json
+
+  # VMIC-A8 MVP readiness checkpoint
+  # Aggregates all VMIC MVP evidence and proves the release smoke path without
+  # Zoom, Teams, live meetings, manual audio checks, or human acceptance.
+  vmic-mvp-readiness:
+    name: VMIC-A8 MVP readiness
+    runs-on: windows-latest
+    needs: [vmic-audio-integration]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-vmic-a8-${{ hashFiles('**/Cargo.lock') }}
+      - name: Download current VMIC-A6 evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: vmic-a6-vbcable-ci-report
+          path: verification-evidence\vmic
+      - name: Check VMIC MVP evidence
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts\check-vmic-mvp-evidence.ps1 -Json
+      - name: Run VMIC-A8 readiness test
+        run: cargo test --test vmic_mvp_readiness -- --nocapture
+      - name: Build release executable
+        run: cargo build --release --bin tui-translator
+      - name: Hash release executable
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\tui-translator.exe"
+          if (-not (Test-Path $exe)) { throw "release executable not found at $exe" }
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          $bytes = (Get-Item $exe).Length
+          "sha256=$hash" | Tee-Object -FilePath verification-evidence\vmic\VMIC-A8-release-sha256.txt
+          "bytes=$bytes" | Add-Content -Path verification-evidence\vmic\VMIC-A8-release-sha256.txt
+      - name: Smoke release device listing
+        shell: pwsh
+        run: |
+          .\target\release\tui-translator.exe --list-audio-devices
+          .\target\release\tui-translator.exe --list-capture-devices
+      - name: Upload VMIC-A8 readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmic-a8-mvp-readiness-report
+          path: |
+            verification-evidence\vmic\VMIC-A8-mvp-readiness-report.md
+            verification-evidence\vmic\VMIC-A8-release-sha256.txt
 
   # ── Contract tests (mock-only) ───────────────────────────────────────────────
   # Runs the dedicated `contract` integration-test binary.
