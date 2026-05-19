@@ -22,6 +22,7 @@ pub const DEFAULT_AMPLITUDE: f64 = 0.50;
 pub const DEFAULT_DURATION_MS: u64 = 1_000;
 /// Minimum RMS energy required for a valid non-silent capture.
 pub const MIN_EXPECTED_RMS: f64 = 0.05;
+const I16_FULL_SCALE: f64 = 32768.0;
 
 /// Pass/fail/skip status for one VMIC-A6 evidence tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -282,7 +283,7 @@ pub fn rms_i16(samples: &[i16]) -> f64 {
     let sum_sq: f64 = samples
         .iter()
         .map(|sample| {
-            let normalized = *sample as f64 / i16::MAX as f64;
+            let normalized = normalized_i16(*sample);
             normalized * normalized
         })
         .sum();
@@ -293,8 +294,12 @@ pub fn rms_i16(samples: &[i16]) -> f64 {
 pub fn peak_i16(samples: &[i16]) -> f64 {
     samples
         .iter()
-        .map(|sample| (*sample as f64 / i16::MAX as f64).abs())
+        .map(|sample| normalized_i16(*sample).abs())
         .fold(0.0, f64::max)
+}
+
+fn normalized_i16(sample: i16) -> f64 {
+    (sample as f64 / I16_FULL_SCALE).clamp(-1.0, 1.0)
 }
 
 /// Build static evidence for a generated tone.
@@ -339,8 +344,9 @@ pub fn percentile_ms(samples_ms: &[f64], percentile: f64) -> f64 {
     }
     let mut sorted = samples_ms.to_vec();
     sorted.sort_by(|a, b| a.total_cmp(b));
-    let rank = (percentile.clamp(0.0, 100.0) / 100.0 * (sorted.len() - 1) as f64).round();
-    sorted[rank as usize]
+    let rank = (percentile.clamp(0.0, 100.0) / 100.0 * sorted.len() as f64).ceil();
+    let index = (rank as usize).saturating_sub(1).min(sorted.len() - 1);
+    sorted[index]
 }
 
 /// Run the deterministic in-memory PCM write/capture tier.
@@ -412,5 +418,22 @@ mod tests {
         assert_eq!(percentile_ms(&values, 50.0), 10.0);
         assert_eq!(percentile_ms(&values, 95.0), 20.0);
         assert_eq!(percentile_ms(&[], 95.0), 0.0);
+    }
+
+    #[test]
+    fn percentiles_follow_nearest_rank_definition() {
+        let values = [100.0, 200.0];
+
+        assert_eq!(percentile_ms(&values, 0.0), 100.0);
+        assert_eq!(percentile_ms(&values, 50.0), 100.0);
+        assert_eq!(percentile_ms(&values, 100.0), 200.0);
+    }
+
+    #[test]
+    fn pcm_metrics_stay_within_unit_range_for_full_scale_samples() {
+        let samples = [i16::MIN, i16::MAX];
+
+        assert!(rms_i16(&samples) <= 1.0);
+        assert_eq!(peak_i16(&samples), 1.0);
     }
 }
