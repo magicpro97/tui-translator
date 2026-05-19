@@ -487,8 +487,21 @@ jobs:
           $log = "verification-evidence\vmic\VMIC-B5-smoke-log.txt"
           "--list-audio-devices" | Tee-Object -FilePath $log
           .\target\release\tui-translator.exe --list-audio-devices *>&1 | Tee-Object -FilePath $log -Append
+          $audioExit = $LASTEXITCODE
+          if ($audioExit -ne 0) {
+            "audio_devices_exit=$audioExit" | Tee-Object -FilePath $log -Append
+            throw "--list-audio-devices exited $audioExit"
+          }
+          "audio_devices_exit=0" | Tee-Object -FilePath $log -Append
           "--list-capture-devices" | Tee-Object -FilePath $log -Append
           .\target\release\tui-translator.exe --list-capture-devices *>&1 | Tee-Object -FilePath $log -Append
+          $captureExit = $LASTEXITCODE
+          if ($captureExit -ne 0) {
+            "capture_devices_exit=$captureExit" | Tee-Object -FilePath $log -Append
+            throw "--list-capture-devices exited $captureExit"
+          }
+          "capture_devices_exit=0" | Tee-Object -FilePath $log -Append
+          "smoke_status=pass" | Tee-Object -FilePath $log -Append
       - name: Validate release hash and smoke artifacts
         shell: pwsh
         run: >

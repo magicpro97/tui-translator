@@ -89,6 +89,9 @@ fn vmic_b5_checker_script_and_ci_gate_are_present() {
         "VMIC-B5-production-readiness-report.md",
         "ReleaseHashPath",
         "SmokeLogPath",
+        "audio_devices_exit=0",
+        "capture_devices_exit=0",
+        "smoke_status=pass",
         "unsigned=true",
         "driver_bundled=false",
     ] {
@@ -101,6 +104,9 @@ fn vmic_b5_checker_script_and_ci_gate_are_present() {
         "scripts\\check-vmic-production-evidence.ps1",
         "VMIC-B5-release-sha256.txt",
         "VMIC-B5-smoke-log.txt",
+        "audio_devices_exit=0",
+        "capture_devices_exit=0",
+        "smoke_status=pass",
         "unsigned=true",
         "driver_bundled=false",
     ] {

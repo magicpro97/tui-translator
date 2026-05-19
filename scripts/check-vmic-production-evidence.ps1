@@ -127,7 +127,10 @@ if ($ReleaseHashPath) {
 if ($SmokeLogPath) {
     Assert-FileContains "SMOKE-LOG" $SmokeLogPath @(
         "--list-audio-devices",
-        "--list-capture-devices"
+        "audio_devices_exit=0",
+        "--list-capture-devices",
+        "capture_devices_exit=0",
+        "smoke_status=pass"
     )
 }
 
