@@ -656,15 +656,23 @@ fn should_list_audio_devices() -> bool {
 }
 
 fn print_audio_devices_to_stdout() -> Result<()> {
+    let cfg_path = config_json_path();
+    let (cfg, _) = config::load_with_state(&cfg_path)
+        .with_context(|| format!("failed to load config for {}", cfg_path.display()))?;
+    let registry =
+        audio::VirtualDevicePatternRegistry::with_custom_patterns(&cfg.virtual_device_patterns)
+            .context("failed to load virtual_device_patterns from config")?;
     let devices = audio::list_capture_devices().context("failed to list audio capture devices")?;
     let mut stdout = io::stdout();
-    write_audio_devices(&mut stdout, &devices).context("failed to write audio device list")?;
+    write_audio_devices(&mut stdout, &devices, &registry)
+        .context("failed to write audio device list")?;
     Ok(())
 }
 
 fn write_audio_devices(
     writer: &mut impl IoWrite,
     devices: &[audio::CaptureDeviceInfo],
+    registry: &audio::VirtualDevicePatternRegistry,
 ) -> io::Result<()> {
     writeln!(
         writer,
@@ -686,11 +694,12 @@ fn write_audio_devices(
             } else {
                 ""
             };
-            let virtual_marker = if audio::classify_virtual_device(&device.name).is_some() {
-                " [VIRTUAL]"
-            } else {
-                ""
-            };
+            let virtual_marker =
+                if audio::classify_virtual_device_with_registry(&device.name, registry).is_some() {
+                    " [VIRTUAL]"
+                } else {
+                    ""
+                };
             writeln!(
                 writer,
                 "  - {}{}{}",
@@ -3451,6 +3460,7 @@ mod tests {
 
     #[test]
     fn write_audio_devices_shows_default_and_detected_devices() {
+        let registry = audio::VirtualDevicePatternRegistry::builtin().unwrap();
         let devices = vec![
             audio::CaptureDeviceInfo {
                 id: "{0.0.0.00000000}.{speakers}".to_string(),
@@ -3465,7 +3475,7 @@ mod tests {
         ];
         let mut output = Vec::new();
 
-        write_audio_devices(&mut output, &devices).unwrap();
+        write_audio_devices(&mut output, &devices, &registry).unwrap();
         let rendered = String::from_utf8(output).unwrap();
 
         assert!(rendered.contains("leave capture_device blank"));
@@ -3477,6 +3487,7 @@ mod tests {
 
     #[test]
     fn write_audio_devices_marks_virtual_devices() {
+        let registry = audio::VirtualDevicePatternRegistry::builtin().unwrap();
         let devices = vec![
             audio::CaptureDeviceInfo {
                 id: "{0.0.0.00000000}.{cable-input}".to_string(),
@@ -3490,7 +3501,7 @@ mod tests {
             },
         ];
         let mut output = Vec::new();
-        write_audio_devices(&mut output, &devices).unwrap();
+        write_audio_devices(&mut output, &devices, &registry).unwrap();
         let rendered = String::from_utf8(output).unwrap();
 
         assert!(
@@ -3500,6 +3511,31 @@ mod tests {
         assert!(
             !rendered.contains("Speakers (Realtek Audio) [VIRTUAL]"),
             "real device must not be labelled [VIRTUAL]"
+        );
+    }
+
+    #[test]
+    fn write_audio_devices_marks_custom_registry_devices() {
+        let registry = audio::VirtualDevicePatternRegistry::with_custom_patterns(&[
+            audio::VirtualDevicePatternConfig::new(
+                r"\bAcme Translation Cable\b",
+                audio::VirtualDeviceKind::GenericOem,
+            ),
+        ])
+        .unwrap();
+        let devices = vec![audio::CaptureDeviceInfo {
+            id: "{0.0.0.00000000}.{acme}".to_string(),
+            name: "Acme Translation Cable Input".to_string(),
+            is_default: false,
+        }];
+        let mut output = Vec::new();
+
+        write_audio_devices(&mut output, &devices, &registry).unwrap();
+        let rendered = String::from_utf8(output).unwrap();
+
+        assert!(
+            rendered.contains("Acme Translation Cable Input [VIRTUAL]"),
+            "custom registry device must be labelled [VIRTUAL]; got:\n{rendered}"
         );
     }
 

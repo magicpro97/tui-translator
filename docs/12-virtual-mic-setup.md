@@ -68,6 +68,40 @@ Example:
 7. Keep the original meeting audio route unchanged unless you are also using the
    virtual cable as a speaker-capture fallback.
 
+## Production/OEM cable registry
+
+The app has built-in technical support for common endpoint-name patterns from
+VB-CABLE, Virtual Audio Cable (VAC), Voicemeeter, and generic OEM/custom virtual
+cable names. This support only classifies already-installed Windows audio
+endpoints; it does not bundle, install, license, or require any specific vendor
+binary.
+
+For commercial/OEM deployments, add `virtual_device_patterns` to `config.json`
+instead of changing code:
+
+```json
+{
+  "virtual_device_patterns": [
+    {
+      "pattern": "\\bAcme Translation Cable\\b",
+      "kind": "generic_oem",
+      "label": "Acme OEM",
+      "enabled": true
+    }
+  ]
+}
+```
+
+Patterns are case-insensitive Rust regular expressions matched against the
+Windows endpoint display name. Custom patterns are evaluated before built-in
+patterns, so an OEM installer can override a vendor-looking name when needed.
+Invalid regex syntax is rejected as a config validation error.
+
+Licensing is separate from technical compatibility: users or distributors must
+obtain the right to install and redistribute VB-CABLE, VAC, Voicemeeter, or any
+OEM/custom cable package. TUI Translator only detects and routes audio to the
+endpoint name that Windows exposes.
+
 ## Zoom and Teams audio caveats
 
 The app's automated evidence proves local routing and virtual-cable detection.
