@@ -444,6 +444,80 @@ jobs:
           python3 -m json.tool "$report" > /dev/null && echo "PASS: $report is valid JSON"
           cat "$report"
 
+  # VMIC-B5 production readiness checkpoint
+  # Aggregates VMIC-B evidence, builds the release executable, labels the app
+  # artifact as unsigned/no-driver-bundled, and captures release smoke output.
+  vmic-production-readiness:
+    name: VMIC-B5 production readiness
+    runs-on: windows-latest
+    needs: [vmic-production-sink, vmic-mvp-readiness, packaging, soak-test, soak-runner]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-vmic-b5-${{ hashFiles('**/Cargo.lock') }}
+      - name: Check VMIC production evidence
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts\check-vmic-production-evidence.ps1 -Json
+      - name: Run VMIC-B5 readiness test
+        run: cargo test --test vmic_b5_production_readiness -- --nocapture
+      - name: Build release executable
+        run: cargo build --release --bin tui-translator
+      - name: Hash release executable
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\tui-translator.exe"
+          if (-not (Test-Path $exe)) { throw "release executable not found at $exe" }
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
+          $bytes = (Get-Item $exe).Length
+          $out = "verification-evidence\vmic\VMIC-B5-release-sha256.txt"
+          "sha256=$hash" | Tee-Object -FilePath $out
+          "bytes=$bytes" | Add-Content -Path $out
+          "unsigned=true" | Add-Content -Path $out
+          "driver_bundled=false" | Add-Content -Path $out
+      - name: Smoke release device listing
+        shell: pwsh
+        run: |
+          $log = "verification-evidence\vmic\VMIC-B5-smoke-log.txt"
+          "--list-audio-devices" | Tee-Object -FilePath $log
+          .\target\release\tui-translator.exe --list-audio-devices *>&1 | Tee-Object -FilePath $log -Append
+          $audioExit = $LASTEXITCODE
+          if ($audioExit -ne 0) {
+            "audio_devices_exit=$audioExit" | Tee-Object -FilePath $log -Append
+            throw "--list-audio-devices exited $audioExit"
+          }
+          "audio_devices_exit=0" | Tee-Object -FilePath $log -Append
+          "--list-capture-devices" | Tee-Object -FilePath $log -Append
+          .\target\release\tui-translator.exe --list-capture-devices *>&1 | Tee-Object -FilePath $log -Append
+          $captureExit = $LASTEXITCODE
+          if ($captureExit -ne 0) {
+            "capture_devices_exit=$captureExit" | Tee-Object -FilePath $log -Append
+            throw "--list-capture-devices exited $captureExit"
+          }
+          "capture_devices_exit=0" | Tee-Object -FilePath $log -Append
+          "smoke_status=pass" | Tee-Object -FilePath $log -Append
+      - name: Validate release hash and smoke artifacts
+        shell: pwsh
+        run: >
+          pwsh -NoProfile -File scripts\check-vmic-production-evidence.ps1 -Json
+          -ReleaseHashPath verification-evidence\vmic\VMIC-B5-release-sha256.txt
+          -SmokeLogPath verification-evidence\vmic\VMIC-B5-smoke-log.txt
+      - name: Upload VMIC-B5 readiness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmic-b5-production-readiness
+          path: |
+            verification-evidence\vmic\VMIC-B5-production-readiness-report.md
+            verification-evidence\vmic\VMIC-B5-release-sha256.txt
+            verification-evidence\vmic\VMIC-B5-smoke-log.txt
+
   # ── Linux smoke ─────────────────────────────────────────────────────────────
   # We also build on Linux so that CI does not fail if a contributor uses
   # a non-Windows machine.  Audio capture tests are excluded; they need

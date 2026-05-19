@@ -102,6 +102,29 @@ obtain the right to install and redistribute VB-CABLE, VAC, Voicemeeter, or any
 OEM/custom cable package. TUI Translator only detects and routes audio to the
 endpoint name that Windows exposes.
 
+## Supported production path and limitations
+
+The supported production path is an **OEM/commercial virtual cable**. TUI
+Translator writes translated TTS audio into an already-installed Windows render
+endpoint through `OemCableSink`; the meeting app selects the paired recording
+endpoint as its microphone.
+
+Important production limits:
+
+- TUI Translator does not create a Windows microphone endpoint by itself.
+- The app does not bundle, install, license, or redistribute a VB-CABLE, VAC,
+  Voicemeeter, OEM, or custom vendor driver binary.
+- Release artifacts are an unsigned application executable unless a release
+  pipeline signs it; this is separate from any external driver signing.
+- The custom SysVAD/WaveRT driver path is deferred until a separate WDK,
+  signing, installer, rollback, HLK, and support plan exists.
+- No manual Zoom or Teams acceptance is required for the automated production
+  gate. The gate uses evidence artifacts, round-trip tests, packaging checks,
+  smoke commands, and soak jobs; Zoom/Teams settings remain operator guidance.
+
+The final production checkpoint is documented in
+`verification-evidence/vmic/VMIC-B5-production-readiness-report.md`.
+
 ## Zoom and Teams audio caveats
 
 The app's automated evidence proves local routing and virtual-cable detection.
@@ -151,6 +174,8 @@ No-human automated evidence lives in the repository:
 |----------|------|----------------|
 | VMIC-A6 virtual-cable CI report | `verification-evidence/vmic/VMIC-A6-vbcable-ci-report.json` | The deterministic PCM tier passes; the real virtual-cable tier runs automatically when a supported device exists and records an explicit skip otherwise. |
 | VMIC-A7 docs check | `verification-evidence/vmic/VMIC-A7-docs-check.json` | These docs mention routing modes, consent disclosure, local links, Zoom/Teams caveats, and the no-human evidence location. |
+| VMIC-B4 production sink round-trip | `verification-evidence/vmic/VMIC-B4-production-sink-roundtrip.json` | The selected `OemCableSink` path passes the mandatory memory PCM round-trip, RMS, drop, and latency gates. |
+| VMIC-B5 production readiness report | `verification-evidence/vmic/VMIC-B5-production-readiness-report.md` | The production release checkpoint lists child evidence, release artifact labeling, smoke logs, and supported-path limitations. |
 | Automated test | `tests/vmic_docs_check.rs` | `cargo test --test vmic_docs_check` verifies the documentation contract without Zoom, Teams, live meetings, manual audio checks, or human acceptance. |
 
 Related user documentation:
