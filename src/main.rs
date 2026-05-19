@@ -681,12 +681,21 @@ fn write_audio_devices(
         )?;
     } else {
         for device in devices {
-            let marker = if device.is_default {
+            let default_marker = if device.is_default {
                 " (current Windows default)"
             } else {
                 ""
             };
-            writeln!(writer, "  - {}{}", device.name, marker)?;
+            let virtual_marker = if audio::classify_virtual_device(&device.name).is_some() {
+                " [VIRTUAL]"
+            } else {
+                ""
+            };
+            writeln!(
+                writer,
+                "  - {}{}{}",
+                device.name, virtual_marker, default_marker
+            )?;
             writeln!(writer, "      endpoint_id: {}", device.id)?;
         }
     }
@@ -3402,6 +3411,34 @@ mod tests {
         assert!(rendered.contains("endpoint_id: {0.0.0.00000000}.{speakers}"));
         assert!(rendered.contains("Headphones (USB Audio)"));
         assert!(rendered.contains("endpoint_id: {0.0.0.00000000}.{headphones}"));
+    }
+
+    #[test]
+    fn write_audio_devices_marks_virtual_devices() {
+        let devices = vec![
+            audio::CaptureDeviceInfo {
+                id: "{0.0.0.00000000}.{cable-input}".to_string(),
+                name: "CABLE Input (VB-Audio Virtual Cable)".to_string(),
+                is_default: false,
+            },
+            audio::CaptureDeviceInfo {
+                id: "{0.0.0.00000000}.{realtek}".to_string(),
+                name: "Speakers (Realtek Audio)".to_string(),
+                is_default: true,
+            },
+        ];
+        let mut output = Vec::new();
+        write_audio_devices(&mut output, &devices).unwrap();
+        let rendered = String::from_utf8(output).unwrap();
+
+        assert!(
+            rendered.contains("CABLE Input (VB-Audio Virtual Cable) [VIRTUAL]"),
+            "virtual device must be labelled [VIRTUAL]; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("Speakers (Realtek Audio) [VIRTUAL]"),
+            "real device must not be labelled [VIRTUAL]"
+        );
     }
 
     #[test]

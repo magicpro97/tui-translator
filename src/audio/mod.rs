@@ -53,6 +53,13 @@ pub use archive::{AudioArchiveWriter, AudioArchiveWriterConfig};
 /// Soak-proof evidence types and Issue #32 pass-fail thresholds.
 pub mod probe;
 
+// Virtual audio device enumeration and classification — VMIC-A1 (issue #313)
+pub mod virtual_device;
+#[allow(unused_imports)]
+pub use virtual_device::{
+    classify_virtual_device, probe_virtual_audio_devices, VirtualAudioDeviceInfo, VirtualDeviceKind,
+};
+
 // ─── Core types ──────────────────────────────────────────────────────────────
 
 /// A single chunk of captured audio, ready to be sent to the STT pipeline.

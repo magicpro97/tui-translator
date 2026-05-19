@@ -1,0 +1,59 @@
+{
+  "issue": 313,
+  "title": "[VMIC-A1] Virtual audio device enumeration and probe",
+  "status": "pass",
+  "scope": "Detect VB-CABLE/VAC/Voicemeeter render endpoints; classify by name; mark [VIRTUAL] in CLI output",
+  "acceptance": {
+    "no_virtual_device_returns_empty_list_without_error": true,
+    "vbcable_names_classify_correctly": true,
+    "vac_names_classify_correctly": true,
+    "probe_is_idempotent_across_repeated_calls": true,
+    "non_windows_builds_compile_with_safe_empty_stub": true,
+    "cli_list_output_marks_virtual_devices": true,
+    "production_driver_logic_added": false
+  },
+  "new_files": [
+    "src/audio/virtual_device.rs"
+  ],
+  "changed_files": [
+    "src/audio/mod.rs",
+    "src/main.rs"
+  ],
+  "commands": [
+    {
+      "name": "fmt-check",
+      "command": "cargo +stable-x86_64-pc-windows-gnu fmt --check",
+      "result": "pass"
+    },
+    {
+      "name": "acceptance-test-cases",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- detects_vbcable_by_name detects_vac_by_name regular_device_is_not_virtual",
+      "result": "pass",
+      "summary": "3 passed; 0 failed"
+    },
+    {
+      "name": "virtual-module-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- virtual",
+      "result": "pass",
+      "summary": "11 passed; 0 failed"
+    },
+    {
+      "name": "clippy-all-targets",
+      "command": "cargo +stable-x86_64-pc-windows-gnu clippy --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "name": "windows-release-build",
+      "command": "cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator",
+      "result": "pass"
+    }
+  ],
+  "notes": [
+    "classify_virtual_device() is pure (no I/O), cross-platform, case-insensitive substring matching.",
+    "VB-CABLE checked before VAC to avoid any false-positive from the shared 'cable' substring.",
+    "probe_virtual_audio_devices() delegates to list_capture_devices() on Windows; returns Ok(vec![]) on non-Windows.",
+    "No new crate dependencies added; uses existing wasapi crate via the existing list_capture_devices path.",
+    "CLI write_audio_devices() annotates matching devices with ' [VIRTUAL]' before the default marker.",
+    "test probe_is_idempotent verifies repeated calls return same length and same name/id/kind values."
+  ]
+}
