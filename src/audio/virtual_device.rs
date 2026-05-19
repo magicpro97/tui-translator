@@ -15,15 +15,23 @@
 // `pub use` re-exports in the parent module; suppress dead-code lints.
 #![allow(dead_code)]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    OnceLock,
+};
 use thiserror::Error;
 
 /// Current JSON schema version for VMIC-B2 evidence artifacts.
 pub const VMIC_B2_EVIDENCE_SCHEMA_VERSION: u32 = 1;
 /// GitHub issue covered by the VMIC-B2 evidence report.
 pub const VMIC_B2_ISSUE_NUMBER: u32 = 322;
+static BUILTIN_REGISTRY: OnceLock<
+    std::result::Result<VirtualDevicePatternRegistry, VirtualDevicePatternError>,
+> = OnceLock::new();
+static BUILTIN_REGISTRY_ERROR_LOGGED: AtomicBool = AtomicBool::new(false);
 
 // ─── VirtualDeviceKind ────────────────────────────────────────────────────────
 
@@ -308,10 +316,10 @@ pub struct VirtualAudioDeviceInfo {
 ///
 /// Returns `None` for any device name that does not match a known pattern.
 pub fn classify_virtual_device(name: &str) -> Option<VirtualDeviceKind> {
-    match VirtualDevicePatternRegistry::builtin() {
-        Ok(registry) => classify_virtual_device_with_registry(name, &registry),
+    match builtin_registry() {
+        Ok(registry) => classify_virtual_device_with_registry(name, registry),
         Err(err) => {
-            tracing::error!("built-in virtual device registry failed to compile: {err}");
+            log_builtin_registry_error_once(err);
             None
         }
     }
@@ -347,8 +355,10 @@ pub fn classify_virtual_device_with_registry(
 /// failure).  When enumeration succeeds but no virtual devices are present,
 /// returns `Ok(vec![])`.
 pub fn probe_virtual_audio_devices() -> Result<Vec<VirtualAudioDeviceInfo>> {
-    let registry = VirtualDevicePatternRegistry::builtin()?;
-    probe_virtual_audio_devices_with_registry(&registry)
+    let registry = builtin_registry()
+        .as_ref()
+        .map_err(|err| anyhow!(err.clone()))?;
+    probe_virtual_audio_devices_with_registry(registry)
 }
 
 /// Enumerate Windows render endpoints using a caller-supplied registry.
@@ -383,6 +393,17 @@ fn probe_windows(registry: &VirtualDevicePatternRegistry) -> Result<Vec<VirtualA
         })
         .collect();
     Ok(virtual_devices)
+}
+
+fn builtin_registry(
+) -> &'static std::result::Result<VirtualDevicePatternRegistry, VirtualDevicePatternError> {
+    BUILTIN_REGISTRY.get_or_init(VirtualDevicePatternRegistry::builtin)
+}
+
+fn log_builtin_registry_error_once(err: &VirtualDevicePatternError) {
+    if !BUILTIN_REGISTRY_ERROR_LOGGED.swap(true, Ordering::Relaxed) {
+        tracing::error!("built-in virtual device registry failed to compile: {err}");
+    }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
