@@ -49,7 +49,7 @@ impl VirtualDeviceKind {
 pub struct VirtualAudioDeviceInfo {
     /// Human-readable Windows endpoint name.
     pub name: String,
-    /// Stable Windows endpoint ID (empty string on non-Windows stubs).
+    /// Stable Windows endpoint ID for the detected render endpoint.
     pub id: String,
     /// Whether this is the current Windows default playback endpoint.
     pub is_default: bool,
@@ -67,7 +67,7 @@ pub struct VirtualAudioDeviceInfo {
 ///
 /// Returns `None` for any device name that does not match a known pattern.
 pub fn classify_virtual_device(name: &str) -> Option<VirtualDeviceKind> {
-    let lower = name.to_lowercase();
+    let lower = name.to_ascii_lowercase();
 
     // VB-CABLE checked first: "cable input" / "cable output" are the exact
     // endpoint names injected by the VB-Audio driver.
@@ -95,8 +95,10 @@ pub fn classify_virtual_device(name: &str) -> Option<VirtualDeviceKind> {
 ///
 /// On Windows this calls the existing `list_capture_devices` function so no
 /// additional dependencies are needed.  The result is idempotent — calling
-/// this function multiple times returns the same devices in the same order as
-/// long as the OS device set has not changed between calls.
+/// this function multiple times returns the same device names, IDs, and kinds
+/// in the same order as long as the OS device set has not changed between calls.
+/// The `is_default` marker may change if the Windows default playback endpoint
+/// changes between calls.
 ///
 /// On non-Windows platforms this function always returns `Ok(vec![])` without
 /// performing any I/O.
