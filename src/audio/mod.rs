@@ -56,6 +56,9 @@ pub mod probe;
 /// VMIC-A6 deterministic virtual-cable CI evidence helpers.
 pub mod vbcable_ci;
 
+/// PCM format negotiation and conversion helpers for production sinks.
+pub mod pcm_format;
+
 // Virtual audio device enumeration and classification — VMIC-A1 (issue #313)
 pub mod virtual_device;
 #[allow(unused_imports)]
