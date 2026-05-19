@@ -254,7 +254,7 @@ pub fn rms_i16(samples: &[i16]) -> f64 {
     let sum_sq: f64 = samples
         .iter()
         .map(|&sample| {
-            let normalized = sample as f64 / i16::MAX as f64;
+            let normalized = sample as f64 / 32_768.0;
             normalized * normalized
         })
         .sum();
@@ -275,8 +275,9 @@ fn validate_format(format: PcmFormat) -> Result<(), PcmFormatError> {
 }
 
 fn resampled_frame_count(source_frames: usize, source_rate: usize, target_rate: usize) -> usize {
-    ((source_frames as u128 * target_rate as u128 + (source_rate / 2) as u128)
-        / source_rate as u128) as usize
+    let rounded = ((source_frames as u128 * target_rate as u128 + (source_rate / 2) as u128)
+        / source_rate as u128) as usize;
+    rounded.max(1)
 }
 
 fn interpolate_channel(
@@ -354,6 +355,7 @@ mod tests {
         assert_eq!(f32_to_i16_clamped(1.25), i16::MAX);
         assert_eq!(f32_to_i16_clamped(-1.25), i16::MIN);
         assert_eq!(f32_to_i16_clamped(0.0), 0);
+        assert!(rms_i16(&[i16::MIN, i16::MAX]) <= 1.0);
 
         let source = PcmFormat::i16(24_000, 2);
         let target = PcmFormat::i16(24_000, 1);
@@ -362,6 +364,18 @@ mod tests {
             .expect("stereo-to-mono near clipping should clamp safely");
 
         assert_eq!(converted, vec![i16::MAX, i16::MIN]);
+    }
+
+    #[test]
+    fn downsample_short_non_empty_pcm_keeps_one_frame() {
+        let converted = convert_i16_pcm(
+            &[12_000],
+            PcmFormat::i16(48_000, 1),
+            PcmFormat::i16(8_000, 1),
+        )
+        .expect("short non-empty PCM should downsample to at least one frame");
+
+        assert_eq!(converted, vec![12_000]);
     }
 
     #[test]
