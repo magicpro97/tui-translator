@@ -10,15 +10,6 @@ fn read_file(relative_path: &str) -> String {
         .unwrap_or_else(|err| panic!("failed to read {relative_path}: {err}"))
 }
 
-fn assert_file_exists(relative_path: &str) {
-    let path = repo_root().join(relative_path);
-    assert!(
-        path.exists(),
-        "{relative_path} must exist at {}",
-        path.display()
-    );
-}
-
 fn assert_contains(file_name: &str, contents: &str, needle: &str) {
     assert!(
         contents.contains(needle),
@@ -27,7 +18,6 @@ fn assert_contains(file_name: &str, contents: &str, needle: &str) {
 }
 
 fn assert_evidence_file(relative_path: &str, required_terms: &[&str]) {
-    assert_file_exists(relative_path);
     let contents = read_file(relative_path);
     for term in required_terms {
         assert_contains(relative_path, &contents, term);
@@ -175,6 +165,4 @@ fn vmic_mvp_checker_script_is_present() {
     ] {
         assert_contains(script_path, &script, term);
     }
-
-    assert_file_exists(script_path);
 }

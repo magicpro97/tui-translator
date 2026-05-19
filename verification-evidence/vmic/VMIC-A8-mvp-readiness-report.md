@@ -34,7 +34,7 @@ No human acceptance step is required for the MVP checkpoint. Real meeting apps r
 | Full default test suite | `cargo +stable-x86_64-pc-windows-gnu test --all-targets --quiet` | pass |
 | Clippy default local gate | `cargo +stable-x86_64-pc-windows-gnu clippy --all-targets -- -D warnings` | pass |
 | Clippy all-features CI gate | GitHub Actions `Lint (clippy)` uses `cargo clippy --all-targets --all-features -- -D warnings` | pass on latest `main` CI for baseline commit |
-| All-features binary tests | GitHub Actions `Lint (clippy)` now also runs `cargo test --all-features --bins -- --nocapture --skip real_api` | required green before merge |
+| All-features test suite | GitHub Actions `Lint (clippy)` also runs `cargo test --all-features -- --nocapture --skip real_api` | required green before merge |
 | Windows release build | `cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator --quiet` | pass |
 | CI release hash | GitHub Actions `VMIC-A8 MVP readiness` writes `verification-evidence\vmic\VMIC-A8-release-sha256.txt` after building the release executable | required green before merge |
 | Device-list smoke | `target\release\tui-translator.exe --list-audio-devices` | exit 0 |
@@ -47,7 +47,7 @@ No human acceptance step is required for the MVP checkpoint. Real meeting apps r
 
 | Artifact | Value |
 |----------|-------|
-| Local path | `C:\Users\linhnt102\zoom-terminal-translator-rs\target\release\tui-translator.exe` |
+| Local path | `target\release\tui-translator.exe` |
 | Build command | `cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator --quiet` |
 | Size | `4,299,776` bytes |
 | Local verification SHA-256 | `be0fbb2c53b2740a1c6f99ee8035f55592eb5db0c3105c2fd7277ebdfefe16e8` |

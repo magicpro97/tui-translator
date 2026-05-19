@@ -25,6 +25,9 @@ jobs:
   clippy:
     name: Lint (clippy)
     runs-on: windows-latest
+    env:
+      CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
+      CMAKE_POLICY_DEFAULT_CMP0091: NEW
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -60,10 +63,12 @@ jobs:
 
           "LIBCLANG_PATH=$clangBin" >> $env:GITHUB_ENV
           "$clangBin" >> $env:GITHUB_PATH
+      - name: Clean cached whisper native build
+        run: cargo clean -p whisper-rs-sys -p whisper-rs
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: Run all-features binary tests
-        run: cargo test --all-features --bins -- --nocapture --skip real_api
+      - name: Run all-features test suite
+        run: cargo test --all-features -- --nocapture --skip real_api
 
   # ── Build & Test ─────────────────────────────────────────────────────────────
   test:
@@ -191,7 +196,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: vmic-a6-vbcable-ci-report
-          path: verification-evidence\vmic
+          path: vmic-a6-current-evidence
+      - name: Install current VMIC-A6 evidence
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -Path vmic-a6-current-evidence -Recurse -File -Filter VMIC-A6-vbcable-ci-report.json)
+          if ($files.Count -ne 1) {
+            throw "expected exactly one current VMIC-A6 evidence file, found $($files.Count)"
+          }
+          $destination = "verification-evidence\vmic\VMIC-A6-vbcable-ci-report.json"
+          Copy-Item -Path $files[0].FullName -Destination $destination -Force
       - name: Check VMIC MVP evidence
         shell: pwsh
         run: pwsh -NoProfile -File scripts\check-vmic-mvp-evidence.ps1 -Json
