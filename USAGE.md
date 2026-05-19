@@ -184,6 +184,41 @@ Keep the terminal window visible alongside Zoom — for example, snap it to one 
 
 ---
 
+## Optional: route translated speech into Zoom or Teams
+
+TUI Translator can play translated TTS into an installed virtual audio cable so
+Zoom, Microsoft Teams, or another meeting app can select that cable as its
+microphone. This is the VMIC MVP path: it uses VB-CABLE, VAC, or Voicemeeter
+that you install separately. It is not yet a project-owned production virtual
+microphone driver.
+
+Routing choices:
+
+| Mode | Config value | Use when |
+|------|--------------|----------|
+| Speakers | `tts_routing: "speakers"` | You only want to hear translated audio locally. |
+| VirtualMic | `tts_routing: "virtual_mic"` | You want the meeting app to receive the translated voice and do not need local monitoring. |
+| Both | `tts_routing: "both"` | You want both local monitoring and meeting-app microphone output. Use headphones to avoid echo. |
+
+Minimal config:
+
+```json
+"tts_enabled": true,
+"tts_routing": "both",
+"virtual_mic_device": "CABLE Input (VB-Audio Virtual Cable)"
+```
+
+Then choose the paired microphone endpoint in the meeting app, usually
+**CABLE Output (VB-Audio Virtual Cable)** for VB-CABLE.
+
+Before using this in a real meeting, tell participants that they may hear an
+AI-generated translated voice and that translation can be inaccurate or delayed.
+For exact setup steps, Zoom Original Sound / Teams Noise Suppression guidance,
+troubleshooting, and automated evidence paths, see
+[`docs/12-virtual-mic-setup.md`](docs/12-virtual-mic-setup.md).
+
+---
+
 ## Speech windowing and translation quality
 
 TUI Translator does not send audio to Google Speech-to-Text (STT) as a raw
