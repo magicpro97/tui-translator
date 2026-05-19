@@ -24,6 +24,7 @@
 
 #![allow(dead_code)]
 
+pub mod audio_sink;
 pub mod cpu_gate;
 pub mod fallback;
 pub mod playback;
