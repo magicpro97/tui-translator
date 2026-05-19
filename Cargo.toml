@@ -32,6 +32,10 @@ path = "src/bin/provider_benchmark.rs"
 name = "quality_benchmark"
 path = "src/bin/quality_benchmark.rs"
 
+[[bin]]
+name = "vbcable_ci_probe"
+path = "src/bin/vbcable_ci_probe.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.26"
@@ -93,6 +97,9 @@ local-stt = ["whisper-rs"]
 # Enable the local OPUS-MT backend. Model download/version management is handled
 # separately by issue #218; this feature only loads verified files already on disk.
 local-mt = ["ort", "sentencepiece-rs"]
+# Enable the VMIC-A6 automated virtual-cable integration tests. The tests are
+# skip-safe on runners without VB-CABLE/VAC and write explicit JSON evidence.
+audio-integration = []
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)

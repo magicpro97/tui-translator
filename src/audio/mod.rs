@@ -53,6 +53,9 @@ pub use archive::{AudioArchiveWriter, AudioArchiveWriterConfig};
 /// Soak-proof evidence types and Issue #32 pass-fail thresholds.
 pub mod probe;
 
+/// VMIC-A6 deterministic virtual-cable CI evidence helpers.
+pub mod vbcable_ci;
+
 // Virtual audio device enumeration and classification — VMIC-A1 (issue #313)
 pub mod virtual_device;
 #[allow(unused_imports)]

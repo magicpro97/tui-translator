@@ -114,6 +114,59 @@ jobs:
       - name: Run PTY tests (issue #108)
         run: cargo test --test pty -- --nocapture
 
+  # VMIC-A6 virtual-cable CI evidence
+  # Hosted Windows runners do not reliably expose installable audio cable
+  # drivers. This job still proves the deterministic PCM write/capture harness
+  # on every run and upgrades to a real VB-CABLE/VAC/Voicemeeter loopback test
+  # automatically when such a render endpoint is detected.
+  vmic-audio-integration:
+    name: VMIC-A6 virtual-cable integration
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-vmic-a6-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run feature-gated VMIC-A6 tests
+        run: cargo test --features audio-integration --test vmic_audio_integration -- --nocapture
+      - name: Write VMIC-A6 evidence artifact
+        run: >
+          cargo run --features audio-integration --bin vbcable_ci_probe --
+          --duration-ms 750
+          --out verification-evidence\vmic\VMIC-A6-vbcable-ci-report.json
+      - name: Validate VMIC-A6 evidence schema
+        shell: pwsh
+        run: |
+          $path = "verification-evidence\vmic\VMIC-A6-vbcable-ci-report.json"
+          if (-not (Test-Path $path)) { throw "VMIC-A6 report not found at $path" }
+          $report = Get-Content $path -Raw | ConvertFrom-Json
+          if ($report.schema_version -ne 1) { throw "unexpected schema_version: $($report.schema_version)" }
+          if ($report.issue -ne "#318") { throw "unexpected issue: $($report.issue)" }
+          if ($report.status -ne "pass") { throw "VMIC-A6 report did not pass: $($report | ConvertTo-Json -Depth 8)" }
+          if (-not $report.generated_audio -or $report.generated_audio.rms -le 0.30) {
+            throw "generated_audio.rms is missing or too low"
+          }
+          $memory = $report.tiers | Where-Object { $_.name -eq "memory_pcm" } | Select-Object -First 1
+          if (-not $memory -or $memory.status -ne "pass") { throw "memory_pcm tier did not pass" }
+          $real = $report.tiers | Where-Object { $_.name -eq "real_virtual_cable" } | Select-Object -First 1
+          if (-not $real) { throw "real_virtual_cable tier missing" }
+          if ($real.status -eq "skipped" -and -not $real.skip_reason) {
+            throw "real_virtual_cable skipped without an explicit reason"
+          }
+          Write-Host ($report | ConvertTo-Json -Depth 8)
+      - name: Upload VMIC-A6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vmic-a6-vbcable-ci-report
+          path: verification-evidence\vmic\VMIC-A6-vbcable-ci-report.json
+
   # ── Contract tests (mock-only) ───────────────────────────────────────────────
   # Runs the dedicated `contract` integration-test binary.
   # No real API keys or network access are required.
