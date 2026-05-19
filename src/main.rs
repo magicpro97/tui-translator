@@ -1329,7 +1329,7 @@ fn main() -> Result<()> {
     }
     if onboarding_required {
         state.open_config_editor(ConfigEditorMode::Onboarding, &cfg, &cfg_path);
-        populate_capture_device_options(&state);
+        populate_config_editor_device_options(&state);
         let _ = state.with_config_editor_mut(|editor| {
             editor.set_status_message(" Fill required fields, then press Enter to save.");
         });
@@ -1341,7 +1341,7 @@ fn main() -> Result<()> {
     }
     if config_recovery_required {
         state.open_config_editor(ConfigEditorMode::Settings, &cfg, &cfg_path);
-        populate_capture_device_options(&state);
+        populate_config_editor_device_options(&state);
         let _ = state.with_config_editor_mut(|editor| {
             let detail = if load_error
                 .as_deref()
@@ -2260,6 +2260,25 @@ fn populate_capture_device_options(state: &AppState) {
     }
 }
 
+fn populate_virtual_mic_device_options(state: &AppState) {
+    match audio::probe_virtual_audio_devices() {
+        Ok(devices) => {
+            let names = devices.into_iter().map(|device| device.name).collect();
+            let _ = state.with_config_editor_mut(|editor| {
+                editor.set_virtual_mic_device_options(names);
+            });
+        }
+        Err(err) => {
+            tracing::warn!("failed to probe virtual audio devices for settings picker: {err:#}");
+        }
+    }
+}
+
+fn populate_config_editor_device_options(state: &AppState) {
+    populate_capture_device_options(state);
+    populate_virtual_mic_device_options(state);
+}
+
 fn overwrite_target_language(slot: &Arc<std::sync::Mutex<String>>, next_language: &str) {
     match slot.lock() {
         Ok(mut guard) => {
@@ -2369,6 +2388,17 @@ fn parse_editor_bool(field_name: &str, value: &str) -> Result<bool> {
     }
 }
 
+fn parse_editor_tts_routing(value: &str) -> Result<config::TtsRouting> {
+    match value.trim() {
+        "speakers" => Ok(config::TtsRouting::Speakers),
+        "virtual_mic" => Ok(config::TtsRouting::VirtualMic),
+        "both" => Ok(config::TtsRouting::Both),
+        other => bail!(
+            "validation failed: `tts_routing` must be \"speakers\", \"virtual_mic\", or \"both\", got {other:?}"
+        ),
+    }
+}
+
 fn parse_editor_u32(field_name: &str, value: &str) -> Result<u32> {
     let trimmed = value.trim();
     trimmed.parse::<u32>().map_err(|_| {
@@ -2403,6 +2433,8 @@ fn build_config_from_editor(
     next_cfg.stt_provider = editor.stt_provider.trim().to_string();
     next_cfg.mt_provider = editor.mt_provider.trim().to_string();
     next_cfg.tts_enabled = parse_editor_bool("tts_enabled", &editor.tts_enabled)?;
+    next_cfg.tts_routing = parse_editor_tts_routing(&editor.tts_routing)?;
+    next_cfg.virtual_mic_device = normalize_optional_field(&editor.virtual_mic_device);
     next_cfg.stt_fallback_policy = editor.stt_fallback_policy.trim().to_string();
     // Pipeline knobs (issue #270).
     next_cfg.vad.pre_roll_ms = parse_editor_u32("vad.pre_roll_ms", &editor.vad_pre_roll_ms)?;
@@ -3110,7 +3142,7 @@ fn handle_action(
                 .unwrap_or_else(|p| p.into_inner())
                 .clone();
             state.open_config_editor(ConfigEditorMode::Settings, &current, cfg_path);
-            populate_capture_device_options(state);
+            populate_config_editor_device_options(state);
         }
 
         // Language prompt input (issue #64)
@@ -4059,6 +4091,40 @@ mod tests {
     }
 
     #[test]
+    fn build_config_from_editor_persists_tts_route_fields() {
+        let current = config::AppConfig::default();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.tts_routing = "both".to_string();
+        editor.virtual_mic_device = "CABLE Input (VB-Audio Virtual Cable)".to_string();
+
+        let next = build_config_from_editor(&editor, &current).unwrap();
+
+        assert_eq!(next.tts_routing, config::TtsRouting::Both);
+        assert_eq!(
+            next.virtual_mic_device.as_deref(),
+            Some("CABLE Input (VB-Audio Virtual Cable)")
+        );
+    }
+
+    #[test]
+    fn build_config_from_editor_rejects_invalid_tts_routing() {
+        let current = config::AppConfig::default();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.tts_routing = "vmic".to_string();
+
+        let err = build_config_from_editor(&editor, &current).unwrap_err();
+
+        assert!(
+            err.to_string().contains("tts_routing"),
+            "invalid route error should name tts_routing: {err:#}"
+        );
+    }
+
+    #[test]
     fn runtime_provider_error_allows_default_google_mode() {
         let cfg = config::AppConfig::default();
         assert!(runtime_provider_error(&cfg).is_none());
@@ -4574,6 +4640,45 @@ mod tests {
         let reopened =
             tui::ConfigEditorState::from_config(&persisted, &cfg_path, ConfigEditorMode::Settings);
         assert_eq!(reopened.capture_device, "Headphones (USB Audio)");
+        assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn config_save_persists_tts_route_and_virtual_mic_selection() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        state.open_config_editor(
+            ConfigEditorMode::Settings,
+            &config::AppConfig::default(),
+            &cfg_path,
+        );
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.tts_routing = "virtual_mic".to_string();
+            editor.virtual_mic_device = "CABLE Input (VB-Audio Virtual Cable)".to_string();
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(persisted.tts_routing, config::TtsRouting::VirtualMic);
+        assert_eq!(
+            persisted.virtual_mic_device.as_deref(),
+            Some("CABLE Input (VB-Audio Virtual Cable)")
+        );
+        assert!(restart_required.load(Ordering::Relaxed));
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
     }
 

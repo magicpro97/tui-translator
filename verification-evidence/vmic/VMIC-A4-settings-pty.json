@@ -1,0 +1,83 @@
+{
+  "issue": 316,
+  "title": "[VMIC-A4] Settings UI virtual microphone picker",
+  "status": "pass",
+  "scope": "Settings editor exposes TTS routing as a choice field and virtual_mic_device as a keyboard-selectable virtual endpoint picker, persists both fields, and preserves API key masking.",
+  "acceptance": {
+    "tts_routing_is_selectable": true,
+    "virtual_mic_picker_uses_detected_virtual_endpoints": true,
+    "missing_virtual_devices_have_plain_english_status": true,
+    "route_and_device_persist_to_config": true,
+    "keyboard_only_pty_flow_persists_route": true,
+    "api_key_masking_unchanged": true,
+    "compact_onboarding_hints_remain_visible": true
+  },
+  "test_cases": {
+    "config_editor_cycles_tts_routing_choices": "pass - F2/Ctrl+D cycles speakers -> virtual_mic -> both -> speakers",
+    "config_editor_cycles_only_detected_virtual_mic_devices": "pass - picker cycles only configured virtual endpoint options",
+    "config_editor_cycle_virtual_mic_reaches_hidden_detected_devices": "pass - F2/Ctrl+D cycles across the full detected virtual endpoint list, including rows outside the rendered picker window",
+    "config_editor_virtual_mic_cycle_explains_empty_probe": "pass - empty probe shows an install/reopen Settings recovery message",
+    "build_config_from_editor_persists_tts_route_fields": "pass - route enum and virtual_mic_device are copied from editor state into AppConfig",
+    "build_config_from_editor_rejects_invalid_tts_routing": "pass - invalid route values fail with a tts_routing validation message",
+    "config_save_persists_tts_route_and_virtual_mic_selection": "pass - saved config round-trips virtual_mic route and device",
+    "config_editor_onboarding_navigation_skips_hidden_pipeline_fields": "pass - onboarding Tab/Shift+Tab wraps across only visible fields after advanced pipeline knobs are hidden",
+    "settings_tts_route_selection_persists_keyboard_only": "pass - PTY opens Settings, tabs to TTS routing, sends Ctrl+D, saves, and verifies config.json"
+  },
+  "changed_files": [
+    "src/tui/mod.rs",
+    "src/main.rs",
+    "tests/pty/settings_test.rs",
+    "tests/pty/onboarding_test.rs",
+    "tests/snapshots/snapshot__config_editor_onboarding.snap",
+    "tests/snapshots/snapshot__config_editor_onboarding_narrow.snap",
+    "tests/snapshots/snapshot__config_editor_settings.snap",
+    "tests/snapshots/snapshot__config_editor_settings_narrow.snap"
+  ],
+  "commands": [
+    {
+      "name": "focused-route-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test tts_route --quiet",
+      "result": "pass"
+    },
+    {
+      "name": "focused-virtual-mic-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test virtual_mic --quiet",
+      "result": "pass"
+    },
+    {
+      "name": "pty-keyboard-route-flow",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test settings_tts_route_selection_persists_keyboard_only --test pty --quiet",
+      "result": "pass"
+    },
+    {
+      "name": "snapshot-update",
+      "command": "INSTA_UPDATE=always cargo +stable-x86_64-pc-windows-gnu test --test snapshot --quiet",
+      "result": "pass",
+      "summary": "329 snapshot tests passed; four config-editor snapshots updated"
+    },
+    {
+      "name": "full-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --all-targets --quiet",
+      "result": "pass",
+      "summary": "All Rust test targets passed, including PTY and snapshot suites"
+    },
+    {
+      "name": "clippy-all-targets",
+      "command": "cargo +stable-x86_64-pc-windows-gnu clippy --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "name": "windows-release-build",
+      "command": "cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator --quiet",
+      "result": "pass",
+      "note": "A stale tui-translator.exe process was holding the release binary; stopped only PID 192984 before rerunning the release build."
+    }
+  ],
+  "notes": [
+    "Settings population now probes both normal capture devices and virtual audio endpoints when the editor opens.",
+    "Virtual mic F2/Ctrl+D selection uses the full detected endpoint list, not the truncated render window; clearing remains possible by editing the field manually.",
+    "Onboarding hides advanced pipeline tuning rows so compact and full onboarding panels keep keyboard hints visible after adding route fields.",
+    "Onboarding keyboard navigation skips the hidden advanced pipeline fields so Tab/Shift+Tab never lands on an invisible editable field.",
+    "AppConfig validation remains the single source of truth for invalid virtual_mic_device/tts_routing combinations."
+  ]
+}

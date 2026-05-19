@@ -6,7 +6,6 @@ expression: "render_config_editor(&editor, 90, 20)"
        │ Save your initial config: source, target, Google API key. Ctrl+C quits   │
        │for manual config.                                                        │
        │ Path: C:\Users\demo\.tui-translator\config.json                          │
-       │                                                                          │
        │> Source language : ja-JP_                                                │
        │  Target language : vi                                                    │
        │  Google API key  : ••••••••                                              │
@@ -16,9 +15,10 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  STT provider    : google                                                │
        │  MT provider     : google                                                │
        │  TTS enabled     : false                                                 │
+       │  TTS routing     : speakers                                              │
+       │  Virtual mic     : not configured                                        │
        │  STT fallback    : none                                                  │
-       │  VAD pre-roll ms : 200                                                   │
-       │  Max window ms   : 3000                                                  │
-       │  Early VAD flush : true                                                  │
-       │  Idle flush ms   : 600                                                   │
+       │ Ready to save.                                                           │
+       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
+       │                                                                          │
        └──────────────────────────────────────────────────────────────────────────┘

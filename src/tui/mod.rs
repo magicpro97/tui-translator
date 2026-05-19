@@ -81,7 +81,8 @@ const MIN_USABLE_ROWS: u16 = 3   // title bar
 const LANGUAGE_PRESETS: [&str; 5] = ["ja-JP", "vi", "en-US", "zh-CN", "ko"];
 const CAPTURE_DEVICE_DEFAULT_LABEL: &str = "Windows default playback";
 const CAPTURE_DEVICE_PICKER_MAX_CHOICES: usize = 3;
-const CONFIG_EDITOR_FIELD_COUNT: usize = 16;
+const VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES: usize = 3;
+const CONFIG_EDITOR_FIELD_COUNT: usize = 18;
 const CONFIG_EDITOR_LABEL_WIDTH: usize = 16;
 const CONFIG_EDITOR_MIN_VALUE_WIDTH: usize = 8;
 
@@ -170,6 +171,8 @@ enum ConfigEditorField {
     SttProvider,
     MtProvider,
     TtsEnabled,
+    TtsRouting,
+    VirtualMicDevice,
     SttFallbackPolicy,
     // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4).
     VadPreRollMs,
@@ -191,6 +194,8 @@ impl ConfigEditorField {
         Self::SttProvider,
         Self::MtProvider,
         Self::TtsEnabled,
+        Self::TtsRouting,
+        Self::VirtualMicDevice,
         Self::SttFallbackPolicy,
         Self::VadPreRollMs,
         Self::PipelineMaxWindowMs,
@@ -211,6 +216,8 @@ impl ConfigEditorField {
             Self::SttProvider => "STT provider",
             Self::MtProvider => "MT provider",
             Self::TtsEnabled => "TTS enabled",
+            Self::TtsRouting => "TTS routing",
+            Self::VirtualMicDevice => "Virtual mic",
             Self::SttFallbackPolicy => "STT fallback",
             Self::VadPreRollMs => "VAD pre-roll ms",
             Self::PipelineMaxWindowMs => "Max window ms",
@@ -232,14 +239,39 @@ impl ConfigEditorField {
             Self::SttProvider => 6,
             Self::MtProvider => 7,
             Self::TtsEnabled => 8,
-            Self::SttFallbackPolicy => 9,
-            Self::VadPreRollMs => 10,
-            Self::PipelineMaxWindowMs => 11,
-            Self::PipelineEarlyFlushOnVadEnd => 12,
-            Self::PipelineIdleFlushMs => 13,
-            Self::PipelineIdleMinMs => 14,
-            Self::PipelineSentenceMaxAgeMs => 15,
+            Self::TtsRouting => 9,
+            Self::VirtualMicDevice => 10,
+            Self::SttFallbackPolicy => 11,
+            Self::VadPreRollMs => 12,
+            Self::PipelineMaxWindowMs => 13,
+            Self::PipelineEarlyFlushOnVadEnd => 14,
+            Self::PipelineIdleFlushMs => 15,
+            Self::PipelineIdleMinMs => 16,
+            Self::PipelineSentenceMaxAgeMs => 17,
         }
+    }
+
+    fn is_visible_in_mode(self, mode: ConfigEditorMode) -> bool {
+        match mode {
+            ConfigEditorMode::Settings => true,
+            ConfigEditorMode::Onboarding => !matches!(
+                self,
+                Self::VadPreRollMs
+                    | Self::PipelineMaxWindowMs
+                    | Self::PipelineEarlyFlushOnVadEnd
+                    | Self::PipelineIdleFlushMs
+                    | Self::PipelineIdleMinMs
+                    | Self::PipelineSentenceMaxAgeMs
+            ),
+        }
+    }
+}
+
+fn tts_routing_config_value(routing: TtsRouting) -> &'static str {
+    match routing {
+        TtsRouting::Speakers => "speakers",
+        TtsRouting::VirtualMic => "virtual_mic",
+        TtsRouting::Both => "both",
     }
 }
 
@@ -260,6 +292,10 @@ pub struct ConfigEditorState {
     pub mt_provider: String,
     /// Whether TTS audio output is enabled, stored as `"true"` or `"false"`.
     pub tts_enabled: String,
+    /// TTS audio route (`"speakers"`, `"virtual_mic"`, or `"both"`).
+    pub tts_routing: String,
+    /// Virtual microphone render endpoint used by virtual-mic/both TTS routing.
+    pub virtual_mic_device: String,
     /// STT fallback policy (`"none"` or `"local"`).
     pub stt_fallback_policy: String,
     // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4) — stored as strings.
@@ -278,6 +314,7 @@ pub struct ConfigEditorState {
     pub config_path: String,
     pub status_message: Option<String>,
     pub capture_device_options: Vec<String>,
+    pub virtual_mic_device_options: Vec<String>,
     capture_device_filter_active: bool,
     field_cursors: [usize; CONFIG_EDITOR_FIELD_COUNT],
 }
@@ -300,6 +337,8 @@ impl ConfigEditorState {
             } else {
                 "false".to_string()
             },
+            tts_routing: tts_routing_config_value(config.tts_routing).to_string(),
+            virtual_mic_device: config.virtual_mic_device.clone().unwrap_or_default(),
             stt_fallback_policy: config.stt_fallback_policy.clone(),
             vad_pre_roll_ms: config.vad.pre_roll_ms.to_string(),
             pipeline_max_window_ms: config.pipeline.max_window_ms.to_string(),
@@ -314,6 +353,7 @@ impl ConfigEditorState {
             config_path: config_path.display().to_string(),
             status_message: None,
             capture_device_options: Vec::new(),
+            virtual_mic_device_options: Vec::new(),
             capture_device_filter_active: false,
             field_cursors: [0; CONFIG_EDITOR_FIELD_COUNT],
         };
@@ -336,6 +376,8 @@ impl ConfigEditorState {
             ConfigEditorField::SttProvider => &self.stt_provider,
             ConfigEditorField::MtProvider => &self.mt_provider,
             ConfigEditorField::TtsEnabled => &self.tts_enabled,
+            ConfigEditorField::TtsRouting => &self.tts_routing,
+            ConfigEditorField::VirtualMicDevice => &self.virtual_mic_device,
             ConfigEditorField::SttFallbackPolicy => &self.stt_fallback_policy,
             ConfigEditorField::VadPreRollMs => &self.vad_pre_roll_ms,
             ConfigEditorField::PipelineMaxWindowMs => &self.pipeline_max_window_ms,
@@ -357,6 +399,8 @@ impl ConfigEditorState {
             ConfigEditorField::SttProvider => self.stt_provider = value,
             ConfigEditorField::MtProvider => self.mt_provider = value,
             ConfigEditorField::TtsEnabled => self.tts_enabled = value,
+            ConfigEditorField::TtsRouting => self.tts_routing = value,
+            ConfigEditorField::VirtualMicDevice => self.virtual_mic_device = value,
             ConfigEditorField::SttFallbackPolicy => self.stt_fallback_policy = value,
             ConfigEditorField::VadPreRollMs => self.vad_pre_roll_ms = value,
             ConfigEditorField::PipelineMaxWindowMs => self.pipeline_max_window_ms = value,
@@ -405,6 +449,8 @@ impl ConfigEditorState {
             ConfigEditorField::SttProvider => &mut self.stt_provider,
             ConfigEditorField::MtProvider => &mut self.mt_provider,
             ConfigEditorField::TtsEnabled => &mut self.tts_enabled,
+            ConfigEditorField::TtsRouting => &mut self.tts_routing,
+            ConfigEditorField::VirtualMicDevice => &mut self.virtual_mic_device,
             ConfigEditorField::SttFallbackPolicy => &mut self.stt_fallback_policy,
             ConfigEditorField::VadPreRollMs => &mut self.vad_pre_roll_ms,
             ConfigEditorField::PipelineMaxWindowMs => &mut self.pipeline_max_window_ms,
@@ -440,15 +486,27 @@ impl ConfigEditorState {
     }
 
     pub fn next_field(&mut self) {
-        self.selected_field = (self.selected_field + 1) % ConfigEditorField::ALL.len();
+        let len = ConfigEditorField::ALL.len();
+        for _ in 0..len {
+            self.selected_field = (self.selected_field + 1) % len;
+            if self.active_field().is_visible_in_mode(self.mode) {
+                break;
+            }
+        }
         self.status_message = None;
     }
 
     pub fn prev_field(&mut self) {
-        if self.selected_field == 0 {
-            self.selected_field = ConfigEditorField::ALL.len() - 1;
-        } else {
-            self.selected_field -= 1;
+        let len = ConfigEditorField::ALL.len();
+        for _ in 0..len {
+            if self.selected_field == 0 {
+                self.selected_field = len - 1;
+            } else {
+                self.selected_field -= 1;
+            }
+            if self.active_field().is_visible_in_mode(self.mode) {
+                break;
+            }
         }
         self.status_message = None;
     }
@@ -459,6 +517,14 @@ impl ConfigEditorState {
 
     pub fn set_capture_device_options(&mut self, options: Vec<String>) {
         self.capture_device_options = options
+            .into_iter()
+            .map(|device| device.trim().to_string())
+            .filter(|device| !device.is_empty())
+            .collect();
+    }
+
+    pub fn set_virtual_mic_device_options(&mut self, options: Vec<String>) {
+        self.virtual_mic_device_options = options
             .into_iter()
             .map(|device| device.trim().to_string())
             .filter(|device| !device.is_empty())
@@ -506,6 +572,33 @@ impl ConfigEditorState {
         }
     }
 
+    pub fn cycle_virtual_mic_device(&mut self) {
+        if self.virtual_mic_device_options.is_empty() {
+            self.set_status_message(
+                " No virtual microphone devices detected. Install VB-CABLE/VAC/Voicemeeter, then reopen Settings.",
+            );
+            return;
+        }
+
+        let choices = virtual_mic_device_picker_choices(self);
+        let current = self.virtual_mic_device.trim();
+        let current_index = choices
+            .iter()
+            .position(|candidate| candidate.value == current)
+            .unwrap_or(usize::MAX);
+        let next_index = if current_index == usize::MAX {
+            0
+        } else {
+            (current_index + 1) % choices.len()
+        };
+        let next = &choices[next_index];
+        self.set_field_value(ConfigEditorField::VirtualMicDevice, next.value.clone());
+        self.set_status_message(format!(
+            " Virtual mic selected: {}. Save and restart to use it.",
+            next.label
+        ));
+    }
+
     /// Cycle the value of the currently active selectable field.
     ///
     /// Dispatches to the appropriate cycle helper based on the active field:
@@ -530,6 +623,13 @@ impl ConfigEditorState {
             ConfigEditorField::TtsEnabled => {
                 self.cycle_choice_field(&["false", "true"], ". Save to apply.");
             }
+            ConfigEditorField::TtsRouting => {
+                self.cycle_choice_field(
+                    &["speakers", "virtual_mic", "both"],
+                    ". Save and restart to apply.",
+                );
+            }
+            ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device(),
             ConfigEditorField::SttFallbackPolicy => {
                 self.cycle_choice_field(&["none", "local"], ". Save and restart to apply.");
             }
@@ -2389,6 +2489,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     };
 
     let is_compact_editor = panel.width < 76 || panel.height <= 16;
+    let show_editor_spacing = !is_compact_editor && panel.height >= 27;
     let key_hint = if is_compact_editor {
         " Tab/Shift+Tab move  F2 cycle  Enter save  Esc close"
     } else {
@@ -2417,7 +2518,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
         Style::default().fg(Color::DarkGray),
     )));
     if active == ConfigEditorField::CaptureDevice {
-        if !is_compact_editor {
+        if show_editor_spacing {
             lines.push(Line::from(""));
         }
         lines.extend(capture_device_picker_lines(
@@ -2425,9 +2526,18 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             panel.width,
             is_compact_editor,
         ));
+    } else if active == ConfigEditorField::VirtualMicDevice {
+        if show_editor_spacing {
+            lines.push(Line::from(""));
+        }
+        lines.extend(virtual_mic_device_picker_lines(
+            editor,
+            panel.width,
+            is_compact_editor,
+        ));
     }
 
-    if !is_compact_editor {
+    if show_editor_spacing {
         lines.push(Line::from(""));
     }
     lines.extend([
@@ -2497,73 +2607,98 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             value_width,
         ),
         config_editor_field_line(
+            ConfigEditorField::TtsRouting,
+            &editor.tts_routing,
+            active,
+            editor.field_cursor(ConfigEditorField::TtsRouting),
+            value_width,
+        ),
+        config_editor_field_line(
+            ConfigEditorField::VirtualMicDevice,
+            &editor.virtual_mic_device,
+            active,
+            editor.field_cursor(ConfigEditorField::VirtualMicDevice),
+            value_width,
+        ),
+        config_editor_field_line(
             ConfigEditorField::SttFallbackPolicy,
             &editor.stt_fallback_policy,
             active,
             editor.field_cursor(ConfigEditorField::SttFallbackPolicy),
             value_width,
         ),
-        // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4).
-        config_editor_field_line(
-            ConfigEditorField::VadPreRollMs,
-            &editor.vad_pre_roll_ms,
-            active,
-            editor.field_cursor(ConfigEditorField::VadPreRollMs),
-            value_width,
-        ),
-        config_editor_field_line(
-            ConfigEditorField::PipelineMaxWindowMs,
-            &editor.pipeline_max_window_ms,
-            active,
-            editor.field_cursor(ConfigEditorField::PipelineMaxWindowMs),
-            value_width,
-        ),
-        config_editor_field_line(
-            ConfigEditorField::PipelineEarlyFlushOnVadEnd,
-            &editor.pipeline_early_flush_on_vad_end,
-            active,
-            editor.field_cursor(ConfigEditorField::PipelineEarlyFlushOnVadEnd),
-            value_width,
-        ),
-        config_editor_field_line(
-            ConfigEditorField::PipelineIdleFlushMs,
-            &editor.pipeline_idle_flush_ms,
-            active,
-            editor.field_cursor(ConfigEditorField::PipelineIdleFlushMs),
-            value_width,
-        ),
-        config_editor_field_line(
-            ConfigEditorField::PipelineIdleMinMs,
-            &editor.pipeline_idle_min_ms,
-            active,
-            editor.field_cursor(ConfigEditorField::PipelineIdleMinMs),
-            value_width,
-        ),
-        config_editor_field_line(
-            ConfigEditorField::PipelineSentenceMaxAgeMs,
-            &editor.pipeline_sentence_max_age_ms,
-            active,
-            editor.field_cursor(ConfigEditorField::PipelineSentenceMaxAgeMs),
-            value_width,
-        ),
     ]);
 
-    if !is_compact_editor {
+    if editor.mode == ConfigEditorMode::Settings {
+        lines.extend([
+            // Pipeline windowing/aggregation knobs (issue #267 / EP-I.4).
+            config_editor_field_line(
+                ConfigEditorField::VadPreRollMs,
+                &editor.vad_pre_roll_ms,
+                active,
+                editor.field_cursor(ConfigEditorField::VadPreRollMs),
+                value_width,
+            ),
+            config_editor_field_line(
+                ConfigEditorField::PipelineMaxWindowMs,
+                &editor.pipeline_max_window_ms,
+                active,
+                editor.field_cursor(ConfigEditorField::PipelineMaxWindowMs),
+                value_width,
+            ),
+            config_editor_field_line(
+                ConfigEditorField::PipelineEarlyFlushOnVadEnd,
+                &editor.pipeline_early_flush_on_vad_end,
+                active,
+                editor.field_cursor(ConfigEditorField::PipelineEarlyFlushOnVadEnd),
+                value_width,
+            ),
+            config_editor_field_line(
+                ConfigEditorField::PipelineIdleFlushMs,
+                &editor.pipeline_idle_flush_ms,
+                active,
+                editor.field_cursor(ConfigEditorField::PipelineIdleFlushMs),
+                value_width,
+            ),
+            config_editor_field_line(
+                ConfigEditorField::PipelineIdleMinMs,
+                &editor.pipeline_idle_min_ms,
+                active,
+                editor.field_cursor(ConfigEditorField::PipelineIdleMinMs),
+                value_width,
+            ),
+            config_editor_field_line(
+                ConfigEditorField::PipelineSentenceMaxAgeMs,
+                &editor.pipeline_sentence_max_age_ms,
+                active,
+                editor.field_cursor(ConfigEditorField::PipelineSentenceMaxAgeMs),
+                value_width,
+            ),
+        ]);
+    }
+
+    if show_editor_spacing {
         lines.push(Line::from(""));
     }
-    lines.push(Line::from(Span::styled(
-        editor
-            .status_message
-            .clone()
-            .unwrap_or_else(|| " Ready to save.".to_string()),
-        Style::default().fg(Color::Yellow),
-    )));
+    let status_text = editor
+        .status_message
+        .clone()
+        .unwrap_or_else(|| " Ready to save.".to_string());
+    let show_status = !is_compact_editor
+        || status_text.contains("Save failed")
+        || status_text.contains("Config needs repair");
+    if show_status {
+        lines.push(Line::from(Span::styled(
+            status_text,
+            Style::default().fg(Color::Yellow),
+        )));
+    }
     lines.push(Line::from(Span::styled(
         key_hint,
         Style::default().fg(Color::DarkGray),
     )));
 
-    if !is_compact_editor {
+    if show_editor_spacing {
         lines.push(Line::from(Span::styled(
             " Save writes config. Restart when prompted for restart-required changes.",
             Style::default().fg(Color::DarkGray),
@@ -2782,6 +2917,116 @@ fn capture_device_choice_line(choice: &CaptureDeviceChoice, label_width: usize) 
     Line::from(spans)
 }
 
+fn virtual_mic_device_picker_choices(editor: &ConfigEditorState) -> Vec<CaptureDeviceChoice> {
+    let current = editor.virtual_mic_device.trim();
+    editor
+        .virtual_mic_device_options
+        .iter()
+        .map(|device| CaptureDeviceChoice {
+            value: device.clone(),
+            label: device.clone(),
+            selected: device == current,
+        })
+        .collect()
+}
+
+fn visible_virtual_mic_device_picker_choices(
+    editor: &ConfigEditorState,
+) -> Vec<CaptureDeviceChoice> {
+    let choices = virtual_mic_device_picker_choices(editor);
+    if choices.len() <= VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES {
+        return choices;
+    }
+
+    if let Some(selected_index) = choices.iter().position(|choice| choice.selected) {
+        if selected_index >= VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES {
+            let mut visible: Vec<CaptureDeviceChoice> = choices
+                .iter()
+                .take(VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES - 1)
+                .cloned()
+                .collect();
+            visible.push(choices[selected_index].clone());
+            return visible;
+        }
+    }
+
+    choices
+        .into_iter()
+        .take(VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES)
+        .collect()
+}
+
+fn virtual_mic_device_picker_lines(
+    editor: &ConfigEditorState,
+    panel_width: u16,
+    is_compact_editor: bool,
+) -> Vec<Line<'static>> {
+    let content_width = panel_width.saturating_sub(4) as usize;
+    let label_width = content_width
+        .saturating_sub(5)
+        .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
+    let choices = virtual_mic_device_picker_choices(editor);
+    let visible_choices = visible_virtual_mic_device_picker_choices(editor);
+    let mut lines = vec![Line::from(Span::styled(
+        if is_compact_editor {
+            " Virtual mic picker: F2 selects"
+        } else {
+            " Virtual microphone picker: F2/Ctrl+D selects detected endpoint"
+        },
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    ))];
+    lines.push(Line::from(Span::styled(
+        if is_compact_editor {
+            " Save, then restart to use route changes."
+        } else {
+            " Virtual-mic route changes require Save, then app restart to use."
+        },
+        Style::default().fg(Color::Yellow),
+    )));
+
+    if !editor.virtual_mic_device.trim().is_empty()
+        && !editor
+            .virtual_mic_device_options
+            .iter()
+            .any(|device| device == editor.virtual_mic_device.trim())
+    {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "   Saved virtual mic unavailable: {}",
+                truncate_device_name(editor.virtual_mic_device.trim(), label_width)
+            ),
+            Style::default().fg(Color::Yellow),
+        )));
+    }
+
+    if choices.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "    No virtual microphone devices detected.",
+            Style::default().fg(Color::Yellow),
+        )));
+        lines.push(Line::from(Span::styled(
+            "    Install VB-CABLE/VAC/Voicemeeter, then reopen Settings.",
+            Style::default().fg(Color::DarkGray),
+        )));
+        return lines;
+    }
+
+    for choice in &visible_choices {
+        lines.push(capture_device_choice_line(choice, label_width));
+    }
+    let remaining = choices.len().saturating_sub(visible_choices.len());
+    if remaining > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("    +{remaining} more virtual device(s)."),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines
+}
+
 fn config_editor_field_line(
     field: ConfigEditorField,
     value: &str,
@@ -2794,6 +3039,7 @@ fn config_editor_field_line(
     let display_value = if value.is_empty() && !is_active {
         match field {
             ConfigEditorField::CaptureDevice => "Windows default playback".to_string(),
+            ConfigEditorField::VirtualMicDevice => "not configured".to_string(),
             _ => "\u{2014}".to_string(),
         }
     } else {
@@ -3478,7 +3724,7 @@ mod tests {
             "Speakers (Realtek Audio)".to_string(),
             "Headphones (USB Audio)".to_string(),
         ]);
-        editor.selected_field = 4;
+        editor.selected_field = ConfigEditorField::CaptureDevice.index();
         editor.handle_input_request(InputRequest::InsertChar('u'));
         editor.handle_input_request(InputRequest::InsertChar('s'));
         editor.handle_input_request(InputRequest::InsertChar('b'));
@@ -3509,7 +3755,7 @@ mod tests {
             "Speakers (Realtek Audio)".to_string(),
             "Headphones (USB Audio)".to_string(),
         ]);
-        editor.selected_field = 4;
+        editor.selected_field = ConfigEditorField::CaptureDevice.index();
         editor.handle_input_request(InputRequest::InsertChar('u'));
         editor.handle_input_request(InputRequest::InsertChar('s'));
         editor.handle_input_request(InputRequest::InsertChar('b'));
@@ -3534,7 +3780,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        editor.selected_field = 0;
+        editor.selected_field = ConfigEditorField::SourceLanguage.index();
 
         editor.handle_input_request(InputRequest::GoToStart);
         editor.handle_input_request(InputRequest::InsertChar('x'));
@@ -3565,6 +3811,48 @@ mod tests {
     }
 
     #[test]
+    fn config_editor_state_loads_tts_route_fields() {
+        let mut cfg = AppConfig::default();
+        cfg.tts_routing = TtsRouting::Both;
+        cfg.virtual_mic_device = Some("CABLE Input (VB-Audio Virtual Cable)".to_string());
+        let editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+
+        assert_eq!(editor.tts_routing, "both");
+        assert_eq!(
+            editor.virtual_mic_device,
+            "CABLE Input (VB-Audio Virtual Cable)"
+        );
+    }
+
+    #[test]
+    fn config_editor_onboarding_navigation_skips_hidden_pipeline_fields() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Onboarding,
+        );
+        editor.selected_field = ConfigEditorField::SttFallbackPolicy.index();
+
+        editor.next_field();
+        assert_eq!(
+            editor.active_field(),
+            ConfigEditorField::SourceLanguage,
+            "onboarding Tab should wrap from last visible field to first visible field"
+        );
+
+        editor.prev_field();
+        assert_eq!(
+            editor.active_field(),
+            ConfigEditorField::SttFallbackPolicy,
+            "onboarding Shift+Tab should skip hidden pipeline fields when wrapping backward"
+        );
+    }
+
+    #[test]
     fn config_editor_provider_fields_default_to_google() {
         let editor = ConfigEditorState::from_config(
             &AppConfig::default(),
@@ -3574,6 +3862,103 @@ mod tests {
 
         assert_eq!(editor.stt_provider, "google");
         assert_eq!(editor.mt_provider, "google");
+    }
+
+    #[test]
+    fn config_editor_cycles_tts_routing_choices() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::TtsRouting.index();
+
+        editor.cycle_active_field();
+        assert_eq!(editor.tts_routing, "virtual_mic");
+        editor.cycle_active_field();
+        assert_eq!(editor.tts_routing, "both");
+        editor.cycle_active_field();
+        assert_eq!(editor.tts_routing, "speakers");
+    }
+
+    #[test]
+    fn config_editor_cycles_only_detected_virtual_mic_devices() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+        editor.set_virtual_mic_device_options(vec![
+            "CABLE Input (VB-Audio Virtual Cable)".to_string(),
+            "Line 1 (Virtual Audio Cable)".to_string(),
+        ]);
+
+        editor.cycle_active_field();
+        assert_eq!(
+            editor.virtual_mic_device,
+            "CABLE Input (VB-Audio Virtual Cable)"
+        );
+        editor.cycle_active_field();
+        assert_eq!(editor.virtual_mic_device, "Line 1 (Virtual Audio Cable)");
+        editor.cycle_active_field();
+        assert_eq!(
+            editor.virtual_mic_device,
+            "CABLE Input (VB-Audio Virtual Cable)"
+        );
+    }
+
+    #[test]
+    fn config_editor_cycle_virtual_mic_reaches_hidden_detected_devices() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+        editor.set_virtual_mic_device_options(vec![
+            "CABLE Input (VB-Audio Virtual Cable)".to_string(),
+            "Line 1 (Virtual Audio Cable)".to_string(),
+            "Voicemeeter Input (VB-Audio Voicemeeter VAIO)".to_string(),
+            "Voicemeeter Aux Input (VB-Audio Voicemeeter AUX VAIO)".to_string(),
+        ]);
+
+        for _ in 0..4 {
+            editor.cycle_active_field();
+        }
+
+        assert_eq!(
+            editor.virtual_mic_device, "Voicemeeter Aux Input (VB-Audio Voicemeeter AUX VAIO)",
+            "F2/Ctrl+D should reach every detected virtual endpoint, not only visible picker rows"
+        );
+        assert!(
+            visible_virtual_mic_device_picker_choices(&editor)
+                .iter()
+                .any(|choice| choice.value == editor.virtual_mic_device && choice.selected),
+            "the selected hidden endpoint should still be rendered in the compact picker window"
+        );
+    }
+
+    #[test]
+    fn config_editor_virtual_mic_cycle_explains_empty_probe() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+
+        editor.cycle_active_field();
+
+        assert!(editor.virtual_mic_device.is_empty());
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .is_some_and(|message| message.contains("No virtual microphone devices detected")),
+            "empty virtual-mic picker should explain the recovery path: {:?}",
+            editor.status_message
+        );
     }
 
     #[test]
@@ -3613,6 +3998,47 @@ mod tests {
     }
 
     #[test]
+    fn render_config_editor_shows_virtual_mic_picker_with_selection() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(110, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+        editor.set_virtual_mic_device_options(vec![
+            "CABLE Input (VB-Audio Virtual Cable)".to_string(),
+            "Line 1 (Virtual Audio Cable)".to_string(),
+        ]);
+        editor.virtual_mic_device = "Line 1 (Virtual Audio Cable)".to_string();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.size();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("Virtual microphone picker"),
+            "settings should expose a visible virtual-mic picker; got: {rendered:?}"
+        );
+        assert!(
+            rendered.contains("> Line 1 (Virtual Audio Cable)"),
+            "virtual-mic picker should highlight the selected endpoint; got: {rendered:?}"
+        );
+    }
+
+    #[test]
     fn render_config_editor_shows_capture_device_picker_with_selection() {
         use ratatui::{backend::TestBackend, Terminal};
         let backend = TestBackend::new(110, 30);
@@ -3622,7 +4048,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        editor.selected_field = 4;
+        editor.selected_field = ConfigEditorField::CaptureDevice.index();
         editor.set_capture_device_options(vec![
             "Speakers (Realtek Audio)".to_string(),
             "Headphones (USB Audio)".to_string(),
@@ -3875,8 +4301,7 @@ mod tests {
         );
         // Default source language is "ja-JP" (first preset).
         assert_eq!(editor.source_language, "ja-JP");
-        // Select source language field (index 0).
-        editor.selected_field = 0;
+        editor.selected_field = ConfigEditorField::SourceLanguage.index();
 
         editor.cycle_active_field();
         assert_eq!(editor.source_language, "vi");
@@ -3900,8 +4325,7 @@ mod tests {
         );
         // Default target language is "vi" (second preset).
         assert_eq!(editor.target_language, "vi");
-        // Select target language field (index 1).
-        editor.selected_field = 1;
+        editor.selected_field = ConfigEditorField::TargetLanguage.index();
 
         editor.cycle_active_field();
         assert_eq!(editor.target_language, "en-US");
@@ -3916,8 +4340,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        // Audio source field is index 3.
-        editor.selected_field = 3;
+        editor.selected_field = ConfigEditorField::AudioSource.index();
         assert_eq!(editor.audio_source, "wasapi");
 
         editor.cycle_active_field();
@@ -3942,8 +4365,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        // STT provider field is index 6.
-        editor.selected_field = 6;
+        editor.selected_field = ConfigEditorField::SttProvider.index();
         assert_eq!(editor.stt_provider, "google");
 
         editor.cycle_active_field();
@@ -3959,8 +4381,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        // MT provider field is index 7.
-        editor.selected_field = 7;
+        editor.selected_field = ConfigEditorField::MtProvider.index();
         assert_eq!(editor.mt_provider, "google");
 
         editor.cycle_active_field();
@@ -3985,8 +4406,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        // TTS enabled field is index 8.
-        editor.selected_field = 8;
+        editor.selected_field = ConfigEditorField::TtsEnabled.index();
         assert_eq!(editor.tts_enabled, "false");
 
         editor.cycle_active_field();
@@ -4011,8 +4431,7 @@ mod tests {
             Path::new(r"C:\Users\demo\.tui-translator\config.json"),
             ConfigEditorMode::Settings,
         );
-        // STT fallback policy field is index 9.
-        editor.selected_field = 9;
+        editor.selected_field = ConfigEditorField::SttFallbackPolicy.index();
         assert_eq!(editor.stt_fallback_policy, "none");
 
         editor.cycle_active_field();
@@ -4029,8 +4448,7 @@ mod tests {
             ConfigEditorMode::Settings,
         );
         editor.set_capture_device_options(vec!["Speakers (Realtek Audio)".to_string()]);
-        // CaptureDevice field is index 4.
-        editor.selected_field = 4;
+        editor.selected_field = ConfigEditorField::CaptureDevice.index();
 
         editor.cycle_active_field();
         assert_eq!(editor.capture_device, "Speakers (Realtek Audio)");

@@ -413,7 +413,7 @@ fn onboarding_layout_standard_80x24() {
 ///
 /// Panel width 60 < 76 triggers compact rendering: the intro blurb and extra
 /// blank lines are omitted, and the shorter key-hint line is used.  The panel
-/// inner area (58×20) is just large enough to fit all 19 compact content lines,
+/// inner area (58×20) is just large enough to fit all 20 compact content lines,
 /// so "Enter save" and "Tab/Shift+Tab" are assertable.
 #[test]
 fn onboarding_layout_compact_60x22() {

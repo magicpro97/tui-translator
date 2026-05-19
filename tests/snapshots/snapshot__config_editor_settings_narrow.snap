@@ -13,8 +13,8 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  STT provider    : google                                │
 │  MT provider     : google                                │
 │  TTS enabled     : false                                 │
+│  TTS routing     : speakers                              │
+│  Virtual mic     : not configured                        │
 │  STT fallback    : none                                  │
 │  VAD pre-roll ms : 200                                   │
-│  Max window ms   : 3000                                  │
-│  Early VAD flush : true                                  │
 └──────────────────────────────────────────────────────────┘
