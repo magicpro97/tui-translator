@@ -15,6 +15,7 @@
   "test_cases": {
     "config_editor_cycles_tts_routing_choices": "pass - F2/Ctrl+D cycles speakers -> virtual_mic -> both -> speakers",
     "config_editor_cycles_only_detected_virtual_mic_devices": "pass - picker cycles only configured virtual endpoint options",
+    "config_editor_cycle_virtual_mic_reaches_hidden_detected_devices": "pass - F2/Ctrl+D cycles across the full detected virtual endpoint list, including rows outside the rendered picker window",
     "config_editor_virtual_mic_cycle_explains_empty_probe": "pass - empty probe shows an install/reopen Settings recovery message",
     "build_config_from_editor_persists_tts_route_fields": "pass - route enum and virtual_mic_device are copied from editor state into AppConfig",
     "build_config_from_editor_rejects_invalid_tts_routing": "pass - invalid route values fail with a tts_routing validation message",
@@ -74,7 +75,7 @@
   ],
   "notes": [
     "Settings population now probes both normal capture devices and virtual audio endpoints when the editor opens.",
-    "Virtual mic F2/Ctrl+D selection does not invent a blank/default route target; clearing remains possible by editing the field manually.",
+    "Virtual mic F2/Ctrl+D selection uses the full detected endpoint list, not the truncated render window; clearing remains possible by editing the field manually.",
     "Onboarding hides advanced pipeline tuning rows so compact and full onboarding panels keep keyboard hints visible after adding route fields.",
     "Onboarding keyboard navigation skips the hidden advanced pipeline fields so Tab/Shift+Tab never lands on an invisible editable field.",
     "AppConfig validation remains the single source of truth for invalid virtual_mic_device/tts_routing combinations."

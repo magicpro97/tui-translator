@@ -580,7 +580,7 @@ impl ConfigEditorState {
             return;
         }
 
-        let choices = visible_virtual_mic_device_picker_choices(self);
+        let choices = virtual_mic_device_picker_choices(self);
         let current = self.virtual_mic_device.trim();
         let current_index = choices
             .iter()
@@ -3905,6 +3905,37 @@ mod tests {
         assert_eq!(
             editor.virtual_mic_device,
             "CABLE Input (VB-Audio Virtual Cable)"
+        );
+    }
+
+    #[test]
+    fn config_editor_cycle_virtual_mic_reaches_hidden_detected_devices() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+        editor.set_virtual_mic_device_options(vec![
+            "CABLE Input (VB-Audio Virtual Cable)".to_string(),
+            "Line 1 (Virtual Audio Cable)".to_string(),
+            "Voicemeeter Input (VB-Audio Voicemeeter VAIO)".to_string(),
+            "Voicemeeter Aux Input (VB-Audio Voicemeeter AUX VAIO)".to_string(),
+        ]);
+
+        for _ in 0..4 {
+            editor.cycle_active_field();
+        }
+
+        assert_eq!(
+            editor.virtual_mic_device, "Voicemeeter Aux Input (VB-Audio Voicemeeter AUX VAIO)",
+            "F2/Ctrl+D should reach every detected virtual endpoint, not only visible picker rows"
+        );
+        assert!(
+            visible_virtual_mic_device_picker_choices(&editor)
+                .iter()
+                .any(|choice| choice.value == editor.virtual_mic_device && choice.selected),
+            "the selected hidden endpoint should still be rendered in the compact picker window"
         );
     }
 
