@@ -1,0 +1,74 @@
+{
+  "issue": 315,
+  "title": "[VMIC-A3] Multi-sink PlaybackService for Speakers, VirtualMic, and Both",
+  "status": "pass",
+  "scope": "PlaybackService route planning and multi-sink fan-out for TTS audio",
+  "acceptance": {
+    "speakers_mode_preserves_existing_behavior": true,
+    "virtual_mic_mode_targets_only_virtual_sink": true,
+    "both_mode_fans_out_identical_payload_to_both_sinks": true,
+    "sink_startup_failure_is_reported": true,
+    "startup_logs_include_route_label": true
+  },
+  "routing": {
+    "speakers": ["tts_output_device or system default"],
+    "virtual_mic": ["virtual_mic_device"],
+    "both": ["tts_output_device or system default", "virtual_mic_device"]
+  },
+  "test_cases": {
+    "playback_route_speakers_one_sink": "pass - Speakers config resolves to one speaker sink target",
+    "playback_route_virtual_mic_one_sink": "pass - VirtualMic config resolves to one virtual mic sink target",
+    "playback_route_both_fans_out": "pass - two mock sinks receive identical payload bytes",
+    "virtual_sink_failure_is_startup_error": "pass - sink factory failure includes virtual device name and root cause"
+  },
+  "commands": [
+    {
+      "name": "fmt-check",
+      "command": "cargo +stable-x86_64-pc-windows-gnu fmt --check",
+      "result": "pass"
+    },
+    {
+      "name": "acceptance-test-speakers",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- playback_route_speakers_one_sink",
+      "result": "pass"
+    },
+    {
+      "name": "acceptance-test-both",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- playback_route_both_fans_out",
+      "result": "pass"
+    },
+    {
+      "name": "acceptance-test-failure",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- virtual_sink_failure_is_startup_error",
+      "result": "pass"
+    },
+    {
+      "name": "playback-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- playback",
+      "result": "pass",
+      "summary": "9 passed; 0 failed"
+    },
+    {
+      "name": "config-tests",
+      "command": "cargo +stable-x86_64-pc-windows-gnu test --bin tui-translator -- config",
+      "result": "pass",
+      "summary": "151 passed; 0 failed"
+    },
+    {
+      "name": "clippy-all-targets",
+      "command": "cargo +stable-x86_64-pc-windows-gnu clippy --all-targets -- -D warnings",
+      "result": "pass"
+    },
+    {
+      "name": "windows-release-build",
+      "command": "cargo +stable-x86_64-pc-windows-gnu build --release --bin tui-translator",
+      "result": "pass"
+    }
+  ],
+  "notes": [
+    "PlaybackRoutePlan maps TtsRouting to concrete sink targets without changing legacy PlaybackService::new behavior.",
+    "Rodio sinks are still constructed inside the playback thread so rodio OutputStream ownership remains on the same OS thread.",
+    "Both mode starts one rodio sink per target from the same compressed audio bytes and polls all active sinks for completion/interruption.",
+    "MockAudioSink fan-out tests are hardware-free and do not require Zoom, Teams, or a real virtual cable."
+  ]
+}
