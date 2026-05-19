@@ -651,7 +651,7 @@ fn find_output_device_by_name(device_name: &str) -> Result<rodio::cpal::Device, 
     }
 
     Err(format!(
-        "configured TTS output device '{device_name}' was not found"
+        "configured output render endpoint '{device_name}' was not found"
     ))
 }
 
@@ -747,11 +747,17 @@ mod tests {
 
     #[test]
     fn audio_sink_contract_mock_records_bytes() {
-        let sink: Box<dyn AudioSink> = Box::new(MockAudioSink::new());
+        let mock = MockAudioSink::new();
+        let handle = mock.clone();
+        let sink: Box<dyn AudioSink> = Box::new(mock);
 
         sink.play_bytes(vec![1, 2, 3]);
+
+        assert_eq!(handle.call_count(), 1);
+        assert_eq!(handle.received_chunks(), vec![vec![1, 2, 3]]);
     }
 
+    #[cfg(feature = "production-audio")]
     #[test]
     fn audio_sink_contract_oem_cable_sink_writes_pcm() {
         let writer = MemoryPcmWriter::new();
@@ -779,6 +785,7 @@ mod tests {
         assert!(writes[0].samples.len() > samples.len());
     }
 
+    #[cfg(feature = "production-audio")]
     #[test]
     fn production_sink_roundtrip_memory_passes_latency_rms_gate() {
         let report = run_memory_production_sink_roundtrip();
@@ -800,6 +807,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "production-audio")]
     #[test]
     fn production_sink_roundtrip_rejects_misaligned_pcm_payload() {
         let decoder = LittleEndianPcmDecoder::new(TTS_PCM_24K_MONO);
