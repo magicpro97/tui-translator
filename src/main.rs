@@ -103,8 +103,7 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
 
 fn write_metrics_snapshot_export(path: &Path, snapshot: &MetricsSnapshot) -> Result<()> {
     let export = MetricsSnapshotExport::from(snapshot);
-    let json =
-        serde_json::to_vec_pretty(&export).context("failed to serialize metrics snapshot")?;
+    let json = serde_json::to_vec(&export).context("failed to serialize metrics snapshot")?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| {
             format!(

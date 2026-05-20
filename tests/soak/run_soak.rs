@@ -55,6 +55,7 @@
 //! the soak run continues and the `network_disconnect_test.succeeded` field is
 //! set to `false` with the error message in `network_disconnect_test.note`.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -655,29 +656,32 @@ pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
             "Chunk loss ≤ {:.0}% in any 15-minute window",
             CHUNK_LOSS_WINDOW_MAX * 100.0
         );
+        const WINDOW_SECS: u64 = 15 * 60;
         let mut points = Vec::with_capacity(chunk_points.len() + 1);
         points.push((0, 0, 0));
         points.extend(chunk_points.iter().copied());
         let mut worst: Option<(f64, u64, u64)> = None;
         for start in 0..points.len() {
-            for end in (start + 1)..points.len() {
-                let (start_secs, start_total, start_dropped) = points[start];
-                let (end_secs, end_total, end_dropped) = points[end];
-                if end_secs < start_secs || end_secs - start_secs > 15 * 60 {
-                    continue;
-                }
-                if end_total < start_total || end_dropped < start_dropped {
-                    continue;
-                }
-                let sent = end_total - start_total;
-                if sent == 0 {
-                    continue;
-                }
-                let dropped = end_dropped - start_dropped;
-                let loss = dropped as f64 / sent as f64;
-                if worst.is_none_or(|(current, _, _)| loss > current) {
-                    worst = Some((loss, dropped, sent));
-                }
+            let Some(end) = ((start + 1)..points.len()).find(|&end| {
+                let (start_secs, _, _) = points[start];
+                let (end_secs, _, _) = points[end];
+                end_secs.saturating_sub(start_secs) >= WINDOW_SECS
+            }) else {
+                continue;
+            };
+            let (_, start_total, start_dropped) = points[start];
+            let (_, end_total, end_dropped) = points[end];
+            if end_total < start_total || end_dropped < start_dropped {
+                continue;
+            }
+            let sent = end_total - start_total;
+            if sent == 0 {
+                continue;
+            }
+            let dropped = end_dropped - start_dropped;
+            let loss = dropped as f64 / sent as f64;
+            if worst.is_none_or(|(current, _, _)| loss > current) {
+                worst = Some((loss, dropped, sent));
             }
         }
         if let Some((loss, dropped, sent)) = worst {
@@ -694,13 +698,20 @@ pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
                 pending_reason: None,
             }
         } else {
+            let pending_reason = if chunk_points.is_empty() {
+                metrics_gap_reason.clone()
+            } else {
+                "run duration is shorter than a full 15-minute chunk-loss window; \
+                 re-run with a longer soak to evaluate this sub-gate"
+                    .to_string()
+            };
             ThresholdResult {
                 blocker: "B-11".to_string(),
                 description,
                 limit: format!("{:.0}%", CHUNK_LOSS_WINDOW_MAX * 100.0),
                 measured: None,
                 verdict: ThresholdVerdict::UnevaluablePending,
-                pending_reason: Some(metrics_gap_reason.clone()),
+                pending_reason: Some(pending_reason),
             }
         }
     };
@@ -983,11 +994,14 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 }
 
 fn read_app_metrics_snapshot(path: &Path) -> Result<Option<AppMetricsSnapshot>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("cannot read metrics snapshot {}", path.display()))?;
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("cannot read metrics snapshot {}", path.display()));
+        }
+    };
     let snapshot = serde_json::from_str(&raw)
         .with_context(|| format!("metrics snapshot is not valid JSON: {}", path.display()))?;
     Ok(Some(snapshot))
@@ -1806,6 +1820,8 @@ mod tests {
             .push(sample_with_app_metrics(0, 100, 0, Some(900)));
         r.samples
             .push(sample_with_app_metrics(600, 1_000, 5, Some(1_100)));
+        r.samples
+            .push(sample_with_app_metrics(900, 1_500, 6, Some(1_200)));
 
         let ev = evaluate_thresholds(&r);
 
@@ -1826,6 +1842,8 @@ mod tests {
             .push(sample_with_app_metrics(0, 100, 0, Some(900)));
         r.samples
             .push(sample_with_app_metrics(600, 1_000, 80, Some(6_100)));
+        r.samples
+            .push(sample_with_app_metrics(900, 1_500, 120, Some(6_200)));
 
         let ev = evaluate_thresholds(&r);
 
@@ -1836,6 +1854,29 @@ mod tests {
             ThresholdVerdict::Fail
         );
         assert!(ev.any_blocker_triggered);
+    }
+
+    #[test]
+    fn evaluate_thresholds_chunk_loss_window_requires_full_window() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.samples
+            .push(sample_with_app_metrics(0, 100, 0, Some(900)));
+        r.samples
+            .push(sample_with_app_metrics(600, 1_000, 80, Some(1_100)));
+
+        let ev = evaluate_thresholds(&r);
+
+        assert_eq!(
+            ev.b11_chunk_loss_window.verdict,
+            ThresholdVerdict::UnevaluablePending
+        );
+        let pending_reason = ev
+            .b11_chunk_loss_window
+            .pending_reason
+            .as_deref()
+            .unwrap_or_default();
+        assert!(pending_reason.contains("15-minute"));
+        assert!(!pending_reason.contains("Gap 1"));
     }
 
     #[test]

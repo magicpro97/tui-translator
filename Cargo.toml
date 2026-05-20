@@ -39,7 +39,7 @@ path = "src/bin/vbcable_ci_probe.rs"
 [dependencies]
 # Terminal user interface
 ratatui = "0.30"
-crossterm = "0.27"
+crossterm = "0.29"
 
 # Async runtime (all I/O runs on Tokio)
 tokio = { version = "1", features = ["full"] }
