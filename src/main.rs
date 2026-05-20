@@ -116,12 +116,15 @@ struct MetricsSnapshotExport {
     // DM-02 (issue #378): fanout drop counters.
     fanout_slot_a_drops: u64,
     fanout_slot_b_drops: u64,
+    // LF-02 (issue #370): local runtime caps observability.
+    local_cpu_pct: f32,
+    local_active_threads: u32,
 }
 
 impl From<&MetricsSnapshot> for MetricsSnapshotExport {
     fn from(snapshot: &MetricsSnapshot) -> Self {
         Self {
-            schema_version: "2",
+            schema_version: "3",
             line_pairs_shown: snapshot.line_pairs_shown,
             estimated_cost_usd: snapshot.estimated_cost_usd,
             e2e_latency_ms: snapshot.e2e_latency_ms,
@@ -137,6 +140,8 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
             archive_sealed: snapshot.archive_sealed,
             fanout_slot_a_drops: snapshot.fanout_slot_a_drops,
             fanout_slot_b_drops: snapshot.fanout_slot_b_drops,
+            local_cpu_pct: snapshot.local_cpu_pct,
+            local_active_threads: snapshot.local_active_threads,
         }
     }
 }
@@ -1574,7 +1579,29 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    // LF-02 (issue #370): export OMP_NUM_THREADS before any library is loaded
+    // so onnxruntime's OpenMP thread pool honours the same cap as the ORT
+    // session builder.  Must happen before init_tracing/Tokio/provider init.
+    // Preserved here as a binding so we can log the outcome once tracing is up.
+    #[cfg(feature = "local-mt")]
+    let omp_status = crate::providers::local::runtime_caps::prepare_omp_env();
+
     init_tracing();
+
+    #[cfg(feature = "local-mt")]
+    {
+        if omp_status.applied {
+            tracing::info!(
+                cap = omp_status.cap,
+                "exported OMP_NUM_THREADS for onnxruntime OpenMP (LF-02 #370)"
+            );
+        } else {
+            tracing::info!(
+                cap = omp_status.cap,
+                "OMP_NUM_THREADS already set in environment; skipping override (LF-02 #370)"
+            );
+        }
+    }
 
     tracing::info!("tui-translator starting");
 
@@ -2264,6 +2291,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             let mut last_ram_budget_bytes = u64::MAX;
+            let mut last_local_inferences_skipped = 0_u64;
             loop {
                 interval.tick().await;
                 let session = metrics_src
@@ -2325,7 +2353,15 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                 snapshot.dropped_chunks = loss_metrics.dropped_chunks();
                 // Issue #230: publish how many local-inference chunks were
                 // intentionally skipped due to CPU pressure.
-                snapshot.local_inferences_skipped = cpu_gate.skipped_count();
+                let local_inferences_skipped = cpu_gate.skipped_count();
+                let local_skip_advanced = local_inferences_skipped > last_local_inferences_skipped;
+                last_local_inferences_skipped = local_inferences_skipped;
+                snapshot.local_inferences_skipped = local_inferences_skipped;
+                // LF-02 (issue #370): publish local-inference runtime caps
+                // observability (active-threads gauge + local CPU mirror).
+                let active_local = providers::local::runtime_caps::active_local_threads();
+                let active_local_u32 = u32::try_from(active_local).unwrap_or(u32::MAX);
+                snapshot.apply_local_runtime(active_local_u32, local_skip_advanced);
                 // Issue #393: apply storage metrics from the session recorder and
                 // audio archive.
                 snapshot.apply_storage(
@@ -3839,9 +3875,11 @@ mod tests {
         let value =
             serde_json::to_value(MetricsSnapshotExport::from(&snapshot)).expect("serialize export");
 
-        assert_eq!(value["schema_version"], "2");
+        assert_eq!(value["schema_version"], "3");
         assert_eq!(value["fanout_slot_a_drops"], 3);
         assert_eq!(value["fanout_slot_b_drops"], 5);
+        assert_eq!(value["local_cpu_pct"], 0.0);
+        assert_eq!(value["local_active_threads"], 0);
     }
 
     #[test]

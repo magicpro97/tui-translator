@@ -1340,16 +1340,17 @@ fn audio_device_title_max_cols(area_width: u16) -> usize {
 
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
-/// In expanded mode the block is normally 7 rows (2 border + 5 content):
-/// STT/TTS, metrics, elapsed, CPU/RAM/Net, and the issue-#269 quality row.
-/// When a cost or RAM warning is active an extra content row is needed,
-/// making it 8.  In compact mode the strip is always 3 rows.
+/// In expanded mode the block is normally 8 rows (2 border + 6 content):
+/// STT/TTS, metrics, elapsed, CPU/RAM/Net, the issue-#269 quality row, and
+/// the LF-02 local-runtime row.  When a cost or RAM warning is active an
+/// extra content row is needed, making it 9.  In compact mode the strip is
+/// always 3 rows.
 pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
     if metrics_expanded {
         if over_threshold {
-            8u16
+            9u16
         } else {
-            7u16
+            8u16
         }
     } else {
         3u16
@@ -1813,6 +1814,12 @@ pub struct StatusMetricsStrip<'a> {
     pub flicker_count: u64,
     /// Count of successful MT API calls.
     pub mt_call_count: u64,
+    // ── LF-02 (issue #370): local runtime caps observability ─────────────
+    /// Process CPU percentage attributed to local on-device inference.
+    /// `0.0` for cloud-only sessions.
+    pub local_cpu_pct: f32,
+    /// In-flight local-inference operations (Whisper STT + OPUS-MT).
+    pub local_active_threads: u32,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -2060,6 +2067,17 @@ impl StatusMetricsStrip<'_> {
                 self.truncation_rate * 100.0,
                 self.flicker_count,
                 self.mt_call_count,
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        // LF-02 (issue #370): local runtime caps line.
+        // Shows the active local-inference thread count and the process CPU
+        // attributed to local inference (`0.0` when local engine idle).
+        lines.push(Line::from(Span::styled(
+            format!(
+                "local CPU:{:.0}%  local threads:{}",
+                self.local_cpu_pct, self.local_active_threads,
             ),
             Style::default().fg(Color::DarkGray),
         )));
@@ -2358,6 +2376,9 @@ pub fn draw_ui_with_route(
         truncation_rate: metrics.truncation_rate,
         flicker_count: metrics.flicker_count,
         mt_call_count: metrics.mt_call_count,
+        // LF-02 (issue #370): local runtime caps observability.
+        local_cpu_pct: metrics.local_cpu_pct,
+        local_active_threads: metrics.local_active_threads,
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -3597,6 +3618,8 @@ mod tests {
                     truncation_rate: 0.0,
                     flicker_count: 0,
                     mt_call_count: 0,
+                    local_cpu_pct: 0.0,
+                    local_active_threads: 0,
                 };
                 frame.render_widget(&strip, frame.area());
             })
