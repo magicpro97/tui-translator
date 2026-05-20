@@ -67,6 +67,9 @@ pub const DEFAULT_PIPELINE_IDLE_MIN_MS: u32 = 500;
 pub const DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS: u64 = 4_000;
 static CONFIG_TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Default cap for retained transcript JSONL files when session recording is enabled.
+pub const DEFAULT_SESSION_STORE_MAX_SESSIONS: usize = 100;
+
 /// Whether `load_with_state` found a persisted config file or fell back to defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadState {
@@ -212,7 +215,7 @@ fn pipeline_config_is_default(p: &PipelineConfigJson) -> bool {
 ///
 /// Recording is opt-in. When disabled, no session directory or transcript file
 /// is created.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SessionStoreConfig {
     /// Enable per-session transcript JSONL recording. Default: `false`.
@@ -224,6 +227,23 @@ pub struct SessionStoreConfig {
     /// `None` uses the `sessions/` subdirectory under the per-user config directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directory: Option<String>,
+
+    /// Maximum number of session JSONL files to retain. Default: 100.
+    #[serde(
+        default = "default_session_store_max_sessions",
+        skip_serializing_if = "session_store_max_sessions_is_default"
+    )]
+    pub max_sessions: usize,
+}
+
+impl Default for SessionStoreConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            directory: None,
+            max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+        }
+    }
 }
 
 // ─── Audio archive configuration (issue #228) ────────────────────────────────
@@ -333,7 +353,7 @@ fn tts_routing_is_default(r: &TtsRouting) -> bool {
 /// values they want to change.  Missing fields fall back to built-in defaults;
 /// fields that are present but semantically invalid are rejected with a clear
 /// error message.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AppConfig {
     /// BCP-47 language code for the language spoken in the meeting.
@@ -574,6 +594,36 @@ impl Default for AppConfig {
     }
 }
 
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted_api_key = self.google_api_key.as_ref().map(|_| "[REDACTED]");
+        f.debug_struct("AppConfig")
+            .field("source_language", &self.source_language)
+            .field("target_language", &self.target_language)
+            .field("google_api_key", &redacted_api_key)
+            .field("tts_enabled", &self.tts_enabled)
+            .field("tts_output_device", &self.tts_output_device)
+            .field("tts_routing", &self.tts_routing)
+            .field("virtual_mic_device", &self.virtual_mic_device)
+            .field("virtual_device_patterns", &self.virtual_device_patterns)
+            .field("capture_device", &self.capture_device)
+            .field("stt_provider", &self.stt_provider)
+            .field("mt_provider", &self.mt_provider)
+            .field("stt_fallback_policy", &self.stt_fallback_policy)
+            .field("audio_source", &self.audio_source)
+            .field("audio_file_path", &self.audio_file_path)
+            .field("cost_warning_usd", &self.cost_warning_usd)
+            .field("vad", &self.vad)
+            .field("stt_phrase_hints", &self.stt_phrase_hints)
+            .field("session_store", &self.session_store)
+            .field("cpu_budget_pct", &self.cpu_budget_pct)
+            .field("ram_budget_mb", &self.ram_budget_mb)
+            .field("pipeline", &self.pipeline)
+            .field("audio_archive", &self.audio_archive)
+            .finish()
+    }
+}
+
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_source_lang() -> String {
     "ja-JP".to_string()
@@ -648,6 +698,11 @@ fn default_pipeline_sentence_max_age_ms() -> u64 {
     DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS
 }
 
+#[allow(dead_code)]
+fn default_session_store_max_sessions() -> usize {
+    DEFAULT_SESSION_STORE_MAX_SESSIONS
+}
+
 /// `skip_serializing_if` predicate: omit `vad` from the JSON output when it
 /// holds the default (disabled) value to keep the config file tidy.
 fn vad_config_is_default(v: &VadConfigJson) -> bool {
@@ -660,7 +715,11 @@ fn vad_config_is_default(v: &VadConfigJson) -> bool {
 }
 
 fn session_store_is_default(v: &SessionStoreConfig) -> bool {
-    !v.enabled && v.directory.is_none()
+    !v.enabled && v.directory.is_none() && session_store_max_sessions_is_default(&v.max_sessions)
+}
+
+fn session_store_max_sessions_is_default(value: &usize) -> bool {
+    *value == DEFAULT_SESSION_STORE_MAX_SESSIONS
 }
 
 const DEFAULT_AUDIO_FILE_NAME: &str = "audio-input.wav";
@@ -716,6 +775,14 @@ impl AppConfig {
             bail!(
                 "`session_store.directory` must not be empty — \
                  supply a directory path or omit the field entirely"
+            );
+        }
+        if let Some(path) = &self.session_store.directory {
+            validate_directory_path("session_store.directory", path)?;
+        }
+        if self.session_store.enabled && self.session_store.max_sessions == 0 {
+            bail!(
+                "`session_store.max_sessions` must be greater than zero when session recording is enabled"
             );
         }
         match self.audio_source.as_str() {
@@ -819,6 +886,9 @@ impl AppConfig {
                 "`audio_archive.directory` must not be empty — \
                  supply a directory path or omit the field entirely"
             );
+        }
+        if let Some(path) = &self.audio_archive.directory {
+            validate_directory_path("audio_archive.directory", path)?;
         }
         Ok(())
     }
@@ -1334,6 +1404,27 @@ fn validate_virtual_mic_device_name(value: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_directory_path(field_name: &str, value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("`{field_name}` must not be empty");
+    }
+    if trimmed != value {
+        bail!("`{field_name}` must not include leading or trailing whitespace");
+    }
+    if value.chars().any(char::is_control) {
+        bail!("`{field_name}` must not contain control characters");
+    }
+    if has_parent_dir_segment(value) {
+        bail!("`{field_name}` must not contain `..` path traversal components");
+    }
+    Ok(())
+}
+
+fn has_parent_dir_segment(value: &str) -> bool {
+    value.split(['/', '\\']).any(|segment| segment == "..")
+}
+
 #[cfg(test)]
 pub(crate) mod test_env {
     use std::ffi::{OsStr, OsString};
@@ -1596,6 +1687,7 @@ mod tests {
             session_store: SessionStoreConfig {
                 enabled: true,
                 directory: Some("D:\\transcripts".to_string()),
+                max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
             },
             ..AppConfig::default()
         };
@@ -1617,6 +1709,7 @@ mod tests {
             session_store: SessionStoreConfig {
                 enabled: true,
                 directory: Some("   ".to_string()),
+                max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
             },
             ..AppConfig::default()
         };
@@ -1734,6 +1827,19 @@ mod tests {
     }
 
     #[test]
+    fn app_config_debug_redacts_google_api_key() {
+        let cfg = AppConfig {
+            google_api_key: Some("AIzaSySecretTokenShouldNotLeak".to_string()),
+            ..AppConfig::default()
+        };
+
+        let debug = format!("{cfg:?}");
+
+        assert!(!debug.contains("AIzaSySecretTokenShouldNotLeak"));
+        assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
     fn validate_rejects_malformed_capture_device() {
         for value in [
             "   ",
@@ -1754,6 +1860,73 @@ mod tests {
                 "error should mention capture_device for {value:?}; got: {err}"
             );
         }
+    }
+
+    #[test]
+    fn validate_rejects_path_traversal_directories() {
+        let cases = [
+            AppConfig {
+                session_store: SessionStoreConfig {
+                    enabled: true,
+                    directory: Some("..\\transcripts".to_string()),
+                    max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                },
+                ..AppConfig::default()
+            },
+            AppConfig {
+                session_store: SessionStoreConfig {
+                    enabled: true,
+                    directory: Some("../transcripts".to_string()),
+                    max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                },
+                ..AppConfig::default()
+            },
+            AppConfig {
+                audio_archive: AudioArchiveConfig {
+                    store_audio: true,
+                    consent_given: true,
+                    directory: Some("recordings\\..\\archive".to_string()),
+                    max_size_mb: 10,
+                },
+                ..AppConfig::default()
+            },
+            AppConfig {
+                audio_archive: AudioArchiveConfig {
+                    store_audio: true,
+                    consent_given: true,
+                    directory: Some("recordings/../archive".to_string()),
+                    max_size_mb: 10,
+                },
+                ..AppConfig::default()
+            },
+        ];
+
+        for cfg in cases {
+            let err = cfg.validate().unwrap_err();
+            assert!(
+                err.to_string().contains(".."),
+                "error should reject traversal component; got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_zero_session_retention_when_enabled() {
+        let cfg = AppConfig {
+            session_store: SessionStoreConfig {
+                enabled: true,
+                directory: None,
+                max_sessions: 0,
+            },
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+
+        assert!(
+            err.to_string().contains("session_store.max_sessions"),
+            "error should mention session_store.max_sessions; got: {err}"
+        );
     }
 
     #[test]
@@ -1829,6 +2002,7 @@ mod tests {
             session_store: SessionStoreConfig {
                 enabled: true,
                 directory: None,
+                max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
             },
             ..AppConfig::default()
         };

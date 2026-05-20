@@ -41,7 +41,7 @@ fn render_pane(pane: &SubtitlePane, width: u16, height: u16) -> String {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            let area = frame.size();
+            let area = frame.area();
             frame.render_widget(pane, area);
         })
         .unwrap();
@@ -54,7 +54,7 @@ fn render_strip(strip: &StatusMetricsStrip<'_>, width: u16, height: u16) -> Stri
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(strip, frame.size());
+            frame.render_widget(strip, frame.area());
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -66,7 +66,7 @@ fn render_hints(bar: &ControlHintsBar, width: u16, height: u16) -> String {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(bar, frame.size());
+            frame.render_widget(bar, frame.area());
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -78,7 +78,7 @@ fn render_help(width: u16, height: u16, scroll_offset: u16) -> String {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            let area = frame.size();
+            let area = frame.area();
             render_help_overlay(frame, area, scroll_offset);
         })
         .unwrap();
@@ -91,7 +91,7 @@ fn render_lang_prompt(input: &str, width: u16, height: u16) -> String {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            let area = frame.size();
+            let area = frame.area();
             render_language_prompt(frame, area, input);
         })
         .unwrap();
@@ -104,7 +104,7 @@ fn render_auth_banner(message: &str, restart: bool, width: u16, height: u16) -> 
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            let area = frame.size();
+            let area = frame.area();
             // Simulate the y_offset as if this were anchored below a 6-row header.
             let subtitle_y_offset = 6u16.min(area.height.saturating_sub(5));
             render_auth_error_banner(frame, area, message, restart, subtitle_y_offset);
@@ -135,7 +135,7 @@ fn render_config_editor(editor: &ConfigEditorState, width: u16, height: u16) -> 
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            tui::render_config_editor(frame, frame.size(), editor);
+            tui::render_config_editor(frame, frame.area(), editor);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
@@ -186,7 +186,7 @@ fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
     let mut rows = Vec::with_capacity(area.height as usize);
     for y in 0..area.height {
         let row: String = (0..area.width)
-            .map(|x| buf.get(x, y).symbol().chars().next().unwrap_or(' '))
+            .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
             .collect();
         rows.push(row);
     }
@@ -766,7 +766,7 @@ fn hints_bar_contains_required_controls() {
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {
-            frame.render_widget(&ControlHintsBar { tts_on: false }, frame.size());
+            frame.render_widget(&ControlHintsBar { tts_on: false }, frame.area());
         })
         .unwrap();
     let rendered = buffer_to_string(terminal.backend().buffer());

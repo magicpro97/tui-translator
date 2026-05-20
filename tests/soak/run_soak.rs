@@ -27,21 +27,15 @@
 //!
 //! # Known gaps (documented with code evidence)
 //!
-//! ## Gap 1 — Metrics IPC
+//! ## Gap 1 — Metrics snapshot
 //!
-//! `tui-translator` does not expose an inter-process communication channel,
-//! so the runner cannot read chunk counts, API failure counters, subtitle
-//! latency, or the cost-counter value from an external process.
+//! Full-mode runs pass `TUI_TRANSLATOR_METRICS_SNAPSHOT` to `tui-translator`.
+//! The app writes a local JSON snapshot once per second, and the runner reads it
+//! into each sample so reports include chunk counts, dropped chunks, subtitle
+//! pair count, latency, and estimated cost.
 //!
-//! The runner collects **only what `sysinfo` can observe externally**: process
-//! RSS (memory in MB) and CPU %.  All other per-sample fields are `null` in
-//! the report.
-//!
-//! The pipeline state that _would_ need to be exported lives in:
-//! - `src/metrics/snapshot.rs` (`MetricsSnapshot`) — all required fields
-//!   already exist; the gap is writing them to a shared file or named pipe.
-//! - `src/pipeline/mod.rs` — the orchestrator would need a hook to write a
-//!   snapshot after each STT/MT cycle.
+//! Dry-run mode still leaves app-internal metric fields as `null` because no
+//! child process is spawned.
 //!
 //! ## Gap 2 — Google Cloud Billing API
 //!
@@ -61,6 +55,7 @@
 //! the soak run continues and the `network_disconnect_test.succeeded` field is
 //! set to `false` with the error message in `network_disconnect_test.note`.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -252,24 +247,33 @@ pub struct MetricSample {
     pub cpu_pct: Option<f32>,
     /// Total audio chunks sent to the STT pipeline.
     ///
-    /// **Always `null`** — requires metrics IPC (see Gap 1).
+    /// `None` only in dry-run or before the child writes its first snapshot.
     pub total_chunks_sent: Option<u64>,
     /// Total audio chunks dropped after retry budget exhausted.
     ///
-    /// **Always `null`** — requires metrics IPC (see Gap 1).
+    /// `None` only in dry-run or before the child writes its first snapshot.
     pub total_chunks_dropped: Option<u64>,
     /// Total API failures (any provider) since the session started.
     ///
-    /// **Always `null`** — requires metrics IPC (see Gap 1).
+    /// `None` until provider-failure counters are exported.
     pub api_failures: Option<u64>,
     /// Most recent end-to-end subtitle latency in milliseconds.
     ///
-    /// **Always `null`** — requires metrics IPC (see Gap 1).
+    /// `None` until at least one subtitle pair is produced.
     pub latest_subtitle_latency_ms: Option<u64>,
     /// Running cost estimate in USD from the cost counter.
     ///
-    /// **Always `null`** — requires metrics IPC (see Gap 1).
+    /// `None` only in dry-run or before the child writes its first snapshot.
     pub estimated_cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AppMetricsSnapshot {
+    line_pairs_shown: u64,
+    estimated_cost_usd: f64,
+    e2e_latency_ms: Option<u64>,
+    total_chunks: u64,
+    dropped_chunks: u64,
 }
 
 /// Outcome of the 30-second network-disconnect test.
@@ -311,6 +315,12 @@ pub struct SoakReport {
     pub app_binary: Option<String>,
     /// Path to the soak config.json that was written.
     pub soak_config_path: Option<String>,
+    /// Path to the local metrics snapshot JSON file written by the child.
+    pub metrics_snapshot_path: Option<String>,
+    /// Final subtitle pair count observed from the metrics snapshot.
+    pub final_subtitle_pair_count: Option<u64>,
+    /// Maximum subtitle pair count observed across all samples.
+    pub max_subtitle_pair_count: Option<u64>,
     /// Periodic metric samples.
     pub samples: Vec<MetricSample>,
     /// Outcome of the network-disconnect test at the 2-hour mark.
@@ -342,25 +352,33 @@ impl SoakReport {
             audio_fixture: audio_fixture.to_string(),
             app_binary: app_binary.map(str::to_string),
             soak_config_path: None,
+            metrics_snapshot_path: None,
+            final_subtitle_pair_count: None,
+            max_subtitle_pair_count: None,
             samples: Vec::new(),
             network_disconnect_test: None,
             billing_actual_usd: None,
-            gaps: vec![
-                "metrics_ipc: chunk counts, API failures, and subtitle latency are not \
-                 observable from an external process.  tui-translator does not expose an IPC \
-                 channel.  The required fields exist in src/metrics/snapshot.rs \
-                 (MetricsSnapshot) but are not written to any shared file or named pipe. \
-                 Tracked against: src/pipeline/mod.rs (orchestrator loop)."
-                    .to_string(),
-                "billing_api: Google Cloud Billing API not queried.  Requires an OAuth \
+            gaps: {
+                let mut gaps = Vec::new();
+                if dry_run {
+                    gaps.push(
+                        "metrics_snapshot: dry-run does not spawn tui-translator, so app-internal \
+                         metrics are intentionally null. Full mode uses TUI_TRANSLATOR_METRICS_SNAPSHOT."
+                            .to_string(),
+                    );
+                }
+                gaps.extend([
+                    "billing_api: Google Cloud Billing API not queried.  Requires an OAuth \
                  service-account key and a billing export configured in the GCP project. \
                  Reference: docs/04-verification-plan.md §6.3."
-                    .to_string(),
-                "network_disconnect: requires Windows administrator privileges (netsh \
+                        .to_string(),
+                    "network_disconnect: requires Windows administrator privileges (netsh \
                  advfirewall).  Attempted in full mode; skipped in dry-run mode. \
                  The soak run continues even if the attempt fails."
-                    .to_string(),
-            ],
+                        .to_string(),
+                ]);
+                gaps
+            },
             threshold_evaluation: None,
         }
     }
@@ -572,63 +590,199 @@ pub fn evaluate_thresholds(report: &SoakReport) -> ThresholdEvaluation {
         }
     };
 
-    // ── B-11 and B-12: IPC-backed metrics (unavailable) ───────────────────────
-    // chunk counts and subtitle latency live inside `tui-translator` and are
-    // not observable from an external process until Gap 1 is closed.
-    let ipc_gap_reason =
-        "metric requires metrics IPC (Gap 1): chunk counts and subtitle latency are \
-         not observable from an external process. The fields exist in \
-         src/metrics/snapshot.rs (MetricsSnapshot) but are not written to any shared \
-         file or named pipe. Close Gap 1 before this threshold can be evaluated \
-         automatically. Reference: docs/04-verification-plan.md §6.1."
-            .to_string();
+    // ── B-11 and B-12: app metrics from the local snapshot file ────────────────
+    let metrics_gap_reason = "metric requires app metrics snapshot (Gap 1): full-mode runs set \
+         TUI_TRANSLATOR_METRICS_SNAPSHOT, but no usable metric values were present \
+         in this report. Reference: docs/04-verification-plan.md §6.1."
+        .to_string();
 
-    let b11_chunk_loss_overall = ThresholdResult {
-        blocker: "B-11".to_string(),
-        description: format!(
+    let chunk_points: Vec<(u64, u64, u64)> = samples
+        .iter()
+        .filter_map(|s| {
+            Some((
+                s.elapsed_secs,
+                s.total_chunks_sent?,
+                s.total_chunks_dropped?,
+            ))
+        })
+        .collect();
+
+    let b11_chunk_loss_overall = {
+        let description = format!(
             "Chunk loss ≤ {:.0}% overall",
             CHUNK_LOSS_OVERALL_MAX * 100.0
-        ),
-        limit: format!("{:.0}%", CHUNK_LOSS_OVERALL_MAX * 100.0),
-        measured: None,
-        verdict: ThresholdVerdict::UnevaluablePending,
-        pending_reason: Some(ipc_gap_reason.clone()),
+        );
+        if let Some((_, total, dropped)) = chunk_points.last().copied() {
+            if total == 0 {
+                ThresholdResult {
+                    blocker: "B-11".to_string(),
+                    description,
+                    limit: format!("{:.0}%", CHUNK_LOSS_OVERALL_MAX * 100.0),
+                    measured: Some("0/0 chunks observed".to_string()),
+                    verdict: ThresholdVerdict::UnevaluablePending,
+                    pending_reason: Some(
+                        "no audio chunks were observed in app metrics".to_string(),
+                    ),
+                }
+            } else {
+                let loss = dropped as f64 / total as f64;
+                ThresholdResult {
+                    blocker: "B-11".to_string(),
+                    description,
+                    limit: format!("{:.0}%", CHUNK_LOSS_OVERALL_MAX * 100.0),
+                    measured: Some(format!("{:.2}% ({dropped}/{total} chunks)", loss * 100.0)),
+                    verdict: if loss <= CHUNK_LOSS_OVERALL_MAX {
+                        ThresholdVerdict::Pass
+                    } else {
+                        ThresholdVerdict::Fail
+                    },
+                    pending_reason: None,
+                }
+            }
+        } else {
+            ThresholdResult {
+                blocker: "B-11".to_string(),
+                description,
+                limit: format!("{:.0}%", CHUNK_LOSS_OVERALL_MAX * 100.0),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some(metrics_gap_reason.clone()),
+            }
+        }
     };
 
-    let b11_chunk_loss_window = ThresholdResult {
-        blocker: "B-11".to_string(),
-        description: format!(
+    let b11_chunk_loss_window = {
+        let description = format!(
             "Chunk loss ≤ {:.0}% in any 15-minute window",
             CHUNK_LOSS_WINDOW_MAX * 100.0
-        ),
-        limit: format!("{:.0}%", CHUNK_LOSS_WINDOW_MAX * 100.0),
-        measured: None,
-        verdict: ThresholdVerdict::UnevaluablePending,
-        pending_reason: Some(ipc_gap_reason.clone()),
+        );
+        const WINDOW_SECS: u64 = 15 * 60;
+        let mut points = Vec::with_capacity(chunk_points.len() + 1);
+        points.push((0, 0, 0));
+        points.extend(chunk_points.iter().copied());
+        let mut worst: Option<(f64, u64, u64)> = None;
+        for start in 0..points.len() {
+            let Some(end) = ((start + 1)..points.len()).find(|&end| {
+                let (start_secs, _, _) = points[start];
+                let (end_secs, _, _) = points[end];
+                end_secs.saturating_sub(start_secs) >= WINDOW_SECS
+            }) else {
+                continue;
+            };
+            let (_, start_total, start_dropped) = points[start];
+            let (_, end_total, end_dropped) = points[end];
+            if end_total < start_total || end_dropped < start_dropped {
+                continue;
+            }
+            let sent = end_total - start_total;
+            if sent == 0 {
+                continue;
+            }
+            let dropped = end_dropped - start_dropped;
+            let loss = dropped as f64 / sent as f64;
+            if worst.is_none_or(|(current, _, _)| loss > current) {
+                worst = Some((loss, dropped, sent));
+            }
+        }
+        if let Some((loss, dropped, sent)) = worst {
+            ThresholdResult {
+                blocker: "B-11".to_string(),
+                description,
+                limit: format!("{:.0}%", CHUNK_LOSS_WINDOW_MAX * 100.0),
+                measured: Some(format!("{:.2}% ({dropped}/{sent} chunks)", loss * 100.0)),
+                verdict: if loss <= CHUNK_LOSS_WINDOW_MAX {
+                    ThresholdVerdict::Pass
+                } else {
+                    ThresholdVerdict::Fail
+                },
+                pending_reason: None,
+            }
+        } else {
+            let pending_reason = if chunk_points.is_empty() {
+                metrics_gap_reason.clone()
+            } else {
+                "run duration is shorter than a full 15-minute chunk-loss window; \
+                 re-run with a longer soak to evaluate this sub-gate"
+                    .to_string()
+            };
+            ThresholdResult {
+                blocker: "B-11".to_string(),
+                description,
+                limit: format!("{:.0}%", CHUNK_LOSS_WINDOW_MAX * 100.0),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some(pending_reason),
+            }
+        }
     };
 
-    let b12_subtitle_latency_avg = ThresholdResult {
-        blocker: "B-12".to_string(),
-        description: format!(
+    let b12_subtitle_latency_avg = {
+        let description = format!(
             "Subtitle latency ≤ {} ms average",
             SUBTITLE_LATENCY_AVG_MAX_MS
-        ),
-        limit: format!("{} ms", SUBTITLE_LATENCY_AVG_MAX_MS),
-        measured: None,
-        verdict: ThresholdVerdict::UnevaluablePending,
-        pending_reason: Some(ipc_gap_reason.clone()),
+        );
+        let latencies: Vec<u64> = samples
+            .iter()
+            .filter_map(|s| s.latest_subtitle_latency_ms)
+            .collect();
+        if latencies.is_empty() {
+            ThresholdResult {
+                blocker: "B-12".to_string(),
+                description,
+                limit: format!("{} ms", SUBTITLE_LATENCY_AVG_MAX_MS),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some(metrics_gap_reason.clone()),
+            }
+        } else {
+            let avg = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
+            ThresholdResult {
+                blocker: "B-12".to_string(),
+                description,
+                limit: format!("{} ms", SUBTITLE_LATENCY_AVG_MAX_MS),
+                measured: Some(format!("{avg:.0} ms")),
+                verdict: if avg <= SUBTITLE_LATENCY_AVG_MAX_MS as f64 {
+                    ThresholdVerdict::Pass
+                } else {
+                    ThresholdVerdict::Fail
+                },
+                pending_reason: None,
+            }
+        }
     };
 
-    let b12_subtitle_latency_window = ThresholdResult {
-        blocker: "B-12".to_string(),
-        description: format!(
+    let b12_subtitle_latency_window = {
+        let description = format!(
             "Subtitle latency ≤ {} ms in any 15-minute window",
             SUBTITLE_LATENCY_WINDOW_MAX_MS
-        ),
-        limit: format!("{} ms", SUBTITLE_LATENCY_WINDOW_MAX_MS),
-        measured: None,
-        verdict: ThresholdVerdict::UnevaluablePending,
-        pending_reason: Some(ipc_gap_reason),
+        );
+        let peak = samples
+            .iter()
+            .filter_map(|s| s.latest_subtitle_latency_ms)
+            .max();
+        if let Some(peak) = peak {
+            ThresholdResult {
+                blocker: "B-12".to_string(),
+                description,
+                limit: format!("{} ms", SUBTITLE_LATENCY_WINDOW_MAX_MS),
+                measured: Some(format!("{peak} ms")),
+                verdict: if peak <= SUBTITLE_LATENCY_WINDOW_MAX_MS {
+                    ThresholdVerdict::Pass
+                } else {
+                    ThresholdVerdict::Fail
+                },
+                pending_reason: None,
+            }
+        } else {
+            ThresholdResult {
+                blocker: "B-12".to_string(),
+                description,
+                limit: format!("{} ms", SUBTITLE_LATENCY_WINDOW_MAX_MS),
+                measured: None,
+                verdict: ThresholdVerdict::UnevaluablePending,
+                pending_reason: Some(metrics_gap_reason),
+            }
+        }
     };
 
     // ── B-13: Cost discrepancy (unavailable) ──────────────────────────────────
@@ -837,6 +991,30 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     }
     let json = serde_json::to_string_pretty(value).context("failed to serialise report")?;
     std::fs::write(path, json).with_context(|| format!("cannot write report to {}", path.display()))
+}
+
+fn read_app_metrics_snapshot(path: &Path) -> Result<Option<AppMetricsSnapshot>> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("cannot read metrics snapshot {}", path.display()));
+        }
+    };
+    let snapshot = serde_json::from_str(&raw)
+        .with_context(|| format!("metrics snapshot is not valid JSON: {}", path.display()))?;
+    Ok(Some(snapshot))
+}
+
+fn update_report_with_app_metrics(report: &mut SoakReport, metrics: &AppMetricsSnapshot) {
+    report.final_subtitle_pair_count = Some(metrics.line_pairs_shown);
+    report.max_subtitle_pair_count = Some(
+        report
+            .max_subtitle_pair_count
+            .unwrap_or(0)
+            .max(metrics.line_pairs_shown),
+    );
 }
 
 /// Read normalised CPU % and RSS (MiB) for a process by PID.
@@ -1129,13 +1307,24 @@ fn run_full_soak(args: Args) -> Result<()> {
         std::fs::canonicalize(fixture_path).unwrap_or_else(|_| PathBuf::from(fixture_path));
     let cfg_path = write_soak_config(&config_dir, &fixture_abs.to_string_lossy())?;
     println!("[run_soak] soak config: {}", cfg_path.display());
+    let metrics_snapshot_path = config_dir.join("soak-metrics-snapshot.json");
+    let _ = std::fs::remove_file(&metrics_snapshot_path);
+    println!(
+        "[run_soak] metrics snapshot: {}",
+        metrics_snapshot_path.display()
+    );
 
     let mut report = SoakReport::new(false, fixture_path, Some(&bin_path.to_string_lossy()));
     report.soak_config_path = Some(cfg_path.to_string_lossy().into_owned());
+    report.metrics_snapshot_path = Some(metrics_snapshot_path.to_string_lossy().into_owned());
 
     // Spawn the application binary.
     let mut child = Command::new(&bin_path)
         .env("TUI_TRANSLATOR_CONFIG", cfg_path.to_string_lossy().as_ref())
+        .env(
+            "TUI_TRANSLATOR_METRICS_SNAPSHOT",
+            metrics_snapshot_path.to_string_lossy().as_ref(),
+        )
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -1170,22 +1359,35 @@ fn run_full_soak(args: Args) -> Result<()> {
         // Sample metrics on the scheduled interval.
         if now >= next_sample {
             let (cpu, ram_mb) = poll_process(&mut sys, child_pid, n_cores);
+            let app_metrics = match read_app_metrics_snapshot(&metrics_snapshot_path) {
+                Ok(metrics) => metrics,
+                Err(err) => {
+                    println!("[run_soak] metrics snapshot read failed: {err}");
+                    None
+                }
+            };
+            if let Some(metrics) = app_metrics.as_ref() {
+                update_report_with_app_metrics(&mut report, metrics);
+            }
             let sample = MetricSample {
                 elapsed_secs: elapsed.as_secs(),
                 timestamp_utc: utc_now_iso8601(),
                 memory_mb: ram_mb,
                 cpu_pct: cpu,
-                total_chunks_sent: None,
-                total_chunks_dropped: None,
+                total_chunks_sent: app_metrics.as_ref().map(|m| m.total_chunks),
+                total_chunks_dropped: app_metrics.as_ref().map(|m| m.dropped_chunks),
                 api_failures: None,
-                latest_subtitle_latency_ms: None,
-                estimated_cost_usd: None,
+                latest_subtitle_latency_ms: app_metrics.as_ref().and_then(|m| m.e2e_latency_ms),
+                estimated_cost_usd: app_metrics.as_ref().map(|m| m.estimated_cost_usd),
             };
             println!(
-                "[run_soak] sample at {}s: mem={:.1}MiB cpu={:.1}%",
+                "[run_soak] sample at {}s: mem={:.1}MiB cpu={:.1}% chunks={:?} dropped={:?} pairs={:?}",
                 elapsed.as_secs(),
                 ram_mb.unwrap_or(0.0),
                 cpu.unwrap_or(0.0),
+                sample.total_chunks_sent,
+                sample.total_chunks_dropped,
+                report.final_subtitle_pair_count,
             );
             report.samples.push(sample);
             next_sample = now + sample_interval;
@@ -1233,6 +1435,21 @@ fn run_full_soak(args: Args) -> Result<()> {
     let total_secs = start.elapsed().as_secs();
     report.finished_at_utc = Some(utc_now_iso8601());
     report.duration_secs = Some(total_secs);
+    match read_app_metrics_snapshot(&metrics_snapshot_path) {
+        Ok(Some(metrics)) => update_report_with_app_metrics(&mut report, &metrics),
+        Ok(None) => {
+            report.gaps.push(format!(
+                "metrics_snapshot_unavailable: no metrics snapshot was written at {}",
+                metrics_snapshot_path.display()
+            ));
+        }
+        Err(err) => {
+            report.gaps.push(format!(
+                "metrics_snapshot_unreadable: failed to read {}: {err}",
+                metrics_snapshot_path.display()
+            ));
+        }
+    }
 
     // Gap 2: billing API is not implemented.
     report.billing_actual_usd = None;
@@ -1554,7 +1771,8 @@ mod tests {
         assert!(ev.any_blocker_triggered);
     }
 
-    /// IPC-backed threshold reasons must reference the correct gap tag.
+    /// Metrics-backed threshold reasons must reference the correct gap tag when
+    /// no app metrics were captured.
     #[test]
     fn evaluate_thresholds_ipc_reasons_reference_gap1() {
         let r = SoakReport::new(true, "tests/soak/soak_audio.wav", None);
@@ -1574,6 +1792,119 @@ mod tests {
                 "pending_reason must cite Gap 1; got: {reason}"
             );
         }
+    }
+
+    fn sample_with_app_metrics(
+        elapsed_secs: u64,
+        total_chunks_sent: u64,
+        total_chunks_dropped: u64,
+        latest_subtitle_latency_ms: Option<u64>,
+    ) -> MetricSample {
+        MetricSample {
+            elapsed_secs,
+            timestamp_utc: "2025-01-01T00:00:00Z".to_string(),
+            memory_mb: Some(100.0),
+            cpu_pct: Some(10.0),
+            total_chunks_sent: Some(total_chunks_sent),
+            total_chunks_dropped: Some(total_chunks_dropped),
+            api_failures: None,
+            latest_subtitle_latency_ms,
+            estimated_cost_usd: Some(0.001),
+        }
+    }
+
+    #[test]
+    fn evaluate_thresholds_app_metrics_pass_chunk_and_latency_gates() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.samples
+            .push(sample_with_app_metrics(0, 100, 0, Some(900)));
+        r.samples
+            .push(sample_with_app_metrics(600, 1_000, 5, Some(1_100)));
+        r.samples
+            .push(sample_with_app_metrics(900, 1_500, 6, Some(1_200)));
+
+        let ev = evaluate_thresholds(&r);
+
+        assert_eq!(ev.b11_chunk_loss_overall.verdict, ThresholdVerdict::Pass);
+        assert_eq!(ev.b11_chunk_loss_window.verdict, ThresholdVerdict::Pass);
+        assert_eq!(ev.b12_subtitle_latency_avg.verdict, ThresholdVerdict::Pass);
+        assert_eq!(
+            ev.b12_subtitle_latency_window.verdict,
+            ThresholdVerdict::Pass
+        );
+        assert!(!ev.any_blocker_triggered);
+    }
+
+    #[test]
+    fn evaluate_thresholds_app_metrics_fail_chunk_and_latency_gates() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.samples
+            .push(sample_with_app_metrics(0, 100, 0, Some(900)));
+        r.samples
+            .push(sample_with_app_metrics(600, 1_000, 80, Some(6_100)));
+        r.samples
+            .push(sample_with_app_metrics(900, 1_500, 120, Some(6_200)));
+
+        let ev = evaluate_thresholds(&r);
+
+        assert_eq!(ev.b11_chunk_loss_overall.verdict, ThresholdVerdict::Fail);
+        assert_eq!(ev.b11_chunk_loss_window.verdict, ThresholdVerdict::Fail);
+        assert_eq!(
+            ev.b12_subtitle_latency_window.verdict,
+            ThresholdVerdict::Fail
+        );
+        assert!(ev.any_blocker_triggered);
+    }
+
+    #[test]
+    fn evaluate_thresholds_chunk_loss_window_requires_full_window() {
+        let mut r = SoakReport::new(false, "tests/soak/soak_audio.wav", None);
+        r.samples
+            .push(sample_with_app_metrics(0, 100, 0, Some(900)));
+        r.samples
+            .push(sample_with_app_metrics(600, 1_000, 80, Some(1_100)));
+
+        let ev = evaluate_thresholds(&r);
+
+        assert_eq!(
+            ev.b11_chunk_loss_window.verdict,
+            ThresholdVerdict::UnevaluablePending
+        );
+        let pending_reason = ev
+            .b11_chunk_loss_window
+            .pending_reason
+            .as_deref()
+            .unwrap_or_default();
+        assert!(pending_reason.contains("15-minute"));
+        assert!(!pending_reason.contains("Gap 1"));
+    }
+
+    #[test]
+    fn read_app_metrics_snapshot_accepts_export_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("metrics.json");
+        std::fs::write(
+            &path,
+            r#"{
+              "schema_version": "1",
+              "line_pairs_shown": 42,
+              "estimated_cost_usd": 0.0123,
+              "e2e_latency_ms": 1234,
+              "e2e_latency_mean_ms": 1000.0,
+              "e2e_latency_p95_ms": 1500,
+              "loss_pct": 0.0,
+              "total_chunks": 500,
+              "dropped_chunks": 1
+            }"#,
+        )
+        .unwrap();
+
+        let snapshot = read_app_metrics_snapshot(&path).unwrap().unwrap();
+
+        assert_eq!(snapshot.line_pairs_shown, 42);
+        assert_eq!(snapshot.total_chunks, 500);
+        assert_eq!(snapshot.dropped_chunks, 1);
+        assert_eq!(snapshot.e2e_latency_ms, Some(1234));
     }
 
     /// The threshold constants must match the specification values exactly.

@@ -97,6 +97,9 @@ fn make_context() -> OrchestratorContext {
         pipeline_error_msg: Arc::new(Mutex::new(None)),
         auth_error_banner: Arc::new(Mutex::new(None)),
         pipeline_halted: Arc::new(AtomicBool::new(false)),
+        provider_circuits: Arc::new(Mutex::new(
+            crate::pipeline::ProviderCircuitBreakers::default(),
+        )),
         paused: Arc::new(AtomicBool::new(false)),
         tts_enabled: Arc::new(AtomicBool::new(false)),
         source_language: Arc::new(Mutex::new("ja-JP".to_string())),

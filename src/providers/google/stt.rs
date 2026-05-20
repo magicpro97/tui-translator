@@ -25,6 +25,8 @@ use std::time::Duration;
 
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
+use super::sanitize_google_error_body;
+
 // ── Google Speech REST API URL ────────────────────────────────────────────────
 
 const SPEECH_RECOGNIZE_URL: &str = "https://speech.googleapis.com/v1/speech:recognize";
@@ -177,7 +179,8 @@ fn looks_like_auth_error(status: StatusCode, body: &str) -> bool {
 }
 
 fn classify_http_error(status: StatusCode, body: &str) -> ProviderError {
-    if looks_like_auth_error(status, body) {
+    let body = sanitize_google_error_body(body);
+    if looks_like_auth_error(status, &body) {
         return ProviderError::AuthError(format!(
             "Google STT authentication failed (HTTP {}): {}",
             status.as_u16(),

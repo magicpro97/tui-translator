@@ -33,6 +33,8 @@ use std::time::Duration;
 
 use crate::providers::{CostReporter, MtProvider, MtResult, ProviderError};
 
+use super::sanitize_google_error_body;
+
 // ── Google Translation REST API URL ──────────────────────────────────────────
 
 const TRANSLATE_URL: &str = "https://translation.googleapis.com/language/translate/v2";
@@ -142,7 +144,8 @@ fn looks_like_auth_error(status: StatusCode, body: &str) -> bool {
 }
 
 fn classify_http_error(status: StatusCode, body: &str) -> ProviderError {
-    if looks_like_auth_error(status, body) {
+    let body = sanitize_google_error_body(body);
+    if looks_like_auth_error(status, &body) {
         return ProviderError::AuthError(format!(
             "Google MT authentication failed (HTTP {}): {}",
             status.as_u16(),
