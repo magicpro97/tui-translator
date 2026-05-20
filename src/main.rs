@@ -1678,6 +1678,7 @@ fn main() -> Result<()> {
     // Initialise the operator-facing capture device label from config (issue #197).
     overwrite_capture_device_label(&state.capture_device_label, &loaded_config.capture_device);
     state.set_tts_enabled(loaded_config.tts_enabled);
+    state.set_audio_consent(loaded_config.audio_archive.consent_given);
     let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
     if !onboarding_required && !config_recovery_required {
         let current_cfg = current_config
@@ -1737,6 +1738,7 @@ fn main() -> Result<()> {
         let source_language = Arc::clone(&state.source_language);
         let capture_device_label = Arc::clone(&state.capture_device_label);
         let tts_enabled = Arc::clone(&state.tts_enabled);
+        let audio_consent = Arc::clone(&state.audio_consent);
         let restart_required = Arc::clone(&restart_required);
         let playback_service = Arc::clone(&playback_service);
         rt.spawn(async move {
@@ -1749,10 +1751,11 @@ fn main() -> Result<()> {
                 let sl = Arc::clone(&source_language);
                 let cdl = Arc::clone(&capture_device_label);
                 let te = Arc::clone(&tts_enabled);
+                let ac = Arc::clone(&audio_consent);
                 let rr = Arc::clone(&restart_required);
                 let ps = Arc::clone(&playback_service);
                 tokio::task::spawn_blocking(move || {
-                    apply_runtime_config(&cc, &tl, &sl, &cdl, &te, &rr, &ps, next_cfg);
+                    apply_runtime_config(&cc, &tl, &sl, &cdl, &te, &ac, &rr, &ps, next_cfg);
                 })
                 .await
                 .ok();
@@ -2765,8 +2768,8 @@ fn overwrite_source_language(slot: &Arc<std::sync::Mutex<String>>, next_language
     }
 }
 
-/// Update `current_config`, language strings, capture-device label, TTS state, and the
-/// restart-required flag from `next_cfg`.
+/// Update `current_config`, language strings, capture-device label, TTS state,
+/// audio-consent gate, and the restart-required flag from `next_cfg`.
 ///
 /// Called on live config hot-reload (R key), after saving the settings overlay,
 /// and from the file-watcher task.
@@ -2777,6 +2780,7 @@ fn apply_runtime_config(
     source_language: &Arc<std::sync::Mutex<String>>,
     capture_device_label: &Arc<std::sync::Mutex<String>>,
     tts_enabled: &Arc<AtomicBool>,
+    audio_consent: &Arc<AtomicBool>,
     restart_required: &Arc<AtomicBool>,
     playback_service: &SharedPlaybackService,
     next_cfg: config::AppConfig,
@@ -2798,6 +2802,7 @@ fn apply_runtime_config(
     // Sync the backend first; only set the UI flag to match what actually succeeded.
     let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
     tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
+    audio_consent.store(next_cfg.audio_archive.consent_given, Ordering::Relaxed);
 }
 
 fn normalize_optional_field(value: &str) -> Option<String> {
@@ -3027,6 +3032,7 @@ fn save_config_editor(
         &state.source_language,
         &state.capture_device_label,
         &state.tts_enabled,
+        &state.audio_consent,
         restart_required,
         playback_service,
         next_cfg,
@@ -3682,6 +3688,7 @@ fn handle_action(
                     &state.source_language,
                     &state.capture_device_label,
                     &state.tts_enabled,
+                    &state.audio_consent,
                     restart_required,
                     playback_service,
                     next_cfg,
@@ -4997,6 +5004,7 @@ mod tests {
             &state.source_language,
             &state.capture_device_label,
             &state.tts_enabled,
+            &state.audio_consent,
             &restart_required,
             &playback_service,
             saved,
@@ -5008,6 +5016,30 @@ mod tests {
             !restart_required.load(Ordering::Relaxed),
             "watcher replay of the just-saved hot-reloadable config must not create a restart loop"
         );
+    }
+
+    #[test]
+    fn apply_runtime_config_updates_audio_consent_gate() {
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let mut next = config::AppConfig::default();
+        next.audio_archive.consent_given = true;
+
+        apply_runtime_config(
+            &current_config,
+            &state.target_language,
+            &state.source_language,
+            &state.capture_device_label,
+            &state.tts_enabled,
+            &state.audio_consent,
+            &restart_required,
+            &playback_service,
+            next,
+        );
+
+        assert!(state.audio_consent.load(Ordering::Relaxed));
     }
 
     #[test]

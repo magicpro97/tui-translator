@@ -5353,6 +5353,10 @@ mod tests {
             !rendered.contains("archive.wav"),
             "storage row must NOT show archive path when consent is revoked; got:\n{rendered}"
         );
+        assert!(
+            !rendered.contains("94.2 MB"),
+            "storage row must NOT show archive byte count when consent is revoked; got:\n{rendered}"
+        );
         // Transcript info should still be visible (no privacy concern for transcripts here).
         assert!(
             rendered.contains("transcripts:"),
