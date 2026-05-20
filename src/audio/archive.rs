@@ -34,6 +34,10 @@
 use std::{
     io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use anyhow::{Context, Result};
@@ -120,6 +124,10 @@ impl AudioArchiveWriterConfig {
 ///   nothing.
 pub struct AudioArchiveWriter {
     inner: Option<WriterInner>,
+    /// Shared view of `WriterInner::data_bytes` for the metrics publisher.
+    bytes_arc: Arc<AtomicU64>,
+    /// Shared view of `WriterInner::sealed` for the metrics publisher.
+    sealed_arc: Arc<AtomicBool>,
 }
 
 struct WriterInner {
@@ -136,7 +144,11 @@ struct WriterInner {
 impl AudioArchiveWriter {
     /// Return a writer that is permanently disabled (no-op for all calls).
     pub fn disabled() -> Self {
-        Self { inner: None }
+        Self {
+            inner: None,
+            bytes_arc: Arc::new(AtomicU64::new(0)),
+            sealed_arc: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Open (or create) a WAV archive file at `path`.
@@ -156,6 +168,8 @@ impl AudioArchiveWriter {
             .with_context(|| format!("cannot create audio archive file: {}", path.display()))?;
         write_wav_header(&mut file, 0)
             .with_context(|| format!("cannot write WAV header: {}", path.display()))?;
+        let bytes_arc = Arc::new(AtomicU64::new(0));
+        let sealed_arc = Arc::new(AtomicBool::new(false));
         Ok(Self {
             inner: Some(WriterInner {
                 file,
@@ -164,6 +178,8 @@ impl AudioArchiveWriter {
                 max_size_bytes,
                 sealed: false,
             }),
+            bytes_arc,
+            sealed_arc,
         })
     }
 
@@ -216,6 +232,7 @@ impl AudioArchiveWriter {
             let chunk_bytes = (chunk.samples.len() as u64) * u64::from(WAV_BYTES_PER_SAMPLE);
             if WAV_HEADER_SIZE + inner.data_bytes + chunk_bytes > inner.max_size_bytes {
                 inner.sealed = true;
+                self.sealed_arc.store(true, Ordering::Relaxed);
                 tracing::info!(
                     path = %inner.path.display(),
                     data_bytes = inner.data_bytes,
@@ -242,6 +259,9 @@ impl AudioArchiveWriter {
         patch_wav_header(&mut inner.file, inner.data_bytes)
             .with_context(|| format!("cannot patch WAV header: {}", inner.path.display()))?;
 
+        // Sync the shared atomics so the metrics publisher sees up-to-date values.
+        self.bytes_arc.store(inner.data_bytes, Ordering::Relaxed);
+
         Ok(())
     }
 
@@ -263,6 +283,22 @@ impl AudioArchiveWriter {
     /// `true` when the writer is disabled (no-op mode).
     pub fn is_disabled(&self) -> bool {
         self.inner.is_none()
+    }
+
+    /// Shared atomic handle for the `data_bytes` counter.
+    ///
+    /// Callers that outlive this writer (e.g. the metrics-publisher task) should
+    /// clone this `Arc` before the writer is moved elsewhere.
+    pub fn bytes_arc(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.bytes_arc)
+    }
+
+    /// Shared atomic handle for the `sealed` flag.
+    ///
+    /// Callers that outlive this writer (e.g. the metrics-publisher task) should
+    /// clone this `Arc` before the writer is moved elsewhere.
+    pub fn sealed_arc(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.sealed_arc)
     }
 
     /// Disable this writer and close any open archive file.
@@ -388,6 +424,7 @@ mod tests {
         let writer = AudioArchiveWriter::start(&config, "test-session-disabled").unwrap();
         assert!(writer.is_disabled());
         assert_eq!(writer.data_bytes(), 0);
+        assert!(!writer.sealed_arc().load(Ordering::Relaxed));
         // No file should exist in the temp dir.
         let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
         assert!(
@@ -459,6 +496,10 @@ mod tests {
 
         let expected_data_bytes = (samples_1s.len() * 2) as u64;
         assert_eq!(writer.data_bytes(), expected_data_bytes);
+        assert_eq!(
+            writer.bytes_arc().load(Ordering::Relaxed),
+            expected_data_bytes
+        );
 
         // The file should exist and be readable by WavFileSource.
         let wav_path = writer.path().unwrap().to_path_buf();
@@ -554,6 +595,35 @@ mod tests {
         // Should be sealed now, but first chunk's 800 bytes still written.
         assert!(writer.is_sealed());
         assert_eq!(writer.data_bytes(), 800, "quota stops before second chunk");
+        assert_eq!(writer.bytes_arc().load(Ordering::Relaxed), 800);
+        assert!(writer.sealed_arc().load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn runtime_disable_does_not_report_quota_seal() {
+        let dir = TempDir::new().unwrap();
+        let resolved = AudioArchiveWriterConfig::from_parts(
+            true,
+            true,
+            Some(&dir.path().to_string_lossy()),
+            0,
+            dir.path().to_path_buf(),
+        );
+        let mut writer = AudioArchiveWriter::start(&resolved, "disable-test").unwrap();
+        let sealed = writer.sealed_arc();
+        let bytes = writer.bytes_arc();
+
+        writer
+            .append_chunk(&AudioChunk::new(vec![1i16; 16]))
+            .unwrap();
+        writer.disable();
+
+        assert!(writer.is_disabled());
+        assert_eq!(bytes.load(Ordering::Relaxed), 32);
+        assert!(
+            !sealed.load(Ordering::Relaxed),
+            "archive_sealed is reserved for quota seals, not runtime disable"
+        );
     }
 
     // ── from_parts resolution ─────────────────────────────────────────────────

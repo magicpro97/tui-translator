@@ -30,6 +30,7 @@
 //! let snap = state.metrics_rx.borrow().clone();
 //! ```
 
+use std::path::PathBuf;
 use std::time::Instant;
 
 // ── MetricsSnapshot ───────────────────────────────────────────────────────────
@@ -154,6 +155,29 @@ pub struct MetricsSnapshot {
     /// Cumulative count of successful MT API calls.  Never incremented on
     /// errors or skipped non-final STT results.
     pub mt_call_count: u64,
+
+    // ── Storage metrics (issue #393) ─────────────────────────────────────────
+    /// Total bytes successfully written and flushed to the session JSONL file
+    /// since the recorder started, including the header record.  Monotonically
+    /// non-decreasing during a session.  `0` when recording is disabled.
+    pub recorder_bytes: u64,
+
+    /// Current path of the session JSONL file, or `None` when recording is
+    /// disabled.
+    pub recorder_path: Option<PathBuf>,
+
+    /// Total bytes of PCM audio written to the WAV archive data chunk.
+    /// Monotonically non-decreasing during a session.  `0` when archiving is
+    /// disabled.
+    pub archive_bytes: u64,
+
+    /// Current path of the WAV audio archive file, or `None` when archiving is
+    /// disabled.
+    pub archive_path: Option<PathBuf>,
+
+    /// `true` when the audio archive has reached its size quota and no further
+    /// samples will be written.  Always `false` when archiving is disabled.
+    pub archive_sealed: bool,
 }
 
 impl Default for MetricsSnapshot {
@@ -182,6 +206,11 @@ impl Default for MetricsSnapshot {
             truncation_rate: 0.0,
             flicker_count: 0,
             mt_call_count: 0,
+            recorder_bytes: 0,
+            recorder_path: None,
+            archive_bytes: 0,
+            archive_path: None,
+            archive_sealed: false,
         }
     }
 }
@@ -245,6 +274,25 @@ impl MetricsSnapshot {
             self.ram_bytes = guard.ram_bytes();
         }
     }
+
+    /// Apply storage-layer metrics (issue #393).
+    ///
+    /// Call once per second in the metrics-publisher task to update the
+    /// session-recorder and audio-archive fields in place.
+    pub fn apply_storage(
+        &mut self,
+        recorder_bytes: u64,
+        recorder_path: Option<PathBuf>,
+        archive_bytes: u64,
+        archive_path: Option<PathBuf>,
+        archive_sealed: bool,
+    ) {
+        self.recorder_bytes = recorder_bytes;
+        self.recorder_path = recorder_path;
+        self.archive_bytes = archive_bytes;
+        self.archive_path = archive_path;
+        self.archive_sealed = archive_sealed;
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -277,6 +325,12 @@ mod tests {
         assert_eq!(s.truncation_rate, 0.0);
         assert_eq!(s.flicker_count, 0);
         assert_eq!(s.mt_call_count, 0);
+        // Issue #393: storage metrics default to zero / None / false.
+        assert_eq!(s.recorder_bytes, 0);
+        assert!(s.recorder_path.is_none());
+        assert_eq!(s.archive_bytes, 0);
+        assert!(s.archive_path.is_none());
+        assert!(!s.archive_sealed);
     }
 
     #[test]
@@ -450,5 +504,59 @@ mod tests {
         };
         assert_eq!(s.flicker_count, 7);
         assert_eq!(s.mt_call_count, 42);
+    }
+
+    // ── Issue #393: storage metrics tests ────────────────────────────────────
+
+    #[test]
+    fn apply_storage_sets_all_fields() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_storage(
+            1024,
+            Some(PathBuf::from("/sessions/session-1.jsonl")),
+            4096,
+            Some(PathBuf::from("/audio/session-1.wav")),
+            false,
+        );
+        assert_eq!(s.recorder_bytes, 1024);
+        assert_eq!(
+            s.recorder_path,
+            Some(PathBuf::from("/sessions/session-1.jsonl"))
+        );
+        assert_eq!(s.archive_bytes, 4096);
+        assert_eq!(s.archive_path, Some(PathBuf::from("/audio/session-1.wav")));
+        assert!(!s.archive_sealed);
+    }
+
+    #[test]
+    fn apply_storage_disabled_paths_are_none() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_storage(0, None, 0, None, false);
+        assert_eq!(s.recorder_bytes, 0);
+        assert!(s.recorder_path.is_none());
+        assert_eq!(s.archive_bytes, 0);
+        assert!(s.archive_path.is_none());
+        assert!(!s.archive_sealed);
+    }
+
+    #[test]
+    fn apply_storage_sealed_archive() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_storage(0, None, 8192, Some(PathBuf::from("/audio/s.wav")), true);
+        assert!(s.archive_sealed);
+        assert_eq!(s.archive_bytes, 8192);
+    }
+
+    #[test]
+    fn recorder_bytes_is_non_decreasing_after_repeated_apply() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_storage(100, None, 0, None, false);
+        assert_eq!(s.recorder_bytes, 100);
+        s.apply_storage(200, None, 0, None, false);
+        assert!(
+            s.recorder_bytes >= 100,
+            "recorder_bytes must not decrease; got {}",
+            s.recorder_bytes
+        );
     }
 }
