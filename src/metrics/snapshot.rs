@@ -181,6 +181,16 @@ pub struct MetricsSnapshot {
     /// samples will be written. Always `false` when archiving was disabled by
     /// config or stopped after a runtime write error.
     pub archive_sealed: bool,
+
+    // ── Fanout drop counters (DM-02, issue #378) ───────────────────────────────
+    /// Number of audio chunks dropped for slot A (STT pipeline) because its
+    /// bounded fanout queue was full.  Always `0` when no fanout node is active.
+    pub fanout_slot_a_drops: u64,
+
+    /// Number of audio chunks dropped for slot B (secondary consumer) because
+    /// its bounded fanout queue was full.  Always `0` when no fanout node is
+    /// active or slot B has no consumer.
+    pub fanout_slot_b_drops: u64,
 }
 
 impl Default for MetricsSnapshot {
@@ -214,6 +224,8 @@ impl Default for MetricsSnapshot {
             archive_bytes: 0,
             archive_path: None,
             archive_sealed: false,
+            fanout_slot_a_drops: 0,
+            fanout_slot_b_drops: 0,
         }
     }
 }
@@ -296,6 +308,16 @@ impl MetricsSnapshot {
         self.archive_path = archive_path;
         self.archive_sealed = archive_sealed;
     }
+
+    /// Apply per-slot fanout drop counts (DM-02, issue #378).
+    ///
+    /// Called once per second by the metrics-publisher task with values read
+    /// from the shared [`FanoutDropCounters`](crate::audio::FanoutDropCounters)
+    /// Arc.  Both arguments are `0` when no fanout node has been started.
+    pub fn apply_fanout_drops(&mut self, slot_a_drops: u64, slot_b_drops: u64) {
+        self.fanout_slot_a_drops = slot_a_drops;
+        self.fanout_slot_b_drops = slot_b_drops;
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -334,6 +356,9 @@ mod tests {
         assert_eq!(s.archive_bytes, 0);
         assert!(s.archive_path.is_none());
         assert!(!s.archive_sealed);
+        // Issue #378 (DM-02): fanout drop counters default to zero.
+        assert_eq!(s.fanout_slot_a_drops, 0);
+        assert_eq!(s.fanout_slot_b_drops, 0);
     }
 
     #[test]
@@ -561,5 +586,58 @@ mod tests {
             "recorder_bytes must not decrease; got {}",
             s.recorder_bytes
         );
+    }
+
+    // ── Issue #378 (DM-02): fanout drop counter snapshot tests ───────────────
+
+    #[test]
+    fn apply_fanout_drops_sets_both_fields() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_fanout_drops(10, 25);
+        assert_eq!(s.fanout_slot_a_drops, 10, "slot A drops must be applied");
+        assert_eq!(s.fanout_slot_b_drops, 25, "slot B drops must be applied");
+    }
+
+    #[test]
+    fn apply_fanout_drops_slot_a_only() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_fanout_drops(7, 0);
+        assert_eq!(s.fanout_slot_a_drops, 7);
+        assert_eq!(s.fanout_slot_b_drops, 0, "slot B must remain zero");
+    }
+
+    #[test]
+    fn apply_fanout_drops_slot_b_only() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_fanout_drops(0, 99);
+        assert_eq!(s.fanout_slot_a_drops, 0, "slot A must remain zero");
+        assert_eq!(s.fanout_slot_b_drops, 99);
+    }
+
+    #[test]
+    fn apply_fanout_drops_overwrites_previous_values() {
+        let mut s = MetricsSnapshot {
+            fanout_slot_a_drops: 50,
+            fanout_slot_b_drops: 50,
+            ..MetricsSnapshot::default()
+        };
+        s.apply_fanout_drops(1, 2);
+        assert_eq!(s.fanout_slot_a_drops, 1);
+        assert_eq!(s.fanout_slot_b_drops, 2);
+    }
+
+    #[test]
+    fn apply_fanout_drops_zero_does_not_affect_other_fields() {
+        let mut s = MetricsSnapshot {
+            loss_pct: 5.0,
+            total_chunks: 100,
+            dropped_chunks: 5,
+            ..MetricsSnapshot::default()
+        };
+        s.apply_fanout_drops(0, 0);
+        // Existing loss metrics must be unchanged.
+        assert_eq!(s.loss_pct, 5.0);
+        assert_eq!(s.total_chunks, 100);
+        assert_eq!(s.dropped_chunks, 5);
     }
 }

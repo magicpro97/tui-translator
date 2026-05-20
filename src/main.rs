@@ -113,12 +113,15 @@ struct MetricsSnapshotExport {
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_path: Option<std::path::PathBuf>,
     archive_sealed: bool,
+    // DM-02 (issue #378): fanout drop counters.
+    fanout_slot_a_drops: u64,
+    fanout_slot_b_drops: u64,
 }
 
 impl From<&MetricsSnapshot> for MetricsSnapshotExport {
     fn from(snapshot: &MetricsSnapshot) -> Self {
         Self {
-            schema_version: "1",
+            schema_version: "2",
             line_pairs_shown: snapshot.line_pairs_shown,
             estimated_cost_usd: snapshot.estimated_cost_usd,
             e2e_latency_ms: snapshot.e2e_latency_ms,
@@ -132,6 +135,8 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
             archive_bytes: snapshot.archive_bytes,
             archive_path: snapshot.archive_path.clone(),
             archive_sealed: snapshot.archive_sealed,
+            fanout_slot_a_drops: snapshot.fanout_slot_a_drops,
+            fanout_slot_b_drops: snapshot.fanout_slot_b_drops,
         }
     }
 }
@@ -191,6 +196,11 @@ struct FinishMainArgs<'a> {
     // ── Storage metrics (issue #393) ──────────────────────────────────────
     /// Shared atomic handles from the session recorder and audio archive.
     storage: StorageMetricsHandles,
+    // ── Fanout drop counters (DM-02, issue #378) ──────────────────────────
+    /// Shared atomic counters from the fanout node inserted after capture.
+    /// Both slots are zero when no fanout is active (onboarding / capture
+    /// failure paths).
+    fanout_counters: Arc<audio::FanoutDropCounters>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1787,6 +1797,11 @@ fn main() -> Result<()> {
     let (process_tx, process_rx) = tokio::sync::watch::channel(ProcessSnapshot::default());
     spawn_process_metrics_task(process_tx, rt.handle());
 
+    // DM-02 (issue #378): default counters for paths where audio capture is not
+    // started (onboarding, capture failure).  Reassigned after fanout wiring.
+    let mut fanout_counters: Arc<audio::FanoutDropCounters> =
+        Arc::new(audio::FanoutDropCounters::default());
+
     if onboarding_required || config_recovery_required {
         let orchestrator_join = None;
         return finish_main(
@@ -1806,6 +1821,7 @@ fn main() -> Result<()> {
                 cpu_gate,
                 memory_guard,
                 storage: StorageMetricsHandles::default(),
+                fanout_counters,
             },
         );
     }
@@ -1862,6 +1878,27 @@ fn main() -> Result<()> {
                 Arc::clone(&state.pipeline_error_msg),
             );
 
+            // DM-02 (issue #378): insert fanout node after capture.
+            // Slot A → primary consumer (orchestrator / metrics-only task).
+            // Slot B has no consumer in DM-02. Close it immediately so the
+            // fanout task takes the Closed branch instead of filling the queue
+            // and reporting false drops.
+            let audio::CaptureStream {
+                info: capture_info,
+                receiver: capture_rx,
+            } = stream;
+            let fanout_handle = {
+                // rt.enter() sets the runtime context so tokio::spawn inside
+                // start_fanout resolves to the correct runtime.
+                let _guard = rt.enter();
+                audio::start_fanout(capture_rx)
+            };
+            fanout_counters = Arc::clone(&fanout_handle.counters);
+            drop(fanout_handle.slot_b);
+            let stream = audio::CaptureStream {
+                info: capture_info,
+                receiver: fanout_handle.slot_a,
+            };
             if let Some(provider_msg) = runtime_provider_error(&cfg_snapshot) {
                 tracing::warn!("{provider_msg}");
                 *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
@@ -1939,6 +1976,7 @@ fn main() -> Result<()> {
                                 cpu_gate: Arc::clone(&cpu_gate),
                                 memory_guard: Arc::clone(&memory_guard),
                                 storage,
+                                fanout_counters: Arc::clone(&fanout_counters),
                             },
                         );
                     }
@@ -1980,6 +2018,7 @@ fn main() -> Result<()> {
                                 cpu_gate: Arc::clone(&cpu_gate),
                                 memory_guard: Arc::clone(&memory_guard),
                                 storage,
+                                fanout_counters: Arc::clone(&fanout_counters),
                             },
                         );
                     }
@@ -2015,6 +2054,7 @@ fn main() -> Result<()> {
                                 cpu_gate: Arc::clone(&cpu_gate),
                                 memory_guard: Arc::clone(&memory_guard),
                                 storage,
+                                fanout_counters: Arc::clone(&fanout_counters),
                             },
                         );
                     }
@@ -2139,6 +2179,7 @@ fn main() -> Result<()> {
             cpu_gate,
             memory_guard,
             storage,
+            fanout_counters,
         },
     )
 }
@@ -2195,6 +2236,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         cpu_gate,
         memory_guard,
         storage,
+        fanout_counters,
     } = args;
 
     // ── Issues #61, #82: metrics observability background task ───────────────
@@ -2208,6 +2250,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let cpu_gate = Arc::clone(&cpu_gate);
         let memory_guard = Arc::clone(&memory_guard);
         let current_config = Arc::clone(current_config);
+        let fanout_counters = Arc::clone(&fanout_counters);
         let mut process_rx = process_rx;
         let metrics_snapshot_path = std::env::var_os(METRICS_SNAPSHOT_ENV).map(PathBuf::from);
         // Issue #393: clone the storage handles for the publisher task.
@@ -2291,6 +2334,12 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     storage_archive_bytes.load(Ordering::Relaxed),
                     storage_archive_path.clone(),
                     storage_archive_sealed.load(Ordering::Relaxed),
+                );
+
+                // DM-02 (issue #378): publish per-slot fanout drop counters.
+                snapshot.apply_fanout_drops(
+                    fanout_counters.drops(audio::SLOT_A),
+                    fanout_counters.drops(audio::SLOT_B),
                 );
 
                 if let Some(path) = metrics_snapshot_path.as_deref() {
@@ -3778,6 +3827,21 @@ mod tests {
             !metrics_warning_row_active(false, 0.0, &metrics),
             "compact layout height must stay fixed even when RAM warning is active"
         );
+    }
+
+    #[test]
+    fn metrics_snapshot_export_includes_fanout_drop_counters() {
+        let snapshot = MetricsSnapshot {
+            fanout_slot_a_drops: 3,
+            fanout_slot_b_drops: 5,
+            ..MetricsSnapshot::default()
+        };
+        let value =
+            serde_json::to_value(MetricsSnapshotExport::from(&snapshot)).expect("serialize export");
+
+        assert_eq!(value["schema_version"], "2");
+        assert_eq!(value["fanout_slot_a_drops"], 3);
+        assert_eq!(value["fanout_slot_b_drops"], 5);
     }
 
     #[test]
