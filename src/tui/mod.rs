@@ -9,7 +9,7 @@
 #![allow(dead_code)]
 
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex,
@@ -1340,16 +1340,17 @@ fn audio_device_title_max_cols(area_width: u16) -> usize {
 
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
-/// In expanded mode the block is normally 7 rows (2 border + 5 content):
-/// STT/TTS, metrics, elapsed, CPU/RAM/Net, and the issue-#269 quality row.
+/// In expanded mode the block is normally 8 rows (2 border + 6 content):
+/// STT/TTS, metrics, elapsed, CPU/RAM/Net, the issue-#269 quality row, and
+/// the issue-#394 storage row.
 /// When a cost or RAM warning is active an extra content row is needed,
-/// making it 8.  In compact mode the strip is always 3 rows.
+/// making it 9.  In compact mode the strip is always 3 rows.
 pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
     if metrics_expanded {
         if over_threshold {
-            8u16
+            9u16
         } else {
-            7u16
+            8u16
         }
     } else {
         3u16
@@ -1357,9 +1358,9 @@ pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> 
 }
 
 pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
-    // Expanded mode: 2 border rows + 5 standard content rows (STT/TTS, metrics,
-    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters) + optional warning row = 7
-    // or 8 total.  Compact mode keeps 3 rows.
+    // Expanded mode: 2 border rows + 6 standard content rows (STT/TTS, metrics,
+    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters, storage) + optional warning
+    // row = 8 or 9 total.  Compact mode keeps 3 rows.
     let metrics_h = expanded_metrics_height(metrics_expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1494,6 +1495,15 @@ pub struct AppState {
     /// Cleared only on application restart; pressing R does not un-halt a
     /// pipeline stopped by an auth error.
     pub pipeline_halted: Arc<AtomicBool>,
+
+    // ── Issue #394 (SM-02) — audio consent gate ───────────────────────────
+    /// `true` when the user has given consent to record raw audio
+    /// (`audio_archive.consent_given` in the loaded config).
+    ///
+    /// Updated whenever the config is reloaded; read by the TUI draw loop to
+    /// gate archive bytes and path visibility in the metrics overlay within
+    /// the existing 1 Hz render cadence.
+    pub audio_consent: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -1526,6 +1536,7 @@ impl AppState {
             capture_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
+            audio_consent: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1687,6 +1698,15 @@ impl AppState {
         *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
+    /// Update the audio-consent gate from the loaded config.
+    ///
+    /// Call this whenever the config is reloaded so the TUI metrics overlay
+    /// reflects the current `audio_archive.consent_given` value within the
+    /// next 1 Hz render tick.
+    pub fn set_audio_consent(&self, consent: bool) {
+        self.audio_consent.store(consent, Ordering::Relaxed);
+    }
+
     pub fn config_editor_snapshot(&self) -> Option<ConfigEditorState> {
         self.config_editor
             .lock()
@@ -1769,7 +1789,7 @@ impl Default for TtsRouteStatus {
     }
 }
 
-/// Compact (3-row) or expanded (7-row) metrics strip rendered below the
+/// Compact (3-row) or expanded (8-row) metrics strip rendered below the
 /// subtitle pane.
 ///
 /// In **compact** mode (the default) the strip is a single bordered line
@@ -1813,6 +1833,25 @@ pub struct StatusMetricsStrip<'a> {
     pub flicker_count: u64,
     /// Count of successful MT API calls.
     pub mt_call_count: u64,
+    // ── Issue #394 (SM-02): storage metrics ──────────────────────────────────
+    /// Total bytes handed to the OS for the session JSONL transcript file.
+    pub recorder_bytes: u64,
+    /// Path to the session JSONL transcript file, or `None` when recording is
+    /// disabled.
+    pub recorder_path: Option<PathBuf>,
+    /// Total bytes of PCM audio written to the WAV archive data chunk.
+    pub archive_bytes: u64,
+    /// Path of the WAV audio archive, or `None` when archiving is disabled.
+    pub archive_path: Option<PathBuf>,
+    /// `true` when the audio archive has reached its size quota.
+    pub archive_sealed: bool,
+    /// `true` when the user has given consent to record raw audio.
+    ///
+    /// When `false`, archive bytes and path are hidden in the metrics overlay
+    /// to prevent accidental privacy disclosure.  The gate is applied in the
+    /// render layer and updated at most 1 s after the config changes, matching
+    /// the existing 1 Hz metrics-publisher cadence.
+    pub audio_consent: bool,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -2061,6 +2100,39 @@ impl StatusMetricsStrip<'_> {
                 self.flicker_count,
                 self.mt_call_count,
             ),
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        // Issue #394 (SM-02): storage metrics row with privacy gate.
+        // Archive bytes and path are hidden when audio consent is not given,
+        // ensuring revoked consent is reflected within the next render tick
+        // (≤ 1 s via the existing 1 Hz metrics-publisher cadence).
+        let transcript_str = match &self.recorder_path {
+            Some(path) => format!(
+                "transcripts: {} at {}",
+                format_storage_bytes(self.recorder_bytes),
+                path.display()
+            ),
+            None => "transcripts: \u{2014}".to_string(),
+        };
+        let archive_str = if self.audio_consent {
+            match &self.archive_path {
+                Some(path) => {
+                    let sealed = if self.archive_sealed { " (sealed)" } else { "" };
+                    format!(
+                        "audio archive: {} at {}{}",
+                        format_storage_bytes(self.archive_bytes),
+                        path.display(),
+                        sealed,
+                    )
+                }
+                None => "audio archive: \u{2014}".to_string(),
+            }
+        } else {
+            "audio archive: (consent revoked)".to_string()
+        };
+        lines.push(Line::from(Span::styled(
+            format!("{transcript_str}  {archive_str}"),
             Style::default().fg(Color::DarkGray),
         )));
 
@@ -2358,6 +2430,13 @@ pub fn draw_ui_with_route(
         truncation_rate: metrics.truncation_rate,
         flicker_count: metrics.flicker_count,
         mt_call_count: metrics.mt_call_count,
+        // Issue #394 (SM-02): storage metrics with consent gate.
+        recorder_bytes: metrics.recorder_bytes,
+        recorder_path: metrics.recorder_path.clone(),
+        archive_bytes: metrics.archive_bytes,
+        archive_path: metrics.archive_path.clone(),
+        archive_sealed: metrics.archive_sealed,
+        audio_consent: state.audio_consent.load(Ordering::Relaxed),
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -3551,6 +3630,27 @@ fn stt_color(state: &SttState) -> Color {
     }
 }
 
+/// Format a byte count as a human-readable string for the storage metrics row.
+///
+/// Uses binary prefixes: `B`, `KB` (1 024 B), `MB` (1 024 KB), `GB` (1 024 MB).
+/// Returns `"0 B"` for zero so the row is always populated.
+pub fn format_storage_bytes(bytes: u64) -> String {
+    const KB: u64 = 1_024;
+    const MB: u64 = 1_024 * KB;
+    const GB: u64 = 1_024 * MB;
+    if bytes == 0 {
+        "0 B".to_string()
+    } else if bytes < KB {
+        format!("{bytes} B")
+    } else if bytes < MB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else if bytes < GB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3597,6 +3697,12 @@ mod tests {
                     truncation_rate: 0.0,
                     flicker_count: 0,
                     mt_call_count: 0,
+                    recorder_bytes: 0,
+                    recorder_path: None,
+                    archive_bytes: 0,
+                    archive_path: None,
+                    archive_sealed: false,
+                    audio_consent: false,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -5123,5 +5229,194 @@ mod tests {
             scroll_before,
             "set_partial must not change scroll position even when flicker is detected"
         );
+    }
+
+    // ── Issue #394 (SM-02): storage metrics / privacy gate ────────────────────
+
+    /// Helper: render an expanded StatusMetricsStrip at 120×8 and return the text.
+    fn render_expanded_storage_strip(
+        recorder_bytes: u64,
+        recorder_path: Option<PathBuf>,
+        archive_bytes: u64,
+        archive_path: Option<PathBuf>,
+        archive_sealed: bool,
+        audio_consent: bool,
+    ) -> String {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let stt = SttState::Idle;
+        let strip = StatusMetricsStrip {
+            stt: &stt,
+            tts_on: false,
+            tts_route: TtsRouteStatus::default(),
+            target_language: "vi".to_string(),
+            pairs: 0,
+            audio_secs: 0.0,
+            cost_usd: 0.0,
+            elapsed: "0:00".to_string(),
+            show_restart: false,
+            expanded: true,
+            cost_warning_usd: 0.0,
+            cpu_pct: 0.0,
+            ram_bytes: 0,
+            net_kbps_tx: 0.0,
+            net_kbps_rx: 0.0,
+            e2e_latency_ms: None,
+            loss_pct: 0.0,
+            ram_warning: false,
+            truncation_rate: 0.0,
+            flicker_count: 0,
+            mt_call_count: 0,
+            recorder_bytes,
+            recorder_path,
+            archive_bytes,
+            archive_path,
+            archive_sealed,
+            audio_consent,
+        };
+        let backend = TestBackend::new(120, 8);
+        let mut terminal = Terminal::new(backend).expect("TestBackend terminal init must not fail");
+        terminal
+            .draw(|frame| {
+                frame.render_widget(&strip, frame.area());
+            })
+            .expect("test draw must not fail");
+        let area = terminal.backend().buffer().area;
+        let mut rows = Vec::with_capacity(area.height as usize);
+        for y in 0..area.height {
+            let row: String = (0..area.width)
+                .map(|x| {
+                    terminal.backend().buffer()[(x, y)]
+                        .symbol()
+                        .chars()
+                        .next()
+                        .unwrap_or(' ')
+                })
+                .collect();
+            rows.push(row);
+        }
+        rows.join("\n")
+    }
+
+    #[test]
+    fn storage_row_with_consent_shows_archive_path_and_bytes() {
+        // Use short paths that fit within the 120-column test terminal width.
+        let archive_path = PathBuf::from(r"C:\tui\archive.wav");
+        let recorder_path = PathBuf::from(r"C:\tui\session.jsonl");
+        let rendered = render_expanded_storage_strip(
+            1_234_567,
+            Some(recorder_path),
+            98_765_432,
+            Some(archive_path),
+            false,
+            true, // consent given
+        );
+        assert!(
+            rendered.contains("audio archive:"),
+            "storage row must contain 'audio archive:' label when consent is given; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("archive.wav"),
+            "storage row must show archive path when consent is given; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("consent revoked"),
+            "storage row must NOT show 'consent revoked' when consent is given; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("transcripts:"),
+            "storage row must always show transcripts label; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("session.jsonl"),
+            "storage row must show recorder path; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn storage_row_without_consent_hides_archive_bytes_and_path() {
+        let archive_path = PathBuf::from(r"C:\tui\archive.wav");
+        let recorder_path = PathBuf::from(r"C:\tui\session.jsonl");
+        let rendered = render_expanded_storage_strip(
+            1_234_567,
+            Some(recorder_path),
+            98_765_432,         // non-zero archive bytes
+            Some(archive_path), // non-None archive path
+            false,
+            false, // consent revoked
+        );
+        assert!(
+            rendered.contains("consent revoked"),
+            "storage row must show '(consent revoked)' when audio consent is false; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("archive.wav"),
+            "storage row must NOT show archive path when consent is revoked; got:\n{rendered}"
+        );
+        // Transcript info should still be visible (no privacy concern for transcripts here).
+        assert!(
+            rendered.contains("transcripts:"),
+            "storage row must still show transcripts label even when consent is revoked; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn storage_row_sealed_archive_shows_sealed_label() {
+        let archive_path = PathBuf::from(r"C:\tui-translator\audio-archive\sealed.wav");
+        let rendered = render_expanded_storage_strip(
+            0,
+            None,
+            50 * 1024 * 1024,
+            Some(archive_path),
+            true, // sealed
+            true, // consent given
+        );
+        assert!(
+            rendered.contains("(sealed)"),
+            "sealed archive must display '(sealed)' label; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn storage_row_no_recorder_shows_dash() {
+        let rendered = render_expanded_storage_strip(0, None, 0, None, false, false);
+        assert!(
+            rendered.contains("transcripts:"),
+            "storage row must show transcripts label even when recording is disabled; got:\n{rendered}"
+        );
+        // em-dash for disabled recorder
+        assert!(
+            rendered.contains('\u{2014}'),
+            "disabled recorder path should show em-dash placeholder; got:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn format_storage_bytes_edge_cases() {
+        assert_eq!(format_storage_bytes(0), "0 B");
+        assert_eq!(format_storage_bytes(1), "1 B");
+        assert_eq!(format_storage_bytes(1023), "1023 B");
+        assert_eq!(format_storage_bytes(1024), "1.0 KB");
+        assert_eq!(format_storage_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_storage_bytes(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_storage_bytes(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn audio_consent_default_is_false() {
+        let state = AppState::new();
+        assert!(
+            !state.audio_consent.load(Ordering::Relaxed),
+            "audio_consent must default to false (no consent on fresh state)"
+        );
+    }
+
+    #[test]
+    fn set_audio_consent_updates_atomic() {
+        let state = AppState::new();
+        state.set_audio_consent(true);
+        assert!(state.audio_consent.load(Ordering::Relaxed));
+        state.set_audio_consent(false);
+        assert!(!state.audio_consent.load(Ordering::Relaxed));
     }
 }
