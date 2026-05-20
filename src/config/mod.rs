@@ -985,9 +985,40 @@ impl AppConfig {
     }
 
     /// Returns `true` when changing from `self` to `next` requires restarting
-    /// the application (e.g., `google_api_key` changed and the provider must
-    /// be re-initialised, or `tts_output_device` changed and the audio output
-    /// stream must be re-opened).
+    /// the application.
+    ///
+    /// ## Restart-classification audit (issue #386 / HC-01)
+    ///
+    /// This is the authoritative record of every `AppConfig` field's
+    /// live-reload classification.  Any change to the body of this function
+    /// **must** update this table.
+    ///
+    /// | Field | Class | Reason |
+    /// |---|---|---|
+    /// | `google_api_key` | **restart** | Provider credential; Google STT/MT/TTS clients must be re-initialised. |
+    /// | `tts_output_device` | **restart** | Audio output stream must be re-opened on the new device. |
+    /// | `tts_routing` | **restart** | `sync_playback_service_state` does not rebuild an existing service on routing change; restart required. |
+    /// | `virtual_mic_device` | **restart** | Virtual-mic output stream must be re-opened. |
+    /// | `virtual_device_patterns` | **restart** | Pattern list is baked into device enumeration at startup. |
+    /// | `capture_device` | **restart** | WASAPI loopback stream must be re-opened on the new device. |
+    /// | `audio_source` | **restart** | Input-source type is baked into pipeline construction. |
+    /// | `audio_file_path` | **restart** | File source is opened once at pipeline start. |
+    /// | `stt_provider` | **restart** | Provider trait object must be reconstructed. |
+    /// | `mt_provider` | **restart** | Provider trait object must be reconstructed. |
+    /// | `stt_fallback_policy` | **restart** | Fallback chain is wired at pipeline initialisation. |
+    /// | `cpu_budget_pct` | **restart** | Budget guard is initialised at pipeline start. |
+    /// | `vad` | **restart** | VAD filter is wired at pipeline construction. |
+    /// | `stt_phrase_hints` | **restart** | Hints are embedded in the Google STT session context at init. |
+    /// | `session_store` | **restart** | Store handle is opened once at startup. |
+    /// | `pipeline` | **restart** | Window/timing constants are baked into pipeline state. |
+    /// | `audio_archive` | **restart** | WAV writer is opened once at startup. |
+    /// | `slots` | **restart** | Dual-slot pipeline topology is set at construction. |
+    /// | `source_language` | **hot** | Forwarded to provider calls per-request; no stream rebuild needed. |
+    /// | `target_language` | **hot** | Forwarded to MT calls per-request; no stream rebuild needed. |
+    /// | `tts_enabled` | **hot** | Playback toggle is checked at synthesis time. |
+    /// | `cost_warning_usd` | **hot** | UI threshold is read each render tick. |
+    /// | `ram_budget_mb` | **hot** | UI threshold is read each render tick. |
+    /// | `_comment` | **hot** | Documentation-only; never read at runtime. |
     pub fn requires_restart(&self, next: &AppConfig) -> bool {
         self.google_api_key != next.google_api_key
             || self.tts_output_device != next.tts_output_device
@@ -3129,5 +3160,212 @@ mod tests {
         restored
             .validate()
             .expect("restored Both config must be valid");
+    }
+
+    // issue #386 / HC-01: restart-classification audit tests
+
+    /// `google_api_key` change must require restart (provider credential).
+    #[test]
+    fn google_api_key_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            google_api_key: Some("NEW_KEY".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing google_api_key must require a restart"
+        );
+    }
+
+    /// `tts_output_device` change must require restart (audio stream re-open).
+    #[test]
+    fn tts_output_device_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            tts_output_device: Some("Headphones (USB)".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing tts_output_device must require a restart"
+        );
+    }
+
+    /// `tts_routing` change must require restart.
+    ///
+    /// `sync_playback_service_state` does not rebuild an existing service when
+    /// routing changes, so a restart is required.
+    #[test]
+    fn tts_routing_change_requires_restart() {
+        let current = AppConfig::default(); // TtsRouting::Speakers
+        let next = AppConfig {
+            tts_routing: TtsRouting::VirtualMic,
+            virtual_mic_device: Some("CABLE Input (VB-Audio)".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing tts_routing must require a restart"
+        );
+    }
+
+    /// `virtual_mic_device` change must require restart (virtual-mic stream re-open).
+    #[test]
+    fn virtual_mic_device_change_requires_restart() {
+        let current = AppConfig {
+            tts_routing: TtsRouting::VirtualMic,
+            virtual_mic_device: Some("CABLE Input (VB-Audio)".to_string()),
+            ..AppConfig::default()
+        };
+        let next = AppConfig {
+            tts_routing: TtsRouting::VirtualMic,
+            virtual_mic_device: Some("CABLE Input (VB-Audio v2)".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing virtual_mic_device must require a restart"
+        );
+    }
+
+    /// `audio_source` change must require restart (input-source type baked into pipeline).
+    #[test]
+    fn audio_source_change_requires_restart() {
+        let current = AppConfig::default(); // "wasapi"
+        let next = AppConfig {
+            audio_source: "file".to_string(),
+            audio_file_path: Some("tests/soak/soak_audio.wav".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing audio_source must require a restart"
+        );
+    }
+
+    /// `audio_file_path` change must require restart (file opened once at pipeline start).
+    #[test]
+    fn audio_file_path_change_requires_restart() {
+        let current = AppConfig {
+            audio_source: "file".to_string(),
+            audio_file_path: Some("old.wav".to_string()),
+            ..AppConfig::default()
+        };
+        let next = AppConfig {
+            audio_source: "file".to_string(),
+            audio_file_path: Some("new.wav".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing audio_file_path must require a restart"
+        );
+    }
+
+    /// `stt_fallback_policy` change must require restart (fallback chain wired at init).
+    #[test]
+    fn stt_fallback_policy_change_requires_restart() {
+        let current = AppConfig::default(); // "none"
+        let next = AppConfig {
+            stt_fallback_policy: "local".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing stt_fallback_policy must require a restart"
+        );
+    }
+
+    /// `audio_archive` change must require restart (WAV writer opened once at startup).
+    #[test]
+    fn audio_archive_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            audio_archive: AudioArchiveConfig {
+                store_audio: true,
+                consent_given: true,
+                directory: None,
+                max_size_mb: 0,
+            },
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing audio_archive must require a restart"
+        );
+    }
+
+    /// `source_language` change must NOT require restart (hot field).
+    #[test]
+    fn source_language_change_does_not_require_restart() {
+        let current = AppConfig::default(); // "ja-JP"
+        let next = AppConfig {
+            source_language: "en-US".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(
+            !current.requires_restart(&next),
+            "changing source_language must not require a restart"
+        );
+    }
+
+    /// `target_language` change must NOT require restart (hot field).
+    #[test]
+    fn target_language_change_does_not_require_restart() {
+        let current = AppConfig::default(); // "vi"
+        let next = AppConfig {
+            target_language: "en".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(
+            !current.requires_restart(&next),
+            "changing target_language must not require a restart"
+        );
+    }
+
+    /// `tts_enabled` change must NOT require restart (hot field: checked at synthesis).
+    #[test]
+    fn tts_enabled_change_does_not_require_restart() {
+        let current = AppConfig::default(); // false
+        let next = AppConfig {
+            tts_enabled: true,
+            ..AppConfig::default()
+        };
+        assert!(
+            !current.requires_restart(&next),
+            "changing tts_enabled must not require a restart"
+        );
+    }
+
+    /// `cost_warning_usd` change must NOT require restart (hot field: UI threshold).
+    #[test]
+    fn cost_warning_usd_change_does_not_require_restart() {
+        let current = AppConfig::default(); // 0.0
+        let next = AppConfig {
+            cost_warning_usd: 5.0,
+            ..AppConfig::default()
+        };
+        assert!(
+            !current.requires_restart(&next),
+            "changing cost_warning_usd must not require a restart"
+        );
+    }
+
+    /// `_comment` change must NOT require restart (documentation-only field).
+    #[test]
+    fn comment_change_does_not_require_restart() {
+        // Deserialise via JSON to reach the private `comment` field without
+        // struct-literal access from the child test module.
+        let base = r#"{"source_language":"ja-JP","target_language":"vi"}"#;
+        let with_comment =
+            r#"{"source_language":"ja-JP","target_language":"vi","_comment":"see docs"}"#;
+        let current: AppConfig = serde_json::from_str(base).expect("parse base config");
+        let next: AppConfig =
+            serde_json::from_str(with_comment).expect("parse config with _comment");
+        assert!(
+            !current.requires_restart(&next),
+            "changing _comment must not require a restart"
+        );
     }
 }
