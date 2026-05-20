@@ -328,6 +328,12 @@ fn snapshot_status_strip_compact_idle() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -359,6 +365,12 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -393,6 +405,12 @@ fn snapshot_status_strip_compact_restart_notice() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -429,6 +447,12 @@ fn snapshot_status_strip_compact_sending() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -460,6 +484,12 @@ fn snapshot_status_strip_compact_waiting() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -491,6 +521,12 @@ fn snapshot_status_strip_compact_error() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -524,8 +560,14 @@ fn snapshot_status_strip_expanded_idle() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 7);
+    let rendered = render_strip(&strip, 80, 9);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -560,8 +602,14 @@ fn snapshot_status_strip_expanded_listening() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 7);
+    let rendered = render_strip(&strip, 80, 9);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -570,7 +618,7 @@ fn snapshot_status_strip_expanded_listening() {
 }
 
 /// Expanded mode with an active cost warning: the warning row must be visible
-/// and the block must be 9 rows tall (2 borders + 6 standard rows + 1 warning).
+/// and the block must be 10 rows tall (2 borders + 7 standard rows + 1 warning).
 #[test]
 fn snapshot_status_strip_expanded_with_warning() {
     let stt = SttState::Listening;
@@ -598,11 +646,17 @@ fn snapshot_status_strip_expanded_with_warning() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 9,
-        "expanded_height() must be 9 when over_threshold; got {height}"
+        height, 10,
+        "expanded_height() must be 10 when over_threshold; got {height}"
     );
     insta::assert_snapshot!(
         "status_strip_expanded_with_warning",
@@ -640,6 +694,12 @@ fn snapshot_status_strip_narrow_abbreviated() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -675,6 +735,12 @@ fn snapshot_status_strip_wide_full_labels() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -839,6 +905,12 @@ fn stt_error_state_label_contains_message() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -875,6 +947,12 @@ fn narrow_strip_uses_abbreviated_labels() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
@@ -894,11 +972,11 @@ fn narrow_strip_uses_abbreviated_labels() {
 /// when `cost_usd` exceeds `cost_warning_usd` (issue #74).
 ///
 /// Verifies:
-/// 1. `expanded_height()` returns 9 (not 8) when over threshold (LF-02 added
-///    the local-runtime row).
+/// 1. `expanded_height()` returns 10 (not 9) when over threshold (LF-02 adds
+///    the local-runtime row and SM-02 adds the storage row).
 /// 2. `expanded_metrics_height(true, true)` matches that value.
-/// 3. The rendered text at 9 rows contains the warning.
-/// 4. The same strip at 8 rows (old, pre-LF-02 height) does NOT show the
+/// 3. The rendered text at 10 rows contains the warning.
+/// 4. The same strip at 9 rows (old, pre-combined height) does NOT show the
 ///    warning.
 #[test]
 fn expanded_warning_renders_when_over_threshold() {
@@ -927,23 +1005,29 @@ fn expanded_warning_renders_when_over_threshold() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
 
-    // Height accounting must be 9 when warning is active.
+    // Height accounting must be 10 when warning is active.
     assert_eq!(
         strip.expanded_height(),
-        9,
-        "expanded_height() must return 9 when cost exceeds threshold"
+        10,
+        "expanded_height() must return 10 when cost exceeds threshold"
     );
     assert_eq!(
         expanded_metrics_height(true, true),
-        9,
-        "expanded_metrics_height(expanded=true, over_threshold=true) must be 9"
+        10,
+        "expanded_metrics_height(expanded=true, over_threshold=true) must be 10"
     );
     assert_eq!(
         expanded_metrics_height(true, false),
-        8,
-        "expanded_metrics_height(expanded=true, over_threshold=false) must be 8"
+        9,
+        "expanded_metrics_height(expanded=true, over_threshold=false) must be 9"
     );
     assert_eq!(
         expanded_metrics_height(false, true),
@@ -951,22 +1035,22 @@ fn expanded_warning_renders_when_over_threshold() {
         "expanded_metrics_height(expanded=false, ...) must always be 3"
     );
 
-    // At the correct height of 9 the warning IS visible.
-    let rendered_9 = render_strip(&strip, 80, 9);
+    // At the correct height of 10 the warning IS visible.
+    let rendered_10 = render_strip(&strip, 80, 10);
     assert!(
-        rendered_9.contains("Cost warning"),
-        "expanded strip at 9 rows must show cost warning; got:\n{rendered_9}"
+        rendered_10.contains("Cost warning"),
+        "expanded strip at 10 rows must show cost warning; got:\n{rendered_10}"
     );
     assert!(
-        rendered_9.contains("1.20"),
-        "cost warning must include the current cost value; got:\n{rendered_9}"
+        rendered_10.contains("1.20"),
+        "cost warning must include the current cost value; got:\n{rendered_10}"
     );
 
-    // At the old (wrong) height of 8 the warning row is clipped — regression guard.
-    let rendered_8 = render_strip(&strip, 80, 8);
+    // At the old combined height of 9 the warning row is clipped - regression guard.
+    let rendered_clipped = render_strip(&strip, 80, 9);
     assert!(
-        !rendered_8.contains("Cost warning"),
-        "at 8 rows the warning row IS clipped — confirms fix was needed; got:\n{rendered_8}"
+        !rendered_clipped.contains("Cost warning"),
+        "at 9 rows the warning row is clipped - confirms fix was needed; got:\n{rendered_clipped}"
     );
 }
 
@@ -998,6 +1082,12 @@ fn snapshot_status_strip_zero_state_narrow() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -1033,8 +1123,14 @@ fn snapshot_status_strip_zero_state_expanded() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 7);
+    let rendered = render_strip(&strip, 80, 9);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -1115,6 +1211,12 @@ fn narrow_compact_strip_uses_lang_label() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1155,6 +1257,12 @@ fn narrow_compact_strip_uses_tts_label() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1195,6 +1303,12 @@ fn compact_restart_notice_is_spelled_out() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1235,6 +1349,12 @@ fn snapshot_status_strip_very_narrow_30cols() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1435,6 +1555,12 @@ fn expanded_metrics_narrow_uses_lang_label() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 60, 7);
     assert!(
@@ -1750,6 +1876,12 @@ fn snapshot_status_strip_compact_ram_warning() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1796,11 +1928,17 @@ fn snapshot_status_strip_expanded_ram_warning() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 9,
-        "expanded_height() must be 9 when ram_warning is true; got {height}"
+        height, 10,
+        "expanded_height() must be 10 when ram_warning is true; got {height}"
     );
     let rendered = render_strip(&strip, 80, height);
     assert!(
@@ -1843,8 +1981,14 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
-    assert_eq!(strip.expanded_height(), 9);
+    assert_eq!(strip.expanded_height(), 10);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
     assert!(
         rendered.contains("Cost warning") && rendered.contains("RAM warning"),
@@ -1854,7 +1998,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
 
 /// Expanded strip: no extra row and no warning when `ram_warning` is false.
 #[test]
-fn expanded_metrics_height_is_8_without_any_warning() {
+fn expanded_metrics_height_is_9_without_any_warning() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
@@ -1880,10 +2024,16 @@ fn expanded_metrics_height_is_8_without_any_warning() {
         mt_call_count: 0,
         local_cpu_pct: 0.0,
         local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
     };
     assert_eq!(
         strip.expanded_height(),
-        8,
-        "no warnings → expanded_height() must be 8"
+        9,
+        "no warnings -> expanded_height() must be 9"
     );
 }

@@ -162,10 +162,15 @@ pub fn generate_session_id(started_at_unix_ms: u64) -> String {
 pub struct SessionRecorderConfig {
     /// Whether transcript JSONL recording is enabled.
     pub enabled: bool,
-    /// Directory where per-session JSONL files are written when enabled.
+    /// Parent directory under which per-session subdirectories
+    /// (`<directory>/<session-id>/<segment>.jsonl`) are written.
     pub directory: PathBuf,
-    /// Maximum number of session JSONL files to keep, including the new file.
+    /// Maximum number of session directories to keep, including the new one.
     pub max_sessions: Option<usize>,
+    /// LF-06 per-session byte cap.  When the active segment file exceeds this
+    /// many bytes, the writer task seals it and starts a new segment under
+    /// the same session directory.  `0` disables segment rollover.
+    pub per_session_bytes_cap: u64,
 }
 
 impl SessionRecorderConfig {
@@ -175,16 +180,24 @@ impl SessionRecorderConfig {
             enabled: true,
             directory: directory.into(),
             max_sessions: None,
+            per_session_bytes_cap: 0,
         }
     }
 
-    /// Create an enabled recorder config and cap retained JSONL files.
+    /// Create an enabled recorder config and cap retained sessions.
     pub fn enabled_with_max_sessions(directory: impl Into<PathBuf>, max_sessions: usize) -> Self {
         Self {
             enabled: true,
             directory: directory.into(),
             max_sessions: Some(max_sessions),
+            per_session_bytes_cap: 0,
         }
+    }
+
+    /// Builder: set the per-session byte cap for segment rollover.
+    pub fn with_per_session_bytes_cap(mut self, cap: u64) -> Self {
+        self.per_session_bytes_cap = cap;
+        self
     }
 
     /// Create a disabled recorder config. The directory is kept for tests and diagnostics.
@@ -193,6 +206,7 @@ impl SessionRecorderConfig {
             enabled: false,
             directory: directory.into(),
             max_sessions: None,
+            per_session_bytes_cap: 0,
         }
     }
 }
@@ -205,7 +219,8 @@ impl SessionRecorderConfig {
 /// guarantee.
 pub struct SessionRecorder {
     session_id: Option<String>,
-    path: Option<PathBuf>,
+    session_dir: Option<PathBuf>,
+    active_path: Arc<Mutex<Option<PathBuf>>>,
     sender: Option<mpsc::Sender<SessionLogRecord>>,
     writer: Option<JoinHandle<()>>,
     last_error: Arc<Mutex<Option<String>>>,
@@ -220,7 +235,8 @@ impl SessionRecorder {
     pub fn disabled() -> Self {
         Self {
             session_id: None,
-            path: None,
+            session_dir: None,
+            active_path: Arc::new(Mutex::new(None)),
             sender: None,
             writer: None,
             last_error: Arc::new(Mutex::new(None)),
@@ -244,12 +260,27 @@ impl SessionRecorder {
             )
         })?;
         if let Some(max_sessions) = config.max_sessions {
-            prune_session_logs(&config.directory, max_sessions)?;
+            prune_session_dirs(&config.directory, max_sessions)?;
         }
 
-        let path = config
-            .directory
-            .join(session_log_file_name(&header.session_id));
+        // LF-06: validate the session-id as a path component; fall back to the
+        // legacy filesystem sanitizer when the caller supplied a string with
+        // non-component characters so existing flows keep working.
+        let session_subdir_name = if is_valid_path_component(&header.session_id) {
+            header.session_id.clone()
+        } else {
+            sanitize_session_id_for_fs(&header.session_id)
+        };
+
+        let session_dir = config.directory.join(&session_subdir_name);
+        fs::create_dir_all(&session_dir).await.map_err(|err| {
+            anyhow::anyhow!(
+                "failed to create per-session directory {}: {err}",
+                session_dir.display()
+            )
+        })?;
+
+        let path = session_dir.join(segment_file_name(1));
         let session_id = header.session_id.clone();
         let mut file = OpenOptions::new()
             .write(true)
@@ -269,20 +300,27 @@ impl SessionRecorder {
                 })?;
 
         let bytes_written = Arc::new(AtomicU64::new(header_byte_count as u64));
+        let active_path = Arc::new(Mutex::new(Some(path.clone())));
 
         let (tx, rx) = mpsc::channel(RECORDER_QUEUE_CAPACITY);
         let last_error = Arc::new(Mutex::new(None));
         let writer = tokio::spawn(run_writer(
             file,
             rx,
-            Arc::clone(&last_error),
-            path.clone(),
-            Arc::clone(&bytes_written),
+            WriterRuntime {
+                last_error: Arc::clone(&last_error),
+                session_dir: session_dir.clone(),
+                active_path: Arc::clone(&active_path),
+                initial_segment_bytes: header_byte_count as u64,
+                per_session_bytes_cap: config.per_session_bytes_cap,
+                bytes_written: Arc::clone(&bytes_written),
+            },
         ));
 
         Ok(Self {
             session_id: Some(session_id),
-            path: Some(path),
+            session_dir: Some(session_dir),
+            active_path,
             sender: Some(tx),
             writer: Some(writer),
             last_error,
@@ -290,9 +328,17 @@ impl SessionRecorder {
         })
     }
 
-    /// Return the JSONL path when recording is enabled.
-    pub fn path(&self) -> Option<&Path> {
-        self.path.as_deref()
+    /// Return the active JSONL segment path when recording is enabled.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.active_path
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    /// Return the per-session directory that holds JSONL segments.
+    pub fn session_dir(&self) -> Option<&Path> {
+        self.session_dir.as_deref()
     }
 
     /// Return the active session id when recording is enabled.
@@ -382,22 +428,100 @@ pub enum SessionRecorderError {
     WriterStopped(String),
 }
 
+struct WriterRuntime {
+    last_error: Arc<Mutex<Option<String>>>,
+    session_dir: PathBuf,
+    active_path: Arc<Mutex<Option<PathBuf>>>,
+    initial_segment_bytes: u64,
+    per_session_bytes_cap: u64,
+    bytes_written: Arc<AtomicU64>,
+}
+
 async fn run_writer(
     mut file: File,
     mut rx: mpsc::Receiver<SessionLogRecord>,
-    last_error: Arc<Mutex<Option<String>>>,
-    path: PathBuf,
-    bytes_written: Arc<AtomicU64>,
+    writer: WriterRuntime,
 ) {
+    let WriterRuntime {
+        last_error,
+        session_dir,
+        active_path,
+        initial_segment_bytes,
+        per_session_bytes_cap,
+        bytes_written,
+    } = writer;
+    let mut current_segment: u32 = 1;
+    let mut current_segment_bytes: u64 = initial_segment_bytes;
+    let mut current_path: PathBuf = active_path
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .unwrap_or_else(|| session_dir.join(segment_file_name(current_segment)));
+
     while let Some(record) = rx.recv().await {
-        match write_record_line(&mut file, &record).await {
-            Ok(n) => {
-                bytes_written.fetch_add(n as u64, Ordering::Relaxed);
+        // Pre-serialise to know the line length so we can rotate before writing.
+        let line = match serialise_record_line(&record) {
+            Ok(line) => line,
+            Err(err) => {
+                let message = format!(
+                    "session recorder serialise failed for {}: {err}",
+                    current_path.display()
+                );
+                tracing::warn!("{message}");
+                *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
+                break;
+            }
+        };
+        let line_len = line.len() as u64;
+
+        if per_session_bytes_cap > 0
+            && current_segment_bytes > 0
+            && current_segment_bytes.saturating_add(line_len) > per_session_bytes_cap
+        {
+            if let Err(err) = file.flush().await {
+                let message = format!(
+                    "session recorder flush failed for {}: {err}",
+                    current_path.display()
+                );
+                tracing::warn!("{message}");
+                *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
+                break;
+            }
+            current_segment = current_segment.saturating_add(1);
+            let next_path = session_dir.join(segment_file_name(current_segment));
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&next_path)
+                .await
+            {
+                Ok(next_file) => {
+                    file = next_file;
+                    current_path = next_path.clone();
+                    *active_path.lock().unwrap_or_else(|p| p.into_inner()) = Some(next_path);
+                    current_segment_bytes = 0;
+                }
+                Err(err) => {
+                    let message = format!(
+                        "session recorder failed to open next segment {}: {err}",
+                        next_path.display()
+                    );
+                    tracing::warn!("{message}");
+                    *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
+                    break;
+                }
+            }
+        }
+
+        match write_line_bytes(&mut file, &line).await {
+            Ok(()) => {
+                current_segment_bytes = current_segment_bytes.saturating_add(line_len);
+                bytes_written.fetch_add(line_len, Ordering::Relaxed);
             }
             Err(err) => {
                 let message = format!(
                     "session recorder write failed for {}: {err}",
-                    path.display()
+                    current_path.display()
                 );
                 tracing::warn!("{message}");
                 *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
@@ -409,24 +533,37 @@ async fn run_writer(
     if let Err(err) = file.flush().await {
         let message = format!(
             "session recorder flush failed for {}: {err}",
-            path.display()
+            current_path.display()
         );
         tracing::warn!("{message}");
         *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
     }
 }
 
-async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::io::Result<usize> {
+fn serialise_record_line(record: &SessionLogRecord) -> std::io::Result<Vec<u8>> {
     let mut line = serde_json::to_vec(record).map_err(std::io::Error::other)?;
     line.push(b'\n');
+    Ok(line)
+}
+
+async fn write_line_bytes(file: &mut File, line: &[u8]) -> std::io::Result<()> {
+    file.write_all(line).await?;
+    file.flush().await
+}
+
+async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::io::Result<usize> {
+    let line = serialise_record_line(record)?;
     let len = line.len();
-    file.write_all(&line).await?;
-    file.flush().await?;
+    write_line_bytes(file, &line).await?;
     Ok(len)
 }
 
-fn session_log_file_name(session_id: &str) -> String {
-    let stem: String = session_id
+fn segment_file_name(segment_index: u32) -> String {
+    format!("{segment_index:05}.jsonl")
+}
+
+fn sanitize_session_id_for_fs(session_id: &str) -> String {
+    session_id
         .chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
@@ -435,8 +572,68 @@ fn session_log_file_name(session_id: &str) -> String {
                 '_'
             }
         })
-        .collect();
-    format!("{stem}.jsonl")
+        .collect()
+}
+
+/// Local mirror of `storage::validate_path_component`'s acceptance rule —
+/// duplicated so that bin targets which only pull in `session/mod.rs`
+/// (e.g. `eval_session`) still build without a separate `storage` mount.
+/// The rule must stay in sync with `crate::storage::validate_path_component`.
+fn is_valid_path_component(component: &str) -> bool {
+    if component.is_empty() || component == "." || component == ".." {
+        return false;
+    }
+    if component.contains('/') || component.contains('\\') || component.contains(':') {
+        return false;
+    }
+    if component.chars().any(|c| {
+        (c as u32) < 0x20 || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*'
+    }) {
+        return false;
+    }
+    if component.ends_with('.') || component.ends_with(' ') {
+        return false;
+    }
+    // Reject absolute path / drive prefix.
+    if std::path::Path::new(component).is_absolute() {
+        return false;
+    }
+    // Reject Windows reserved device names (case-insensitive, base stem).
+    let stem = component
+        .split('.')
+        .next()
+        .unwrap_or(component)
+        .to_ascii_uppercase();
+    !matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+#[allow(dead_code)]
+fn session_log_file_name(session_id: &str) -> String {
+    format!("{}.jsonl", sanitize_session_id_for_fs(session_id))
 }
 
 struct SessionLogCandidate {
@@ -444,19 +641,24 @@ struct SessionLogCandidate {
     modified: SystemTime,
 }
 
-fn prune_session_logs(directory: &Path, max_sessions: usize) -> anyhow::Result<()> {
+fn prune_session_dirs(directory: &Path, max_sessions: usize) -> anyhow::Result<()> {
     if max_sessions == 0 {
         anyhow::bail!("session recorder max_sessions must be greater than zero");
     }
 
     let keep_existing = max_sessions.saturating_sub(1);
-    let mut logs = Vec::new();
-    for entry in std::fs::read_dir(directory).map_err(|err| {
-        anyhow::anyhow!(
-            "failed to read session directory {}: {err}",
-            directory.display()
-        )
-    })? {
+    let mut entries = Vec::new();
+    let read = match std::fs::read_dir(directory) {
+        Ok(rd) => rd,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => {
+            return Err(anyhow::anyhow!(
+                "failed to read session directory {}: {err}",
+                directory.display()
+            ));
+        }
+    };
+    for entry in read {
         let entry = entry.map_err(|err| {
             anyhow::anyhow!(
                 "failed to read session directory entry {}: {err}",
@@ -464,35 +666,43 @@ fn prune_session_logs(directory: &Path, max_sessions: usize) -> anyhow::Result<(
             )
         })?;
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
-            continue;
-        }
         let metadata = entry.metadata().map_err(|err| {
-            anyhow::anyhow!("failed to inspect session log {}: {err}", path.display())
+            anyhow::anyhow!("failed to inspect session entry {}: {err}", path.display())
         })?;
-        if !metadata.is_file() {
+        // Per-session subdirectories (LF-06 layout) are the canonical units to
+        // prune.  Legacy flat `*.jsonl` files are also considered so the count
+        // cap remains correct during the migration window.
+        let is_session_dir = metadata.is_dir();
+        let is_legacy_log =
+            metadata.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl");
+        if !is_session_dir && !is_legacy_log {
             continue;
         }
-        logs.push(SessionLogCandidate {
+        entries.push(SessionLogCandidate {
             path,
             modified: metadata.modified().unwrap_or(UNIX_EPOCH),
         });
     }
 
-    if logs.len() <= keep_existing {
+    if entries.len() <= keep_existing {
         return Ok(());
     }
 
-    logs.sort_by(|a, b| {
+    entries.sort_by(|a, b| {
         a.modified
             .cmp(&b.modified)
             .then_with(|| a.path.cmp(&b.path))
     });
-    let remove_count = logs.len() - keep_existing;
-    for candidate in logs.into_iter().take(remove_count) {
-        std::fs::remove_file(&candidate.path).map_err(|err| {
+    let remove_count = entries.len() - keep_existing;
+    for candidate in entries.into_iter().take(remove_count) {
+        let result = if candidate.path.is_dir() {
+            std::fs::remove_dir_all(&candidate.path)
+        } else {
+            std::fs::remove_file(&candidate.path)
+        };
+        result.map_err(|err| {
             anyhow::anyhow!(
-                "failed to prune old session log {}: {err}",
+                "failed to prune old session entry {}: {err}",
                 candidate.path.display()
             )
         })?;
@@ -504,19 +714,25 @@ fn prune_session_logs(directory: &Path, max_sessions: usize) -> anyhow::Result<(
 
 /// Extract the session-id stem from a JSONL session-log path.
 ///
-/// Returns the file stem (the filename without its extension) as a `&str`, or
-/// `None` when the path has no filename component or the stem contains
-/// non-UTF-8 bytes.
-///
-/// The returned value is the sanitized session-id encoded by
-/// [`session_log_file_name`] — every character outside `[A-Za-z0-9\-_]` is
-/// replaced with `_` at write time.  The same sanitization rule is applied by
-/// `audio::archive::session_wav_file_name`, so two artifact files written from
-/// the same `session_id` always share an identical stem.  Use
-/// [`check_session_pairing`] to verify that a JSONL path and a WAV path belong
-/// to the same recording session.
+/// LF-06 layout: `<sessions-root>/<session-id>/<segment>.jsonl` — the parent
+/// directory name is the session-id.  Legacy flat layout
+/// `<sessions-root>/<session-id>.jsonl` — the file stem is the session-id.
+/// This helper transparently handles both: when the file stem looks like a
+/// numeric segment (`00001`, `00002`, …) it falls back to the parent directory
+/// name; otherwise it returns the file stem unchanged.
 pub fn session_id_from_jsonl_path(path: &Path) -> Option<&str> {
-    path.file_stem()?.to_str()
+    let stem = path.file_stem().and_then(|s| s.to_str())?;
+    if looks_like_segment_stem(stem) {
+        path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+    } else {
+        Some(stem)
+    }
+}
+
+fn looks_like_segment_stem(stem: &str) -> bool {
+    !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Error returned when a JSONL transcript and a WAV audio-archive path-pair do
@@ -578,25 +794,37 @@ pub fn check_session_pairing<'a>(
     jsonl_path: &'a Path,
     wav_path: &Path,
 ) -> Result<&'a str, SessionPairingError> {
-    let jsonl_stem = jsonl_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| SessionPairingError::NoJsonlStem {
+    let jsonl_id =
+        session_id_from_jsonl_path(jsonl_path).ok_or_else(|| SessionPairingError::NoJsonlStem {
             path: jsonl_path.display().to_string(),
         })?;
-    let wav_stem = wav_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| SessionPairingError::NoWavStem {
+    let wav_id =
+        session_id_from_wav_path_local(wav_path).ok_or_else(|| SessionPairingError::NoWavStem {
             path: wav_path.display().to_string(),
         })?;
-    if jsonl_stem != wav_stem {
+    if jsonl_id != wav_id {
         return Err(SessionPairingError::Mismatch {
-            jsonl_stem: jsonl_stem.to_string(),
-            wav_stem: wav_stem.to_string(),
+            jsonl_stem: jsonl_id.to_string(),
+            wav_stem: wav_id.to_string(),
         });
     }
-    Ok(jsonl_stem)
+    Ok(jsonl_id)
+}
+
+/// Parent-dir-aware WAV session-id extractor (LF-06 layout).
+/// Duplicated here so bin targets that only `#[path]`-mount `session/mod.rs`
+/// can still call [`check_session_pairing`] without also mounting
+/// `audio/archive.rs`.  Behaviour must match
+/// `audio::archive::session_id_from_wav_path`.
+fn session_id_from_wav_path_local(path: &Path) -> Option<&str> {
+    let stem = path.file_stem().and_then(|s| s.to_str())?;
+    if !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit()) {
+        path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+    } else {
+        Some(stem)
+    }
 }
 
 // ── Export helpers ────────────────────────────────────────────────────────────
@@ -948,30 +1176,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enabled_recorder_prunes_old_session_logs_to_max_sessions() {
-        let temp = TempDir::new().unwrap();
+    async fn enabled_recorder_prunes_old_session_entries_to_max_sessions() {
+        let temp = TempDir::new().expect("create tempdir");
         let sessions_dir = temp.path().join("sessions");
-        std::fs::create_dir_all(&sessions_dir).unwrap();
-        std::fs::write(sessions_dir.join("old-a.jsonl"), "{}\n").unwrap();
-        std::fs::write(sessions_dir.join("old-b.jsonl"), "{}\n").unwrap();
-        std::fs::write(sessions_dir.join("old-c.jsonl"), "{}\n").unwrap();
+        std::fs::create_dir_all(&sessions_dir).expect("create sessions root");
+        // Mix of LF-06 per-session dirs and legacy flat .jsonl files: prune
+        // counts both so the cap stays accurate during the migration window.
+        std::fs::create_dir_all(sessions_dir.join("old-a")).expect("create per-session dir A");
+        std::fs::write(sessions_dir.join("old-a").join("00001.jsonl"), "{}\n")
+            .expect("write segment A");
+        std::fs::create_dir_all(sessions_dir.join("old-b")).expect("create per-session dir B");
+        std::fs::write(sessions_dir.join("old-b").join("00001.jsonl"), "{}\n")
+            .expect("write segment B");
+        std::fs::write(sessions_dir.join("old-c.jsonl"), "{}\n")
+            .expect("write legacy flat session file");
 
         let recorder = SessionRecorder::start(
             SessionRecorderConfig::enabled_with_max_sessions(sessions_dir.clone(), 2),
             test_header("new-session"),
         )
         .await
-        .unwrap();
-        recorder.shutdown().await.unwrap();
+        .expect("start recorder");
+        recorder.shutdown().await.expect("shutdown recorder");
 
-        let jsonl_count = std::fs::read_dir(&sessions_dir)
-            .unwrap()
+        let entry_count = std::fs::read_dir(&sessions_dir)
+            .expect("read sessions dir")
             .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
             .count();
 
-        assert_eq!(jsonl_count, 2, "new session plus one retained old log");
-        assert!(sessions_dir.join("new-session.jsonl").exists());
+        assert_eq!(
+            entry_count, 2,
+            "new session plus one retained old entry (cap = 2)"
+        );
+        assert!(
+            sessions_dir
+                .join("new-session")
+                .join("00001.jsonl")
+                .exists(),
+            "new session segment is the freshly written one"
+        );
     }
 
     // ── Issue #393: bytes_written counter tests ────────────────────────────────
@@ -1076,6 +1319,66 @@ mod tests {
         assert!(
             after_segment > after_header,
             "Arc must reflect segment bytes written through the shared atomic"
+        );
+    }
+
+    #[tokio::test]
+    async fn lf06_recorder_uses_per_session_subdir_layout() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone()),
+            test_header("layout-session"),
+        )
+        .await
+        .expect("start recorder");
+        let path = recorder
+            .path()
+            .expect("enabled recorder exposes active segment path");
+        recorder.shutdown().await.expect("shutdown");
+
+        assert_eq!(
+            path,
+            sessions_dir.join("layout-session").join("00001.jsonl"),
+            "LF-06 layout: <root>/<session-id>/00001.jsonl"
+        );
+    }
+
+    #[tokio::test]
+    async fn lf06_recorder_rotates_to_next_segment_at_per_session_cap() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        // Tiny cap so subsequent transcript lines force a rotation.
+        let cap_bytes: u64 = 128;
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone())
+                .with_per_session_bytes_cap(cap_bytes),
+            test_header("rollover-session"),
+        )
+        .await
+        .expect("start recorder");
+
+        for id in 0..6u64 {
+            recorder
+                .record_segment(test_segment(id))
+                .expect("record segment");
+        }
+        recorder.shutdown().await.expect("shutdown");
+
+        let session_dir = sessions_dir.join("rollover-session");
+        let entries: Vec<String> = std::fs::read_dir(&session_dir)
+            .expect("read per-session dir")
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            entries.iter().any(|n| n == "00001.jsonl"),
+            "first segment always created, got {entries:?}"
+        );
+        assert!(
+            entries.iter().any(|n| n == "00002.jsonl"),
+            "rollover creates a second segment when cap is exceeded, got {entries:?}"
         );
     }
 

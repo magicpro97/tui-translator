@@ -45,16 +45,43 @@ pub fn default_config_path() -> Result<PathBuf> {
     Ok(default_config_dir()?.join("config.json"))
 }
 
-/// Return the default transcript session directory under the per-user config directory.
+/// Return the default transcript session directory.
+///
+/// **LF-06 canonical path**: `%LOCALAPPDATA%\tui-translator\sessions`.  This
+/// migrates away from the pre-LF-06 `%APPDATA%` location; the one-shot move
+/// is handled by [`crate::storage::try_migrate_legacy_storage`].
 #[allow(dead_code)]
 pub fn default_sessions_dir() -> Result<PathBuf> {
+    Ok(local_data_dir()?.join("sessions"))
+}
+
+/// Return the default audio archive directory.
+///
+/// **LF-06 canonical path**: `%LOCALAPPDATA%\tui-translator\audio-archive`.
+#[allow(dead_code)]
+pub fn default_audio_archive_dir() -> Result<PathBuf> {
+    Ok(local_data_dir()?.join("audio-archive"))
+}
+
+/// Return the pre-LF-06 transcript session directory under `%APPDATA%`.
+/// Used only by the one-shot LF-06 migration; prefer [`default_sessions_dir`]
+/// for all new code.
+#[allow(dead_code)]
+pub fn legacy_sessions_dir() -> Result<PathBuf> {
     Ok(default_config_dir()?.join("sessions"))
 }
 
-/// Return the default audio archive directory under the per-user config directory.
+/// Return the pre-LF-06 audio archive directory under `%APPDATA%`.
 #[allow(dead_code)]
-pub fn default_audio_archive_dir() -> Result<PathBuf> {
+pub fn legacy_audio_archive_dir() -> Result<PathBuf> {
     Ok(default_config_dir()?.join("audio-archive"))
+}
+
+/// Return the LF-06 storage migration marker path under the canonical local
+/// data root.  See [`crate::storage::try_migrate_legacy_storage`].
+#[allow(dead_code)]
+pub fn lf06_migration_marker_path() -> Result<PathBuf> {
+    Ok(local_data_dir()?.join(".lf06-migrated"))
 }
 
 // ── LF-01 model-cache paths ──────────────────────────────────────────────────
