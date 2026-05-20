@@ -13,6 +13,36 @@ It takes about ten minutes from start to finish.
 
 ---
 
+## Fast path
+
+1. Download and extract the release ZIP.
+2. Start `tui-translator.exe`.
+3. Complete first-run setup; the app saves `%APPDATA%\tui-translator\config.json`.
+4. Join a meeting, keep the terminal visible, and use **S** for settings or
+   **F2/Ctrl+D** to choose from device/provider lists instead of typing.
+
+## Table of contents
+
+| Section | Use it for |
+|---------|------------|
+| [Steps 1-5](#step-1--download-the-application) | Download, configure, run, and join a meeting |
+| [Key controls](#key-controls-at-a-glance) | Runtime shortcuts and settings selection |
+| [Virtual microphone](#optional-route-translated-speech-into-zoom-or-teams) | Route translated TTS into Zoom or Teams |
+| [Speech quality](#speech-windowing-and-translation-quality) | Tune VAD, latency, and sentence aggregation |
+| [Troubleshooting](#troubleshooting) | Fix API key, capture, and cost issues |
+| [Offline / local STT](#optional-offline--local-speech-to-text-mode) | Run speech recognition locally |
+| [Offline quality evaluator](#offline-quality-evaluator-eval_session) | Score session logs without network access |
+
+## What the screens look like
+
+![First-run setup screen](docs/images/first-run-setup.svg)
+
+![Main subtitle screen](docs/images/main-subtitles.svg)
+
+![Settings editor with selectable fields](docs/images/settings-editor.svg)
+
+---
+
 ## What you need before you start
 
 - A **Windows 10 or Windows 11** computer (64-bit).
@@ -108,6 +138,8 @@ Follow these steps in the [Google Cloud Console](https://console.cloud.google.co
 
 A terminal window opens showing the subtitle area and a status bar at the bottom.
 
+![Main subtitle screen](docs/images/main-subtitles.svg)
+
 > **Where the app looks for your config (resolution order):**
 >
 > | Priority | Path | When used |
@@ -191,6 +223,8 @@ Zoom, Microsoft Teams, or another meeting app can select that cable as its
 microphone. This is the VMIC MVP path: it uses VB-CABLE, VAC, or Voicemeeter
 that you install separately. It is not yet a project-owned production virtual
 microphone driver.
+
+![Virtual microphone routing](docs/images/virtual-mic-routing.svg)
 
 Routing choices:
 
@@ -481,6 +515,8 @@ Alternatively, open the settings editor (press **S**), navigate to the
 `capture_device` row, and press **F2** or **Ctrl+D** to cycle through
 detected devices without typing.
 
+![Settings editor with selectable fields](docs/images/settings-editor.svg)
+
 **Step 3 — Start the application and confirm these three indicators**
 
 | Indicator | Expected | Where |
@@ -745,3 +781,85 @@ back to `"google"`.
 > external whisper.cpp/Hugging Face source, not from this repository. Review the
 > model license and Hugging Face terms before downloading, sharing, or
 > redistributing model files.
+
+---
+
+## Offline quality evaluator (`eval_session`)
+
+`eval_session` is a command-line tool included in the same release package.
+It reads a saved session log (JSONL), the paired WAV archive, and a
+ground-truth reference file (TSV) and produces quality-metric reports —
+entirely offline, with **no Google API key or network access required**.
+
+### What it does
+
+For every speech segment in the session log it:
+
+1. Verifies the WAV file is 16 kHz / 16-bit / mono PCM.
+2. Aligns each segment against the ground-truth row it covers (within 250 ms).
+3. Computes STT quality: Word Error Rate (WER) and Character Error Rate (CER).
+4. Computes translation quality: BLEU-2 and chrF against the reference.
+5. Computes a single confidence score (0.0–1.0):
+   `0.35×BLEU + 0.35×chrF + 0.20×alignment_coverage + 0.10×(1−WER)`
+6. Writes three report files into `--output-dir`:
+   - `eval-report.json` — full structured report with all metrics.
+   - `eval-report.csv` — per-segment rows suitable for spreadsheet import.
+   - `eval-report.md` — human-readable summary with a pass/fail badge.
+
+### Quick start
+
+When measurement mode is active the status bar shows a ready-to-paste command:
+
+```
+eval_session --session logs\session-abc.jsonl ^
+             --audio   archive\session-abc.wav ^
+             --truth   truth\ja_sentences.tsv ^
+             --output-dir target\eval
+```
+
+The command exits with code `0` (pass), `1` (parse or I/O error), or `2`
+(confidence below threshold).
+
+### Ground-truth TSV format
+
+Create a plain text file with the following columns separated by tabs.
+Include a header row:
+
+```
+start_ms	end_ms	source_text	reference_translation
+0	1500	こんにちは	Hello
+1500	3000	ありがとうございます	Thank you very much
+```
+
+The `start_ms` / `end_ms` values must match the recording timings of the
+WAV archive (not meeting clock times).
+
+### Full option reference
+
+| Flag | Required | Default | Description |
+|------|:--------:|---------|-------------|
+| `--session <path>` | ✅ | — | Path to session log `.jsonl` file |
+| `--audio <path>` | ✅ | — | Path to paired `.wav` archive file |
+| `--truth <path>` | ✅ | — | Path to ground-truth `.tsv` file |
+| `--output-dir <dir>` | ✅ | — | Directory to write report files |
+| `--latest <dir>` | ☐ | — | Instead of explicit paths, find the most recent matching pair in `<dir>` |
+| `--threshold <0.0–1.0>` | ☐ | `0.90` | Minimum confidence score; exit code `2` if below |
+| `--baseline <mode>` | ☐ | `none` | Compare against a synthetic baseline: `mock-truth` (perfect) or `mock-degraded` (garbled) |
+
+### Using `--latest` mode
+
+If your session files are all in one folder, you can omit `--session` and
+`--audio` and point `--latest` at the folder.  `eval_session` will find the
+most recently modified pair that shares a file stem:
+
+```
+eval_session --latest   logs ^
+             --truth    truth\ja_sentences.tsv ^
+             --output-dir target\eval
+```
+
+### Privacy note
+
+`eval_session` reads local files only.  No audio, text, or credentials are
+sent to any server.  The output reports contain the transcript text from your
+session log; treat them with the same care as the log files themselves.

@@ -36,6 +36,10 @@ path = "src/bin/quality_benchmark.rs"
 name = "vbcable_ci_probe"
 path = "src/bin/vbcable_ci_probe.rs"
 
+[[bin]]
+name = "eval_session"
+path = "src/bin/eval_session.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.30"

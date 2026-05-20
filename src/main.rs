@@ -564,7 +564,11 @@ fn start_session_recorder(
     )) {
         Ok(recorder) => {
             if let Some(path) = recorder.path() {
-                tracing::info!(path = %path.display(), "session transcript recording enabled");
+                tracing::info!(
+                    session_id = %session_id,
+                    path = %path.display(),
+                    "session transcript recording enabled"
+                );
             }
             recorder
         }
@@ -633,6 +637,73 @@ fn start_audio_archive(
 
 fn audio_archive_disabled_status(err: &anyhow::Error) -> String {
     format!("⚠ Audio archive disabled: {err}").replace(['\r', '\n'], " ")
+}
+
+/// Build the combined measurement-mode status string that names the session
+/// identifier, JSONL transcript path, and WAV archive path for any active
+/// measurement artifact.
+///
+/// Returns `None` when both `jsonl_path` and `wav_path` are `None` — no
+/// measurement artifact is active and no status should be shown.
+///
+/// When both paths are present the string includes a copyable `eval_session`
+/// command template with a `<truth.tsv>` placeholder so an operator can run
+/// the offline evaluator without looking up the exact paths.
+///
+/// The returned string is guaranteed to be a single line (no `\r` or `\n`).
+/// It does not include any API keys or credentials.
+fn measurement_mode_status(
+    session_id: &str,
+    jsonl_path: Option<&Path>,
+    wav_path: Option<&Path>,
+) -> Option<String> {
+    if jsonl_path.is_none() && wav_path.is_none() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if let Some(path) = jsonl_path {
+        parts.push(format!("transcript={}", path.display()));
+    }
+    if let Some(path) = wav_path {
+        parts.push(format!("audio={}", path.display()));
+    }
+    // When both artifacts are active, append a copyable eval command template.
+    if let (Some(jpath), Some(wpath)) = (jsonl_path, wav_path) {
+        parts.push(format!(
+            "| eval: eval_session --session {} --audio {} --truth <truth.tsv> --output-dir target/eval",
+            jpath.display(),
+            wpath.display()
+        ));
+    }
+    let msg = format!(
+        "⚠ Measurement mode active: session={session_id} {}",
+        parts.join(" ")
+    );
+    Some(msg.replace(['\r', '\n'], " "))
+}
+
+/// Emit a combined measurement-mode `tracing::info` event and write the status
+/// message to `status_slot` so both the log file and the TUI status bar show
+/// the session identifier plus all active artifact paths.
+///
+/// Called once after both `start_session_recorder` and `start_audio_archive`
+/// have returned.  A `None` result from [`measurement_mode_status`] (no active
+/// recordings) is silently ignored.
+fn log_measurement_mode_status(
+    session_id: &str,
+    jsonl_path: Option<&Path>,
+    wav_path: Option<&Path>,
+    status_slot: &Arc<Mutex<Option<String>>>,
+) {
+    if let Some(msg) = measurement_mode_status(session_id, jsonl_path, wav_path) {
+        tracing::info!(
+            session_id = %session_id,
+            jsonl_path = ?jsonl_path,
+            wav_path = ?wav_path,
+            "measurement mode active"
+        );
+        *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+    }
 }
 
 fn attach_audio_archive(
@@ -1565,10 +1636,13 @@ fn main() -> Result<()> {
                 .clone();
             let started_at_unix_ms = session::system_time_unix_ms(SystemTime::now());
             let session_id = session::generate_session_id(started_at_unix_ms);
+            let audio_archive =
+                start_audio_archive(&cfg_snapshot, &session_id, &state.pipeline_error_msg);
+            let audio_archive_path = audio_archive.path().map(|p| p.to_path_buf());
             let stream = attach_audio_archive(
                 &rt,
                 stream,
-                start_audio_archive(&cfg_snapshot, &session_id, &state.pipeline_error_msg),
+                audio_archive,
                 Arc::clone(&state.pipeline_error_msg),
             );
 
@@ -1732,6 +1806,12 @@ fn main() -> Result<()> {
                     &state.pipeline_error_msg,
                     started_at_unix_ms,
                     &session_id,
+                );
+                log_measurement_mode_status(
+                    &session_id,
+                    session_recorder.path(),
+                    audio_archive_path.as_deref(),
+                    &state.pipeline_error_msg,
                 );
 
                 let ctx = pipeline::OrchestratorContext {
@@ -3981,6 +4061,141 @@ mod tests {
         assert_eq!(
             audio_archive_disabled_status(&err),
             "⚠ Audio archive disabled: first line  second line"
+        );
+    }
+
+    #[test]
+    fn measurement_mode_status_none_when_no_artifacts() {
+        assert_eq!(measurement_mode_status("session-abc", None, None), None);
+    }
+
+    #[test]
+    fn measurement_mode_status_names_session_id_and_jsonl_path() {
+        let jsonl = Path::new(r"C:\sessions\session-abc.jsonl");
+        let status = measurement_mode_status("session-abc", Some(jsonl), None)
+            .expect("status must be Some when JSONL path is active");
+        assert!(
+            status.contains("session=session-abc"),
+            "must include session id; got: {status}"
+        );
+        assert!(
+            status.contains("transcript="),
+            "must include transcript label; got: {status}"
+        );
+        assert!(
+            !status.contains("audio="),
+            "must not include absent WAV path; got: {status}"
+        );
+    }
+
+    #[test]
+    fn measurement_mode_status_names_session_id_and_wav_path() {
+        let wav = Path::new(r"C:\audio\session-abc.wav");
+        let status = measurement_mode_status("session-abc", None, Some(wav))
+            .expect("status must be Some when WAV path is active");
+        assert!(
+            status.contains("session=session-abc"),
+            "must include session id; got: {status}"
+        );
+        assert!(
+            status.contains("audio="),
+            "must include audio label; got: {status}"
+        );
+        assert!(
+            !status.contains("transcript="),
+            "must not include absent JSONL path; got: {status}"
+        );
+    }
+
+    #[test]
+    fn measurement_mode_status_names_both_paths() {
+        let jsonl = Path::new(r"C:\sessions\session-xyz.jsonl");
+        let wav = Path::new(r"C:\audio\session-xyz.wav");
+        let status = measurement_mode_status("session-xyz", Some(jsonl), Some(wav))
+            .expect("status must be Some when both paths are active");
+        assert!(
+            status.contains("session=session-xyz"),
+            "must include session id; got: {status}"
+        );
+        assert!(
+            status.contains("transcript="),
+            "must include transcript label; got: {status}"
+        );
+        assert!(
+            status.contains("audio="),
+            "must include audio label; got: {status}"
+        );
+    }
+
+    #[test]
+    fn measurement_mode_status_includes_eval_command_when_both_paths_active() {
+        let jsonl = Path::new(r"C:\sessions\session-xyz.jsonl");
+        let wav = Path::new(r"C:\audio\session-xyz.wav");
+        let status = measurement_mode_status("session-xyz", Some(jsonl), Some(wav))
+            .expect("status must be Some when both paths are active");
+        assert!(
+            status.contains("eval_session"),
+            "status must include eval_session command when both paths are active; got: {status}"
+        );
+        assert!(
+            status.contains("<truth.tsv>"),
+            "eval command must include <truth.tsv> placeholder; got: {status}"
+        );
+        assert!(
+            !status.contains('\n') && !status.contains('\r'),
+            "eval command must stay on a single line; got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn measurement_mode_status_no_eval_command_when_only_jsonl() {
+        let jsonl = Path::new(r"C:\sessions\session-abc.jsonl");
+        let status = measurement_mode_status("session-abc", Some(jsonl), None)
+            .expect("status must be Some when JSONL is active");
+        assert!(
+            !status.contains("eval_session"),
+            "eval command must not appear when WAV is absent; got: {status}"
+        );
+    }
+
+    #[test]
+    fn measurement_mode_status_is_single_line() {
+        let jsonl = Path::new("sessions/foo.jsonl");
+        let wav = Path::new("audio/foo.wav");
+        let status = measurement_mode_status("foo-id", Some(jsonl), Some(wav)).unwrap();
+        assert!(
+            !status.contains('\n') && !status.contains('\r'),
+            "measurement status must be a single line; got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn log_measurement_mode_status_updates_slot_when_active() {
+        let slot: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let jsonl = Path::new(r"C:\sessions\s1.jsonl");
+        let wav = Path::new(r"C:\audio\s1.wav");
+        log_measurement_mode_status("s1-id", Some(jsonl), Some(wav), &slot);
+        let msg = slot.lock().unwrap().clone();
+        assert!(
+            msg.is_some(),
+            "status slot must be set when measurement is active"
+        );
+        let msg = msg.unwrap();
+        assert!(
+            msg.contains("s1-id"),
+            "status must contain session id; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn log_measurement_mode_status_leaves_slot_unchanged_when_no_artifacts() {
+        let slot: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("prior".to_string())));
+        log_measurement_mode_status("s2-id", None, None, &slot);
+        let msg = slot.lock().unwrap().clone();
+        assert_eq!(
+            msg,
+            Some("prior".to_string()),
+            "status slot must be unchanged when no artifacts are active"
         );
     }
 
