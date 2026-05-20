@@ -811,10 +811,11 @@ For every speech segment in the session log it:
 When measurement mode is active the status bar shows a ready-to-paste command:
 
 ```
-eval_session --session logs\session-abc.jsonl ^
-             --audio   archive\session-abc.wav ^
-             --truth   truth\ja_sentences.tsv ^
-             --output-dir target\eval
+eval_session --session "logs\session-abc.jsonl" ^
+             --audio "archive\session-abc.wav" ^
+             --truth "truth\ja_sentences.tsv" ^
+             --output-dir "target\eval" ^
+             --min-confidence 0.90
 ```
 
 The command exits with code `0` (pass), `1` (parse or I/O error), or `2`
@@ -838,24 +839,29 @@ WAV archive (not meeting clock times).
 
 | Flag | Required | Default | Description |
 |------|:--------:|---------|-------------|
-| `--session <path>` | ✅ | — | Path to session log `.jsonl` file |
-| `--audio <path>` | ✅ | — | Path to paired `.wav` archive file |
-| `--truth <path>` | ✅ | — | Path to ground-truth `.tsv` file |
-| `--output-dir <dir>` | ✅ | — | Directory to write report files |
-| `--latest <dir>` | ☐ | — | Instead of explicit paths, find the most recent matching pair in `<dir>` |
-| `--threshold <0.0–1.0>` | ☐ | `0.90` | Minimum confidence score; exit code `2` if below |
+| `--session <path>` | explicit mode | - | Path to session log `.jsonl` file |
+| `--audio <path>` | explicit mode | - | Path to paired `.wav` archive file |
+| `--truth <path>` | yes | `truth.tsv` | Path to ground-truth `.tsv` file |
+| `--output-dir <dir>` | no | `target/eval-session` | Directory to write report files |
+| `--latest` | latest mode | off | Find the newest JSONL/WAV pair using `--sessions-dir` and `--audio-dir` |
+| `--sessions-dir <dir>` | latest mode | - | Directory containing session JSONL logs |
+| `--audio-dir <dir>` | latest mode | - | Directory containing WAV audio archives |
+| `--min-confidence <0.0-1.0>` | no | no threshold | Minimum confidence score; exit code `2` if below |
 | `--baseline <mode>` | ☐ | `none` | Compare against a synthetic baseline: `mock-truth` (perfect) or `mock-degraded` (garbled) |
 
 ### Using `--latest` mode
 
-If your session files are all in one folder, you can omit `--session` and
-`--audio` and point `--latest` at the folder.  `eval_session` will find the
-most recently modified pair that shares a file stem:
+If your session JSONL files and WAV archives are in their normal folders, you
+can omit `--session` and `--audio`. `eval_session` scans newest JSONL files
+first and uses the newest one with a matching WAV stem:
 
 ```
-eval_session --latest   logs ^
-             --truth    truth\ja_sentences.tsv ^
-             --output-dir target\eval
+eval_session --latest ^
+             --sessions-dir "%APPDATA%\tui-translator\sessions" ^
+             --audio-dir "%APPDATA%\tui-translator\audio-archive" ^
+             --truth "truth\ja_sentences.tsv" ^
+             --output-dir "target\eval" ^
+             --min-confidence 0.90
 ```
 
 ### Privacy note

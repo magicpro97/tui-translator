@@ -1,12 +1,16 @@
 //! Contract tests for the versioned session JSONL schema (issue #224).
 //! Export tests for SRT and TXT output (issue #227).
+//! Pairing contract tests for JSONL/WAV session artifact pairing (issue #350).
 
 #[path = "../src/session/mod.rs"]
 mod session;
 
+use std::path::Path;
+
 use session::{
-    export_srt, export_txt, is_supported_schema_version, transcript_segments_from_jsonl,
-    SessionHeader, SessionLogRecord, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION,
+    check_session_pairing, export_srt, export_txt, is_supported_schema_version,
+    session_id_from_jsonl_path, transcript_segments_from_jsonl, SessionHeader, SessionLogRecord,
+    SessionPairingError, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION,
 };
 
 const FIXTURE: &str = include_str!("fixtures/session_log_v1.jsonl");
@@ -306,4 +310,119 @@ fn export_srt_fixture_segment_has_correct_timestamp() {
         srt.contains("00:00:00,500 --> 00:00:02,000"),
         "fixture SRT timestamp wrong:\n{srt}"
     );
+}
+
+// ── JSONL/WAV session pairing contract tests (issue #350) ────────────────────
+
+/// Helper: synthesize a canonical session-id as `session_log_file_name` would
+/// produce from `generate_session_id`.  Uses only characters that pass through
+/// the sanitization unchanged (`[A-Za-z0-9\-_]`).
+fn synthetic_session_id(ts_ms: u64, pid: u32) -> String {
+    format!("session-{ts_ms}-{pid}")
+}
+
+#[test]
+fn pairing_accepts_matching_stems_in_different_directories() {
+    // Synthetic paths only — no real meeting artifacts.
+    let id = synthetic_session_id(1_710_000_000_000, 42);
+    let jsonl = Path::new("sessions").join(format!("{id}.jsonl"));
+    let wav = Path::new("audio").join(format!("{id}.wav"));
+
+    let stem =
+        check_session_pairing(&jsonl, &wav).expect("matching JSONL/WAV pair must be accepted");
+    assert_eq!(stem, id, "returned stem must equal the session-id");
+}
+
+#[test]
+fn pairing_accepts_sanitized_stem_with_underscores() {
+    // Session-id produced after sanitization replaces ':' and '/' with '_'.
+    let jsonl = Path::new("sessions/session_1710000000000_42.jsonl");
+    let wav = Path::new("audio/session_1710000000000_42.wav");
+
+    let stem = check_session_pairing(jsonl, wav)
+        .expect("matching sanitized JSONL/WAV pair must be accepted");
+    assert_eq!(stem, "session_1710000000000_42");
+}
+
+#[test]
+fn pairing_rejects_mismatched_session_ids() {
+    let jsonl = Path::new("sessions/session-111-42.jsonl");
+    let wav = Path::new("audio/session-999-99.wav");
+
+    let err = check_session_pairing(jsonl, wav)
+        .expect_err("mismatched JSONL/WAV session ids must be rejected");
+
+    assert!(
+        matches!(err, SessionPairingError::Mismatch { .. }),
+        "expected Mismatch, got: {err}"
+    );
+    let msg = err.to_string();
+    assert!(
+        msg.contains("session-111-42"),
+        "error message must cite the JSONL stem: {msg}"
+    );
+    assert!(
+        msg.contains("session-999-99"),
+        "error message must cite the WAV stem: {msg}"
+    );
+}
+
+#[test]
+fn pairing_rejects_jsonl_with_no_file_stem() {
+    // An empty path has no filename component — file_stem() returns None.
+    let jsonl = Path::new("");
+    let wav = Path::new("audio/session-abc.wav");
+
+    let err =
+        check_session_pairing(jsonl, wav).expect_err("JSONL path with no stem must be rejected");
+
+    assert!(
+        matches!(err, SessionPairingError::NoJsonlStem { .. }),
+        "expected NoJsonlStem, got: {err}"
+    );
+}
+
+#[test]
+fn pairing_rejects_wav_with_no_file_stem() {
+    let jsonl = Path::new("sessions/session-abc.jsonl");
+    // An empty path has no filename component.
+    let wav = Path::new("");
+
+    let err =
+        check_session_pairing(jsonl, wav).expect_err("WAV path with no stem must be rejected");
+
+    assert!(
+        matches!(err, SessionPairingError::NoWavStem { .. }),
+        "expected NoWavStem, got: {err}"
+    );
+}
+
+#[test]
+fn session_id_from_jsonl_path_extracts_stem() {
+    let path = Path::new("sessions/session-1710000000000-42.jsonl");
+    assert_eq!(
+        session_id_from_jsonl_path(path),
+        Some("session-1710000000000-42"),
+        "stem must match the session-id portion of the filename"
+    );
+}
+
+#[test]
+fn session_id_from_jsonl_path_returns_none_for_empty_path() {
+    assert_eq!(
+        session_id_from_jsonl_path(Path::new("")),
+        None,
+        "empty path must yield None"
+    );
+}
+
+#[test]
+fn pairing_same_stem_different_extensions_is_accepted() {
+    // Confirm the contract holds even when extensions differ only in casing
+    // or when the file lives at the root (no directory component).
+    let jsonl = Path::new("session-abc-123.jsonl");
+    let wav = Path::new("session-abc-123.wav");
+    let stem = check_session_pairing(jsonl, wav)
+        .expect("flat paths sharing the same stem must be accepted");
+    assert_eq!(stem, "session-abc-123");
 }

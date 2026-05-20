@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">First-run setup screen</title>
+  <desc id="desc">Illustrative setup screen showing language, Google API key, and capture device fields.</desc>
+  <rect width="1120" height="640" rx="28" fill="#0f172a"/>
+  <rect x="120" y="70" width="880" height="500" rx="20" fill="#111827" stroke="#60a5fa" stroke-width="2"/>
+  <text x="168" y="126" fill="#bfdbfe" font-family="Consolas, monospace" font-size="28" font-weight="700">First-Run Setup</text>
+  <text x="168" y="164" fill="#cbd5e1" font-family="Consolas, monospace" font-size="18">Create %APPDATA%\tui-translator\config.json</text>
+
+  <rect x="168" y="205" width="784" height="56" rx="8" fill="#020617" stroke="#334155"/>
+  <text x="194" y="241" fill="#f8fafc" font-family="Consolas, monospace" font-size="21">source_language</text>
+  <text x="720" y="241" fill="#fde68a" font-family="Consolas, monospace" font-size="21">ja-JP</text>
+  <rect x="168" y="276" width="784" height="56" rx="8" fill="#020617" stroke="#334155"/>
+  <text x="194" y="312" fill="#f8fafc" font-family="Consolas, monospace" font-size="21">target_language</text>
+  <text x="720" y="312" fill="#fde68a" font-family="Consolas, monospace" font-size="21">vi</text>
+  <rect x="168" y="347" width="784" height="56" rx="8" fill="#020617" stroke="#334155"/>
+  <text x="194" y="383" fill="#f8fafc" font-family="Consolas, monospace" font-size="21">google_api_key</text>
+  <text x="720" y="383" fill="#fca5a5" font-family="Consolas, monospace" font-size="21">********</text>
+  <rect x="168" y="418" width="784" height="56" rx="8" fill="#020617" stroke="#334155"/>
+  <text x="194" y="454" fill="#f8fafc" font-family="Consolas, monospace" font-size="21">capture_device</text>
+  <text x="600" y="454" fill="#a7f3d0" font-family="Consolas, monospace" font-size="21">Windows default playback</text>
+
+  <text x="168" y="520" fill="#94a3b8" font-family="Consolas, monospace" font-size="18">Enter save  F2/Ctrl+D cycle choices  Esc cancel</text>
+</svg>

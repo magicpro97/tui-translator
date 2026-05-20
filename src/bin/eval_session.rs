@@ -29,24 +29,28 @@
 //! - `none`           — no baseline row; only actual session data (default)
 //! - `mock-truth`     — adds a synthetic perfect-score baseline row for reference
 //! - `mock-degraded`  — adds a synthetic low-score baseline row for reference
+//!
 //! Baseline rows do not affect the confidence score; they appear in CSV/MD for comparison.
 
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     collections::HashMap,
     io::Write as _,
     path::{Path, PathBuf},
+    process::ExitCode,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+#[path = "../session/mod.rs"]
+mod session;
+
+use session::{SessionHeader, SessionLogRecord, TranscriptSegment};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 /// Time-overlap tolerance when aligning session segments with truth rows.
 const ALIGN_TOLERANCE_MS: u64 = 250;
-
-/// Only schema version 1 is supported in this binary.
-const SUPPORTED_SCHEMA_VERSION: u16 = 1;
 
 const WAV_SAMPLE_RATE: u32 = 16_000;
 const WAV_PCM_FORMAT: u16 = 1;
@@ -55,72 +59,6 @@ const WAV_BIT_DEPTH: u16 = 16;
 
 const DEFAULT_OUTPUT_DIR: &str = "target/eval-session";
 const REPORT_SCHEMA_VERSION: &str = "1";
-
-// ── Session log types (mirrors src/session/mod.rs contract) ───────────────────
-
-/// A single line in a persisted session JSONL file.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "record_type", rename_all = "snake_case")]
-enum SessionLogRecord {
-    SessionHeader(SessionHeader),
-    TranscriptSegment(TranscriptSegment),
-}
-
-/// Session metadata from the first JSONL line.
-/// All fields are deserialized to validate the schema; only `schema_version`
-/// and `session_id` are used in the evaluator logic. The remaining fields
-/// mirror the JSONL contract and may be used by future report writers.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-struct SessionHeader {
-    pub schema_version: u16,
-    pub session_id: String,
-    pub app_version: String,
-    pub started_at_unix_ms: u64,
-    pub source_language: String,
-    pub target_language: String,
-    pub stt_provider: String,
-    pub mt_provider: String,
-    pub tts_enabled: bool,
-    #[serde(default)]
-    pub capture_device: Option<String>,
-}
-
-/// One committed bilingual subtitle segment.
-/// Only `audio_start_ms`, `audio_end_ms`, `source_text`, `target_text`, and
-/// `end_to_end_latency_ms` are used in evaluation; all other fields mirror the
-/// JSONL schema for full round-trip fidelity and future report extensions.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-struct TranscriptSegment {
-    pub schema_version: u16,
-    pub session_id: String,
-    pub segment_id: u64,
-    pub sequence_number: u64,
-    pub finalized_at_unix_ms: u64,
-    pub audio_start_ms: u64,
-    pub audio_end_ms: u64,
-    pub source_text: String,
-    pub target_text: String,
-    pub source_language: String,
-    #[serde(default)]
-    pub detected_source_language: Option<String>,
-    pub target_language: String,
-    pub stt_provider: String,
-    pub mt_provider: String,
-    #[serde(default)]
-    pub stt_confidence: Option<f32>,
-    pub stt_is_final: bool,
-    #[serde(default)]
-    pub stt_latency_ms: Option<u64>,
-    #[serde(default)]
-    pub mt_latency_ms: Option<u64>,
-    #[serde(default)]
-    pub end_to_end_latency_ms: Option<u64>,
-    pub audio_seconds_sent: f64,
-    pub chars_translated: u64,
-    pub estimated_cost_usd: f64,
-}
 
 // ── CLI ────────────────────────────────────────────────────────────────────────
 
@@ -235,7 +173,7 @@ fn parse_args() -> Result<Args> {
 
 fn print_help() {
     println!(
-        "eval_session — WBS-03–07 offline quality evaluator for tui-translator sessions
+        "eval_session - WBS-03-07 offline quality evaluator for tui-translator sessions
 
 USAGE (explicit pair):
   eval_session --session <path.jsonl> --audio <path.wav> --truth <truth.tsv> \\
@@ -312,7 +250,7 @@ fn parse_wav_sample_count(bytes: &[u8], path: &Path) -> Result<usize> {
     let len = bytes.len();
     if len < 44 {
         bail!(
-            "WAV file too short ({len} bytes, need ≥ 44): {}",
+            "WAV file too short ({len} bytes, need >= 44): {}",
             path.display()
         );
     }
@@ -518,22 +456,14 @@ fn parse_jsonl(path: &Path) -> Result<ParsedSession> {
         if line.trim().is_empty() {
             continue;
         }
-        let record: SessionLogRecord = serde_json::from_str(line).with_context(|| {
-            format!(
-                "session JSONL {}: line {lineno}: JSON parse error",
+        let record: SessionLogRecord = serde_json::from_str(line).map_err(|err| {
+            anyhow::anyhow!(
+                "session JSONL {}: line {lineno}: JSON parse error or schema error: {err}",
                 path.display()
             )
         })?;
         match record {
             SessionLogRecord::SessionHeader(h) => {
-                if h.schema_version == 0 || h.schema_version > SUPPORTED_SCHEMA_VERSION {
-                    bail!(
-                        "session JSONL {}: line {lineno}: unsupported schema_version {}; \
-                         this binary supports version 1",
-                        path.display(),
-                        h.schema_version
-                    );
-                }
                 if header.is_some() {
                     bail!(
                         "session JSONL {}: line {lineno}: duplicate session_header record \
@@ -544,13 +474,6 @@ fn parse_jsonl(path: &Path) -> Result<ParsedSession> {
                 header = Some(h);
             }
             SessionLogRecord::TranscriptSegment(seg) => {
-                if seg.schema_version == 0 || seg.schema_version > SUPPORTED_SCHEMA_VERSION {
-                    bail!(
-                        "session JSONL {}: line {lineno}: unsupported schema_version {}",
-                        path.display(),
-                        seg.schema_version
-                    );
-                }
                 segments.push(seg);
             }
         }
@@ -563,43 +486,6 @@ fn parse_jsonl(path: &Path) -> Result<ParsedSession> {
         )
     })?;
     Ok(ParsedSession { header, segments })
-}
-
-// ── Session / WAV pairing contract (mirrors src/session/mod.rs) ──────────────
-
-/// Verify that `jsonl_path` and `wav_path` share the same file-stem.
-///
-/// Returns the shared stem on success.  Emits an actionable error if either
-/// path has no UTF-8 stem or the stems differ.
-fn check_session_pairing<'a>(jsonl_path: &'a Path, wav_path: &Path) -> Result<&'a str> {
-    let jsonl_stem = jsonl_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "JSONL path has no valid UTF-8 file stem: {}",
-                jsonl_path.display()
-            )
-        })?;
-    let wav_stem = wav_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "WAV path has no valid UTF-8 file stem: {}",
-                wav_path.display()
-            )
-        })?;
-    if jsonl_stem != wav_stem {
-        bail!(
-            "session artifact mismatch: JSONL stem `{jsonl_stem}` != WAV stem `{wav_stem}`\n  \
-             JSONL: {}\n  WAV:   {}\n  Hint: rename one file so both stems match, \
-             or use --session/--audio to specify the correct pair.",
-            jsonl_path.display(),
-            wav_path.display()
-        );
-    }
-    Ok(jsonl_stem)
 }
 
 // ── Alignment ─────────────────────────────────────────────────────────────────
@@ -652,7 +538,7 @@ fn overlaps_with_tolerance(
     tolerance: u64,
 ) -> bool {
     let a_start_t = a_start.saturating_sub(tolerance);
-    let a_end_t = a_end + tolerance;
+    let a_end_t = a_end.saturating_add(tolerance);
     a_start_t < b_end && b_start < a_end_t
 }
 
@@ -797,11 +683,9 @@ pub fn bleu(hypothesis: &str, reference: &str) -> f64 {
     } else {
         (1.0 - r.len() as f64 / h.len() as f64).exp()
     };
+    let max_n = 2usize.min(h.len()).min(r.len());
     let mut log_sum = 0.0_f64;
-    for n in 1..=2usize {
-        if h.len() < n || r.len() < n {
-            return 0.0;
-        }
+    for n in 1..=max_n {
         let h_ng = word_ngrams(&h, n);
         let r_ng = word_ngrams(&r, n);
         let clipped: usize = h_ng
@@ -814,7 +698,7 @@ pub fn bleu(hypothesis: &str, reference: &str) -> f64 {
         }
         log_sum += (clipped as f64 / total as f64).ln();
     }
-    bp * (log_sum / 2.0).exp()
+    bp * (log_sum / max_n as f64).exp()
 }
 
 /// Character n-gram F-score (chrF), using 6-gram fallback to unigram.
@@ -1264,7 +1148,7 @@ fn write_csv_report(report: &EvalReport, output_dir: &Path) -> Result<()> {
     if let Some(br) = &report.baseline_row {
         writeln!(
             f,
-            "{},,,,,, ,{:.4},{:.4},{:.4},{:.4},n/a",
+            "{},,,,,,,,{:.4},{:.4},{:.4},{:.4},n/a",
             csv_escape(&br.source),
             br.mt_bleu,
             br.mt_chrf,
@@ -1467,29 +1351,36 @@ fn find_latest_session_pair(sessions_dir: &Path, audio_dir: &Path) -> Result<(Pa
     }
     // Sort newest first; break ties by path for determinism.
     candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    let (jsonl_path, _) = candidates
-        .into_iter()
-        .next()
-        .expect("OK: non-empty candidates checked above");
-    let stem = jsonl_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "latest JSONL has no valid UTF-8 file stem: {}",
-                jsonl_path.display()
-            )
-        })?;
-    let wav_path = audio_dir.join(format!("{stem}.wav"));
-    if !wav_path.exists() {
-        bail!(
-            "no matching WAV found for latest session `{stem}`;\n  \
-             expected: {}\n  \
-             Hint: ensure audio archiving is enabled and uses the same session directory.",
-            wav_path.display()
-        );
+    let mut newest_missing_pair: Option<(String, PathBuf)> = None;
+    for (jsonl_path, _) in candidates {
+        let stem = jsonl_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "latest JSONL has no valid UTF-8 file stem: {}",
+                    jsonl_path.display()
+                )
+            })?;
+        let wav_path = audio_dir.join(format!("{stem}.wav"));
+        if wav_path.exists() {
+            return Ok((jsonl_path, wav_path));
+        }
+        if newest_missing_pair.is_none() {
+            newest_missing_pair = Some((stem.to_owned(), wav_path));
+        }
     }
-    Ok((jsonl_path, wav_path))
+    let (stem, expected) =
+        newest_missing_pair.context("no decodable JSONL session file stems found")?;
+    bail!(
+        "no matching WAV found for any JSONL session in: {}\n  \
+         newest session without a pair: `{stem}`\n  \
+         expected: {}\n  \
+         Hint: enable audio_archive.store_audio=true and audio_archive.consent_given=true, \
+         or choose explicit --session/--audio paths for an older complete pair.",
+        sessions_dir.display(),
+        expected.display()
+    )
 }
 
 // ── Core evaluation (shared between main and tests) ────────────────────────────
@@ -1505,7 +1396,13 @@ struct EvalInput {
 
 /// Run the full evaluation pipeline.  Returns `(confidence_score, threshold_pass)`.
 fn evaluate(input: EvalInput) -> Result<(f64, Option<bool>)> {
-    check_session_pairing(&input.session_path, &input.audio_path)?;
+    session::check_session_pairing(&input.session_path, &input.audio_path).with_context(|| {
+        format!(
+            "session/audio pairing failed for JSONL {} and WAV {}",
+            input.session_path.display(),
+            input.audio_path.display()
+        )
+    })?;
 
     let mut warnings = Vec::new();
     let parsed = parse_jsonl(&input.session_path)?;
@@ -1615,18 +1512,18 @@ fn evaluate(input: EvalInput) -> Result<(f64, Option<bool>)> {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
-fn main() {
+fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
         Err(err) => {
             eprintln!("error: {err:#}");
-            std::process::exit(1);
+            return ExitCode::from(1);
         }
     };
 
     if args.help {
         print_help();
-        return;
+        return ExitCode::SUCCESS;
     }
 
     let min_confidence = args.min_confidence;
@@ -1635,7 +1532,7 @@ fn main() {
         Ok(pair) => pair,
         Err(err) => {
             eprintln!("error: {err:#}");
-            std::process::exit(1);
+            return ExitCode::from(1);
         }
     };
 
@@ -1649,11 +1546,11 @@ fn main() {
     };
 
     match evaluate(input) {
-        Ok((_, Some(false))) => std::process::exit(2),
-        Ok(_) => {}
+        Ok((_, Some(false))) => ExitCode::from(2),
+        Ok(_) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err:#}");
-            std::process::exit(1);
+            ExitCode::from(1)
         }
     }
 }
@@ -1940,7 +1837,8 @@ mod tests {
         std::fs::write(&p, format!("{line}\n")).expect("write fixture");
         let err = parse_jsonl(&p).expect_err("must fail on unsupported schema");
         assert!(
-            err.to_string().contains("unsupported schema_version"),
+            err.to_string()
+                .contains("unsupported session log schema version"),
             "error should mention unsupported schema; got: {err}"
         );
     }
@@ -1951,7 +1849,8 @@ mod tests {
     fn check_session_pairing_rejects_stem_mismatch() {
         let jsonl = Path::new("sessions/session-abc.jsonl");
         let wav = Path::new("audio/session-xyz.wav");
-        let err = check_session_pairing(jsonl, wav).expect_err("must fail on stem mismatch");
+        let err =
+            session::check_session_pairing(jsonl, wav).expect_err("must fail on stem mismatch");
         assert!(
             err.to_string().contains("session artifact mismatch"),
             "error should mention mismatch; got: {err}"
@@ -1970,7 +1869,8 @@ mod tests {
     fn check_session_pairing_accepts_matching_stems() {
         let jsonl = Path::new("sessions/session-abc.jsonl");
         let wav = Path::new("audio/session-abc.wav");
-        let stem = check_session_pairing(jsonl, wav).expect("matching stems should succeed");
+        let stem =
+            session::check_session_pairing(jsonl, wav).expect("matching stems should succeed");
         assert_eq!(stem, "session-abc");
     }
 
@@ -2223,7 +2123,7 @@ mod tests {
             return;
         }
 
-        check_session_pairing(&jsonl_path, &wav_path)
+        session::check_session_pairing(&jsonl_path, &wav_path)
             .expect("golden JSONL and WAV must have matching stems");
 
         let parsed = parse_jsonl(&jsonl_path).expect("golden JSONL must parse without error");
@@ -2307,6 +2207,33 @@ mod tests {
                 .contains("session-002"),
             "should pick newest JSONL; got {:?}",
             jsonl.file_name()
+        );
+    }
+
+    #[test]
+    fn find_latest_skips_newest_unpaired_jsonl_and_uses_newest_pair() {
+        let sessions_dir = tempfile::tempdir().expect("tempdir");
+        let audio_dir = tempfile::tempdir().expect("tempdir");
+
+        std::fs::write(sessions_dir.path().join("session-001.jsonl"), "{}").expect("write");
+        std::fs::write(audio_dir.path().join("session-001.wav"), b"RIFF").expect("write");
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        std::fs::write(sessions_dir.path().join("session-002.jsonl"), "{}").expect("write");
+
+        let (jsonl, wav) = find_latest_session_pair(sessions_dir.path(), audio_dir.path())
+            .expect("should fall back to newest complete pair");
+        assert!(
+            jsonl
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "session-001.jsonl"),
+            "should use newest complete JSONL/WAV pair; got {jsonl:?}"
+        );
+        assert!(
+            wav.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "session-001.wav"),
+            "should use paired WAV; got {wav:?}"
         );
     }
 
@@ -2399,6 +2326,18 @@ mod tests {
             json_content.contains("confidence_score"),
             "JSON must contain confidence_score"
         );
+
+        let csv_content =
+            std::fs::read_to_string(dir.path().join("eval-report.csv")).expect("read csv");
+        let mut csv_lines = csv_content.lines();
+        let header_columns = csv_lines.next().expect("csv header").split(',').count();
+        for line in csv_lines {
+            assert_eq!(
+                line.split(',').count(),
+                header_columns,
+                "CSV row must have same column count as header: {line}"
+            );
+        }
 
         let md_content =
             std::fs::read_to_string(dir.path().join("eval-report.md")).expect("read md");

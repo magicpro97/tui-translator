@@ -2,7 +2,7 @@
 
 > **Status:** Measured on 2026-05-17 with the Rust `provider_benchmark`
 > runner on Windows, using the Google API key from
-> `%USERPROFILE%\.tui-translator\config.json` without printing the key.
+> `%APPDATA%\tui-translator\config.json` without printing the key.
 >
 > **Scope:** This compares the two STT paths available today:
 > Google Cloud STT and local Whisper `ggml-tiny.bin`.  Both paths still use

@@ -667,12 +667,11 @@ fn measurement_mode_status(
     if let Some(path) = wav_path {
         parts.push(format!("audio={}", path.display()));
     }
-    // When both artifacts are active, append a copyable eval command template.
     if let (Some(jpath), Some(wpath)) = (jsonl_path, wav_path) {
         parts.push(format!(
             "| eval: eval_session --session {} --audio {} --truth <truth.tsv> --output-dir target/eval",
-            jpath.display(),
-            wpath.display()
+            shell_quoted_path(jpath),
+            shell_quoted_path(wpath)
         ));
     }
     let msg = format!(
@@ -680,6 +679,10 @@ fn measurement_mode_status(
         parts.join(" ")
     );
     Some(msg.replace(['\r', '\n'], " "))
+}
+
+fn shell_quoted_path(path: &Path) -> String {
+    format!("\"{}\"", path.display().to_string().replace('"', "\\\""))
 }
 
 /// Emit a combined measurement-mode `tracing::info` event and write the status
@@ -4142,6 +4145,11 @@ mod tests {
             "eval command must include <truth.tsv> placeholder; got: {status}"
         );
         assert!(
+            status.contains(r#"--session "C:\sessions\session-xyz.jsonl""#)
+                && status.contains(r#"--audio "C:\audio\session-xyz.wav""#),
+            "eval command must quote paths so spaces remain copyable; got: {status}"
+        );
+        assert!(
             !status.contains('\n') && !status.contains('\r'),
             "eval command must stay on a single line; got: {status:?}"
         );
@@ -5745,13 +5753,13 @@ mod tests {
         let mut editor =
             tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
         // Set the real key directly (as the editor holds the unmasked value).
-        editor.google_api_key = "AIzaSyRealKey123456789".to_string();
+        editor.google_api_key = "test-google-api-key".to_string();
 
         let result = build_config_from_editor(&editor, &current).unwrap();
 
         assert_eq!(
             result.google_api_key.as_deref(),
-            Some("AIzaSyRealKey123456789"),
+            Some("test-google-api-key"),
             "build_config_from_editor must preserve the real (unmasked) API key"
         );
     }

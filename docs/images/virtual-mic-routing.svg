@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">Virtual microphone routing diagram</title>
+  <desc id="desc">Diagram showing meeting audio captured by TUI Translator, translated TTS sent to a virtual cable input, and the paired cable output selected as the meeting microphone.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#38bdf8"/>
+    </marker>
+  </defs>
+  <rect width="1120" height="640" rx="28" fill="#0f172a"/>
+  <rect x="70" y="90" width="230" height="130" rx="16" fill="#111827" stroke="#60a5fa" stroke-width="2"/>
+  <text x="105" y="145" fill="#f8fafc" font-family="Consolas, monospace" font-size="22">Zoom / Teams</text>
+  <text x="108" y="180" fill="#94a3b8" font-family="Consolas, monospace" font-size="16">meeting audio</text>
+
+  <rect x="430" y="90" width="270" height="130" rx="16" fill="#111827" stroke="#34d399" stroke-width="2"/>
+  <text x="470" y="138" fill="#f8fafc" font-family="Consolas, monospace" font-size="22">TUI Translator</text>
+  <text x="462" y="174" fill="#94a3b8" font-family="Consolas, monospace" font-size="16">STT -> MT -> TTS</text>
+
+  <rect x="820" y="90" width="230" height="130" rx="16" fill="#111827" stroke="#fbbf24" stroke-width="2"/>
+  <text x="850" y="138" fill="#f8fafc" font-family="Consolas, monospace" font-size="22">Speakers</text>
+  <text x="846" y="174" fill="#94a3b8" font-family="Consolas, monospace" font-size="16">optional monitor</text>
+
+  <rect x="430" y="360" width="270" height="130" rx="16" fill="#111827" stroke="#f472b6" stroke-width="2"/>
+  <text x="462" y="408" fill="#f8fafc" font-family="Consolas, monospace" font-size="22">CABLE Input</text>
+  <text x="462" y="444" fill="#94a3b8" font-family="Consolas, monospace" font-size="16">virtual render endpoint</text>
+
+  <rect x="820" y="360" width="230" height="130" rx="16" fill="#111827" stroke="#f472b6" stroke-width="2"/>
+  <text x="842" y="408" fill="#f8fafc" font-family="Consolas, monospace" font-size="22">CABLE Output</text>
+  <text x="848" y="444" fill="#94a3b8" font-family="Consolas, monospace" font-size="16">meeting microphone</text>
+
+  <line x1="300" y1="155" x2="420" y2="155" stroke="#38bdf8" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="700" y1="155" x2="810" y2="155" stroke="#38bdf8" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="565" y1="220" x2="565" y2="350" stroke="#38bdf8" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="700" y1="425" x2="810" y2="425" stroke="#38bdf8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M935 360 C935 292, 710 272, 520 272 C350 272, 210 250, 185 225" fill="none" stroke="#38bdf8" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <text x="430" y="258" fill="#cbd5e1" font-family="Consolas, monospace" font-size="16">selected microphone input</text>
+  <text x="78" y="558" fill="#cbd5e1" font-family="Consolas, monospace" font-size="18">Use headphones when tts_routing is "both" to prevent translated audio from echoing back into the meeting.</text>
+</svg>

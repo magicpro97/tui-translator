@@ -456,6 +456,105 @@ fn prune_session_logs(directory: &Path, max_sessions: usize) -> anyhow::Result<(
     Ok(())
 }
 
+// ── Session/audio pairing contract ───────────────────────────────────────────
+
+/// Extract the session-id stem from a JSONL session-log path.
+///
+/// Returns the file stem (the filename without its extension) as a `&str`, or
+/// `None` when the path has no filename component or the stem contains
+/// non-UTF-8 bytes.
+///
+/// The returned value is the sanitized session-id encoded by
+/// [`session_log_file_name`] — every character outside `[A-Za-z0-9\-_]` is
+/// replaced with `_` at write time.  The same sanitization rule is applied by
+/// `audio::archive::session_wav_file_name`, so two artifact files written from
+/// the same `session_id` always share an identical stem.  Use
+/// [`check_session_pairing`] to verify that a JSONL path and a WAV path belong
+/// to the same recording session.
+pub fn session_id_from_jsonl_path(path: &Path) -> Option<&str> {
+    path.file_stem()?.to_str()
+}
+
+/// Error returned when a JSONL transcript and a WAV audio-archive path-pair do
+/// not share the same session-id stem.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum SessionPairingError {
+    /// The JSONL path yields no decodable file stem.
+    #[error("JSONL path has no valid UTF-8 file stem: {path}")]
+    NoJsonlStem {
+        /// Display form of the offending path.
+        path: String,
+    },
+    /// The WAV path yields no decodable file stem.
+    #[error("WAV path has no valid UTF-8 file stem: {path}")]
+    NoWavStem {
+        /// Display form of the offending path.
+        path: String,
+    },
+    /// The two stems differ; the paths belong to different sessions.
+    #[error("session artifact mismatch: JSONL stem `{jsonl_stem}` != WAV stem `{wav_stem}`")]
+    Mismatch {
+        /// Stem extracted from the JSONL path.
+        jsonl_stem: String,
+        /// Stem extracted from the WAV path.
+        wav_stem: String,
+    },
+}
+
+/// Verify that `jsonl_path` and `wav_path` are paired artifacts from the same
+/// recording session.
+///
+/// # Pairing contract
+///
+/// Both [`session_log_file_name`] (JSONL writer) and `session_wav_file_name`
+/// (WAV writer in `audio::archive`) apply an identical sanitization rule:
+/// keep ASCII alphanumeric characters, `-`, and `_`; replace every other byte
+/// with `_`.  Given the same `session_id` string, both functions produce an
+/// identical file stem.  Two artifact paths are therefore paired if and only if
+/// their file stems are equal.
+///
+/// Returns `Ok(stem)` — the shared, sanitized session-id — when the pair
+/// matches.  Returns a [`SessionPairingError`] that identifies the specific
+/// mismatch so callers can reject artifact pairs deterministically.
+///
+/// # Example
+///
+/// ```ignore
+/// use std::path::Path;
+///
+/// // Matching pair produced from the same session-id:
+/// let stem = check_session_pairing(
+///     Path::new("sessions/session-1710000000000-42.jsonl"),
+///     Path::new("audio/session-1710000000000-42.wav"),
+/// )
+/// .unwrap();
+/// assert_eq!(stem, "session-1710000000000-42");
+/// ```
+pub fn check_session_pairing<'a>(
+    jsonl_path: &'a Path,
+    wav_path: &Path,
+) -> Result<&'a str, SessionPairingError> {
+    let jsonl_stem = jsonl_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| SessionPairingError::NoJsonlStem {
+            path: jsonl_path.display().to_string(),
+        })?;
+    let wav_stem = wav_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| SessionPairingError::NoWavStem {
+            path: wav_path.display().to_string(),
+        })?;
+    if jsonl_stem != wav_stem {
+        return Err(SessionPairingError::Mismatch {
+            jsonl_stem: jsonl_stem.to_string(),
+            wav_stem: wav_stem.to_string(),
+        });
+    }
+    Ok(jsonl_stem)
+}
+
 // ── Export helpers ────────────────────────────────────────────────────────────
 
 /// Format a millisecond offset as an SRT timestamp: `HH:MM:SS,mmm`.

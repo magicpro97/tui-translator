@@ -5,6 +5,8 @@ meeting app as a microphone source while keeping the current subtitle workflow.
 It is for the VMIC MVP path and is intentionally limited to actions that can be
 checked without a live Zoom or Microsoft Teams meeting.
 
+![Virtual microphone routing](images/virtual-mic-routing.svg)
+
 ## Status and scope
 
 The MVP uses a user-installed virtual audio cable such as VB-CABLE, VAC, or
