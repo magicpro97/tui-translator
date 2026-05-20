@@ -27,13 +27,15 @@ speakers.
 With an installed virtual audio cable, translated speech can also be routed to a
 virtual microphone so meeting apps can receive the AI-translated voice.
 
+![Main subtitle screen](docs/images/main-subtitles.svg)
+
 > **Current status: Phase 4 feature set merged.**
 > WASAPI audio capture, Google Speech-to-Text, Google Translation,
 > Google Text-to-Speech, cost tracking, and live keyboard controls are
 > implemented on `main`.
 > Packaged GitHub Releases remain **pre-releases** until Layer 5 human
 > acceptance (issues #115–#122) is completed by named reviewers.
-> First-run setup, per-user config storage under `~\.tui-translator`, and the
+> First-run setup, per-user config storage under `%APPDATA%\tui-translator`, and the
 > in-app settings entry point are now included in the pre-release builds.
 > WASAPI capture can use the Windows default playback device or a selected
 > playback endpoint from the settings screen.
@@ -81,7 +83,7 @@ The packaged flow is documented in **[USAGE.md](USAGE.md)**.
 > [Releases page](https://github.com/magicpro97/tui-translator/releases).
 > The packaged app is self-contained (no VC++ Redistributable needed).
 > First launch opens an onboarding flow and writes user config under
-> `%USERPROFILE%\.tui-translator\config.json`.
+> `%APPDATA%\tui-translator\config.json`.
 > The application captures Zoom audio through WASAPI loopback,
 > uses Google STT/MT/TTS when configured, and exposes the full TUI controls,
 > settings overlay, and metrics panels.
@@ -154,7 +156,7 @@ cargo fmt --check   # no formatting issues
 Normal interactive runs use the **per-user config** at:
 
 ```text
-%USERPROFILE%\.tui-translator\config.json
+%APPDATA%\tui-translator\config.json
 ```
 
 **Full lookup order** (first match wins):
@@ -162,13 +164,14 @@ Normal interactive runs use the **per-user config** at:
 | Priority | Path |
 |----------|------|
 | 1 | `TUI_TRANSLATOR_CONFIG` environment variable — set to override all other paths |
-| 2 | `%USERPROFILE%\.tui-translator\config.json` — the default for all interactive runs |
-| 3 | `<exe folder>\config.json` — legacy fallback when `USERPROFILE`/`HOME` is unavailable |
-| 4 | `config.json` in the current working directory — last resort |
+| 2 | `<exe folder>\config.json` — portable ZIP mode when that side-by-side file exists |
+| 3 | `%TUI_TRANSLATOR_CONFIG_DIR%\config.json` when that directory override is set; otherwise `%APPDATA%\tui-translator\config.json` — default per-user location |
+| 4 | `<exe folder>\config.json` — fallback when the OS per-user config directory cannot be resolved |
+| 5 | `config.json` in the current working directory — last resort |
 
-On standard Windows machines `USERPROFILE` is always set, so **priority 2 is used
-in practice**. A `config.json` placed next to the `.exe` is **not** read during
-normal runs.
+On standard Windows machines **priority 3 is used unless you intentionally keep a
+portable `config.json` beside the `.exe`**. A side-by-side file is treated as
+portable mode and wins over the per-user config.
 
 On first launch, the app opens a setup overlay and can create this file for
 you. Advanced users can still copy `config.example.json` manually and edit it

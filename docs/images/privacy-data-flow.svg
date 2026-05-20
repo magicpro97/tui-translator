@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">Privacy data-flow diagram</title>
+  <desc id="desc">Diagram of what data stays local and what is sent to Google Cloud services when default providers are enabled.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#60a5fa"/>
+    </marker>
+  </defs>
+  <rect width="1120" height="640" rx="28" fill="#0b1020"/>
+  <rect x="60" y="70" width="520" height="500" rx="18" fill="#111827" stroke="#34d399" stroke-width="2"/>
+  <text x="95" y="120" fill="#a7f3d0" font-family="Consolas, monospace" font-size="25" font-weight="700">Local computer</text>
+  <rect x="100" y="165" width="410" height="70" rx="12" fill="#020617" stroke="#475569"/>
+  <text x="128" y="208" fill="#f8fafc" font-family="Consolas, monospace" font-size="20">WASAPI loopback audio</text>
+  <rect x="100" y="270" width="410" height="70" rx="12" fill="#020617" stroke="#475569"/>
+  <text x="128" y="313" fill="#f8fafc" font-family="Consolas, monospace" font-size="20">Transcript JSONL (opt-in)</text>
+  <rect x="100" y="375" width="410" height="70" rx="12" fill="#020617" stroke="#475569"/>
+  <text x="128" y="418" fill="#f8fafc" font-family="Consolas, monospace" font-size="20">Audio WAV archive (dual opt-in)</text>
+  <rect x="100" y="480" width="410" height="54" rx="12" fill="#020617" stroke="#475569"/>
+  <text x="128" y="514" fill="#fca5a5" font-family="Consolas, monospace" font-size="18">config.json stores API key locally</text>
+
+  <rect x="720" y="90" width="320" height="360" rx="18" fill="#111827" stroke="#60a5fa" stroke-width="2"/>
+  <text x="770" y="140" fill="#bfdbfe" font-family="Consolas, monospace" font-size="25" font-weight="700">Google Cloud</text>
+  <text x="760" y="205" fill="#f8fafc" font-family="Consolas, monospace" font-size="20">Speech-to-Text</text>
+  <text x="760" y="275" fill="#f8fafc" font-family="Consolas, monospace" font-size="20">Translation</text>
+  <text x="760" y="345" fill="#f8fafc" font-family="Consolas, monospace" font-size="20">Text-to-Speech (optional)</text>
+
+  <line x1="510" y1="200" x2="710" y2="200" stroke="#60a5fa" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="710" y1="275" x2="510" y2="305" stroke="#60a5fa" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="710" y1="345" x2="510" y2="410" stroke="#60a5fa" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <text x="625" y="190" fill="#cbd5e1" font-family="Consolas, monospace" font-size="16">audio</text>
+  <text x="612" y="300" fill="#cbd5e1" font-family="Consolas, monospace" font-size="16">text</text>
+  <text x="580" y="390" fill="#cbd5e1" font-family="Consolas, monospace" font-size="16">tts audio</text>
+  <text x="95" y="610" fill="#94a3b8" font-family="Consolas, monospace" font-size="17">No project telemetry. Session logs and audio archives stay local unless you share the files.</text>
+</svg>

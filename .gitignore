@@ -40,3 +40,23 @@ verification-evidence/*.txt
 *.exe
 *.zip
 *.tar.gz
+
+# WBS-08 privacy artifacts
+# Real session transcript logs - utterances, costs, speaker text.
+# Default storage: %APPDATA%\tui-translator\sessions\ (outside the repo).
+# Ignored here in case the binary is run from the project root, or an eval
+# script writes a sessions/ directory relative to cwd.
+sessions/
+*.session.jsonl
+
+# Raw audio archive - WAV recording of all speakers in the meeting.
+# Default storage: %APPDATA%\tui-translator\audio-archive\ (outside the repo).
+# NOTE: global *.wav is intentionally NOT added - committed test fixtures under
+# tests/ (tests/fixtures/*.wav, tests/soak/soak_audio.wav) must remain visible.
+# Stage new test WAV files with `git add -f` if they are rejected by commit-gate.
+audio-archive/
+
+# Eval-session measurement report directories (WBS load / accuracy evaluation runs).
+# target/ at line 2 already covers target/eval-session/; this rule also catches
+# an eval-session/ directory placed at the project root by evaluation scripts.
+eval-session/

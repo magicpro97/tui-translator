@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">Settings editor choice fields</title>
+  <desc id="desc">Illustrative settings editor showing selectable provider and device fields that can be changed with F2 or Ctrl+D.</desc>
+  <rect width="1120" height="640" rx="28" fill="#0b1120"/>
+  <rect x="76" y="54" width="968" height="532" rx="18" fill="#111827" stroke="#475569" stroke-width="2"/>
+  <text x="116" y="106" fill="#bfdbfe" font-family="Consolas, monospace" font-size="26" font-weight="700">Settings</text>
+  <text x="770" y="106" fill="#94a3b8" font-family="Consolas, monospace" font-size="18">config: %APPDATA%\tui-translator\config.json</text>
+
+  <rect x="116" y="142" width="888" height="56" fill="#1d4ed8" rx="8"/>
+  <text x="146" y="178" fill="#ffffff" font-family="Consolas, monospace" font-size="21">capture_device</text>
+  <text x="520" y="178" fill="#ffffff" font-family="Consolas, monospace" font-size="21">Headphones (USB Audio Device)</text>
+
+  <rect x="116" y="212" width="888" height="56" fill="#020617" rx="8" stroke="#334155"/>
+  <text x="146" y="248" fill="#e2e8f0" font-family="Consolas, monospace" font-size="21">stt_provider</text>
+  <text x="520" y="248" fill="#fde68a" font-family="Consolas, monospace" font-size="21">google</text>
+
+  <rect x="116" y="282" width="888" height="56" fill="#020617" rx="8" stroke="#334155"/>
+  <text x="146" y="318" fill="#e2e8f0" font-family="Consolas, monospace" font-size="21">audio_source</text>
+  <text x="520" y="318" fill="#fde68a" font-family="Consolas, monospace" font-size="21">wasapi</text>
+
+  <rect x="116" y="352" width="888" height="56" fill="#020617" rx="8" stroke="#334155"/>
+  <text x="146" y="388" fill="#e2e8f0" font-family="Consolas, monospace" font-size="21">google_api_key</text>
+  <text x="520" y="388" fill="#fca5a5" font-family="Consolas, monospace" font-size="21">********</text>
+
+  <text x="116" y="470" fill="#a7f3d0" font-family="Consolas, monospace" font-size="20">F2 / Ctrl+D: choose next value from the detected list</text>
+  <text x="116" y="510" fill="#94a3b8" font-family="Consolas, monospace" font-size="18">Enter edit  Ctrl+S save  Esc cancel  R reload after external edits</text>
+</svg>

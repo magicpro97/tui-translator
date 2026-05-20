@@ -70,7 +70,7 @@ Source: [Helsinki-NLP/opus-mt-ja-vi model card](https://huggingface.co/Helsinki-
   copies dynamic libraries beside the binary). Static linking is a separate advanced path that
   requires building ONNX Runtime from source.
 - No registry writes, no system service, no admin prompt required.
-- Model files are standard binary files in `%APPDATA%\tui-translator\models\` or alongside
+- Model files are standard binary files in `%USERPROFILE%\.tui-translator\models\` or alongside
   the executable; no elevated access needed.
 
 **Latency expectations (CPU-only, batch=1):**

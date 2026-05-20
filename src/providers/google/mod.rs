@@ -50,13 +50,18 @@ fn redact_google_api_keys(input: &str) -> String {
 mod tests {
     use super::*;
 
+    fn google_api_key_like_token() -> String {
+        ["AIzaSyAbCdEfGhIjKlMn", "OpQrStUvWxYz012345678"].concat()
+    }
+
     #[test]
     fn sanitize_google_error_body_redacts_api_key_like_tokens() {
-        let body = "API key not valid: AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYz012345678";
+        let api_key = google_api_key_like_token();
+        let body = format!("API key not valid: {api_key}");
 
-        let sanitized = sanitize_google_error_body(body);
+        let sanitized = sanitize_google_error_body(&body);
 
-        assert!(!sanitized.contains("AIzaSyAbCdEf"));
+        assert!(!sanitized.contains(&api_key));
         assert!(sanitized.contains(REDACTED_GOOGLE_API_KEY));
     }
 

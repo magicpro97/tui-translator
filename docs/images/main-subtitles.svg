@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">TUI Translator main subtitle screen</title>
+  <desc id="desc">Illustrative terminal screenshot showing live bilingual subtitles, audio level, metrics, and keyboard help.</desc>
+  <rect width="1120" height="640" rx="28" fill="#0b1020"/>
+  <rect x="28" y="28" width="1064" height="584" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <text x="56" y="72" fill="#93c5fd" font-family="Consolas, monospace" font-size="24" font-weight="700">TUI Translator</text>
+  <text x="925" y="72" fill="#a7f3d0" font-family="Consolas, monospace" font-size="18">listening</text>
+  <line x1="56" y1="94" x2="1064" y2="94" stroke="#334155" stroke-width="2"/>
+
+  <rect x="56" y="120" width="1008" height="342" rx="12" fill="#020617" stroke="#475569"/>
+  <text x="86" y="168" fill="#f8fafc" font-family="Consolas, monospace" font-size="27">JP  それでは、今日の議題を確認しましょう。</text>
+  <text x="86" y="216" fill="#fde68a" font-family="Consolas, monospace" font-size="27">VI  Vậy chúng ta hãy xem lại nội dung họp hôm nay.</text>
+  <line x1="86" y1="248" x2="1034" y2="248" stroke="#1e293b" stroke-width="2"/>
+  <text x="86" y="302" fill="#f8fafc" font-family="Consolas, monospace" font-size="27">JP  次に、リリース前の確認項目です。</text>
+  <text x="86" y="350" fill="#fde68a" font-family="Consolas, monospace" font-size="27">VI  Tiếp theo là các mục cần kiểm tra trước khi phát hành.</text>
+  <text x="86" y="418" fill="#38bdf8" font-family="Consolas, monospace" font-size="19">partial: ここまでの品質は...</text>
+
+  <text x="56" y="508" fill="#cbd5e1" font-family="Consolas, monospace" font-size="18">Audio  Speakers (Realtek)  [##########......]  -24 dBFS</text>
+  <text x="56" y="544" fill="#cbd5e1" font-family="Consolas, monospace" font-size="18">Cost $0.04  STT 620 ms  MT 180 ms  pairs 42  drops 0</text>
+  <text x="56" y="580" fill="#94a3b8" font-family="Consolas, monospace" font-size="17">Space pause  S settings  F2 cycle choices  M metrics  ? help  Q quit</text>
+</svg>

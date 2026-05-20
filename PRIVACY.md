@@ -3,6 +3,8 @@
 **Plain-English summary of what this program captures, where your data goes,
 and how you control it.**
 
+![Privacy data-flow diagram](docs/images/privacy-data-flow.svg)
+
 ---
 
 ## 1. What audio this program captures
@@ -45,7 +47,7 @@ and privacy policy.  TUI Translator never sends audio or text to any other
 third party.
 
 Your **Google Cloud API key** is stored in plain text in
-`%USERPROFILE%\.tui-translator\config.json`.  It is never transmitted anywhere
+`%APPDATA%\tui-translator\config.json`.  It is never transmitted anywhere
 except as an API key on HTTPS requests to Google APIs.
 
 ### Offline / CPU-only mode (`stt_provider: "local"`)
@@ -74,7 +76,7 @@ Recording is **disabled by default**.
 | Setting | Effect |
 |---------|--------|
 | `session_store.enabled: false` (default) | No session files are written to disk at all. |
-| `session_store.enabled: true` | A JSONL transcript log is written to `%USERPROFILE%\.tui-translator\sessions\` (or a custom directory). |
+| `session_store.enabled: true` | A JSONL transcript log is written to `%APPDATA%\tui-translator\sessions\` (or a custom directory). |
 
 ### What is recorded
 
@@ -116,7 +118,7 @@ archiving is active.
 ### What is archived
 
 A single WAV file per session is written to
-`%USERPROFILE%\.tui-translator\audio-archive\` (or a custom directory).  The
+`%APPDATA%\tui-translator\audio-archive\` (or a custom directory).  The
 WAV contains **every sound that played through your speakers or headphones**
 during the session — meeting audio, system sounds, notification chimes, music.
 It does **not** capture your microphone.
@@ -197,6 +199,140 @@ No other network connections are made.
   route. The translated voice can be delayed, incomplete, or inaccurate.
 - Applicable regulations (GDPR, local recording laws, etc.) are your
   responsibility to comply with.
+
+
+---
+
+## 9. WBS-08 Privacy Artifact Controls - Developer Checklist
+
+This section is for **developers and CI maintainers**.  It documents the exact
+controls that prevent real session transcripts, audio recordings, and
+API-key-bearing reports from entering the repository, and the commands to
+verify those controls are effective.
+
+### 9.1. Gitignore coverage
+
+The following patterns are enforced in `.gitignore`:
+
+| Pattern | What it guards |
+|---------|---------------|
+| `sessions/` | Runtime session transcript directory (JSONL logs) |
+| `*.session.jsonl` | Stray session-log file at repo root |
+| `audio-archive/` | Runtime audio archive directory (WAV files) |
+| `eval-session/` | Evaluation / measurement report directory |
+| `/target/` (pre-existing) | Build artefacts including `target/eval-session/` |
+| `config.json` (pre-existing) | Local config containing the real API key |
+| `.env` / `.env.*` (pre-existing) | Environment variable files |
+
+`*.jsonl` and `*.wav` are **not** added globally because committed test
+fixtures (`tests/fixtures/*.jsonl`, `tests/fixtures/*.wav`,
+`tests/soak/soak_audio.wav`) must remain visible to `cargo test`.  The
+commit-gate hook (GUARD 5) enforces the restriction at commit time instead.
+
+### 9.2. Commit-gate hook (GUARD 5 - artifact-guard.py)
+
+`.github/hooks/artifact-guard.py` runs as a `preToolUse` hook on every
+`git commit` command.  It blocks:
+
+- Any `*.jsonl` or `*.wav` file staged for commit that is **not** under
+  `tests/fixtures/` or `tests/soak/`.
+- Any file staged from inside `sessions/`, `audio-archive/`, or
+  `eval-session/` directories.
+
+### 9.3. Scan commands for WBS-08 evidence
+
+Run these commands from the repository root to verify no private artifacts
+have entered version control.
+
+#### Scan 1 - No real JSONL logs committed
+
+```powershell
+git ls-files "*.jsonl"
+# Expected: only synthetic JSONL fixtures under tests/fixtures/
+```
+
+#### Scan 2 - No real audio WAV committed outside fixtures
+
+```powershell
+git ls-files "*.wav"
+# Expected: only tests/fixtures/*.wav and tests/soak/soak_audio.wav
+```
+
+#### Scan 3 - No API keys in committed files
+
+```powershell
+# Search committed files for Google API key pattern (AIza...) - exclude test fixtures
+git ls-files | Where-Object { $_ -notmatch "^tests/" } | ForEach-Object {
+    $m = Select-String -Path $_ -Pattern "AIza[0-9A-Za-z_\-]{35}" -Quiet -ErrorAction SilentlyContinue
+    if ($m) { Write-Host "FOUND POSSIBLE REAL KEY IN: $_" }
+}
+# Expected: no output (zero matches = passing condition)
+```
+
+#### Scan 4 - sessions/ and audio-archive/ are gitignored
+
+```powershell
+New-Item -ItemType Directory -Force sessions, audio-archive | Out-Null
+"x" | Set-Content sessions\.gitkeep
+"x" | Set-Content audio-archive\.gitkeep
+git status --ignored --short sessions audio-archive
+# Expected output:
+#   !! audio-archive/
+#   !! sessions/
+# "!!" means gitignored; "??" would mean untracked (fail)
+Remove-Item -Recurse -Force sessions, audio-archive
+```
+
+#### Scan 5 - eval-session/ is gitignored
+
+```powershell
+New-Item -ItemType Directory -Force eval-session | Out-Null
+"x" | Set-Content eval-session\.gitkeep
+git status --ignored --short eval-session
+# Expected: "!! eval-session/"  (ignored)
+Remove-Item -Recurse -Force eval-session
+```
+
+#### Scan 6 - Full ignored-file audit
+
+```powershell
+git status --ignored --short | Where-Object { $_ -match "^!!" }
+# Review output; confirm sessions/, audio-archive/, eval-session/, config.json
+# and .env appear as ignored when those files/directories exist on disk.
+```
+
+### 9.4. Audio consent requirements
+
+The `audio_archive` feature requires two explicit opt-in fields:
+
+```json
+"audio_archive": {
+  "store_audio": true,
+  "consent_given": true
+}
+```
+
+If either field is absent or `false`, **no WAV file is written**.  The
+application also emits a visible warning on the TUI status bar when archiving
+is active.
+
+Before enabling this feature:
+1. Inform all meeting participants that audio is being recorded.
+2. Comply with applicable local recording-consent laws.
+3. Delete archived WAV files when no longer needed.
+4. Never commit WAV files to the repository (GUARD 5 enforces this automatically).
+
+### 9.5. Evidence summary
+
+| Control | Mechanism | Verification |
+|---------|-----------|-------------|
+| `sessions/` gitignored | `.gitignore` | Scan 4 |
+| `audio-archive/` gitignored | `.gitignore` | Scan 4 |
+| `eval-session/` gitignored | `.gitignore` | Scan 5 |
+| No JSONL outside fixtures | `artifact-guard.py` GUARD 5 | Scan 1 |
+| No WAV outside fixtures | `artifact-guard.py` GUARD 5 | Scan 2 |
+| No API keys committed | `secret-detector.py` GUARD 2 | Scan 3 |
+| Audio requires explicit consent | Dual opt-in in `config.json` | §3.2 + §9.4 |
 
 ---
 

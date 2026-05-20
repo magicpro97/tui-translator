@@ -273,6 +273,22 @@ impl AudioArchiveWriter {
 
 // ── WAV header helpers ────────────────────────────────────────────────────────
 
+/// Extract the session-id stem from a WAV audio-archive path.
+///
+/// Returns the file stem (the filename without its extension) as a `&str`, or
+/// `None` when the path has no filename component or the stem contains
+/// non-UTF-8 bytes.
+///
+/// The stem is the value produced by [`session_wav_file_name`] — the sanitized
+/// session-id passed to [`AudioArchiveWriter::start`].  Every character outside
+/// `[A-Za-z0-9\-_]` was replaced with `_` at write time, the same rule applied
+/// by `session::session_log_file_name` for JSONL files.  Use
+/// [`crate::session::check_session_pairing`] to verify that a WAV path and a
+/// JSONL session-log path belong to the same recording session.
+pub fn session_id_from_wav_path(path: &Path) -> Option<&str> {
+    path.file_stem()?.to_str()
+}
+
 fn session_wav_file_name(session_id: &str) -> String {
     let stem: String = session_id
         .chars()
