@@ -221,19 +221,19 @@ fn settings_layout_standard_110x30() {
 
     // Non-compact mode: extended hint line must be present.
     assert!(
-        session.screen_contains("Tab/Down next"),
+        session.wait_for_text("Tab/Down next", OVERLAY_TIMEOUT),
         "110×30: non-compact settings should show 'Tab/Down next'; screen:\n{}",
         session.all_rows().join("\n"),
     );
     assert!(
-        session.screen_contains("Enter save"),
+        session.wait_for_text("Enter save", OVERLAY_TIMEOUT),
         "110×30: settings hint must contain 'Enter save'; screen:\n{}",
         session.all_rows().join("\n"),
     );
 
     // Non-compact mode: intro blurb must be visible.
     assert!(
-        session.screen_contains("Edit the saved config"),
+        session.wait_for_text("Edit the saved config", OVERLAY_TIMEOUT),
         "110×30: non-compact settings should show intro blurb; screen:\n{}",
         session.all_rows().join("\n"),
     );
