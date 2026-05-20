@@ -12,7 +12,7 @@ use anyhow::{bail, Context, Result};
 use notify::{recommended_watcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write as _};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -1415,13 +1415,14 @@ fn validate_directory_path(field_name: &str, value: &str) -> Result<()> {
     if value.chars().any(char::is_control) {
         bail!("`{field_name}` must not contain control characters");
     }
-    if Path::new(value)
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
+    if has_parent_dir_segment(value) {
         bail!("`{field_name}` must not contain `..` path traversal components");
     }
     Ok(())
+}
+
+fn has_parent_dir_segment(value: &str) -> bool {
+    value.split(['/', '\\']).any(|segment| segment == "..")
 }
 
 #[cfg(test)]
@@ -1873,10 +1874,27 @@ mod tests {
                 ..AppConfig::default()
             },
             AppConfig {
+                session_store: SessionStoreConfig {
+                    enabled: true,
+                    directory: Some("../transcripts".to_string()),
+                    max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                },
+                ..AppConfig::default()
+            },
+            AppConfig {
                 audio_archive: AudioArchiveConfig {
                     store_audio: true,
                     consent_given: true,
                     directory: Some("recordings\\..\\archive".to_string()),
+                    max_size_mb: 10,
+                },
+                ..AppConfig::default()
+            },
+            AppConfig {
+                audio_archive: AudioArchiveConfig {
+                    store_audio: true,
+                    consent_given: true,
+                    directory: Some("recordings/../archive".to_string()),
                     max_size_mb: 10,
                 },
                 ..AppConfig::default()
