@@ -129,7 +129,8 @@ pub struct FanoutHandle {
 ///
 /// # Behaviour
 ///
-/// * Each chunk is cloned once (cheap — `Vec<i16>` clone).
+/// * Each chunk is cloned once only when both slots are still open (small heap
+///   copy: about 320 bytes for a 10 ms, 16 kHz mono chunk).
 /// * Delivery to each slot is attempted with `try_send`.  A full slot
 ///   causes a drop **for that slot only**; the other slot is unaffected.
 /// * When `source` is closed (capture task exited) the fanout task exits and
@@ -167,34 +168,46 @@ pub(crate) async fn fanout_loop(
     tx_b: mpsc::Sender<AudioChunk>,
     counters: Arc<FanoutDropCounters>,
 ) {
-    while let Some(chunk) = source.recv().await {
-        // Try slot A — no await, no block.
-        match tx_a.try_send(chunk.clone()) {
-            Ok(()) => {}
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                tracing::debug!("fanout: slot A full — dropping chunk");
-                counters.increment(SLOT_A);
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                // Slot A consumer exited; keep running for slot B.
-                tracing::debug!("fanout: slot A closed");
-            }
-        }
+    let mut tx_a = Some(tx_a);
+    let mut tx_b = Some(tx_b);
 
-        // Try slot B — independent of slot A outcome.
-        match tx_b.try_send(chunk) {
-            Ok(()) => {}
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                tracing::debug!("fanout: slot B full — dropping chunk");
-                counters.increment(SLOT_B);
+    while let Some(chunk) = source.recv().await {
+        match (tx_a.is_some(), tx_b.is_some()) {
+            (true, true) => {
+                try_send_slot(&mut tx_a, chunk.clone(), SLOT_A, "A", &counters);
+                try_send_slot(&mut tx_b, chunk, SLOT_B, "B", &counters);
             }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                tracing::debug!("fanout: slot B closed");
-            }
+            (true, false) => try_send_slot(&mut tx_a, chunk, SLOT_A, "A", &counters),
+            (false, true) => try_send_slot(&mut tx_b, chunk, SLOT_B, "B", &counters),
+            (false, false) => {}
         }
     }
 
     tracing::debug!("fanout: source closed — fanout task exiting");
+}
+
+fn try_send_slot(
+    tx: &mut Option<mpsc::Sender<AudioChunk>>,
+    chunk: AudioChunk,
+    slot: usize,
+    label: &str,
+    counters: &FanoutDropCounters,
+) {
+    let result = match tx.as_ref() {
+        Some(sender) => sender.try_send(chunk),
+        None => return,
+    };
+    match result {
+        Ok(()) => {}
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            tracing::debug!("fanout: slot {label} full — dropping chunk");
+            counters.increment(slot);
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => {
+            tracing::debug!("fanout: slot {label} closed permanently");
+            *tx = None;
+        }
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -325,6 +338,39 @@ mod tests {
         let expected_a_drops = (total - FANOUT_SLOT_CAPACITY) as u64;
         assert_eq!(counters.drops(SLOT_A), expected_a_drops);
         assert_eq!(received_b, total);
+    }
+
+    #[tokio::test]
+    async fn closed_slot_b_does_not_drop_or_block_slot_a() {
+        let large_cap = FANOUT_SLOT_CAPACITY * 4;
+        let (source_tx, source_rx) = mpsc::channel::<AudioChunk>(large_cap);
+        let (tx_a, mut rx_a) = mpsc::channel::<AudioChunk>(large_cap);
+        let (tx_b, rx_b) = mpsc::channel::<AudioChunk>(FANOUT_SLOT_CAPACITY);
+        drop(rx_b);
+        let counters = Arc::new(FanoutDropCounters::default());
+
+        let total = FANOUT_SLOT_CAPACITY + 32;
+        for i in 0..total {
+            source_tx
+                .try_send(make_chunk(i))
+                .expect("source must accept chunk");
+        }
+        drop(source_tx);
+
+        fanout_loop(source_rx, tx_a, tx_b, Arc::clone(&counters)).await;
+
+        let mut received_a = 0usize;
+        while rx_a.try_recv().is_ok() {
+            received_a += 1;
+        }
+
+        assert_eq!(counters.drops(SLOT_A), 0);
+        assert_eq!(
+            counters.drops(SLOT_B),
+            0,
+            "closed slot B must not be counted as backpressure drops"
+        );
+        assert_eq!(received_a, total);
     }
 
     // ── Both slots draining: no drops ─────────────────────────────────────────

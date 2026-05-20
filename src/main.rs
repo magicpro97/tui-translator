@@ -113,12 +113,15 @@ struct MetricsSnapshotExport {
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_path: Option<std::path::PathBuf>,
     archive_sealed: bool,
+    // DM-02 (issue #378): fanout drop counters.
+    fanout_slot_a_drops: u64,
+    fanout_slot_b_drops: u64,
 }
 
 impl From<&MetricsSnapshot> for MetricsSnapshotExport {
     fn from(snapshot: &MetricsSnapshot) -> Self {
         Self {
-            schema_version: "1",
+            schema_version: "2",
             line_pairs_shown: snapshot.line_pairs_shown,
             estimated_cost_usd: snapshot.estimated_cost_usd,
             e2e_latency_ms: snapshot.e2e_latency_ms,
@@ -132,6 +135,8 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
             archive_bytes: snapshot.archive_bytes,
             archive_path: snapshot.archive_path.clone(),
             archive_sealed: snapshot.archive_sealed,
+            fanout_slot_a_drops: snapshot.fanout_slot_a_drops,
+            fanout_slot_b_drops: snapshot.fanout_slot_b_drops,
         }
     }
 }
@@ -3822,6 +3827,21 @@ mod tests {
             !metrics_warning_row_active(false, 0.0, &metrics),
             "compact layout height must stay fixed even when RAM warning is active"
         );
+    }
+
+    #[test]
+    fn metrics_snapshot_export_includes_fanout_drop_counters() {
+        let snapshot = MetricsSnapshot {
+            fanout_slot_a_drops: 3,
+            fanout_slot_b_drops: 5,
+            ..MetricsSnapshot::default()
+        };
+        let value =
+            serde_json::to_value(MetricsSnapshotExport::from(&snapshot)).expect("serialize export");
+
+        assert_eq!(value["schema_version"], "2");
+        assert_eq!(value["fanout_slot_a_drops"], 3);
+        assert_eq!(value["fanout_slot_b_drops"], 5);
     }
 
     #[test]
