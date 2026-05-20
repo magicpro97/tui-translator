@@ -347,6 +347,63 @@ fn tts_routing_is_default(r: &TtsRouting) -> bool {
     *r == TtsRouting::Speakers
 }
 
+// ─── Slot mode (DM-01) ───────────────────────────────────────────────────────
+
+/// Operational slot mode, determined by whether the `slots` block is present.
+///
+/// Downstream code that needs to branch on mode should call
+/// [`AppConfig::slot_mode`] rather than inspecting `slots` directly.
+// Consumed by the pipeline routing layer introduced in DM-02.
+// The `contract` test includes this file via #[path] but does not exercise
+// slot dispatch, so clippy would otherwise flag the enum as dead_code.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotMode {
+    /// Single-slot (legacy flat config): one STT/MT pipeline using the
+    /// top-level `stt_provider`, `mt_provider`, and `target_language` fields.
+    Single,
+    /// Dual-slot: two independent STT/MT pipelines (slot A and slot B), each
+    /// with their own provider and target-language settings.
+    Dual,
+}
+
+/// Per-slot STT/MT configuration for dual-slot mode (DM-01).
+///
+/// Each slot specifies its own STT provider, MT provider, and target language.
+/// The source language and all audio/pipeline/TTS settings come from the
+/// top-level [`AppConfig`] and apply to both slots equally.
+///
+/// Equal `target_language` values across slot A and slot B are accepted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SlotConfig {
+    /// STT provider for this slot. Accepted values: `"google"` | `"local"`.
+    pub stt_provider: String,
+
+    /// Machine-translation provider for this slot.
+    /// Accepted values: `"google"` | `"local"`.
+    pub mt_provider: String,
+
+    /// BCP-47 target language for this slot.
+    /// Examples: `"vi"` (Vietnamese), `"en"` (English), `"zh-TW"` (Traditional Chinese).
+    pub target_language: String,
+}
+
+/// Dual-slot configuration block (DM-01).
+///
+/// Both `slot_a` and `slot_b` are required when this block is present.
+/// Omitting either field is a parse error.  Set `slots` to `null` or omit
+/// the key entirely to run in single-slot (legacy) mode.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DualSlotConfig {
+    /// Primary slot (slot A). Required.
+    pub slot_a: SlotConfig,
+
+    /// Secondary slot (slot B). Required.
+    pub slot_b: SlotConfig,
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -562,6 +619,32 @@ pub struct AppConfig {
     /// `consent_given` must be `true` before any WAV file is created.
     #[serde(default, skip_serializing_if = "audio_archive_is_default")]
     pub audio_archive: AudioArchiveConfig,
+
+    /// Dual-slot mode configuration (DM-01).
+    ///
+    /// When present, the application operates with two independent STT/MT
+    /// pipelines: slot A and slot B.  Each slot specifies its own
+    /// `stt_provider`, `mt_provider`, and `target_language`.  The top-level
+    /// `source_language`, `google_api_key`, and all audio/pipeline/TTS
+    /// settings are shared across both slots.
+    ///
+    /// When absent (the default), the application runs in single-slot
+    /// (legacy) mode using the top-level `stt_provider`, `mt_provider`, and
+    /// `target_language` fields.  A legacy flat config is equivalent to a
+    /// dual-slot config where slot A mirrors the flat fields (see
+    /// [`AppConfig::slot_a`]).
+    ///
+    /// Equal `target_language` values in slot A and slot B are accepted.
+    ///
+    /// Example JSON:
+    /// ```json
+    /// "slots": {
+    ///   "slot_a": { "stt_provider": "google", "mt_provider": "google", "target_language": "vi" },
+    ///   "slot_b": { "stt_provider": "google", "mt_provider": "google", "target_language": "en" }
+    /// }
+    /// ```
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slots: Option<DualSlotConfig>,
 }
 
 impl Default for AppConfig {
@@ -590,6 +673,7 @@ impl Default for AppConfig {
             ram_budget_mb: 0,
             pipeline: PipelineConfigJson::default(),
             audio_archive: AudioArchiveConfig::default(),
+            slots: None,
         }
     }
 }
@@ -620,6 +704,7 @@ impl std::fmt::Debug for AppConfig {
             .field("ram_budget_mb", &self.ram_budget_mb)
             .field("pipeline", &self.pipeline)
             .field("audio_archive", &self.audio_archive)
+            .field("slots", &self.slots)
             .finish()
     }
 }
@@ -890,6 +975,11 @@ impl AppConfig {
         if let Some(path) = &self.audio_archive.directory {
             validate_directory_path("audio_archive.directory", path)?;
         }
+        // ── Dual-slot validation (DM-01) ──────────────────────────────────
+        if let Some(slots) = &self.slots {
+            validate_slot_config("slots.slot_a", &slots.slot_a)?;
+            validate_slot_config("slots.slot_b", &slots.slot_b)?;
+        }
         Ok(())
     }
 
@@ -915,6 +1005,53 @@ impl AppConfig {
             || self.session_store != next.session_store
             || self.pipeline != next.pipeline
             || self.audio_archive != next.audio_archive
+            || self.slots != next.slots
+    }
+
+    /// Return the active slot mode.
+    ///
+    /// `SlotMode::Dual` when `slots` is `Some(_)`;
+    /// `SlotMode::Single` when `slots` is `None`.
+    // Used by config_dual_mode tests and future pipeline dispatch (DM-02).
+    // Suppressed here because the `contract` test compilation unit does not
+    // exercise slot-mode logic and would otherwise produce a dead_code lint.
+    #[allow(dead_code)]
+    pub fn slot_mode(&self) -> SlotMode {
+        if self.slots.is_some() {
+            SlotMode::Dual
+        } else {
+            SlotMode::Single
+        }
+    }
+
+    /// Return the resolved [`SlotConfig`] for slot A.
+    ///
+    /// In dual-slot mode this returns `slots.slot_a`.  In single-slot
+    /// (legacy) mode it is synthesised from the top-level `stt_provider`,
+    /// `mt_provider`, and `target_language` fields so callers can treat both
+    /// modes uniformly.
+    // Used by config_dual_mode tests; pipeline callers arrive in DM-02.
+    #[allow(dead_code)]
+    pub fn slot_a(&self) -> SlotConfig {
+        match &self.slots {
+            Some(s) => s.slot_a.clone(),
+            None => SlotConfig {
+                stt_provider: self.stt_provider.clone(),
+                mt_provider: self.mt_provider.clone(),
+                target_language: self.target_language.clone(),
+            },
+        }
+    }
+
+    /// Return the resolved [`SlotConfig`] for slot B, or `None` in
+    /// single-slot (legacy) mode.
+    ///
+    /// Returns `Some(slots.slot_b)` in dual-slot mode; `None` when no
+    /// `slots` block is present.
+    // Used by config_dual_mode tests; pipeline callers arrive in DM-02.
+    #[allow(dead_code)]
+    pub fn slot_b(&self) -> Option<SlotConfig> {
+        self.slots.as_ref().map(|s| s.slot_b.clone())
     }
 }
 
@@ -1354,6 +1491,28 @@ fn validate_language_tag(field_name: &str, value: &str) -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+/// Validate a single [`SlotConfig`] entry in the `slots` block.
+///
+/// Called by [`AppConfig::validate`] for both `slots.slot_a` and
+/// `slots.slot_b`.  Returns a plain-English error on the first violated
+/// constraint.
+fn validate_slot_config(context: &str, slot: &SlotConfig) -> Result<()> {
+    validate_language_tag(&format!("{context}.target_language"), &slot.target_language)?;
+    match slot.stt_provider.as_str() {
+        "google" | "local" => {}
+        other => {
+            bail!("`{context}.stt_provider` must be \"google\" or \"local\", got {other:?}");
+        }
+    }
+    match slot.mt_provider.as_str() {
+        "google" | "local" => {}
+        other => {
+            bail!("`{context}.mt_provider` must be \"google\" or \"local\", got {other:?}");
+        }
+    }
     Ok(())
 }
 
