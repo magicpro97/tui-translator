@@ -26,6 +26,9 @@ mod paths;
 #[allow(dead_code)]
 pub const CONFIG_DIR_OVERRIDE_ENV: &str = paths::CONFIG_DIR_OVERRIDE_ENV;
 
+#[allow(dead_code)]
+pub const LOCAL_DATA_DIR_OVERRIDE_ENV: &str = paths::LOCAL_DATA_DIR_OVERRIDE_ENV;
+
 /// Return the user's home directory.
 #[allow(dead_code)]
 pub fn home_dir() -> Result<PathBuf> {
@@ -46,6 +49,24 @@ pub fn default_sessions_dir() -> Result<PathBuf> {
 #[allow(dead_code)]
 pub fn default_audio_archive_dir() -> Result<PathBuf> {
     paths::default_audio_archive_dir()
+}
+
+/// Return the pre-LF-06 session directory used by the migration.
+#[allow(dead_code)]
+pub fn legacy_sessions_dir() -> Result<PathBuf> {
+    paths::legacy_sessions_dir()
+}
+
+/// Return the pre-LF-06 audio archive directory used by the migration.
+#[allow(dead_code)]
+pub fn legacy_audio_archive_dir() -> Result<PathBuf> {
+    paths::legacy_audio_archive_dir()
+}
+
+/// Return the LF-06 storage migration marker path.
+#[allow(dead_code)]
+pub fn lf06_migration_marker_path() -> Result<PathBuf> {
+    paths::lf06_migration_marker_path()
 }
 
 const DEFAULT_VAD_THRESHOLD: f32 = 0.01;
@@ -214,18 +235,20 @@ fn pipeline_config_is_default(p: &PipelineConfigJson) -> bool {
 
 /// Transcript session storage settings.
 ///
-/// Recording is opt-in. When disabled, no session directory or transcript file
-/// is created.
+/// **LF-06**: transcript recording is **on by default** (`enabled: true`).
+/// When disabled, no session directory or transcript file is created.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SessionStoreConfig {
-    /// Enable per-session transcript JSONL recording. Default: `false`.
-    #[serde(default)]
+    /// Enable per-session transcript JSONL recording.
+    ///
+    /// **LF-06 default**: `true`.
+    #[serde(default = "default_session_store_enabled")]
     pub enabled: bool,
 
     /// Directory where JSONL logs are written.
     ///
-    /// `None` uses the `sessions/` subdirectory under the per-user config directory.
+    /// `None` uses `%LOCALAPPDATA%\tui-translator\sessions`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directory: Option<String>,
 
@@ -235,16 +258,47 @@ pub struct SessionStoreConfig {
         skip_serializing_if = "session_store_max_sessions_is_default"
     )]
     pub max_sessions: usize,
+
+    /// LF-06 per-session byte cap.  When the active transcript segment
+    /// exceeds this size, the recorder seals it and starts a new segment
+    /// file under the same session directory.  `0` (default) disables the
+    /// cap and keeps a single segment per session.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub per_session_bytes_cap: u64,
+
+    /// LF-06 total-byte cap across all retained sessions.  When the
+    /// `sessions/` directory exceeds this size on startup or after a
+    /// session ends, the oldest sealed sessions are evicted first.  `0`
+    /// (default) disables the cap.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub total_bytes_cap: u64,
+
+    /// LF-06 retention TTL in days.  Sessions whose newest file is older
+    /// than this are purged on startup and at session end.  `0` (default)
+    /// disables TTL-based purging.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub retention_days: u64,
 }
 
 impl Default for SessionStoreConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             directory: None,
             max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+            per_session_bytes_cap: 0,
+            total_bytes_cap: 0,
+            retention_days: 0,
         }
     }
+}
+
+fn default_session_store_enabled() -> bool {
+    true
+}
+
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
 }
 
 // ─── Audio archive configuration (issue #228) ────────────────────────────────
@@ -299,14 +353,30 @@ pub struct AudioArchiveConfig {
 
     /// Soft per-file quota in MiB.  `0` (default) means no quota.
     ///
-    /// Once the WAV file for the current session reaches this size, the
-    /// archive writer stops appending samples and finalizes the WAV header.
+    /// **LF-06**: when the active WAV segment reaches this size the writer
+    /// seals it and starts a new segment under the same session directory
+    /// instead of stopping silently.
     #[serde(default)]
     pub max_size_mb: u64,
+
+    /// LF-06 total-byte cap across all retained audio sessions.  When the
+    /// `audio-archive/` directory exceeds this size on startup or session
+    /// end, the oldest sealed sessions are evicted first.  `0` disables.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub total_bytes_cap: u64,
+
+    /// LF-06 retention TTL in days for audio sessions.  `0` disables.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub retention_days: u64,
 }
 
 fn audio_archive_is_default(v: &AudioArchiveConfig) -> bool {
-    !v.store_audio && !v.consent_given && v.directory.is_none() && v.max_size_mb == 0
+    !v.store_audio
+        && !v.consent_given
+        && v.directory.is_none()
+        && v.max_size_mb == 0
+        && v.total_bytes_cap == 0
+        && v.retention_days == 0
 }
 
 // ─── TTS routing (VMIC-A2, issue #314) ───────────────────────────────────────
@@ -801,7 +871,7 @@ fn vad_config_is_default(v: &VadConfigJson) -> bool {
 }
 
 fn session_store_is_default(v: &SessionStoreConfig) -> bool {
-    !v.enabled && v.directory.is_none() && session_store_max_sessions_is_default(&v.max_sessions)
+    v == &SessionStoreConfig::default()
 }
 
 fn session_store_max_sessions_is_default(value: &usize) -> bool {
@@ -1597,22 +1667,100 @@ fn validate_virtual_mic_device_name(value: &str) -> Result<()> {
 }
 
 fn validate_directory_path(field_name: &str, value: &str) -> Result<()> {
+    if value.is_empty() {
+        anyhow::bail!("`{field_name}` must not be empty");
+    }
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        bail!("`{field_name}` must not be empty");
+        anyhow::bail!("`{field_name}` must not be empty");
     }
     if trimmed != value {
-        bail!("`{field_name}` must not include leading or trailing whitespace");
+        anyhow::bail!("`{field_name}` must not include leading or trailing whitespace");
     }
     if value.chars().any(char::is_control) {
-        bail!("`{field_name}` must not contain control characters");
+        anyhow::bail!("`{field_name}` must not contain control characters");
     }
-    if has_parent_dir_segment(value) {
-        bail!("`{field_name}` must not contain `..` path traversal components");
+    if value.starts_with("\\\\") || value.starts_with("//") {
+        anyhow::bail!("`{field_name}` must not be a UNC path");
+    }
+    let remainder = strip_root_prefix_inline(value);
+    for raw_segment in remainder.split(['/', '\\']) {
+        if raw_segment.is_empty() {
+            continue;
+        }
+        if !is_valid_path_component_inline(raw_segment) {
+            anyhow::bail!("`{field_name}` contains invalid path segment `{raw_segment}`");
+        }
     }
     Ok(())
 }
 
+fn strip_root_prefix_inline(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        let rest = &value[2..];
+        return rest
+            .strip_prefix('\\')
+            .or_else(|| rest.strip_prefix('/'))
+            .unwrap_or(rest);
+    }
+    value
+        .strip_prefix('\\')
+        .or_else(|| value.strip_prefix('/'))
+        .unwrap_or(value)
+}
+
+fn is_valid_path_component_inline(component: &str) -> bool {
+    if component.is_empty() || component == "." || component == ".." {
+        return false;
+    }
+    if component.contains('/') || component.contains('\\') || component.contains(':') {
+        return false;
+    }
+    if component.chars().any(|c| {
+        (c as u32) < 0x20 || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*'
+    }) {
+        return false;
+    }
+    if component.ends_with('.') || component.ends_with(' ') {
+        return false;
+    }
+    if std::path::Path::new(component).is_absolute() {
+        return false;
+    }
+    let stem = component
+        .split('.')
+        .next()
+        .unwrap_or(component)
+        .to_ascii_uppercase();
+    !matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+#[allow(dead_code)]
 fn has_parent_dir_segment(value: &str) -> bool {
     value.split(['/', '\\']).any(|segment| segment == "..")
 }
@@ -1683,7 +1831,7 @@ mod tests {
         // T1: provider fields must default to "google"
         assert_eq!(cfg.stt_provider, "google");
         assert_eq!(cfg.mt_provider, "google");
-        assert!(!cfg.session_store.enabled);
+        assert!(cfg.session_store.enabled, "LF-06: enabled by default");
         cfg.validate()
             .expect("default config should pass validation");
     }
@@ -1864,13 +2012,15 @@ mod tests {
     }
 
     #[test]
-    fn session_store_defaults_to_disabled_when_absent() {
+    fn session_store_defaults_to_lf06_defaults_when_absent() {
         let mut f = NamedTempFile::new().unwrap();
         write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
 
         let cfg = load(f.path()).unwrap();
 
+        // LF-06: enabled-by-default with all retention caps at zero.
         assert_eq!(cfg.session_store, SessionStoreConfig::default());
+        assert!(cfg.session_store.enabled);
     }
 
     #[test]
@@ -1880,6 +2030,9 @@ mod tests {
                 enabled: true,
                 directory: Some("D:\\transcripts".to_string()),
                 max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                per_session_bytes_cap: 0,
+                total_bytes_cap: 0,
+                retention_days: 0,
             },
             ..AppConfig::default()
         };
@@ -1902,6 +2055,7 @@ mod tests {
                 enabled: true,
                 directory: Some("   ".to_string()),
                 max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                ..SessionStoreConfig::default()
             },
             ..AppConfig::default()
         };
@@ -2062,6 +2216,7 @@ mod tests {
                     enabled: true,
                     directory: Some("..\\transcripts".to_string()),
                     max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                    ..SessionStoreConfig::default()
                 },
                 ..AppConfig::default()
             },
@@ -2070,6 +2225,7 @@ mod tests {
                     enabled: true,
                     directory: Some("../transcripts".to_string()),
                     max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                    ..SessionStoreConfig::default()
                 },
                 ..AppConfig::default()
             },
@@ -2079,6 +2235,7 @@ mod tests {
                     consent_given: true,
                     directory: Some("recordings\\..\\archive".to_string()),
                     max_size_mb: 10,
+                    ..AudioArchiveConfig::default()
                 },
                 ..AppConfig::default()
             },
@@ -2088,6 +2245,7 @@ mod tests {
                     consent_given: true,
                     directory: Some("recordings/../archive".to_string()),
                     max_size_mb: 10,
+                    ..AudioArchiveConfig::default()
                 },
                 ..AppConfig::default()
             },
@@ -2109,6 +2267,7 @@ mod tests {
                 enabled: true,
                 directory: None,
                 max_sessions: 0,
+                ..SessionStoreConfig::default()
             },
             ..AppConfig::default()
         };
@@ -2193,8 +2352,9 @@ mod tests {
         let next = AppConfig {
             session_store: SessionStoreConfig {
                 enabled: true,
-                directory: None,
+                directory: Some("D:\\transcripts".to_string()),
                 max_sessions: DEFAULT_SESSION_STORE_MAX_SESSIONS,
+                ..SessionStoreConfig::default()
             },
             ..AppConfig::default()
         };
@@ -2284,14 +2444,15 @@ mod tests {
     }
 
     #[test]
-    fn default_sessions_dir_uses_default_config_directory() {
+    fn default_sessions_dir_uses_local_data_directory() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let config_dir = TempDir::new().unwrap();
-        let _override = EnvVarGuard::set(CONFIG_DIR_OVERRIDE_ENV, config_dir.path());
+        let local_dir = TempDir::new().unwrap();
+        let _override = EnvVarGuard::set(LOCAL_DATA_DIR_OVERRIDE_ENV, local_dir.path());
 
         let path = default_sessions_dir().unwrap();
 
-        assert_eq!(path, config_dir.path().join("sessions"));
+        // LF-06: sessions root is %LOCALAPPDATA%\tui-translator\sessions.
+        assert_eq!(path, local_dir.path().join("sessions"));
     }
 
     #[test]
@@ -3305,6 +3466,7 @@ mod tests {
                 consent_given: true,
                 directory: None,
                 max_size_mb: 0,
+                ..AudioArchiveConfig::default()
             },
             ..AppConfig::default()
         };

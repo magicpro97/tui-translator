@@ -56,6 +56,7 @@ mod metrics;
 mod pipeline;
 mod providers;
 mod session;
+mod storage;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
@@ -605,9 +606,10 @@ fn start_session_recorder(
 
     match rt.block_on(session::SessionRecorder::start(
         session::SessionRecorderConfig::enabled_with_max_sessions(
-            directory,
+            directory.clone(),
             cfg.session_store.max_sessions,
-        ),
+        )
+        .with_per_session_bytes_cap(cfg.session_store.per_session_bytes_cap),
         header,
     )) {
         Ok(recorder) => {
@@ -618,6 +620,14 @@ fn start_session_recorder(
                     "session transcript recording enabled"
                 );
             }
+            // LF-06: enforce total cap + TTL on transcript root at session start.
+            apply_storage_retention(
+                &directory,
+                cfg.session_store.total_bytes_cap,
+                cfg.session_store.retention_days,
+                "transcripts",
+                Some(session_id),
+            );
             recorder
         }
         Err(err) => {
@@ -661,7 +671,7 @@ fn start_audio_archive(
 
     let archive_config = audio::AudioArchiveWriterConfig {
         enabled: true,
-        directory,
+        directory: directory.clone(),
         max_size_bytes: cfg.audio_archive.max_size_mb.saturating_mul(1024 * 1024),
     };
 
@@ -672,6 +682,14 @@ fn start_audio_archive(
                 *status_slot.lock().unwrap_or_else(|p| p.into_inner()) =
                     Some(format!("⚠ Audio archiving enabled: {}", path.display()));
             }
+            // LF-06: enforce total cap + TTL on audio root at session start.
+            apply_storage_retention(
+                &directory,
+                cfg.audio_archive.total_bytes_cap,
+                cfg.audio_archive.retention_days,
+                "audio archive",
+                Some(session_id),
+            );
             writer
         }
         Err(err) => {
@@ -679,6 +697,48 @@ fn start_audio_archive(
             tracing::warn!("audio archive disabled: {err:#}");
             *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
             audio::AudioArchiveWriter::disabled()
+        }
+    }
+}
+
+fn apply_storage_retention(
+    root: &Path,
+    total_bytes_cap: u64,
+    retention_days: u64,
+    label: &str,
+    active_session_id: Option<&str>,
+) {
+    if total_bytes_cap > 0 {
+        match storage::enforce_total_session_cap(root, total_bytes_cap, active_session_id) {
+            Ok(evicted) => {
+                if evicted > 0 {
+                    tracing::info!(
+                        root = %root.display(),
+                        evicted,
+                        "{label} retention: evicted oldest sessions over total-bytes cap"
+                    );
+                }
+            }
+            Err(err) => {
+                tracing::warn!("{label} total-cap enforcement failed: {err:#}");
+            }
+        }
+    }
+    if retention_days > 0 {
+        let ttl = std::time::Duration::from_secs(retention_days.saturating_mul(86_400));
+        match storage::purge_expired_sessions(root, ttl, active_session_id) {
+            Ok(evicted) => {
+                if evicted > 0 {
+                    tracing::info!(
+                        root = %root.display(),
+                        evicted,
+                        "{label} retention: purged sessions older than TTL"
+                    );
+                }
+            }
+            Err(err) => {
+                tracing::warn!("{label} TTL purge failed: {err:#}");
+            }
         }
     }
 }
@@ -1641,6 +1701,43 @@ fn main() -> Result<()> {
     prepare_per_user_config_dir_for_startup(&cfg_path)?;
     bootstrap_legacy_config_if_needed(&cfg_path)?;
     let (cfg, load_state, load_error) = config::load_for_startup(&cfg_path)?;
+
+    // LF-06: best-effort, one-shot migration of pre-LF-06 transcript + audio
+    // archive directories from %APPDATA% into the canonical %LOCALAPPDATA%
+    // layout.  A `.lf06-migrated` marker prevents repeat work on every launch.
+    if let (
+        Ok(marker),
+        Ok(legacy_sessions),
+        Ok(canonical_sessions),
+        Ok(legacy_audio),
+        Ok(canonical_audio),
+    ) = (
+        config::lf06_migration_marker_path(),
+        config::legacy_sessions_dir(),
+        config::default_sessions_dir(),
+        config::legacy_audio_archive_dir(),
+        config::default_audio_archive_dir(),
+    ) {
+        if let Err(err) = storage::try_migrate_legacy_storage(
+            &legacy_sessions,
+            &canonical_sessions,
+            &legacy_audio,
+            &canonical_audio,
+            &marker,
+        ) {
+            tracing::warn!("LF-06 storage migration skipped: {err:#}");
+        }
+    }
+
+    // LF-06: print the one-shot startup summary that names where transcripts
+    // and raw audio go.  Best-effort: a missing %LOCALAPPDATA% root is logged
+    // but not fatal.
+    if let (Ok(sessions_root), Ok(audio_root)) = (
+        config::default_sessions_dir(),
+        config::default_audio_archive_dir(),
+    ) {
+        storage::print_startup_summary(&sessions_root, &audio_root);
+    }
     let startup_config_mode = startup_config_mode(
         load_state,
         has_explicit_config_override(),
@@ -2068,7 +2165,7 @@ fn main() -> Result<()> {
                 );
                 log_measurement_mode_status(
                     &session_id,
-                    session_recorder.path(),
+                    session_recorder.path().as_deref(),
                     audio_archive_path.as_deref(),
                     &state.pipeline_error_msg,
                 );
@@ -2076,7 +2173,7 @@ fn main() -> Result<()> {
                 // Issue #393: extract shared storage handles before the recorder
                 // is moved into the orchestrator context.
                 storage.recorder_bytes = session_recorder.bytes_written_arc();
-                storage.recorder_path = session_recorder.path().map(PathBuf::from);
+                storage.recorder_path = session_recorder.path();
 
                 let ctx = pipeline::OrchestratorContext {
                     audio_level: Arc::clone(&state.audio_level),
@@ -4512,6 +4609,28 @@ mod tests {
     }
 
     #[test]
+    fn storage_retention_wrapper_preserves_active_session() {
+        let root = TempDir::new().unwrap();
+        let old_dir = root.path().join("old");
+        let active_dir = root.path().join("active");
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::create_dir_all(&active_dir).unwrap();
+        fs::write(old_dir.join("00001.jsonl"), vec![b'x'; 200]).unwrap();
+        fs::write(active_dir.join("00001.jsonl"), vec![b'x'; 1_000]).unwrap();
+
+        apply_storage_retention(root.path(), 100, 0, "test", Some("active"));
+
+        assert!(
+            active_dir.exists(),
+            "active session must not be deleted even when it is over the total cap"
+        );
+        assert!(
+            !old_dir.exists(),
+            "old sealed sessions should still be evicted before preserving the active session"
+        );
+    }
+
+    #[test]
     fn attach_audio_archive_writes_and_forwards_chunks() {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -4544,7 +4663,8 @@ mod tests {
             assert!(archived.receiver.recv().await.is_none());
         });
 
-        let wav_path = dir.path().join("archive-forward.wav");
+        let wav_path = dir.path().join("archive-forward").join("00001.wav");
+        // OK: test asserts file presence; failure means archive layout regression
         let source = audio::WavFileSource::open(&wav_path).unwrap();
         assert_eq!(source.total_samples(), chunk.samples.len());
     }
