@@ -200,17 +200,18 @@ impl SessionRecorderConfig {
 /// Non-blocking transcript JSONL recorder.
 ///
 /// The hot path calls [`record_segment`](Self::record_segment), which uses
-/// `try_send` into a bounded channel. Disk I/O runs on a Tokio task and flushes
-/// after each line so a crash cannot leave buffered JSON records unwritten.
+/// `try_send` into a bounded channel. Disk I/O runs on a Tokio task and writes
+/// each line through the Tokio file handle; this is not an fsync durability
+/// guarantee.
 pub struct SessionRecorder {
     session_id: Option<String>,
     path: Option<PathBuf>,
     sender: Option<mpsc::Sender<SessionLogRecord>>,
     writer: Option<JoinHandle<()>>,
     last_error: Arc<Mutex<Option<String>>>,
-    /// Monotonically non-decreasing count of bytes successfully written and
-    /// flushed to disk since the recorder was started (including the header
-    /// line).  Zero when the recorder is disabled.
+    /// Monotonically non-decreasing count of bytes successfully handed to the
+    /// OS for the JSONL file since the recorder was started (including the
+    /// header line). Zero when the recorder is disabled.
     bytes_written: Arc<AtomicU64>,
 }
 
@@ -259,16 +260,15 @@ impl SessionRecorder {
                 anyhow::anyhow!("failed to create session log {}: {err}", path.display())
             })?;
 
-        write_record_line(&mut file, &SessionLogRecord::SessionHeader(header.clone()))
-            .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to write session header {}: {err}", path.display())
-            })?;
+        let header_record = SessionLogRecord::SessionHeader(header);
+        let header_byte_count =
+            write_record_line(&mut file, &header_record)
+                .await
+                .map_err(|err| {
+                    anyhow::anyhow!("failed to write session header {}: {err}", path.display())
+                })?;
 
-        let bytes_written = Arc::new(AtomicU64::new(0));
-        // Measure and record the bytes from the header write.
-        let header_byte_count = record_byte_count(&SessionLogRecord::SessionHeader(header)) as u64;
-        bytes_written.fetch_add(header_byte_count, Ordering::Relaxed);
+        let bytes_written = Arc::new(AtomicU64::new(header_byte_count as u64));
 
         let (tx, rx) = mpsc::channel(RECORDER_QUEUE_CAPACITY);
         let last_error = Arc::new(Mutex::new(None));
@@ -305,8 +305,8 @@ impl SessionRecorder {
         self.sender.is_some()
     }
 
-    /// Total bytes successfully written and flushed to disk since the recorder
-    /// was started, including the session header.  Monotonically non-decreasing
+    /// Total bytes successfully handed to the OS for the JSONL file since the
+    /// recorder started, including the session header.  Monotonically non-decreasing
     /// within a session.  Returns `0` when the recorder is disabled or before
     /// the first write completes.
     pub fn bytes_written(&self) -> u64 {
@@ -423,15 +423,6 @@ async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::i
     file.write_all(&line).await?;
     file.flush().await?;
     Ok(len)
-}
-
-/// Compute the number of bytes that [`write_record_line`] would write for `record`.
-///
-/// Used to measure the header write that occurs before the writer task starts.
-fn record_byte_count(record: &SessionLogRecord) -> usize {
-    serde_json::to_vec(record)
-        .map(|v| v.len() + 1) // +1 for the '\n'
-        .unwrap_or(0)
 }
 
 fn session_log_file_name(session_id: &str) -> String {

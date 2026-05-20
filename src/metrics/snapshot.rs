@@ -157,9 +157,9 @@ pub struct MetricsSnapshot {
     pub mt_call_count: u64,
 
     // ── Storage metrics (issue #393) ─────────────────────────────────────────
-    /// Total bytes successfully written and flushed to the session JSONL file
-    /// since the recorder started, including the header record.  Monotonically
-    /// non-decreasing during a session.  `0` when recording is disabled.
+    /// Total bytes successfully handed to the OS for the session JSONL file
+    /// since the recorder started, including the header record. Monotonically
+    /// non-decreasing during a session. `0` when recording is disabled.
     pub recorder_bytes: u64,
 
     /// Current path of the session JSONL file, or `None` when recording is
@@ -167,16 +167,19 @@ pub struct MetricsSnapshot {
     pub recorder_path: Option<PathBuf>,
 
     /// Total bytes of PCM audio written to the WAV archive data chunk.
-    /// Monotonically non-decreasing during a session.  `0` when archiving is
-    /// disabled.
+    /// Monotonically non-decreasing during a session. `0` when archiving was
+    /// not enabled at session start. If a write error disables archiving at
+    /// runtime, this remains the last-known successful byte count.
     pub archive_bytes: u64,
 
-    /// Current path of the WAV audio archive file, or `None` when archiving is
-    /// disabled.
+    /// Path of the WAV audio archive file, or `None` when archiving was not
+    /// enabled at session start. If a write error disables archiving at runtime,
+    /// this remains the path of the partial WAV file for troubleshooting.
     pub archive_path: Option<PathBuf>,
 
     /// `true` when the audio archive has reached its size quota and no further
-    /// samples will be written.  Always `false` when archiving is disabled.
+    /// samples will be written. Always `false` when archiving was disabled by
+    /// config or stopped after a runtime write error.
     pub archive_sealed: bool,
 }
 

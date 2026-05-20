@@ -2215,6 +2215,8 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let storage_recorder_path = storage.recorder_path.clone();
         let storage_archive_bytes = Arc::clone(&storage.archive_bytes);
         let storage_archive_sealed = Arc::clone(&storage.archive_sealed);
+        // Path of the configured WAV target. It remains after a runtime
+        // write-error disable; that disabled state is surfaced via status text.
         let storage_archive_path = storage.archive_path.clone();
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
