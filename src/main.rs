@@ -43,7 +43,7 @@ use std::{
     io::{self, Write as IoWrite},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     time::{Duration, SystemTime},
@@ -72,6 +72,28 @@ const METRICS_SNAPSHOT_ENV: &str = "TUI_TRANSLATOR_METRICS_SNAPSHOT";
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
 
+/// Shared handles from the session recorder and audio archive, used by the
+/// metrics-publisher task to populate `MetricsSnapshot` storage fields (issue #393).
+struct StorageMetricsHandles {
+    recorder_bytes: Arc<AtomicU64>,
+    recorder_path: Option<PathBuf>,
+    archive_bytes: Arc<AtomicU64>,
+    archive_sealed: Arc<AtomicBool>,
+    archive_path: Option<PathBuf>,
+}
+
+impl Default for StorageMetricsHandles {
+    fn default() -> Self {
+        Self {
+            recorder_bytes: Arc::new(AtomicU64::new(0)),
+            recorder_path: None,
+            archive_bytes: Arc::new(AtomicU64::new(0)),
+            archive_sealed: Arc::new(AtomicBool::new(false)),
+            archive_path: None,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct MetricsSnapshotExport {
     schema_version: &'static str,
@@ -83,6 +105,14 @@ struct MetricsSnapshotExport {
     loss_pct: f64,
     total_chunks: u64,
     dropped_chunks: u64,
+    // Issue #393: storage metrics.
+    recorder_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recorder_path: Option<std::path::PathBuf>,
+    archive_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_path: Option<std::path::PathBuf>,
+    archive_sealed: bool,
 }
 
 impl From<&MetricsSnapshot> for MetricsSnapshotExport {
@@ -97,6 +127,11 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
             loss_pct: snapshot.loss_pct,
             total_chunks: snapshot.total_chunks,
             dropped_chunks: snapshot.dropped_chunks,
+            recorder_bytes: snapshot.recorder_bytes,
+            recorder_path: snapshot.recorder_path.clone(),
+            archive_bytes: snapshot.archive_bytes,
+            archive_path: snapshot.archive_path.clone(),
+            archive_sealed: snapshot.archive_sealed,
         }
     }
 }
@@ -153,6 +188,9 @@ struct FinishMainArgs<'a> {
     cpu_gate: Arc<pipeline::cpu_gate::CpuGate>,
     /// RAM budget guard shared with the metrics publisher.
     memory_guard: Arc<MemoryGuard>,
+    // ── Storage metrics (issue #393) ──────────────────────────────────────
+    /// Shared atomic handles from the session recorder and audio archive.
+    storage: StorageMetricsHandles,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1717,6 +1755,9 @@ fn main() -> Result<()> {
     let orchestrator_shutdown = Arc::new(AtomicBool::new(false));
     // Handle returned by the orchestrator task; `None` when no API key is set.
     let orchestrator_join: Option<tokio::task::JoinHandle<()>>;
+    // Issue #393: storage metrics handles — populated from recorder/archive when
+    // the orchestrator starts; default (all-zero) for early-exit paths.
+    let mut storage = StorageMetricsHandles::default();
 
     // ── Issues #79–#83 — shared observability objects ─────────────────────────
     // Created here so both the orchestrator and the metrics-publisher can share
@@ -1764,6 +1805,7 @@ fn main() -> Result<()> {
                 loss_metrics,
                 cpu_gate,
                 memory_guard,
+                storage: StorageMetricsHandles::default(),
             },
         );
     }
@@ -1806,6 +1848,13 @@ fn main() -> Result<()> {
             let audio_archive =
                 start_audio_archive(&cfg_snapshot, &session_id, &state.pipeline_error_msg);
             let audio_archive_path = audio_archive.path().map(|p| p.to_path_buf());
+            // Issue #393: extract shared storage handles before the archive writer
+            // is moved into attach_audio_archive.
+            let audio_archive_bytes_arc = audio_archive.bytes_arc();
+            let audio_archive_sealed_arc = audio_archive.sealed_arc();
+            storage.archive_bytes = Arc::clone(&audio_archive_bytes_arc);
+            storage.archive_sealed = Arc::clone(&audio_archive_sealed_arc);
+            storage.archive_path = audio_archive_path.clone();
             let stream = attach_audio_archive(
                 &rt,
                 stream,
@@ -1889,6 +1938,7 @@ fn main() -> Result<()> {
                                 loss_metrics: Arc::clone(&loss_metrics),
                                 cpu_gate: Arc::clone(&cpu_gate),
                                 memory_guard: Arc::clone(&memory_guard),
+                                storage,
                             },
                         );
                     }
@@ -1929,6 +1979,7 @@ fn main() -> Result<()> {
                                 loss_metrics: Arc::clone(&loss_metrics),
                                 cpu_gate: Arc::clone(&cpu_gate),
                                 memory_guard: Arc::clone(&memory_guard),
+                                storage,
                             },
                         );
                     }
@@ -1963,6 +2014,7 @@ fn main() -> Result<()> {
                                 loss_metrics: Arc::clone(&loss_metrics),
                                 cpu_gate: Arc::clone(&cpu_gate),
                                 memory_guard: Arc::clone(&memory_guard),
+                                storage,
                             },
                         );
                     }
@@ -1980,6 +2032,11 @@ fn main() -> Result<()> {
                     audio_archive_path.as_deref(),
                     &state.pipeline_error_msg,
                 );
+
+                // Issue #393: extract shared storage handles before the recorder
+                // is moved into the orchestrator context.
+                storage.recorder_bytes = session_recorder.bytes_written_arc();
+                storage.recorder_path = session_recorder.path().map(PathBuf::from);
 
                 let ctx = pipeline::OrchestratorContext {
                     audio_level: Arc::clone(&state.audio_level),
@@ -2081,6 +2138,7 @@ fn main() -> Result<()> {
             loss_metrics,
             cpu_gate,
             memory_guard,
+            storage,
         },
     )
 }
@@ -2136,6 +2194,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         loss_metrics,
         cpu_gate,
         memory_guard,
+        storage,
     } = args;
 
     // ── Issues #61, #82: metrics observability background task ───────────────
@@ -2151,6 +2210,14 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let current_config = Arc::clone(current_config);
         let mut process_rx = process_rx;
         let metrics_snapshot_path = std::env::var_os(METRICS_SNAPSHOT_ENV).map(PathBuf::from);
+        // Issue #393: clone the storage handles for the publisher task.
+        let storage_recorder_bytes = Arc::clone(&storage.recorder_bytes);
+        let storage_recorder_path = storage.recorder_path.clone();
+        let storage_archive_bytes = Arc::clone(&storage.archive_bytes);
+        let storage_archive_sealed = Arc::clone(&storage.archive_sealed);
+        // Path of the configured WAV target. It remains after a runtime
+        // write-error disable; that disabled state is surfaced via status text.
+        let storage_archive_path = storage.archive_path.clone();
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             let mut last_ram_budget_bytes = u64::MAX;
@@ -2216,6 +2283,15 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                 // Issue #230: publish how many local-inference chunks were
                 // intentionally skipped due to CPU pressure.
                 snapshot.local_inferences_skipped = cpu_gate.skipped_count();
+                // Issue #393: apply storage metrics from the session recorder and
+                // audio archive.
+                snapshot.apply_storage(
+                    storage_recorder_bytes.load(Ordering::Relaxed),
+                    storage_recorder_path.clone(),
+                    storage_archive_bytes.load(Ordering::Relaxed),
+                    storage_archive_path.clone(),
+                    storage_archive_sealed.load(Ordering::Relaxed),
+                );
 
                 if let Some(path) = metrics_snapshot_path.as_deref() {
                     if let Err(err) = write_metrics_snapshot_export(path, &snapshot) {

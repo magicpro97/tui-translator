@@ -19,7 +19,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
@@ -197,14 +200,19 @@ impl SessionRecorderConfig {
 /// Non-blocking transcript JSONL recorder.
 ///
 /// The hot path calls [`record_segment`](Self::record_segment), which uses
-/// `try_send` into a bounded channel. Disk I/O runs on a Tokio task and flushes
-/// after each line so a crash cannot leave buffered JSON records unwritten.
+/// `try_send` into a bounded channel. Disk I/O runs on a Tokio task and writes
+/// each line through the Tokio file handle; this is not an fsync durability
+/// guarantee.
 pub struct SessionRecorder {
     session_id: Option<String>,
     path: Option<PathBuf>,
     sender: Option<mpsc::Sender<SessionLogRecord>>,
     writer: Option<JoinHandle<()>>,
     last_error: Arc<Mutex<Option<String>>>,
+    /// Monotonically non-decreasing count of bytes successfully handed to the
+    /// OS for the JSONL file since the recorder was started (including the
+    /// header line). Zero when the recorder is disabled.
+    bytes_written: Arc<AtomicU64>,
 }
 
 impl SessionRecorder {
@@ -216,6 +224,7 @@ impl SessionRecorder {
             sender: None,
             writer: None,
             last_error: Arc::new(Mutex::new(None)),
+            bytes_written: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -251,15 +260,25 @@ impl SessionRecorder {
                 anyhow::anyhow!("failed to create session log {}: {err}", path.display())
             })?;
 
-        write_record_line(&mut file, &SessionLogRecord::SessionHeader(header))
-            .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to write session header {}: {err}", path.display())
-            })?;
+        let header_record = SessionLogRecord::SessionHeader(header);
+        let header_byte_count =
+            write_record_line(&mut file, &header_record)
+                .await
+                .map_err(|err| {
+                    anyhow::anyhow!("failed to write session header {}: {err}", path.display())
+                })?;
+
+        let bytes_written = Arc::new(AtomicU64::new(header_byte_count as u64));
 
         let (tx, rx) = mpsc::channel(RECORDER_QUEUE_CAPACITY);
         let last_error = Arc::new(Mutex::new(None));
-        let writer = tokio::spawn(run_writer(file, rx, Arc::clone(&last_error), path.clone()));
+        let writer = tokio::spawn(run_writer(
+            file,
+            rx,
+            Arc::clone(&last_error),
+            path.clone(),
+            Arc::clone(&bytes_written),
+        ));
 
         Ok(Self {
             session_id: Some(session_id),
@@ -267,6 +286,7 @@ impl SessionRecorder {
             sender: Some(tx),
             writer: Some(writer),
             last_error,
+            bytes_written,
         })
     }
 
@@ -283,6 +303,22 @@ impl SessionRecorder {
     /// Return `true` when this recorder writes transcript files.
     pub fn is_enabled(&self) -> bool {
         self.sender.is_some()
+    }
+
+    /// Total bytes successfully handed to the OS for the JSONL file since the
+    /// recorder started, including the session header.  Monotonically non-decreasing
+    /// within a session.  Returns `0` when the recorder is disabled or before
+    /// the first write completes.
+    pub fn bytes_written(&self) -> u64 {
+        self.bytes_written.load(Ordering::Relaxed)
+    }
+
+    /// Shared atomic handle for the bytes-written counter.
+    ///
+    /// Callers that outlive the [`SessionRecorder`] (e.g. the metrics-publisher
+    /// task) should clone this `Arc` before the recorder is moved elsewhere.
+    pub fn bytes_written_arc(&self) -> Arc<AtomicU64> {
+        Arc::clone(&self.bytes_written)
     }
 
     /// Queue one final transcript segment without waiting for disk I/O.
@@ -351,16 +387,22 @@ async fn run_writer(
     mut rx: mpsc::Receiver<SessionLogRecord>,
     last_error: Arc<Mutex<Option<String>>>,
     path: PathBuf,
+    bytes_written: Arc<AtomicU64>,
 ) {
     while let Some(record) = rx.recv().await {
-        if let Err(err) = write_record_line(&mut file, &record).await {
-            let message = format!(
-                "session recorder write failed for {}: {err}",
-                path.display()
-            );
-            tracing::warn!("{message}");
-            *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
-            break;
+        match write_record_line(&mut file, &record).await {
+            Ok(n) => {
+                bytes_written.fetch_add(n as u64, Ordering::Relaxed);
+            }
+            Err(err) => {
+                let message = format!(
+                    "session recorder write failed for {}: {err}",
+                    path.display()
+                );
+                tracing::warn!("{message}");
+                *last_error.lock().unwrap_or_else(|p| p.into_inner()) = Some(message);
+                break;
+            }
         }
     }
 
@@ -374,11 +416,13 @@ async fn run_writer(
     }
 }
 
-async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::io::Result<()> {
+async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::io::Result<usize> {
     let mut line = serde_json::to_vec(record).map_err(std::io::Error::other)?;
     line.push(b'\n');
+    let len = line.len();
     file.write_all(&line).await?;
-    file.flush().await
+    file.flush().await?;
+    Ok(len)
 }
 
 fn session_log_file_name(session_id: &str) -> String {
@@ -928,6 +972,111 @@ mod tests {
 
         assert_eq!(jsonl_count, 2, "new session plus one retained old log");
         assert!(sessions_dir.join("new-session.jsonl").exists());
+    }
+
+    // ── Issue #393: bytes_written counter tests ────────────────────────────────
+
+    #[test]
+    fn disabled_recorder_bytes_written_is_zero() {
+        let recorder = SessionRecorder::disabled();
+        assert_eq!(recorder.bytes_written(), 0);
+    }
+
+    #[tokio::test]
+    async fn enabled_recorder_bytes_written_increases_after_writes() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone()),
+            test_header("bytes-test"),
+        )
+        .await
+        .expect("start recorder");
+
+        // After start, the header has already been written and counted.
+        let after_header = recorder.bytes_written();
+        assert!(
+            after_header > 0,
+            "bytes_written must be > 0 after header write; got {after_header}"
+        );
+
+        // Clone the Arc before moving recorder into shutdown().
+        let arc = recorder.bytes_written_arc();
+
+        // Record a segment and wait for the writer task to flush.
+        recorder
+            .record_segment(test_segment(1))
+            .expect("record segment");
+        recorder.shutdown().await.expect("shutdown recorder");
+
+        let after_segment = arc.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            after_segment >= after_header,
+            "bytes_written must not decrease; header={after_header}, after={after_segment}"
+        );
+        assert!(
+            after_segment > after_header,
+            "bytes_written must increase after a successful segment write"
+        );
+    }
+
+    #[tokio::test]
+    async fn bytes_written_matches_actual_file_size() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone()),
+            test_header("file-size-test"),
+        )
+        .await
+        .expect("start recorder");
+        let path = recorder.path().expect("recorder has path").to_path_buf();
+        let arc = recorder.bytes_written_arc();
+
+        recorder
+            .record_segment(test_segment(1))
+            .expect("record segment 1");
+        recorder
+            .record_segment(test_segment(2))
+            .expect("record segment 2");
+        recorder.shutdown().await.expect("shutdown recorder");
+
+        let reported = arc.load(std::sync::atomic::Ordering::Relaxed);
+        let actual = std::fs::metadata(&path).expect("read file metadata").len();
+        assert_eq!(
+            reported, actual,
+            "bytes_written() must equal the actual file size on disk"
+        );
+    }
+
+    #[tokio::test]
+    async fn bytes_written_arc_is_shared_with_internal_counter() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone()),
+            test_header("arc-share-test"),
+        )
+        .await
+        .expect("start recorder");
+
+        let arc = recorder.bytes_written_arc();
+        let after_header = arc.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            after_header > 0,
+            "cloned Arc must reflect header bytes; got {after_header}"
+        );
+
+        recorder
+            .record_segment(test_segment(1))
+            .expect("record segment");
+        recorder.shutdown().await.expect("shutdown recorder");
+
+        let after_segment = arc.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            after_segment > after_header,
+            "Arc must reflect segment bytes written through the shared atomic"
+        );
     }
 
     fn test_header(session_id: &str) -> SessionHeader {
