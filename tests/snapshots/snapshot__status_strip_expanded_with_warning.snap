@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 643
 expression: "render_strip(&strip, 80, height)"
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
@@ -8,5 +9,6 @@ expression: "render_strip(&strip, 80, height)"
 │Elapsed: 5:00                                                                 │
 │CPU:12%  RAM:64MB  Net:↑8/↓32 kbps  E2E:420ms  Loss:0.0%                      │
 │trunc:0%  flicker:0  mt:0                                                     │
+│transcripts: —  audio archive: (consent revoked)                              │
 │⚠ Cost warning: $0.75                                                         │
 └──────────────────────────────────────────────────────────────────────────────┘
