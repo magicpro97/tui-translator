@@ -326,6 +326,8 @@ fn snapshot_status_strip_compact_idle() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -361,6 +363,8 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -399,6 +403,8 @@ fn snapshot_status_strip_compact_restart_notice() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -439,6 +445,8 @@ fn snapshot_status_strip_compact_sending() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -474,6 +482,8 @@ fn snapshot_status_strip_compact_waiting() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -509,6 +519,8 @@ fn snapshot_status_strip_compact_error() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -546,6 +558,8 @@ fn snapshot_status_strip_expanded_idle() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -553,7 +567,7 @@ fn snapshot_status_strip_expanded_idle() {
         archive_sealed: false,
         audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 8);
+    let rendered = render_strip(&strip, 80, 9);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -586,6 +600,8 @@ fn snapshot_status_strip_expanded_listening() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -593,7 +609,7 @@ fn snapshot_status_strip_expanded_listening() {
         archive_sealed: false,
         audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 8);
+    let rendered = render_strip(&strip, 80, 9);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -602,7 +618,7 @@ fn snapshot_status_strip_expanded_listening() {
 }
 
 /// Expanded mode with an active cost warning: the warning row must be visible
-/// and the block must be 8 rows tall (2 borders + 5 standard rows + 1 warning).
+/// and the block must be 10 rows tall (2 borders + 7 standard rows + 1 warning).
 #[test]
 fn snapshot_status_strip_expanded_with_warning() {
     let stt = SttState::Listening;
@@ -628,6 +644,8 @@ fn snapshot_status_strip_expanded_with_warning() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -637,8 +655,8 @@ fn snapshot_status_strip_expanded_with_warning() {
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 9,
-        "expanded_height() must be 9 when over_threshold; got {height}"
+        height, 10,
+        "expanded_height() must be 10 when over_threshold; got {height}"
     );
     insta::assert_snapshot!(
         "status_strip_expanded_with_warning",
@@ -674,6 +692,8 @@ fn snapshot_status_strip_narrow_abbreviated() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -713,6 +733,8 @@ fn snapshot_status_strip_wide_full_labels() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -881,6 +903,8 @@ fn stt_error_state_label_contains_message() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -921,6 +945,8 @@ fn narrow_strip_uses_abbreviated_labels() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -946,10 +972,12 @@ fn narrow_strip_uses_abbreviated_labels() {
 /// when `cost_usd` exceeds `cost_warning_usd` (issue #74).
 ///
 /// Verifies:
-/// 1. `expanded_height()` returns 9 (not 8) when over threshold (SM-02 adds storage row).
+/// 1. `expanded_height()` returns 10 (not 9) when over threshold (LF-02 adds
+///    the local-runtime row and SM-02 adds the storage row).
 /// 2. `expanded_metrics_height(true, true)` matches that value.
-/// 3. The rendered text at 9 rows contains the warning.
-/// 4. The same strip at 7 rows (old, wrong height) does NOT show the warning.
+/// 3. The rendered text at 10 rows contains the warning.
+/// 4. The same strip at 9 rows (old, pre-combined height) does NOT show the
+///    warning.
 #[test]
 fn expanded_warning_renders_when_over_threshold() {
     let stt = SttState::Idle;
@@ -975,6 +1003,8 @@ fn expanded_warning_renders_when_over_threshold() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -983,21 +1013,21 @@ fn expanded_warning_renders_when_over_threshold() {
         audio_consent: false,
     };
 
-    // Height accounting must be 9 when warning is active (SM-02 adds storage row).
+    // Height accounting must be 10 when warning is active.
     assert_eq!(
         strip.expanded_height(),
-        9,
-        "expanded_height() must return 9 when cost exceeds threshold"
+        10,
+        "expanded_height() must return 10 when cost exceeds threshold"
     );
     assert_eq!(
         expanded_metrics_height(true, true),
-        9,
-        "expanded_metrics_height(expanded=true, over_threshold=true) must be 9"
+        10,
+        "expanded_metrics_height(expanded=true, over_threshold=true) must be 10"
     );
     assert_eq!(
         expanded_metrics_height(true, false),
-        8,
-        "expanded_metrics_height(expanded=true, over_threshold=false) must be 8"
+        9,
+        "expanded_metrics_height(expanded=true, over_threshold=false) must be 9"
     );
     assert_eq!(
         expanded_metrics_height(false, true),
@@ -1005,22 +1035,22 @@ fn expanded_warning_renders_when_over_threshold() {
         "expanded_metrics_height(expanded=false, ...) must always be 3"
     );
 
-    // At the correct height of 9 the warning IS visible.
-    let rendered_9 = render_strip(&strip, 80, 9);
+    // At the correct height of 10 the warning IS visible.
+    let rendered_10 = render_strip(&strip, 80, 10);
     assert!(
-        rendered_9.contains("Cost warning"),
-        "expanded strip at 9 rows must show cost warning; got:\n{rendered_9}"
+        rendered_10.contains("Cost warning"),
+        "expanded strip at 10 rows must show cost warning; got:\n{rendered_10}"
     );
     assert!(
-        rendered_9.contains("1.20"),
-        "cost warning must include the current cost value; got:\n{rendered_9}"
+        rendered_10.contains("1.20"),
+        "cost warning must include the current cost value; got:\n{rendered_10}"
     );
 
-    // At height 7 the warning row IS clipped — regression guard.
-    let rendered_7 = render_strip(&strip, 80, 7);
+    // At the old combined height of 9 the warning row is clipped - regression guard.
+    let rendered_clipped = render_strip(&strip, 80, 9);
     assert!(
-        !rendered_7.contains("Cost warning"),
-        "at 7 rows the warning row IS clipped — confirms fix was needed; got:\n{rendered_7}"
+        !rendered_clipped.contains("Cost warning"),
+        "at 9 rows the warning row is clipped - confirms fix was needed; got:\n{rendered_clipped}"
     );
 }
 
@@ -1050,6 +1080,8 @@ fn snapshot_status_strip_zero_state_narrow() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1089,6 +1121,8 @@ fn snapshot_status_strip_zero_state_expanded() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1096,7 +1130,7 @@ fn snapshot_status_strip_zero_state_expanded() {
         archive_sealed: false,
         audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 7);
+    let rendered = render_strip(&strip, 80, 9);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -1175,6 +1209,8 @@ fn narrow_compact_strip_uses_lang_label() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1219,6 +1255,8 @@ fn narrow_compact_strip_uses_tts_label() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1263,6 +1301,8 @@ fn compact_restart_notice_is_spelled_out() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1307,6 +1347,8 @@ fn snapshot_status_strip_very_narrow_30cols() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1511,6 +1553,8 @@ fn expanded_metrics_narrow_uses_lang_label() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1830,6 +1874,8 @@ fn snapshot_status_strip_compact_ram_warning() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1880,6 +1926,8 @@ fn snapshot_status_strip_expanded_ram_warning() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1889,8 +1937,8 @@ fn snapshot_status_strip_expanded_ram_warning() {
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 9,
-        "expanded_height() must be 9 when ram_warning is true; got {height}"
+        height, 10,
+        "expanded_height() must be 10 when ram_warning is true; got {height}"
     );
     let rendered = render_strip(&strip, 80, height);
     assert!(
@@ -1931,6 +1979,8 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1938,7 +1988,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         archive_sealed: false,
         audio_consent: false,
     };
-    assert_eq!(strip.expanded_height(), 9);
+    assert_eq!(strip.expanded_height(), 10);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
     assert!(
         rendered.contains("Cost warning") && rendered.contains("RAM warning"),
@@ -1948,7 +1998,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
 
 /// Expanded strip: no extra row and no warning when `ram_warning` is false.
 #[test]
-fn expanded_metrics_height_is_8_without_any_warning() {
+fn expanded_metrics_height_is_9_without_any_warning() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
@@ -1972,6 +2022,8 @@ fn expanded_metrics_height_is_8_without_any_warning() {
         truncation_rate: 0.0,
         flicker_count: 0,
         mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
         recorder_bytes: 0,
         recorder_path: None,
         archive_bytes: 0,
@@ -1981,7 +2033,7 @@ fn expanded_metrics_height_is_8_without_any_warning() {
     };
     assert_eq!(
         strip.expanded_height(),
-        8,
-        "no warnings → expanded_height() must be 8"
+        9,
+        "no warnings -> expanded_height() must be 9"
     );
 }

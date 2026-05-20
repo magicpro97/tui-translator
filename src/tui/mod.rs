@@ -1340,17 +1340,17 @@ fn audio_device_title_max_cols(area_width: u16) -> usize {
 
 /// Returns the row count allocated to the metrics strip in the main layout.
 ///
-/// In expanded mode the block is normally 8 rows (2 border + 6 content):
+/// In expanded mode the block is normally 9 rows (2 border + 7 content):
 /// STT/TTS, metrics, elapsed, CPU/RAM/Net, the issue-#269 quality row, and
-/// the issue-#394 storage row.
-/// When a cost or RAM warning is active an extra content row is needed,
-/// making it 9.  In compact mode the strip is always 3 rows.
+/// the LF-02 local-runtime row, and the issue-#394 storage row.  When a cost
+/// or RAM warning is active an extra content row is needed, making it 10.  In
+/// compact mode the strip is always 3 rows.
 pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
     if metrics_expanded {
         if over_threshold {
-            9u16
+            10u16
         } else {
-            8u16
+            9u16
         }
     } else {
         3u16
@@ -1358,9 +1358,9 @@ pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> 
 }
 
 pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
-    // Expanded mode: 2 border rows + 6 standard content rows (STT/TTS, metrics,
-    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters, storage) + optional warning
-    // row = 8 or 9 total.  Compact mode keeps 3 rows.
+    // Expanded mode: 2 border rows + 7 standard content rows (STT/TTS, metrics,
+    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters, local runtime, storage)
+    // + optional warning row = 9 or 10 total.  Compact mode keeps 3 rows.
     let metrics_h = expanded_metrics_height(metrics_expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1833,6 +1833,12 @@ pub struct StatusMetricsStrip<'a> {
     pub flicker_count: u64,
     /// Count of successful MT API calls.
     pub mt_call_count: u64,
+    // ── LF-02 (issue #370): local runtime caps observability ─────────────
+    /// Process CPU percentage attributed to local on-device inference.
+    /// `0.0` for cloud-only sessions.
+    pub local_cpu_pct: f32,
+    /// In-flight local-inference operations (Whisper STT + OPUS-MT).
+    pub local_active_threads: u32,
     // ── Issue #394 (SM-02): storage metrics ──────────────────────────────────
     /// Total bytes handed to the OS for the session JSONL transcript file.
     pub recorder_bytes: u64,
@@ -2099,6 +2105,17 @@ impl StatusMetricsStrip<'_> {
                 self.truncation_rate * 100.0,
                 self.flicker_count,
                 self.mt_call_count,
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        // LF-02 (issue #370): local runtime caps line.
+        // Shows in-flight local inference operations and the process CPU
+        // attributed to local inference (`0.0` when local engine idle).
+        lines.push(Line::from(Span::styled(
+            format!(
+                "local CPU:{:.0}%  local inflight:{}",
+                self.local_cpu_pct, self.local_active_threads,
             ),
             Style::default().fg(Color::DarkGray),
         )));
@@ -2430,6 +2447,9 @@ pub fn draw_ui_with_route(
         truncation_rate: metrics.truncation_rate,
         flicker_count: metrics.flicker_count,
         mt_call_count: metrics.mt_call_count,
+        // LF-02 (issue #370): local runtime caps observability.
+        local_cpu_pct: metrics.local_cpu_pct,
+        local_active_threads: metrics.local_active_threads,
         // Issue #394 (SM-02): storage metrics with consent gate.
         recorder_bytes: metrics.recorder_bytes,
         recorder_path: metrics.recorder_path.clone(),
@@ -3697,6 +3717,8 @@ mod tests {
                     truncation_rate: 0.0,
                     flicker_count: 0,
                     mt_call_count: 0,
+                    local_cpu_pct: 0.0,
+                    local_active_threads: 0,
                     recorder_bytes: 0,
                     recorder_path: None,
                     archive_bytes: 0,
@@ -5233,7 +5255,7 @@ mod tests {
 
     // ── Issue #394 (SM-02): storage metrics / privacy gate ────────────────────
 
-    /// Helper: render an expanded StatusMetricsStrip at 120×8 and return the text.
+    /// Helper: render an expanded StatusMetricsStrip at 120x9 and return the text.
     fn render_expanded_storage_strip(
         recorder_bytes: u64,
         recorder_path: Option<PathBuf>,
@@ -5267,6 +5289,8 @@ mod tests {
             truncation_rate: 0.0,
             flicker_count: 0,
             mt_call_count: 0,
+            local_cpu_pct: 0.0,
+            local_active_threads: 0,
             recorder_bytes,
             recorder_path,
             archive_bytes,
@@ -5274,7 +5298,7 @@ mod tests {
             archive_sealed,
             audio_consent,
         };
-        let backend = TestBackend::new(120, 8);
+        let backend = TestBackend::new(120, 9);
         let mut terminal = Terminal::new(backend).expect("TestBackend terminal init must not fail");
         terminal
             .draw(|frame| {

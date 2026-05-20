@@ -262,6 +262,11 @@ impl MtProvider for LocalOpusMtProvider {
             let payload = payload.to_string();
             let pair = self.pair;
             tokio::task::spawn_blocking(move || {
+                // LF-02 (issue #370): record this blocking inference in the
+                // shared in-flight local-inference gauge.  Drops at the end
+                // of the closure when `translate_blocking` returns or errors.
+                let _active_guard =
+                    crate::providers::local::runtime_caps::ActiveLocalInference::enter();
                 let translated_text = engine.translate_blocking(&payload)?;
                 Ok(MtResult {
                     translated_text,
@@ -522,9 +527,27 @@ fn resolve_onnxruntime_library(model_dir: &Path) -> Result<PathBuf, String> {
 
 #[cfg(feature = "local-mt")]
 fn load_session(path: &Path, role: &str) -> Result<Session, ProviderError> {
+    // LF-02 (issue #370): align onnxruntime's thread pools with the shared
+    // local-inference cap.  We call the env helper here as a fallback for
+    // non-main construction paths (tests, benchmarks); the canonical call is
+    // in `main` before any library is loaded.  The helper is idempotent and
+    // respects any inherited OMP_NUM_THREADS value.
+    let cap = crate::providers::local::runtime_caps::prepare_omp_env().cap;
     Session::builder()
         .map_err(map_ort_error)?
-        .with_intra_threads(2)
+        // Parallelism within a single graph node (e.g. a matrix multiply).
+        .with_intra_threads(cap)
+        .map_err(map_ort_error)?
+        // Parallelism between independent graph nodes; keep sequential so we
+        // do not over-subscribe the CPU alongside Whisper and the Tokio runtime.
+        .with_inter_threads(1)
+        .map_err(map_ort_error)?
+        // Disable spin-waiting so idle ORT threads yield to the OS scheduler
+        // immediately.  This reduces CPU burn when the local pipeline is idle
+        // between segments and keeps audio-capture latency stable.
+        .with_intra_op_spinning(false)
+        .map_err(map_ort_error)?
+        .with_inter_op_spinning(false)
         .map_err(map_ort_error)?
         .commit_from_file(path)
         .map_err(|e| {

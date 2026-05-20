@@ -47,6 +47,7 @@ pub mod bootstrap;
 mod inference_priority;
 mod model_download;
 mod mt;
+pub mod runtime_caps;
 
 #[allow(unused_imports)]
 pub use bootstrap::{
@@ -708,12 +709,24 @@ impl LocalWhisperSttProvider {
 
         let mut params =
             whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+        // LF-02 (issue #370): cap whisper.cpp's internal thread pool so the
+        // local STT inference leaves headroom for the audio-capture thread
+        // and the Tokio runtime on small CPUs.  `i32::try_from` cannot fail
+        // for the [1, 4] cap range; we still guard defensively.
+        let cap = runtime_caps::local_thread_cap();
+        let n_threads = i32::try_from(cap).unwrap_or(1).max(1);
+        params.set_n_threads(n_threads);
         params.set_language(Some(language_code));
         params.set_print_special(false);
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
+
+        // LF-02 in-flight local-inference gauge: incremented for the lifetime
+        // of the synchronous whisper call so the metrics publisher can
+        // surface local inference activity to the TUI.
+        let _active_guard = runtime_caps::ActiveLocalInference::enter();
 
         state.full(params, &samples_f32).map_err(|e| {
             ProviderError::ServiceUnavailable(format!(

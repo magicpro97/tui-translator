@@ -191,6 +191,27 @@ pub struct MetricsSnapshot {
     /// its bounded fanout queue was full.  Always `0` when no fanout node is
     /// active or slot B has no consumer.
     pub fanout_slot_b_drops: u64,
+
+    // ── Local runtime caps (LF-02, issue #370) ────────────────────────────────
+    /// Process CPU percentage attributed to local on-device inference.
+    ///
+    /// At present this is set to the overall process [`cpu_pct`] value when
+    /// local-inference activity is observed in the current sampling window
+    /// (i.e. [`local_active_threads`] was non-zero or
+    /// the caller observed [`local_inferences_skipped`] advance); otherwise `0.0`.  The
+    /// distinction lets the TUI surface a "local CPU" gauge that is silent
+    /// on cloud-only sessions without requiring per-thread accounting.
+    ///
+    /// [`cpu_pct`]: MetricsSnapshot::cpu_pct
+    /// [`local_active_threads`]: MetricsSnapshot::local_active_threads
+    /// [`local_inferences_skipped`]: MetricsSnapshot::local_inferences_skipped
+    pub local_cpu_pct: f32,
+
+    /// In-flight local-inference operations (Whisper STT + OPUS-MT) at the
+    /// instant the snapshot was published.  The historical field name uses
+    /// `threads`, but the value is an operation gauge, not an OS-thread or
+    /// thread-pool-size count.  Always `0` for cloud-only sessions.
+    pub local_active_threads: u32,
 }
 
 impl Default for MetricsSnapshot {
@@ -226,6 +247,9 @@ impl Default for MetricsSnapshot {
             archive_sealed: false,
             fanout_slot_a_drops: 0,
             fanout_slot_b_drops: 0,
+            // LF-02 (issue #370): local runtime caps observability.
+            local_cpu_pct: 0.0,
+            local_active_threads: 0,
         }
     }
 }
@@ -318,6 +342,27 @@ impl MetricsSnapshot {
         self.fanout_slot_a_drops = slot_a_drops;
         self.fanout_slot_b_drops = slot_b_drops;
     }
+
+    /// Apply LF-02 local-inference runtime observability (issue #370).
+    ///
+    /// `local_active_threads` is the in-flight operation count of Whisper STT +
+    /// OPUS-MT blocking inferences (read from
+    /// [`crate::providers::local::runtime_caps::active_local_threads`]).
+    /// `local_cpu_pct` mirrors the process [`cpu_pct`] when local activity is
+    /// observed in the current sampling window, and is `0.0` otherwise so
+    /// cloud-only sessions read a silent gauge.  Call **after**
+    /// [`apply_process`](MetricsSnapshot::apply_process) so `cpu_pct` is set.
+    ///
+    /// [`cpu_pct`]: MetricsSnapshot::cpu_pct
+    pub fn apply_local_runtime(&mut self, local_active_threads: u32, skipped_advanced: bool) {
+        self.local_active_threads = local_active_threads;
+        let any_local_activity = local_active_threads > 0 || skipped_advanced;
+        self.local_cpu_pct = if any_local_activity {
+            self.cpu_pct
+        } else {
+            0.0
+        };
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -359,6 +404,51 @@ mod tests {
         // Issue #378 (DM-02): fanout drop counters default to zero.
         assert_eq!(s.fanout_slot_a_drops, 0);
         assert_eq!(s.fanout_slot_b_drops, 0);
+        // LF-02 (issue #370): local runtime caps default to zero.
+        assert_eq!(s.local_cpu_pct, 0.0);
+        assert_eq!(s.local_active_threads, 0);
+    }
+
+    /// LF-02 (issue #370): `apply_local_runtime` mirrors process CPU only
+    /// when local-inference activity is observed.
+    #[test]
+    fn apply_local_runtime_mirrors_cpu_only_with_active_threads() {
+        let mut s = MetricsSnapshot {
+            cpu_pct: 42.0,
+            ..MetricsSnapshot::default()
+        };
+        s.apply_local_runtime(0, false);
+        assert_eq!(
+            s.local_cpu_pct, 0.0,
+            "cloud-only / idle local engine must read silent local CPU"
+        );
+        assert_eq!(s.local_active_threads, 0);
+
+        s.apply_local_runtime(2, false);
+        assert_eq!(
+            s.local_cpu_pct, 42.0,
+            "with active local inference, local_cpu_pct mirrors process cpu_pct"
+        );
+        assert_eq!(s.local_active_threads, 2);
+    }
+
+    /// LF-02 (issue #370): only a skip-counter advance counts as "local
+    /// activity observed" so stale cumulative skips do not keep the CPU gauge
+    /// live after local providers go idle.
+    #[test]
+    fn apply_local_runtime_reports_cpu_only_when_skip_counter_advanced() {
+        let mut s = MetricsSnapshot {
+            cpu_pct: 91.0,
+            local_inferences_skipped: 3,
+            ..MetricsSnapshot::default()
+        };
+        s.apply_local_runtime(0, false);
+        assert_eq!(s.local_cpu_pct, 0.0);
+        assert_eq!(s.local_active_threads, 0);
+
+        s.apply_local_runtime(0, true);
+        assert_eq!(s.local_cpu_pct, 91.0);
+        assert_eq!(s.local_active_threads, 0);
     }
 
     #[test]
