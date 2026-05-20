@@ -323,8 +323,9 @@ fn single_slot_serializes_without_slots_key() {
     let f = write_tmp(minimal_flat_json());
     let cfg = load(f.path()).expect("load");
     let json = serde_json::to_string(&cfg).expect("serialize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("serialized config is JSON");
     assert!(
-        !json.contains("\"slots\""),
+        value.get("slots").is_none(),
         "single-slot config must not emit a `slots` key; json={json}"
     );
 }
@@ -346,7 +347,7 @@ fn adding_slots_block_requires_restart() {
 fn unchanged_slots_does_not_require_restart() {
     let f = write_tmp(&dual_slot_json("vi", "en"));
     let cfg = load(f.path()).expect("load");
-    assert!(!cfg.requires_restart(&cfg.clone()));
+    assert!(!cfg.requires_restart(&cfg));
 }
 
 // ─── Schema snapshot: config.example.json parses cleanly ─────────────────────
