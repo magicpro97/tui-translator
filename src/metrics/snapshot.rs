@@ -208,12 +208,9 @@ pub struct MetricsSnapshot {
     pub local_cpu_pct: f32,
 
     /// In-flight local-inference operations (Whisper STT + OPUS-MT) at the
-    /// instant the snapshot was published.  Always `0` for cloud-only
-    /// sessions.  Bounded above by the LF-02 thread cap (`min(4,
-    /// max(1, physical_cores - 2))`) when callers obey the
-    /// [`local_thread_cap`](crate::providers::local::runtime_caps::local_thread_cap)
-    /// hint, though concurrent STT + MT requests can briefly exceed the cap
-    /// since each builds its own threadpool.
+    /// instant the snapshot was published.  The historical field name uses
+    /// `threads`, but the value is an operation gauge, not an OS-thread or
+    /// thread-pool-size count.  Always `0` for cloud-only sessions.
     pub local_active_threads: u32,
 }
 
@@ -348,8 +345,8 @@ impl MetricsSnapshot {
 
     /// Apply LF-02 local-inference runtime observability (issue #370).
     ///
-    /// `local_active_threads` is the in-flight count of Whisper STT + OPUS-MT
-    /// blocking inferences (read from
+    /// `local_active_threads` is the in-flight operation count of Whisper STT +
+    /// OPUS-MT blocking inferences (read from
     /// [`crate::providers::local::runtime_caps::active_local_threads`]).
     /// `local_cpu_pct` mirrors the process [`cpu_pct`] when local activity is
     /// observed in the current sampling window, and is `0.0` otherwise so

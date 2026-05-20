@@ -723,9 +723,9 @@ impl LocalWhisperSttProvider {
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
 
-        // LF-02 active-threads gauge: incremented for the lifetime of the
-        // synchronous whisper call so the metrics publisher can surface
-        // `local_active_threads` to the TUI.
+        // LF-02 in-flight local-inference gauge: incremented for the lifetime
+        // of the synchronous whisper call so the metrics publisher can
+        // surface local inference activity to the TUI.
         let _active_guard = runtime_caps::ActiveLocalInference::enter();
 
         state.full(params, &samples_f32).map_err(|e| {

@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1814
 expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
@@ -9,6 +8,6 @@ expression: rendered
 │Elapsed: 1:00                                                                 │
 │CPU:45%  RAM:600MB  Net:↑8/↓32 kbps  E2E:420ms  Loss:0.0%                     │
 │trunc:0%  flicker:0  mt:0                                                     │
-│local CPU:0%  local threads:0                                                 │
+│local CPU:0%  local inflight:0                                                │
 │⚠ RAM warning: 600MB over budget; optional recording disabled                 │
 └──────────────────────────────────────────────────────────────────────────────┘

@@ -2072,11 +2072,11 @@ impl StatusMetricsStrip<'_> {
         )));
 
         // LF-02 (issue #370): local runtime caps line.
-        // Shows the active local-inference thread count and the process CPU
+        // Shows in-flight local inference operations and the process CPU
         // attributed to local inference (`0.0` when local engine idle).
         lines.push(Line::from(Span::styled(
             format!(
-                "local CPU:{:.0}%  local threads:{}",
+                "local CPU:{:.0}%  local inflight:{}",
                 self.local_cpu_pct, self.local_active_threads,
             ),
             Style::default().fg(Color::DarkGray),

@@ -117,6 +117,8 @@ struct MetricsSnapshotExport {
     fanout_slot_a_drops: u64,
     fanout_slot_b_drops: u64,
     // LF-02 (issue #370): local runtime caps observability.
+    // `local_active_threads` is retained as the schema field name, but the
+    // value is an in-flight local-inference operation count.
     local_cpu_pct: f32,
     local_active_threads: u32,
 }
@@ -2358,7 +2360,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                 last_local_inferences_skipped = local_inferences_skipped;
                 snapshot.local_inferences_skipped = local_inferences_skipped;
                 // LF-02 (issue #370): publish local-inference runtime caps
-                // observability (active-threads gauge + local CPU mirror).
+                // observability (in-flight operation gauge + local CPU mirror).
                 let active_local = providers::local::runtime_caps::active_local_threads();
                 let active_local_u32 = u32::try_from(active_local).unwrap_or(u32::MAX);
                 snapshot.apply_local_runtime(active_local_u32, local_skip_advanced);

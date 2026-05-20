@@ -263,8 +263,8 @@ impl MtProvider for LocalOpusMtProvider {
             let pair = self.pair;
             tokio::task::spawn_blocking(move || {
                 // LF-02 (issue #370): record this blocking inference in the
-                // shared `local_active_threads` gauge.  Drops at the end of
-                // the closure when `translate_blocking` returns or errors.
+                // shared in-flight local-inference gauge.  Drops at the end
+                // of the closure when `translate_blocking` returns or errors.
                 let _active_guard =
                     crate::providers::local::runtime_caps::ActiveLocalInference::enter();
                 let translated_text = engine.translate_blocking(&payload)?;

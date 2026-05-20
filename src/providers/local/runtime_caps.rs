@@ -14,8 +14,8 @@
 //! * [`local_thread_cap`] — convenience that combines the two for production
 //!   construction sites.
 //! * [`ActiveLocalInference`] — RAII guard that increments / decrements a
-//!   shared `local_active_threads` gauge.  Read by the metrics publisher and
-//!   surfaced through [`MetricsSnapshot::local_active_threads`].
+//!   shared in-flight local-inference operation gauge.  Read by the metrics
+//!   publisher and surfaced through [`MetricsSnapshot::local_active_threads`].
 //!
 //! The throttle / backpressure policy itself lives in
 //! [`crate::pipeline::cpu_gate::CpuGate`] (advisory, defer-next-segment).
@@ -110,8 +110,8 @@ pub fn active_local_threads() -> usize {
     ACTIVE_LOCAL_THREADS.load(Ordering::Relaxed)
 }
 
-/// RAII guard that increments the active-threads gauge on construction and
-/// decrements it on drop.
+/// RAII guard that increments the in-flight local-inference operation gauge on
+/// construction and decrements it on drop.
 ///
 /// Always pair construction with the actual blocking-thread inference call
 /// (e.g. inside `spawn_blocking`).  The guard is `Send` so it can be moved
