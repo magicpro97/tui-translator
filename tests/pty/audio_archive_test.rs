@@ -56,7 +56,14 @@ fn audio_archive_enabled_writes_wav_during_real_tui_session() {
     let wav_files: Vec<_> = fs::read_dir(&archive_dir)
         .expect("archive directory should exist")
         .map(|entry| entry.expect("archive entry").path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("wav"))
+        .filter(|path| path.is_dir())
+        .flat_map(|dir| {
+            fs::read_dir(&dir)
+                .expect("session subdir should be readable")
+                .map(|e| e.expect("session entry").path())
+                .filter(|p| p.extension().and_then(|ext| ext.to_str()) == Some("wav"))
+                .collect::<Vec<_>>()
+        })
         .collect();
     assert_eq!(wav_files.len(), 1, "one WAV archive should be written");
 

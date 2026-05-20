@@ -65,9 +65,12 @@ const WAV_HEADER_SIZE: u64 = 44;
 pub struct AudioArchiveWriterConfig {
     /// Whether archiving is active (both `store_audio` and `consent_given`).
     pub enabled: bool,
-    /// Directory to write WAV files into.
+    /// Parent directory under which per-session subdirectories
+    /// (`<directory>/<session-id>/<segment>.wav`) are written.
     pub directory: PathBuf,
-    /// Soft per-file size quota in bytes; `0` means unlimited.
+    /// Soft per-segment size quota in bytes; `0` means unlimited.
+    /// When a WAV segment file reaches this size the writer seals it and
+    /// rotates to a new segment under the same per-session directory.
     pub max_size_bytes: u64,
 }
 
@@ -133,12 +136,21 @@ pub struct AudioArchiveWriter {
 struct WriterInner {
     file: std::fs::File,
     path: PathBuf,
-    /// Total bytes written to the `data` chunk so far.
+    /// Total bytes written to the `data` chunk of the *current* segment.
     data_bytes: u64,
-    /// `0` = no limit.
+    /// Cumulative bytes written across all segments in this session.
+    /// Drives the shared `bytes_arc` for the metrics publisher.
+    total_data_bytes: u64,
+    /// `0` = no per-segment limit.
     max_size_bytes: u64,
-    /// Set to `true` once the quota is reached.
+    /// Set to `true` once the writer is permanently sealed (irrecoverable).
     sealed: bool,
+    /// LF-06: per-session directory (`<archive-root>/<session-id>/`) for
+    /// segment rotation.  `None` for the legacy [`open`](AudioArchiveWriter::open)
+    /// entry point (no rollover).
+    session_dir: Option<PathBuf>,
+    /// LF-06: next segment index to allocate when the current segment is full.
+    next_segment_index: u32,
 }
 
 impl AudioArchiveWriter {
@@ -175,16 +187,22 @@ impl AudioArchiveWriter {
                 file,
                 path,
                 data_bytes: 0,
+                total_data_bytes: 0,
                 max_size_bytes,
                 sealed: false,
+                session_dir: None,
+                next_segment_index: 2,
             }),
             bytes_arc,
             sealed_arc,
         })
     }
 
-    /// Start a new archive session: create `directory` if needed, derive the
-    /// session file name from `session_id`, then call [`open`](Self::open).
+    /// Start a new archive session: create `directory/<session-id>/` if needed,
+    /// open the first segment file `00001.wav`, write the WAV header, and
+    /// return.  When the per-segment quota is reached the writer transparently
+    /// rotates to `00002.wav`, `00003.wav`, … under the same per-session
+    /// directory.
     ///
     /// Returns `Ok(Self::disabled())` when `config.enabled` is `false`.
     pub fn start(config: &AudioArchiveWriterConfig, session_id: &str) -> Result<Self> {
@@ -202,9 +220,47 @@ impl AudioArchiveWriter {
             "⚠ Audio archiving is ENABLED — raw captured audio will be saved to disk. \
              Disable with audio_archive.store_audio=false when not needed."
         );
-        let file_name = session_wav_file_name(session_id);
-        let path = config.directory.join(file_name);
-        Self::open(&path, config.max_size_bytes)
+
+        // LF-06: validate session-id as a path component; fall back to the
+        // legacy filesystem sanitizer when the caller supplied a string with
+        // non-component characters so existing flows keep working.
+        let session_subdir_name = if is_valid_path_component(session_id) {
+            session_id.to_string()
+        } else {
+            sanitize_session_id_for_fs(session_id)
+        };
+        let session_dir = config.directory.join(&session_subdir_name);
+        std::fs::create_dir_all(&session_dir).with_context(|| {
+            format!(
+                "cannot create per-session audio directory: {}",
+                session_dir.display()
+            )
+        })?;
+
+        let path = session_dir.join(segment_wav_file_name(1));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .with_context(|| format!("cannot create audio archive file: {}", path.display()))?;
+        write_wav_header(&mut file, 0)
+            .with_context(|| format!("cannot write WAV header: {}", path.display()))?;
+        let bytes_arc = Arc::new(AtomicU64::new(0));
+        let sealed_arc = Arc::new(AtomicBool::new(false));
+        Ok(Self {
+            inner: Some(WriterInner {
+                file,
+                path,
+                data_bytes: 0,
+                total_data_bytes: 0,
+                max_size_bytes: config.max_size_bytes,
+                sealed: false,
+                session_dir: Some(session_dir),
+                next_segment_index: 2,
+            }),
+            bytes_arc,
+            sealed_arc,
+        })
     }
 
     /// Append the PCM samples from `chunk` to the WAV file.
@@ -227,10 +283,50 @@ impl AudioArchiveWriter {
         if inner.sealed || chunk.samples.is_empty() {
             return Ok(());
         }
-        // Quota check (before writing): seal if this chunk would push the file over the limit.
-        if inner.max_size_bytes > 0 {
-            let chunk_bytes = (chunk.samples.len() as u64) * u64::from(WAV_BYTES_PER_SAMPLE);
-            if WAV_HEADER_SIZE + inner.data_bytes + chunk_bytes > inner.max_size_bytes {
+        let chunk_bytes = (chunk.samples.len() as u64) * u64::from(WAV_BYTES_PER_SAMPLE);
+
+        // Quota check: when the per-segment cap is set and this chunk would
+        // push the active segment over the limit, either rotate to the next
+        // segment (LF-06 layout) or seal the writer (legacy single-file mode).
+        if inner.max_size_bytes > 0
+            && WAV_HEADER_SIZE + inner.data_bytes + chunk_bytes > inner.max_size_bytes
+        {
+            if let Some(session_dir) = inner.session_dir.clone() {
+                // Rotate to the next segment under the same per-session dir.
+                inner.file.flush().with_context(|| {
+                    format!(
+                        "cannot flush sealed audio archive segment: {}",
+                        inner.path.display()
+                    )
+                })?;
+                let next_index = inner.next_segment_index;
+                let next_path = session_dir.join(segment_wav_file_name(next_index));
+                let mut next_file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&next_path)
+                    .with_context(|| {
+                        format!(
+                            "cannot create next audio archive segment: {}",
+                            next_path.display()
+                        )
+                    })?;
+                write_wav_header(&mut next_file, 0).with_context(|| {
+                    format!(
+                        "cannot write WAV header for segment: {}",
+                        next_path.display()
+                    )
+                })?;
+                tracing::info!(
+                    previous = %inner.path.display(),
+                    next = %next_path.display(),
+                    "audio archive segment full — rotating to next segment"
+                );
+                inner.file = next_file;
+                inner.path = next_path;
+                inner.data_bytes = 0;
+                inner.next_segment_index = next_index.saturating_add(1);
+            } else {
                 inner.sealed = true;
                 self.sealed_arc.store(true, Ordering::Relaxed);
                 tracing::info!(
@@ -254,13 +350,15 @@ impl AudioArchiveWriter {
             .write_all(&bytes)
             .with_context(|| format!("cannot write PCM samples: {}", inner.path.display()))?;
         inner.data_bytes += bytes.len() as u64;
+        inner.total_data_bytes = inner.total_data_bytes.saturating_add(bytes.len() as u64);
 
         // Back-fill header so the file is always valid.
         patch_wav_header(&mut inner.file, inner.data_bytes)
             .with_context(|| format!("cannot patch WAV header: {}", inner.path.display()))?;
 
         // Sync the shared atomics so the metrics publisher sees up-to-date values.
-        self.bytes_arc.store(inner.data_bytes, Ordering::Relaxed);
+        self.bytes_arc
+            .store(inner.total_data_bytes, Ordering::Relaxed);
 
         Ok(())
     }
@@ -270,9 +368,10 @@ impl AudioArchiveWriter {
         self.inner.as_ref().map(|i| i.path.as_path())
     }
 
-    /// Total number of bytes written to the WAV `data` chunk so far.
+    /// Total number of bytes written to the WAV `data` chunk(s) across all
+    /// segments of the current session.
     pub fn data_bytes(&self) -> u64 {
-        self.inner.as_ref().map(|i| i.data_bytes).unwrap_or(0)
+        self.inner.as_ref().map(|i| i.total_data_bytes).unwrap_or(0)
     }
 
     /// `true` when the quota has been reached and no further samples will be written.
@@ -309,23 +408,30 @@ impl AudioArchiveWriter {
 
 // ── WAV header helpers ────────────────────────────────────────────────────────
 
-/// Extract the session-id stem from a WAV audio-archive path.
+/// Extract the session-id from a WAV audio-archive path.
 ///
-/// Returns the file stem (the filename without its extension) as a `&str`, or
-/// `None` when the path has no filename component or the stem contains
-/// non-UTF-8 bytes.
-///
-/// The stem is the value produced by [`session_wav_file_name`] — the sanitized
-/// session-id passed to [`AudioArchiveWriter::start`].  Every character outside
-/// `[A-Za-z0-9\-_]` was replaced with `_` at write time, the same rule applied
-/// by `session::session_log_file_name` for JSONL files.  Use
-/// [`crate::session::check_session_pairing`] to verify that a WAV path and a
-/// JSONL session-log path belong to the same recording session.
+/// LF-06 layout: `<audio-archive-root>/<session-id>/<segment>.wav` — the parent
+/// directory name is the session-id.  Legacy flat layout
+/// `<audio-archive-root>/<session-id>.wav` — the file stem is the session-id.
+/// This helper transparently handles both: when the file stem looks like a
+/// numeric segment (`00001`, `00002`, …) it falls back to the parent directory
+/// name; otherwise it returns the file stem unchanged.
 pub fn session_id_from_wav_path(path: &Path) -> Option<&str> {
-    path.file_stem()?.to_str()
+    let stem = path.file_stem().and_then(|s| s.to_str())?;
+    if !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit()) {
+        path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+    } else {
+        Some(stem)
+    }
 }
 
-fn session_wav_file_name(session_id: &str) -> String {
+fn segment_wav_file_name(segment_index: u32) -> String {
+    format!("{segment_index:05}.wav")
+}
+
+fn sanitize_session_id_for_fs(session_id: &str) -> String {
     let stem: String = session_id
         .chars()
         .map(|ch| {
@@ -336,8 +442,69 @@ fn session_wav_file_name(session_id: &str) -> String {
             }
         })
         .collect();
-    let stem = if stem.is_empty() { "session" } else { &stem };
-    format!("{stem}.wav")
+    if stem.is_empty() {
+        "session".to_string()
+    } else {
+        stem
+    }
+}
+
+/// Local mirror of `crate::storage::validate_path_component`'s acceptance rule.
+/// Duplicated so bin targets that only `#[path]`-mount `audio/archive.rs`
+/// build without a separate `storage` mount.  Must stay in sync.
+fn is_valid_path_component(component: &str) -> bool {
+    if component.is_empty() || component == "." || component == ".." {
+        return false;
+    }
+    if component.contains('/') || component.contains('\\') || component.contains(':') {
+        return false;
+    }
+    if component.chars().any(|c| {
+        (c as u32) < 0x20 || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*'
+    }) {
+        return false;
+    }
+    if component.ends_with('.') || component.ends_with(' ') {
+        return false;
+    }
+    if std::path::Path::new(component).is_absolute() {
+        return false;
+    }
+    let stem = component
+        .split('.')
+        .next()
+        .unwrap_or(component)
+        .to_ascii_uppercase();
+    !matches!(
+        stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+#[allow(dead_code)]
+fn session_wav_file_name(session_id: &str) -> String {
+    format!("{}.wav", sanitize_session_id_for_fs(session_id))
 }
 
 /// Write a 44-byte canonical RIFF/WAVE header with the given `data_bytes` as
@@ -538,11 +705,26 @@ mod tests {
             dir.path().to_path_buf(),
         );
 
-        let writer = AudioArchiveWriter::start(&resolved, "..\\evil/session:id").unwrap();
-        let wav_path = writer.path().unwrap().to_path_buf();
+        let writer = AudioArchiveWriter::start(&resolved, "..\\evil/session:id")
+            .expect("start succeeds for valid temp dir");
+        let wav_path = writer
+            .path()
+            .expect("enabled writer exposes active segment path")
+            .to_path_buf();
 
-        assert_eq!(wav_path.parent(), Some(dir.path()));
-        assert_eq!(wav_path.file_name().unwrap(), "___evil_session_id.wav");
+        let session_dir = wav_path
+            .parent()
+            .expect("LF-06 layout: WAV lives under a per-session subdir");
+        assert_eq!(session_dir.parent(), Some(dir.path()));
+        assert_eq!(
+            session_dir.file_name().expect("session subdir has a name"),
+            "___evil_session_id",
+            "session-id sanitized into the per-session subdir name"
+        );
+        assert_eq!(
+            wav_path.file_name().expect("WAV segment has a filename"),
+            "00001.wav"
+        );
     }
 
     #[test]
@@ -571,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn quota_stops_writing_when_reached() {
+    fn quota_rotates_to_next_segment_when_reached() {
         let dir = TempDir::new().unwrap();
         let mut resolved = AudioArchiveWriterConfig::from_parts(
             true,
@@ -580,23 +762,52 @@ mod tests {
             0,
             dir.path().to_path_buf(),
         );
-        // Limit to 1 000 bytes of data (header + ~500 samples).
+        // Limit to 1 000 bytes of data (header + ~500 samples) per segment.
         resolved.max_size_bytes = WAV_HEADER_SIZE + 1_000;
 
-        let mut writer = AudioArchiveWriter::start(&resolved, "quota-test").unwrap();
+        let mut writer = AudioArchiveWriter::start(&resolved, "quota-test")
+            .expect("start succeeds for valid temp dir");
+        let first_path = writer
+            .path()
+            .expect("enabled writer has active segment path")
+            .to_path_buf();
+        assert_eq!(
+            first_path.file_name().expect("segment has a filename"),
+            "00001.wav"
+        );
+
         // First chunk: 400 samples = 800 bytes → under quota.
         let small = AudioChunk::new(vec![0i16; 400]);
-        writer.append_chunk(&small).unwrap();
-        assert!(!writer.is_sealed());
+        writer.append_chunk(&small).expect("first append succeeds");
+        assert!(
+            !writer.is_sealed(),
+            "rollover-capable writer must not seal on quota"
+        );
 
-        // Second chunk: 600 samples = 1200 bytes → would push total to 2000, exceeds quota.
+        // Second chunk: 600 samples = 1200 bytes → would push current segment
+        // over the cap, so the writer rotates to a fresh segment file and
+        // writes the chunk there.
         let larger = AudioChunk::new(vec![0i16; 600]);
-        writer.append_chunk(&larger).unwrap();
-        // Should be sealed now, but first chunk's 800 bytes still written.
-        assert!(writer.is_sealed());
-        assert_eq!(writer.data_bytes(), 800, "quota stops before second chunk");
-        assert_eq!(writer.bytes_arc().load(Ordering::Relaxed), 800);
-        assert!(writer.sealed_arc().load(Ordering::Relaxed));
+        writer
+            .append_chunk(&larger)
+            .expect("rotated append succeeds");
+        let rotated_path = writer
+            .path()
+            .expect("active path follows rotation")
+            .to_path_buf();
+        assert_eq!(
+            rotated_path.file_name().expect("segment has a filename"),
+            "00002.wav",
+            "writer rotates to next segment when per-segment cap would be exceeded"
+        );
+        assert!(!writer.is_sealed(), "rotation, not permanent seal");
+        // Cumulative bytes across both segments: 800 (first) + 1200 (second).
+        assert_eq!(writer.data_bytes(), 800 + 1200);
+        assert_eq!(writer.bytes_arc().load(Ordering::Relaxed), 800 + 1200);
+
+        // Both segment files exist on disk.
+        assert!(first_path.is_file(), "first segment retained");
+        assert!(rotated_path.is_file(), "second segment created");
     }
 
     #[test]
