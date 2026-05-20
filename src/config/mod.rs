@@ -999,10 +999,10 @@ impl AppConfig {
     /// | `tts_output_device` | **restart** | Audio output stream must be re-opened on the new device. |
     /// | `tts_routing` | **restart** | `sync_playback_service_state` does not rebuild an existing service on routing change; restart required. |
     /// | `virtual_mic_device` | **restart** | Virtual-mic output stream must be re-opened. |
-    /// | `virtual_device_patterns` | **restart** | Pattern list is baked into device enumeration at startup. |
+    /// | `virtual_device_patterns` | **restart** | Custom patterns are loaded at startup for config validation and `--list-audio-devices`; the live probe currently uses the built-in registry, so this is conservative for future runtime wiring. |
     /// | `capture_device` | **restart** | WASAPI loopback stream must be re-opened on the new device. |
     /// | `audio_source` | **restart** | Input-source type is baked into pipeline construction. |
-    /// | `audio_file_path` | **restart** | File source is opened once at pipeline start. |
+    /// | `audio_file_path` | **restart (conditional)** | File source is opened once at pipeline start; restart is required only when either side uses `audio_source = "file"`. |
     /// | `stt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `stt_fallback_policy` | **restart** | Fallback chain is wired at pipeline initialisation. |
@@ -1027,7 +1027,8 @@ impl AppConfig {
             || self.virtual_device_patterns != next.virtual_device_patterns
             || self.capture_device != next.capture_device
             || self.audio_source != next.audio_source
-            || self.audio_file_path != next.audio_file_path
+            || (self.audio_file_path != next.audio_file_path
+                && (self.audio_source == "file" || next.audio_source == "file"))
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
             || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
@@ -3244,9 +3245,9 @@ mod tests {
         );
     }
 
-    /// `audio_file_path` change must require restart (file opened once at pipeline start).
+    /// `audio_file_path` change must require restart when file input is active.
     #[test]
-    fn audio_file_path_change_requires_restart() {
+    fn audio_file_path_change_requires_restart_when_source_is_file() {
         let current = AppConfig {
             audio_source: "file".to_string(),
             audio_file_path: Some("old.wav".to_string()),
@@ -3260,6 +3261,23 @@ mod tests {
         assert!(
             current.requires_restart(&next),
             "changing audio_file_path must require a restart"
+        );
+    }
+
+    /// `audio_file_path` change is ignored while WASAPI input is active on both sides.
+    #[test]
+    fn audio_file_path_change_does_not_require_restart_when_both_wasapi() {
+        let current = AppConfig {
+            audio_file_path: Some("old.wav".to_string()),
+            ..AppConfig::default()
+        };
+        let next = AppConfig {
+            audio_file_path: Some("new.wav".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            !current.requires_restart(&next),
+            "changing ignored audio_file_path must not require a restart while both sources are wasapi"
         );
     }
 
@@ -3355,14 +3373,11 @@ mod tests {
     /// `_comment` change must NOT require restart (documentation-only field).
     #[test]
     fn comment_change_does_not_require_restart() {
-        // Deserialise via JSON to reach the private `comment` field without
-        // struct-literal access from the child test module.
-        let base = r#"{"source_language":"ja-JP","target_language":"vi"}"#;
-        let with_comment =
-            r#"{"source_language":"ja-JP","target_language":"vi","_comment":"see docs"}"#;
-        let current: AppConfig = serde_json::from_str(base).expect("parse base config");
-        let next: AppConfig =
-            serde_json::from_str(with_comment).expect("parse config with _comment");
+        let current = AppConfig::default();
+        let next = AppConfig {
+            comment: Some(serde_json::json!("see docs")),
+            ..AppConfig::default()
+        };
         assert!(
             !current.requires_restart(&next),
             "changing _comment must not require a restart"
