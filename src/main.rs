@@ -1133,6 +1133,160 @@ fn run_local_stt_model_prefetch(args: &LocalSttModelPrefetchArgs) -> Result<()> 
     Ok(())
 }
 
+// ── Model list (--model-list) ─────────────────────────────────────────────────
+
+/// Return `true` when the user passed `--model-list`.
+fn should_list_local_models<I>(args: I) -> bool
+where
+    I: IntoIterator<Item = OsString>,
+{
+    args.into_iter().any(|a| a == OsStr::new("--model-list"))
+}
+
+/// Print a table of all built-in Whisper models and their cache status.
+fn run_model_list() -> Result<()> {
+    // LF-01: attempt one-time migration before inspecting cache state so the
+    // table reflects the canonical location that was populated from legacy files.
+    let migration_err = providers::local::try_migrate_legacy_cache()
+        .map(|_| ())
+        .err();
+    if let Some(ref err) = migration_err {
+        tracing::warn!(%err, "LF-01 legacy cache migration failed");
+    }
+
+    let cache_dir = providers::local::model_cache_dir()
+        .context("failed to resolve local model cache directory")?;
+
+    let mut stdout = io::stdout();
+    writeln!(stdout, "Model cache: {}", cache_dir.display())
+        .context("failed to write model list header")?;
+
+    // If migration failed and a legacy directory is still present, surface the
+    // error so the user knows manual intervention may be needed.
+    if let Some(ref err) = migration_err {
+        if let Ok(legacy) = providers::local::bootstrap::legacy_model_cache_dir() {
+            if legacy.exists() {
+                writeln!(
+                    stdout,
+                    "Legacy cache: {} (migration failed: {err}; \
+                     models may need to be moved manually)",
+                    legacy.display()
+                )
+                .context("failed to write legacy cache warning")?;
+            }
+        }
+    }
+
+    writeln!(stdout, "{:<14} {:>12}  Status", "Name", "Size")
+        .context("failed to write model list column header")?;
+    writeln!(stdout, "{}", "-".repeat(44)).context("failed to write separator")?;
+
+    let manifest = providers::local::ModelManifest::builtin();
+    for spec in manifest.iter() {
+        let path = cache_dir.join(spec.file_name);
+        let status = if path.exists() {
+            "cached"
+        } else {
+            "not cached"
+        };
+        let size_mb = spec.size_bytes / 1_048_576;
+        writeln!(
+            stdout,
+            "{:<14} {:>9} MB  {}",
+            spec.id.display_name(),
+            size_mb,
+            status
+        )
+        .context("failed to write model list row")?;
+    }
+    Ok(())
+}
+
+// ── Model verify (--model-verify <model-id>) ──────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelVerifyArgs {
+    model_id: providers::local::ModelId,
+    model_cache_dir: Option<PathBuf>,
+}
+
+/// Parse `--model-verify <model-id>` (and optional `--model-cache-dir <path>`).
+fn parse_model_verify_args_from<I>(args: I) -> Result<Option<ModelVerifyArgs>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().collect();
+    let has_flag = args.iter().any(|a| a == OsStr::new("--model-verify"));
+    if !has_flag {
+        return Ok(None);
+    }
+
+    let mut model_id = None;
+    let mut model_cache_dir = None;
+    let mut iter = args.into_iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--model-verify") {
+            let raw = next_cli_arg(&mut iter, "--model-verify")?;
+            model_id = Some(parse_local_stt_model_id(&raw.to_string_lossy())?);
+        } else if arg == OsStr::new("--model-cache-dir") {
+            model_cache_dir = Some(PathBuf::from(next_cli_arg(&mut iter, "--model-cache-dir")?));
+        }
+    }
+
+    Ok(Some(ModelVerifyArgs {
+        model_id: model_id.context("missing model-id after --model-verify")?,
+        model_cache_dir,
+    }))
+}
+
+/// Verify a Whisper model in the cache directory and report the result.
+fn run_model_verify(args: &ModelVerifyArgs) -> Result<()> {
+    // LF-01: best-effort migration before we resolve the cache directory so that
+    // a model moved from the legacy location is visible to the verify step.
+    if let Err(err) = providers::local::try_migrate_legacy_cache() {
+        tracing::warn!(
+            %err,
+            "LF-01 legacy cache migration failed; \
+             verification may report model-not-found if the model is still in the legacy location"
+        );
+    }
+
+    let cache_dir = match &args.model_cache_dir {
+        Some(p) => p.clone(),
+        None => providers::local::model_cache_dir()
+            .context("failed to resolve local model cache directory")?,
+    };
+
+    let manifest = providers::local::ModelManifest::builtin();
+    let spec = manifest
+        .find(args.model_id)
+        .with_context(|| format!("model '{}' not in built-in manifest", args.model_id))?;
+
+    let path = cache_dir.join(spec.file_name);
+
+    let mut stdout = io::stdout();
+    writeln!(
+        stdout,
+        "Verifying {} at {}",
+        spec.id.display_name(),
+        path.display()
+    )
+    .context("failed to write verify header")?;
+
+    match providers::local::verify_model_checksum(spec, &path) {
+        Ok(()) => {
+            writeln!(stdout, "OK — checksum matches manifest.")
+                .context("failed to write result")?;
+        }
+        Err(err) => {
+            writeln!(stdout, "FAIL — {err}").context("failed to write failure")?;
+            anyhow::bail!("model verification failed");
+        }
+    }
+    Ok(())
+}
+
 fn parse_session_export_args_from<I>(args: I) -> Result<Option<SessionExportArgs>>
 where
     I: IntoIterator<Item = OsString>,
@@ -1391,6 +1545,16 @@ fn main() -> Result<()> {
         parse_local_stt_model_prefetch_args_from(std::env::args_os().skip(1))?
     {
         run_local_stt_model_prefetch(&prefetch_args)?;
+        return Ok(());
+    }
+
+    if should_list_local_models(std::env::args_os().skip(1)) {
+        run_model_list()?;
+        return Ok(());
+    }
+
+    if let Some(verify_args) = parse_model_verify_args_from(std::env::args_os().skip(1))? {
+        run_model_verify(&verify_args)?;
         return Ok(());
     }
 

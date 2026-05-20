@@ -41,13 +41,18 @@ use std::sync::Arc;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
-use crate::config::home_dir;
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
+pub mod bootstrap;
 mod inference_priority;
 mod model_download;
 mod mt;
 
+#[allow(unused_imports)]
+pub use bootstrap::{
+    migrate_models, offline_guard, try_migrate_legacy_cache, write_consent_record, BootstrapError,
+    ConsentRecord, ModelBootstrapManifest, LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
+};
 #[allow(unused_imports)]
 pub use model_download::{
     install_model_bundle, stt_model_bundle_manifest, ModelBundleFile, ModelBundleManifest,
@@ -265,17 +270,20 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
 
 // ── Cache-path helpers ────────────────────────────────────────────────────────
 
-/// Return the per-user model cache directory: `~/.tui-translator/models/`.
+/// Return the canonical per-user model cache directory:
+/// `%LOCALAPPDATA%\tui-translator\models`.
+///
+/// Replaces the pre-LF-01 path (`~/.tui-translator/models`); the one-time
+/// migration is handled by [`try_migrate_legacy_cache`].
 ///
 /// The directory is not created by this function; use
 /// [`std::fs::create_dir_all`] when you need to write into it.
 ///
 /// # Errors
 ///
-/// Propagates any error from [`home_dir`] (e.g. `USERPROFILE` and `HOME` both
-/// unset).
+/// Propagates errors from the OS local-data-directory lookup.
 pub fn model_cache_dir() -> anyhow::Result<PathBuf> {
-    Ok(home_dir()?.join(".tui-translator").join("models"))
+    bootstrap::model_cache_root()
 }
 
 /// Return the absolute path for `spec`'s file inside the model cache directory.
