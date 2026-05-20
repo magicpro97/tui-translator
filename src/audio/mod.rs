@@ -59,6 +59,13 @@ pub mod vbcable_ci;
 /// PCM format negotiation and conversion helpers for production sinks.
 pub mod pcm_format;
 
+/// Bounded dual-slot mpsc fanout for the capture output (DM-02, issue #378).
+pub mod fanout;
+#[allow(unused_imports)]
+pub use fanout::{
+    start_fanout, FanoutDropCounters, FanoutHandle, FANOUT_SLOT_CAPACITY, SLOT_A, SLOT_B,
+};
+
 // Virtual audio device enumeration and classification — VMIC-A1 (issue #313)
 pub mod virtual_device;
 #[allow(unused_imports)]
