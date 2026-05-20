@@ -161,6 +161,8 @@ pub struct SessionRecorderConfig {
     pub enabled: bool,
     /// Directory where per-session JSONL files are written when enabled.
     pub directory: PathBuf,
+    /// Maximum number of session JSONL files to keep, including the new file.
+    pub max_sessions: Option<usize>,
 }
 
 impl SessionRecorderConfig {
@@ -169,6 +171,16 @@ impl SessionRecorderConfig {
         Self {
             enabled: true,
             directory: directory.into(),
+            max_sessions: None,
+        }
+    }
+
+    /// Create an enabled recorder config and cap retained JSONL files.
+    pub fn enabled_with_max_sessions(directory: impl Into<PathBuf>, max_sessions: usize) -> Self {
+        Self {
+            enabled: true,
+            directory: directory.into(),
+            max_sessions: Some(max_sessions),
         }
     }
 
@@ -177,6 +189,7 @@ impl SessionRecorderConfig {
         Self {
             enabled: false,
             directory: directory.into(),
+            max_sessions: None,
         }
     }
 }
@@ -221,6 +234,9 @@ impl SessionRecorder {
                 config.directory.display()
             )
         })?;
+        if let Some(max_sessions) = config.max_sessions {
+            prune_session_logs(&config.directory, max_sessions)?;
+        }
 
         let path = config
             .directory
@@ -377,6 +393,67 @@ fn session_log_file_name(session_id: &str) -> String {
         })
         .collect();
     format!("{stem}.jsonl")
+}
+
+struct SessionLogCandidate {
+    path: PathBuf,
+    modified: SystemTime,
+}
+
+fn prune_session_logs(directory: &Path, max_sessions: usize) -> anyhow::Result<()> {
+    if max_sessions == 0 {
+        anyhow::bail!("session recorder max_sessions must be greater than zero");
+    }
+
+    let keep_existing = max_sessions.saturating_sub(1);
+    let mut logs = Vec::new();
+    for entry in std::fs::read_dir(directory).map_err(|err| {
+        anyhow::anyhow!(
+            "failed to read session directory {}: {err}",
+            directory.display()
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            anyhow::anyhow!(
+                "failed to read session directory entry {}: {err}",
+                directory.display()
+            )
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|err| {
+            anyhow::anyhow!("failed to inspect session log {}: {err}", path.display())
+        })?;
+        if !metadata.is_file() {
+            continue;
+        }
+        logs.push(SessionLogCandidate {
+            path,
+            modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+        });
+    }
+
+    if logs.len() <= keep_existing {
+        return Ok(());
+    }
+
+    logs.sort_by(|a, b| {
+        a.modified
+            .cmp(&b.modified)
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    let remove_count = logs.len() - keep_existing;
+    for candidate in logs.into_iter().take(remove_count) {
+        std::fs::remove_file(&candidate.path).map_err(|err| {
+            anyhow::anyhow!(
+                "failed to prune old session log {}: {err}",
+                candidate.path.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 // ── Export helpers ────────────────────────────────────────────────────────────
@@ -725,6 +802,33 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    #[tokio::test]
+    async fn enabled_recorder_prunes_old_session_logs_to_max_sessions() {
+        let temp = TempDir::new().unwrap();
+        let sessions_dir = temp.path().join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        std::fs::write(sessions_dir.join("old-a.jsonl"), "{}\n").unwrap();
+        std::fs::write(sessions_dir.join("old-b.jsonl"), "{}\n").unwrap();
+        std::fs::write(sessions_dir.join("old-c.jsonl"), "{}\n").unwrap();
+
+        let recorder = SessionRecorder::start(
+            SessionRecorderConfig::enabled_with_max_sessions(sessions_dir.clone(), 2),
+            test_header("new-session"),
+        )
+        .await
+        .unwrap();
+        recorder.shutdown().await.unwrap();
+
+        let jsonl_count = std::fs::read_dir(&sessions_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
+            .count();
+
+        assert_eq!(jsonl_count, 2, "new session plus one retained old log");
+        assert!(sessions_dir.join("new-session.jsonl").exists());
     }
 
     fn test_header(session_id: &str) -> SessionHeader {

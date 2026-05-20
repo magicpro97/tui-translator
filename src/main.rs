@@ -36,6 +36,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use serde::Serialize;
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -67,7 +68,68 @@ use tui::{
     AppState, ConfigEditorMode, TtsRouteStatus, UserAction, AUDIO_LEVEL_SCALE,
 };
 
+const METRICS_SNAPSHOT_ENV: &str = "TUI_TRANSLATOR_METRICS_SNAPSHOT";
+
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
+
+#[derive(Serialize)]
+struct MetricsSnapshotExport {
+    schema_version: &'static str,
+    line_pairs_shown: u64,
+    estimated_cost_usd: f64,
+    e2e_latency_ms: Option<u64>,
+    e2e_latency_mean_ms: f64,
+    e2e_latency_p95_ms: u64,
+    loss_pct: f64,
+    total_chunks: u64,
+    dropped_chunks: u64,
+}
+
+impl From<&MetricsSnapshot> for MetricsSnapshotExport {
+    fn from(snapshot: &MetricsSnapshot) -> Self {
+        Self {
+            schema_version: "1",
+            line_pairs_shown: snapshot.line_pairs_shown,
+            estimated_cost_usd: snapshot.estimated_cost_usd,
+            e2e_latency_ms: snapshot.e2e_latency_ms,
+            e2e_latency_mean_ms: snapshot.e2e_latency_mean_ms,
+            e2e_latency_p95_ms: snapshot.e2e_latency_p95_ms,
+            loss_pct: snapshot.loss_pct,
+            total_chunks: snapshot.total_chunks,
+            dropped_chunks: snapshot.dropped_chunks,
+        }
+    }
+}
+
+fn write_metrics_snapshot_export(path: &Path, snapshot: &MetricsSnapshot) -> Result<()> {
+    let export = MetricsSnapshotExport::from(snapshot);
+    let json =
+        serde_json::to_vec_pretty(&export).context("failed to serialize metrics snapshot")?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create metrics snapshot directory {}",
+                parent.display()
+            )
+        })?;
+    }
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, json).with_context(|| {
+        format!(
+            "failed to write metrics snapshot temp file {}",
+            tmp_path.display()
+        )
+    })?;
+    let _ = fs::remove_file(path);
+    fs::rename(&tmp_path, path).with_context(|| {
+        format!(
+            "failed to move metrics snapshot from {} to {}",
+            tmp_path.display(),
+            path.display()
+        )
+    })?;
+    Ok(())
+}
 
 struct FinishMainArgs<'a> {
     state: &'a AppState,
@@ -495,7 +557,10 @@ fn start_session_recorder(
     };
 
     match rt.block_on(session::SessionRecorder::start(
-        session::SessionRecorderConfig::enabled(directory),
+        session::SessionRecorderConfig::enabled_with_max_sessions(
+            directory,
+            cfg.session_store.max_sessions,
+        ),
         header,
     )) {
         Ok(recorder) => {
@@ -1516,7 +1581,7 @@ fn main() -> Result<()> {
                     .pipeline_error_msg
                     .lock()
                     .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
-                spawn_metrics_only_audio_task(&rt, stream, &state);
+                spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                 orchestrator_join = None;
             } else if let Some(provider_msg) = missing_google_api_key_error(&cfg_snapshot) {
                 tracing::warn!("{provider_msg}");
@@ -1526,7 +1591,7 @@ fn main() -> Result<()> {
                     .pipeline_error_msg
                     .lock()
                     .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
-                spawn_metrics_only_audio_task(&rt, stream, &state);
+                spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                 orchestrator_join = None;
             } else if cfg_snapshot.google_api_key.is_none()
                 && cfg_snapshot.stt_provider == "google"
@@ -1537,7 +1602,7 @@ fn main() -> Result<()> {
                 tracing::info!(
                     "no google_api_key configured; running without STT/MT/TTS (issue #84)"
                 );
-                spawn_metrics_only_audio_task(&rt, stream, &state);
+                spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                 orchestrator_join = None;
             } else {
                 // Build the selected STT provider plus Google MT/TTS, then
@@ -1566,7 +1631,7 @@ fn main() -> Result<()> {
                     Err(err) => {
                         tracing::error!("failed to create STT provider: {err}");
                         // Fall back to metrics-only audio task.
-                        spawn_metrics_only_audio_task(&rt, stream, &state);
+                        spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                         orchestrator_join = None;
                         return finish_main(
                             rt,
@@ -1606,7 +1671,7 @@ fn main() -> Result<()> {
                             .pipeline_error_msg
                             .lock()
                             .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
-                        spawn_metrics_only_audio_task(&rt, stream, &state);
+                        spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                         orchestrator_join = None;
                         return finish_main(
                             rt,
@@ -1640,7 +1705,7 @@ fn main() -> Result<()> {
                     Ok(p) => p,
                     Err(err) => {
                         tracing::error!("failed to create TTS provider: {err}");
-                        spawn_metrics_only_audio_task(&rt, stream, &state);
+                        spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                         orchestrator_join = None;
                         return finish_main(
                             rt,
@@ -1679,6 +1744,9 @@ fn main() -> Result<()> {
                     pipeline_error_msg: Arc::clone(&state.pipeline_error_msg),
                     auth_error_banner: Arc::clone(&state.auth_error_banner),
                     pipeline_halted: Arc::clone(&state.pipeline_halted),
+                    provider_circuits: Arc::new(std::sync::Mutex::new(
+                        pipeline::ProviderCircuitBreakers::default(),
+                    )),
                     paused: Arc::clone(&state.paused),
                     tts_enabled: Arc::clone(&state.tts_enabled),
                     source_language,
@@ -1776,11 +1844,13 @@ fn spawn_metrics_only_audio_task(
     rt: &tokio::runtime::Runtime,
     mut stream: audio::CaptureStream,
     state: &AppState,
+    loss_metrics: &Arc<LossMetrics>,
 ) {
     let level_tx = Arc::clone(&state.audio_level);
     let paused = Arc::clone(&state.paused);
     let session_metrics = Arc::clone(&state.session_metrics);
     let stt_state = Arc::clone(&state.stt_state);
+    let loss_metrics = Arc::clone(loss_metrics);
     let metrics_only_cost_counter = Arc::new(metrics::CostCounter::new());
     rt.spawn(async move {
         loop {
@@ -1788,6 +1858,7 @@ fn spawn_metrics_only_audio_task(
                 mark_audio_capture_stopped(&level_tx, &stt_state);
                 break;
             };
+            loss_metrics.record_chunk();
             handle_audio_chunk(
                 chunk,
                 &paused,
@@ -1833,6 +1904,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let memory_guard = Arc::clone(&memory_guard);
         let current_config = Arc::clone(current_config);
         let mut process_rx = process_rx;
+        let metrics_snapshot_path = std::env::var_os(METRICS_SNAPSHOT_ENV).map(PathBuf::from);
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             let mut last_ram_budget_bytes = u64::MAX;
@@ -1899,6 +1971,14 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                 // intentionally skipped due to CPU pressure.
                 snapshot.local_inferences_skipped = cpu_gate.skipped_count();
 
+                if let Some(path) = metrics_snapshot_path.as_deref() {
+                    if let Err(err) = write_metrics_snapshot_export(path, &snapshot) {
+                        tracing::warn!(
+                            path = %path.display(),
+                            "failed to write soak metrics snapshot: {err}"
+                        );
+                    }
+                }
                 let _ = metrics_tx.send(snapshot);
             }
         });
@@ -2749,7 +2829,6 @@ fn event_loop(
             break;
         }
 
-        let expanded = state.metrics_expanded.load(Ordering::Relaxed);
         let show_restart = context.restart_required.load(Ordering::Relaxed);
         let (cost_warning_usd, tts_route) = {
             let cfg = context
@@ -2758,18 +2837,6 @@ fn event_loop(
                 .unwrap_or_else(|p| p.into_inner());
             (cfg.cost_warning_usd, TtsRouteStatus::from_config(&cfg))
         };
-        let metrics_snap = state.metrics_snapshot();
-        let over_threshold = metrics_warning_row_active(expanded, cost_warning_usd, &metrics_snap);
-        let pane_area = subtitle_inner_area(terminal.size()?, expanded, over_threshold);
-
-        {
-            let mut pane = state
-                .subtitle_pane
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            pane.clamp_scroll(pane_area.width, pane_area.height);
-        }
-
         let level = state.level_ratio();
         terminal.draw(|frame| {
             draw_ui_with_route(
@@ -2795,7 +2862,7 @@ fn event_loop(
                         ignore_replay_side_effect_action(state, &action);
                         continue;
                     }
-                    let terminal_area = terminal.size()?;
+                    let terminal_area = terminal.size()?.into();
                     handle_action(
                         &action,
                         state,
@@ -4459,6 +4526,50 @@ mod tests {
         assert!(
             restart_required.load(Ordering::Relaxed),
             "onboarding save should signal restart for provider credential changes"
+        );
+        assert!(!state.config_editor_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn settings_save_replaces_existing_google_api_key_from_editor() {
+        let temp = TempDir::new().unwrap();
+        let cfg_path = temp.path().join(".tui-translator").join("config.json");
+        let mut existing = config::AppConfig::default();
+        existing.google_api_key = Some("old-secret-key".to_string());
+        config::write_config(&cfg_path, &existing).unwrap();
+
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(existing.clone()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        state.open_config_editor(ConfigEditorMode::Settings, &existing, &cfg_path);
+        let _ = state.with_config_editor_mut(|editor| {
+            editor.selected_field = 2; // Google API key.
+            editor.cycle_active_field();
+            for ch in "new-secret-key".chars() {
+                editor.push_char(ch);
+            }
+        });
+
+        handle_action(
+            &UserAction::ConfigSave,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            &cfg_path,
+            &current_config,
+            &playback_service,
+        );
+
+        let persisted = config::load(&cfg_path).unwrap();
+        assert_eq!(persisted.google_api_key.as_deref(), Some("new-secret-key"));
+        assert_eq!(
+            current_config.lock().unwrap().google_api_key.as_deref(),
+            Some("new-secret-key")
+        );
+        assert!(
+            restart_required.load(Ordering::Relaxed),
+            "changing provider credentials must keep the restart-required signal"
         );
         assert!(!state.config_editor_active.load(Ordering::Relaxed));
     }

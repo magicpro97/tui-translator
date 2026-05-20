@@ -6,7 +6,7 @@ resolver = "2"
 name = "tui-translator"
 version = "0.1.4"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.86"
 description = "Real-time bilingual subtitles for Zoom meetings — terminal-based, Windows-native"
 license = "MIT"
 repository = "https://github.com/magicpro97/tui-translator"
@@ -38,7 +38,7 @@ path = "src/bin/vbcable_ci_probe.rs"
 
 [dependencies]
 # Terminal user interface
-ratatui = "0.26"
+ratatui = "0.30"
 crossterm = "0.27"
 
 # Async runtime (all I/O runs on Tokio)

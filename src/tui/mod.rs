@@ -39,6 +39,12 @@ pub use crate::metrics::{
 /// Shared scale factor for encoding audio level into an atomic integer.
 pub const AUDIO_LEVEL_SCALE: u32 = 1_000_000;
 
+/// Maximum committed subtitle pairs retained in memory.
+///
+/// This bounds the wrapped-line cache and prevents long meetings from growing
+/// the TUI history without limit.
+pub const SUBTITLE_HISTORY_CAP: usize = 500;
+
 const SRC_COLOR: Color = Color::Cyan;
 const TGT_COLOR: Color = Color::Green;
 const SEP_COLOR: Color = Color::DarkGray;
@@ -79,6 +85,11 @@ const MIN_USABLE_ROWS: u16 = 3   // title bar
 /// Preset BCP-47 language codes offered by F2/Ctrl+D when the source or
 /// target language field is active in the settings editor.
 const LANGUAGE_PRESETS: [&str; 5] = ["ja-JP", "vi", "en-US", "zh-CN", "ko"];
+const AUDIO_SOURCE_CHOICES: [&str; 2] = ["wasapi", "file"];
+const PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
+const BOOLEAN_CHOICES: [&str; 2] = ["false", "true"];
+const TTS_ROUTING_CHOICES: [&str; 3] = ["speakers", "virtual_mic", "both"];
+const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "local"];
 const CAPTURE_DEVICE_DEFAULT_LABEL: &str = "Windows default playback";
 const CAPTURE_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES: usize = 3;
@@ -316,6 +327,7 @@ pub struct ConfigEditorState {
     pub capture_device_options: Vec<String>,
     pub virtual_mic_device_options: Vec<String>,
     capture_device_filter_active: bool,
+    google_api_key_replacement_started: bool,
     field_cursors: [usize; CONFIG_EDITOR_FIELD_COUNT],
 }
 
@@ -355,6 +367,7 @@ impl ConfigEditorState {
             capture_device_options: Vec::new(),
             virtual_mic_device_options: Vec::new(),
             capture_device_filter_active: false,
+            google_api_key_replacement_started: false,
             field_cursors: [0; CONFIG_EDITOR_FIELD_COUNT],
         };
         editor.reset_field_cursors_to_end();
@@ -473,16 +486,53 @@ impl ConfigEditorState {
 
     pub fn handle_input_request(&mut self, request: InputRequest) {
         let field = self.active_field();
+        let starts_google_api_key_edit = field == ConfigEditorField::GoogleApiKey
+            && matches!(request, InputRequest::InsertChar(_));
+        if field == ConfigEditorField::GoogleApiKey {
+            match request {
+                InputRequest::InsertChar(_)
+                    if !self.google_api_key_replacement_started
+                        && !self.google_api_key.trim().is_empty() =>
+                {
+                    self.begin_google_api_key_replacement(None);
+                }
+                InputRequest::DeletePrevChar
+                | InputRequest::DeleteNextChar
+                | InputRequest::DeleteLine
+                | InputRequest::DeleteTillEnd
+                | InputRequest::DeletePrevWord
+                    if !self.google_api_key_replacement_started
+                        && !self.google_api_key.trim().is_empty() =>
+                {
+                    self.begin_google_api_key_replacement(Some(
+                        " Existing Google API key cleared. Type the replacement key, then press Enter to save.",
+                    ));
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         let mut input =
             Input::new(self.field_value(field).to_string()).with_cursor(self.field_cursor(field));
         if input.handle(request).is_some() {
             self.replace_field_value(field, input.value().to_string());
             self.field_cursors[field.index()] = input.cursor();
+            if starts_google_api_key_edit {
+                self.google_api_key_replacement_started = true;
+            }
             if field == ConfigEditorField::CaptureDevice {
                 self.capture_device_filter_active = true;
             }
             self.status_message = None;
         }
+    }
+
+    fn begin_google_api_key_replacement(&mut self, status_message: Option<&'static str>) {
+        self.replace_field_value(ConfigEditorField::GoogleApiKey, String::new());
+        self.field_cursors[ConfigEditorField::GoogleApiKey.index()] = 0;
+        self.google_api_key_replacement_started = true;
+        self.status_message = status_message.map(str::to_string);
     }
 
     pub fn next_field(&mut self) {
@@ -612,35 +662,37 @@ impl ConfigEditorState {
                 self.cycle_language_presets();
             }
             ConfigEditorField::AudioSource => {
-                self.cycle_choice_field(&["wasapi", "file"], ". Save and restart to apply.");
+                self.cycle_choice_field(&AUDIO_SOURCE_CHOICES, ". Save and restart to apply.");
             }
             ConfigEditorField::SttProvider => {
-                self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
+                self.cycle_choice_field(&PROVIDER_CHOICES, ". Save and restart to apply.");
             }
             ConfigEditorField::MtProvider => {
-                self.cycle_choice_field(&["google", "local"], ". Save and restart to apply.");
+                self.cycle_choice_field(&PROVIDER_CHOICES, ". Save and restart to apply.");
             }
             ConfigEditorField::TtsEnabled => {
-                self.cycle_choice_field(&["false", "true"], ". Save to apply.");
+                self.cycle_choice_field(&BOOLEAN_CHOICES, ". Save to apply.");
             }
             ConfigEditorField::TtsRouting => {
-                self.cycle_choice_field(
-                    &["speakers", "virtual_mic", "both"],
-                    ". Save and restart to apply.",
-                );
+                self.cycle_choice_field(&TTS_ROUTING_CHOICES, ". Save and restart to apply.");
             }
             ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device(),
             ConfigEditorField::SttFallbackPolicy => {
-                self.cycle_choice_field(&["none", "local"], ". Save and restart to apply.");
+                self.cycle_choice_field(&STT_FALLBACK_CHOICES, ". Save and restart to apply.");
             }
             ConfigEditorField::CaptureDevice => self.cycle_capture_device(),
-            ConfigEditorField::GoogleApiKey | ConfigEditorField::AudioFilePath => {
+            ConfigEditorField::GoogleApiKey => {
+                self.begin_google_api_key_replacement(Some(
+                    " Existing Google API key cleared. Type the replacement key, then press Enter to save.",
+                ));
+            }
+            ConfigEditorField::AudioFilePath => {
                 self.set_status_message(
                     " Type to edit this field. No preset values are available.",
                 );
             }
             ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
-                self.cycle_choice_field(&["true", "false"], ". Save and restart to apply.");
+                self.cycle_choice_field(&BOOLEAN_CHOICES, ". Save and restart to apply.");
             }
             ConfigEditorField::VadPreRollMs
             | ConfigEditorField::PipelineMaxWindowMs
@@ -787,6 +839,7 @@ impl SubtitlePane {
             self.unread += 1;
         }
         self.pairs.push(pair);
+        self.enforce_history_cap();
         self.cache_dirty = true;
     }
 
@@ -937,12 +990,12 @@ impl SubtitlePane {
     fn build_all_lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
         let pair_count = self.pairs.len();
+        let separator = (pair_count > 1).then(|| "\u{2500}".repeat(width));
         for (i, pair) in self.pairs.iter().enumerate() {
             lines.extend(wrap_to_lines(SRC_PREFIX, &pair.source, width, SRC_COLOR));
             lines.extend(wrap_to_lines(TGT_PREFIX, &pair.target, width, TGT_COLOR));
             if i + 1 < pair_count {
-                // "─" (U+2500) repeated to fill the pane width
-                let sep = "\u{2500}".repeat(width);
+                let sep = separator.as_ref().cloned().unwrap_or_default();
                 lines.push(Line::from(Span::styled(
                     sep,
                     Style::default().fg(SEP_COLOR),
@@ -961,6 +1014,15 @@ impl SubtitlePane {
         wrap_to_lines(SRC_PREFIX, &pair.source, width, SRC_COLOR).len()
             + wrap_to_lines(TGT_PREFIX, &pair.target, width, TGT_COLOR).len()
             + usize::from(include_separator)
+    }
+
+    fn enforce_history_cap(&mut self) {
+        if self.pairs.len() <= SUBTITLE_HISTORY_CAP {
+            return;
+        }
+        let excess = self.pairs.len() - SUBTITLE_HISTORY_CAP;
+        self.pairs.drain(..excess);
+        self.unread = self.unread.min(self.pairs.len());
     }
 }
 
@@ -2105,7 +2167,7 @@ pub fn draw_ui_with_route(
     cost_warning_usd: f64,
     tts_route: TtsRouteStatus,
 ) {
-    let area = frame.size();
+    let area = frame.area();
 
     // Fallback for terminals that are too small to show the full UI (#185).
     if area.width < MIN_USABLE_COLS || area.height < MIN_USABLE_ROWS {
@@ -2263,10 +2325,12 @@ pub fn draw_ui_with_route(
 
     // ── Subtitle pane ────────────────────────────────────────────────────────
     {
-        let pane = state
+        let mut pane = state
             .subtitle_pane
             .lock()
             .unwrap_or_else(|p| p.into_inner());
+        let inner = subtitle_block().inner(chunks[2]);
+        pane.clamp_scroll(inner.width, inner.height);
         frame.render_widget(&*pane, chunks[2]);
     }
 
@@ -2465,7 +2529,7 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 /// Render the shared first-run / settings editor overlay.
 pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &ConfigEditorState) {
     let panel_w = 76u16.min(area.width);
-    let panel_h = 28u16.min(area.height);
+    let panel_h = 34u16.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -2501,10 +2565,14 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     } else {
         editor.config_path.clone()
     };
-    // Mask the API key for display — the real value is kept in editor.google_api_key.
-    let masked_key = mask_api_key(&editor.google_api_key);
-
     let active = editor.active_field();
+    // Mask the API key for display — the real value is kept in editor.google_api_key.
+    let masked_key =
+        if active == ConfigEditorField::GoogleApiKey && editor.google_api_key.trim().is_empty() {
+            String::new()
+        } else {
+            mask_api_key(&editor.google_api_key)
+        };
     let value_width = config_editor_value_width(panel.width);
     let mut lines = Vec::new();
     if !is_compact_editor {
@@ -2532,6 +2600,16 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
         }
         lines.extend(virtual_mic_device_picker_lines(
             editor,
+            panel.width,
+            is_compact_editor,
+        ));
+    } else if panel.height >= 32 && config_editor_choice_values(active).is_some() {
+        if show_editor_spacing {
+            lines.push(Line::from(""));
+        }
+        lines.extend(config_choice_picker_lines(
+            editor,
+            active,
             panel.width,
             is_compact_editor,
         ));
@@ -2917,6 +2995,156 @@ fn capture_device_choice_line(choice: &CaptureDeviceChoice, label_width: usize) 
     Line::from(spans)
 }
 
+fn config_editor_choice_values(field: ConfigEditorField) -> Option<&'static [&'static str]> {
+    match field {
+        ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage => {
+            Some(&LANGUAGE_PRESETS)
+        }
+        ConfigEditorField::AudioSource => Some(&AUDIO_SOURCE_CHOICES),
+        ConfigEditorField::SttProvider | ConfigEditorField::MtProvider => Some(&PROVIDER_CHOICES),
+        ConfigEditorField::TtsEnabled | ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
+            Some(&BOOLEAN_CHOICES)
+        }
+        ConfigEditorField::TtsRouting => Some(&TTS_ROUTING_CHOICES),
+        ConfigEditorField::SttFallbackPolicy => Some(&STT_FALLBACK_CHOICES),
+        ConfigEditorField::GoogleApiKey
+        | ConfigEditorField::CaptureDevice
+        | ConfigEditorField::AudioFilePath
+        | ConfigEditorField::VirtualMicDevice
+        | ConfigEditorField::VadPreRollMs
+        | ConfigEditorField::PipelineMaxWindowMs
+        | ConfigEditorField::PipelineIdleFlushMs
+        | ConfigEditorField::PipelineIdleMinMs
+        | ConfigEditorField::PipelineSentenceMaxAgeMs => None,
+    }
+}
+
+fn config_choice_picker_lines(
+    editor: &ConfigEditorState,
+    field: ConfigEditorField,
+    panel_width: u16,
+    is_compact_editor: bool,
+) -> Vec<Line<'static>> {
+    let Some(values) = config_editor_choice_values(field) else {
+        return Vec::new();
+    };
+    let content_width = panel_width.saturating_sub(4) as usize;
+    let label_width = content_width
+        .saturating_sub(5)
+        .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
+    let current = editor.field_value(field).trim();
+    let mut lines = vec![Line::from(Span::styled(
+        if is_compact_editor {
+            " Choice list: F2 selects"
+        } else {
+            " Choice list: F2/Ctrl+D selects next option; type to override only when needed"
+        },
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    ))];
+
+    for value in values {
+        lines.push(config_choice_line(
+            field,
+            value,
+            current == *value,
+            label_width,
+        ));
+    }
+
+    if !current.is_empty() && !values.contains(&current) {
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  > ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                truncate_device_name(&format!("custom/invalid: {current}"), label_width),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+    }
+
+    lines
+}
+
+fn config_choice_line(
+    field: ConfigEditorField,
+    value: &'static str,
+    selected: bool,
+    label_width: usize,
+) -> Line<'static> {
+    let style = if selected {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let label = config_choice_label(field, value);
+    let mut spans = vec![
+        Span::styled(if selected { "  > " } else { "    " }, style),
+        Span::styled(truncate_device_name(&label, label_width), style),
+    ];
+    if selected {
+        spans.push(Span::styled(
+            "  selected",
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+    Line::from(spans)
+}
+
+fn config_choice_label(field: ConfigEditorField, value: &str) -> String {
+    match (field, value) {
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "ja-JP") => {
+            "ja-JP - Japanese".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "vi") => {
+            "vi - Vietnamese".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "en-US") => {
+            "en-US - English (US)".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "zh-CN") => {
+            "zh-CN - Chinese (Simplified)".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "ko") => {
+            "ko - Korean".to_string()
+        }
+        (ConfigEditorField::AudioSource, "wasapi") => "wasapi - live Windows audio".to_string(),
+        (ConfigEditorField::AudioSource, "file") => "file - WAV file replay".to_string(),
+        (ConfigEditorField::SttProvider | ConfigEditorField::MtProvider, "google") => {
+            "google - cloud provider".to_string()
+        }
+        (ConfigEditorField::SttProvider, "local") => "local - offline STT build".to_string(),
+        (ConfigEditorField::MtProvider, "local") => "local - offline MT build".to_string(),
+        (ConfigEditorField::TtsEnabled, "false") => "false - subtitles only".to_string(),
+        (ConfigEditorField::TtsEnabled, "true") => "true - speak translations".to_string(),
+        (ConfigEditorField::TtsRouting, "speakers") => "speakers - play locally".to_string(),
+        (ConfigEditorField::TtsRouting, "virtual_mic") => {
+            "virtual_mic - send to meeting mic".to_string()
+        }
+        (ConfigEditorField::TtsRouting, "both") => "both - speakers and virtual mic".to_string(),
+        (ConfigEditorField::SttFallbackPolicy, "none") => "none - stop on auth error".to_string(),
+        (ConfigEditorField::SttFallbackPolicy, "local") => {
+            "local - fallback to offline STT".to_string()
+        }
+        (ConfigEditorField::PipelineEarlyFlushOnVadEnd, "false") => {
+            "false - wait for idle/max window".to_string()
+        }
+        (ConfigEditorField::PipelineEarlyFlushOnVadEnd, "true") => {
+            "true - flush when speech ends".to_string()
+        }
+        _ => value.to_string(),
+    }
+}
+
 fn virtual_mic_device_picker_choices(editor: &ConfigEditorState) -> Vec<CaptureDeviceChoice> {
     let current = editor.virtual_mic_device.trim();
     editor
@@ -3238,7 +3466,7 @@ pub fn draw_session_summary(
     state: &AppState,
     show_restart_notice: bool,
 ) {
-    let area = frame.size();
+    let area = frame.area();
     frame.render_widget(Clear, area);
 
     let metrics = state.metrics_snapshot();
@@ -3370,7 +3598,7 @@ mod tests {
                     flicker_count: 0,
                     mt_call_count: 0,
                 };
-                frame.render_widget(&strip, frame.size());
+                frame.render_widget(&strip, frame.area());
             })
             .unwrap();
 
@@ -3379,10 +3607,7 @@ mod tests {
         for y in 0..area.height {
             let row: String = (0..area.width)
                 .map(|x| {
-                    terminal
-                        .backend()
-                        .buffer()
-                        .get(x, y)
+                    terminal.backend().buffer()[(x, y)]
                         .symbol()
                         .chars()
                         .next()
@@ -3560,11 +3785,7 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer();
         let rows = (0..24)
-            .map(|y| {
-                (0..80)
-                    .map(|x| buffer.get(x, y).symbol())
-                    .collect::<String>()
-            })
+            .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
             .collect::<Vec<_>>();
         let settings_line = rows
             .iter()
@@ -3882,6 +4103,117 @@ mod tests {
     }
 
     #[test]
+    fn render_config_editor_shows_choice_list_for_selectable_fields() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(120, 32);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::AudioSource.index();
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_config_editor(frame, area, &editor);
+            })
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("Choice list"),
+            "selectable fields should render an audio-like choice list; got: {rendered:?}"
+        );
+        assert!(rendered.contains("wasapi - live Windows audio"));
+        assert!(rendered.contains("file - WAV file replay"));
+        assert!(rendered.contains("selected"));
+    }
+
+    #[test]
+    fn config_editor_f2_clears_existing_google_key_for_replacement() {
+        let mut cfg = AppConfig::default();
+        cfg.google_api_key = Some("old-secret-key".to_string());
+        let mut editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::GoogleApiKey.index();
+
+        editor.cycle_active_field();
+
+        assert_eq!(editor.google_api_key, "");
+        assert_eq!(editor.field_cursor(ConfigEditorField::GoogleApiKey), 0);
+        assert!(
+            editor
+                .status_message
+                .as_deref()
+                .is_some_and(|message| message.contains("cleared")),
+            "F2/Ctrl+D should explain that the saved key is ready for replacement"
+        );
+    }
+
+    #[test]
+    fn config_editor_typing_replaces_existing_google_key_instead_of_appending() {
+        let mut cfg = AppConfig::default();
+        cfg.google_api_key = Some("old-secret-key".to_string());
+        let mut editor = ConfigEditorState::from_config(
+            &cfg,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.selected_field = ConfigEditorField::GoogleApiKey.index();
+
+        editor.push_char('n');
+        editor.push_char('e');
+        editor.push_char('w');
+
+        assert_eq!(editor.google_api_key, "new");
+        assert!(
+            !editor.google_api_key.contains("old-secret-key"),
+            "typing into an existing masked key must begin replacement, not append"
+        );
+    }
+
+    #[test]
+    fn config_editor_bulk_delete_shortcuts_start_google_key_replacement() {
+        for request in [
+            InputRequest::DeleteLine,
+            InputRequest::DeleteTillEnd,
+            InputRequest::DeletePrevWord,
+        ] {
+            let mut cfg = AppConfig::default();
+            cfg.google_api_key = Some("old-secret-key".to_string());
+            let mut editor = ConfigEditorState::from_config(
+                &cfg,
+                Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+                ConfigEditorMode::Settings,
+            );
+            editor.selected_field = ConfigEditorField::GoogleApiKey.index();
+
+            editor.handle_input_request(request);
+
+            assert_eq!(editor.google_api_key, "");
+            assert_eq!(editor.field_cursor(ConfigEditorField::GoogleApiKey), 0);
+            assert!(
+                editor
+                    .status_message
+                    .as_deref()
+                    .is_some_and(|message| message.contains("cleared")),
+                "bulk delete request {request:?} should enter explicit replacement flow"
+            );
+        }
+    }
+
+    #[test]
     fn config_editor_cycles_only_detected_virtual_mic_devices() {
         let mut editor = ConfigEditorState::from_config(
             &AppConfig::default(),
@@ -3976,7 +4308,7 @@ mod tests {
         );
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4016,7 +4348,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4057,7 +4389,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4174,7 +4506,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4199,7 +4531,7 @@ mod tests {
         editor.selected_field = ConfigEditorField::CaptureDevice.index();
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4230,7 +4562,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4264,7 +4596,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4508,7 +4840,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                let area = frame.size();
+                let area = frame.area();
                 render_config_editor(frame, area, &editor);
             })
             .unwrap();
@@ -4582,6 +4914,30 @@ mod tests {
         pane.push(SubtitlePair::new("a", "b"));
         assert_eq!(pane.unread, 0);
         assert_eq!(pane.pairs.len(), 1);
+    }
+
+    #[test]
+    fn push_caps_committed_history_to_subtitle_history_cap() {
+        let mut pane = SubtitlePane::new();
+
+        for idx in 0..(SUBTITLE_HISTORY_CAP + 25) {
+            pane.push(SubtitlePair::new(
+                format!("source-{idx}"),
+                format!("target-{idx}"),
+            ));
+        }
+
+        assert_eq!(pane.pair_count(), SUBTITLE_HISTORY_CAP);
+        assert_eq!(
+            pane.committed_pair_at(0).map(|pair| pair.source.as_str()),
+            Some("source-25")
+        );
+        let expected_target = format!("target-{}", SUBTITLE_HISTORY_CAP + 24);
+        assert_eq!(
+            pane.committed_pair_at(SUBTITLE_HISTORY_CAP - 1)
+                .map(|pair| pair.target.as_str()),
+            Some(expected_target.as_str())
+        );
     }
 
     #[test]

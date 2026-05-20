@@ -517,6 +517,9 @@ fn make_orch_context() -> TestCtx {
         pipeline_error_msg: Arc::clone(&pipeline_error_msg),
         auth_error_banner: Arc::new(Mutex::new(None)),
         pipeline_halted: Arc::new(AtomicBool::new(false)),
+        provider_circuits: Arc::new(Mutex::new(
+            crate::pipeline::ProviderCircuitBreakers::default(),
+        )),
         paused: Arc::new(AtomicBool::new(false)),
         tts_enabled: Arc::new(AtomicBool::new(false)),
         source_language: Arc::new(Mutex::new("en".to_owned())),

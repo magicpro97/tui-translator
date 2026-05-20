@@ -23,6 +23,8 @@ use std::time::Duration;
 
 use crate::providers::{CostReporter, ProviderError, TtsProvider, TtsResult};
 
+use super::sanitize_google_error_body;
+
 // ── Google TTS REST API URL ───────────────────────────────────────────────────
 
 const TTS_SYNTHESIZE_URL: &str = "https://texttospeech.googleapis.com/v1/text:synthesize";
@@ -136,7 +138,8 @@ fn looks_like_auth_error(status: StatusCode, body: &str) -> bool {
 }
 
 fn classify_http_error(status: StatusCode, body: &str) -> ProviderError {
-    if looks_like_auth_error(status, body) {
+    let body = sanitize_google_error_body(body);
+    if looks_like_auth_error(status, &body) {
         return ProviderError::AuthError(format!(
             "Google TTS authentication failed (HTTP {}): {}",
             status.as_u16(),

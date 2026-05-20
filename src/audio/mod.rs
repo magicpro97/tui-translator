@@ -249,7 +249,10 @@ impl SilenceDetector {
 // ─── Channel-based entry point (Issue #29) ───────────────────────────────────
 
 /// Channel buffer capacity (number of [`AudioChunk`]s buffered).
-const CHANNEL_CAPACITY: usize = 64;
+///
+/// WASAPI emits roughly 10 ms chunks. A 512-slot buffer covers about 5 seconds
+/// of provider latency before the dedicated capture thread can stall.
+const CHANNEL_CAPACITY: usize = 512;
 
 /// Spawn the audio capture task and return the audio stream together with
 /// source metadata for the TUI status bar.
@@ -441,6 +444,17 @@ mod tests {
         let rms = c.rms_energy();
         // i16::MIN / i16::MAX ≈ -1.000_03, clamped via squaring → ~1.000_06
         assert!(rms > 0.999, "rms={rms}");
+    }
+
+    #[test]
+    fn channel_capacity_covers_five_seconds_of_wasapi_backpressure() {
+        const WASAPI_CHUNK_MS: usize = 10;
+        let capacity = std::hint::black_box(CHANNEL_CAPACITY);
+
+        assert!(
+            capacity * WASAPI_CHUNK_MS >= 5_000,
+            "audio channel must buffer at least five seconds of 10 ms WASAPI chunks"
+        );
     }
 
     // ── SilenceDetector ─────────────────────────────────────────────────────

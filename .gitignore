@@ -32,8 +32,9 @@ coverage/
 *.profdata
 lcov.info
 
-# Soak runner reports — generated at runtime; not committed
+# Soak runner reports - generated at runtime; not committed
 verification-evidence/*.json
+verification-evidence/*.txt
 
 # Release artifacts
 *.exe

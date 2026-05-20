@@ -37,7 +37,7 @@
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
 use rubato::{
@@ -59,6 +59,9 @@ const FRAMES_PER_CHUNK: usize = 480;
 
 /// WASAPI event wait timeout in milliseconds.
 const EVENT_TIMEOUT_MS: u32 = 1_000;
+
+/// Log when the capture thread is blocked this long sending to the async pipeline.
+const CHANNEL_SEND_STALL_WARN_MS: u64 = 100;
 
 /// Spawn the WASAPI loopback capture thread.
 ///
@@ -215,11 +218,25 @@ fn capture_loop(
                 .collect();
 
             let chunk = AudioChunk::new(samples_i16);
-            if silence_detector.process(&chunk) && tx.blocking_send(chunk).is_err() {
+            if silence_detector.process(&chunk) && !send_audio_chunk(&tx, chunk) {
                 // Receiver was dropped — the application is shutting down.
                 tracing::info!("WASAPI capture: channel closed, exiting thread");
                 return Ok(());
             }
+        }
+
+        fn send_audio_chunk(tx: &mpsc::Sender<AudioChunk>, chunk: AudioChunk) -> bool {
+            let started = Instant::now();
+            let result = tx.blocking_send(chunk);
+            let elapsed = started.elapsed();
+            if result.is_ok() && elapsed >= Duration::from_millis(CHANNEL_SEND_STALL_WARN_MS) {
+                tracing::warn!(
+                    stall_ms = elapsed.as_millis() as u64,
+                    channel_capacity = super::CHANNEL_CAPACITY,
+                    "WASAPI capture channel send stalled; downstream provider latency is backpressuring audio capture"
+                );
+            }
+            result.is_ok()
         }
 
         // Wait for the next buffer event (or timeout after 1 s).

@@ -63,11 +63,83 @@ use crate::{
 pub(crate) const STT_MAX_WINDOW_MS: u32 = 1_500;
 pub(crate) const STT_IDLE_FLUSH_MS: u64 = 600;
 pub(crate) const STT_IDLE_MIN_MS: u32 = 500;
+const PROVIDER_CIRCUIT_FAILURE_THRESHOLD: u8 = 3;
+const PROVIDER_CIRCUIT_OPEN_MS: u64 = 30_000;
 
 // Re-export the retry utilities so that other modules and the integration-test
 // binary (which path-imports this module) continue to find them here.
 #[allow(unused_imports)]
 pub use crate::providers::{is_transient, with_retry, MAX_RETRY_ATTEMPTS};
+
+/// Per-provider circuit breaker state for the orchestrator.
+#[derive(Debug, Default)]
+pub struct ProviderCircuitBreakers {
+    stt: ProviderCircuitBreaker,
+    mt: ProviderCircuitBreaker,
+    tts: ProviderCircuitBreaker,
+}
+
+#[derive(Debug, Default)]
+struct ProviderCircuitBreaker {
+    consecutive_failures: u8,
+    open_until: Option<Instant>,
+}
+
+impl ProviderCircuitBreaker {
+    fn remaining_open(&mut self, now: Instant) -> Option<Duration> {
+        match self.open_until {
+            Some(until) if until > now => Some(until.duration_since(now)),
+            Some(_) => {
+                self.open_until = None;
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn record_success(&mut self) {
+        self.consecutive_failures = 0;
+        self.open_until = None;
+    }
+
+    fn record_failure(&mut self, now: Instant) -> bool {
+        self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+        if self.consecutive_failures < PROVIDER_CIRCUIT_FAILURE_THRESHOLD {
+            return false;
+        }
+
+        self.consecutive_failures = 0;
+        self.open_until = Some(now + Duration::from_millis(PROVIDER_CIRCUIT_OPEN_MS));
+        true
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProviderStage {
+    Stt,
+    Mt,
+    Tts,
+}
+
+impl ProviderStage {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Stt => "STT",
+            Self::Mt => "Translation",
+            Self::Tts => "TTS",
+        }
+    }
+}
+
+impl ProviderCircuitBreakers {
+    fn circuit_mut(&mut self, stage: ProviderStage) -> &mut ProviderCircuitBreaker {
+        match stage {
+            ProviderStage::Stt => &mut self.stt,
+            ProviderStage::Mt => &mut self.mt,
+            ProviderStage::Tts => &mut self.tts,
+        }
+    }
+}
 
 // ── Pipeline state ────────────────────────────────────────────────────────────
 
@@ -141,6 +213,9 @@ pub struct OrchestratorContext {
     /// Cleared only on application restart; pressing R does not un-halt a
     /// pipeline stopped by an auth error.
     pub pipeline_halted: Arc<AtomicBool>,
+
+    /// Circuit breakers that pause a provider after repeated failures.
+    pub provider_circuits: Arc<Mutex<ProviderCircuitBreakers>>,
 
     // ── Runtime controls ───────────────────────────────────────────────────
     /// Space key — when `true`, skip API calls but continue receiving audio.
@@ -608,6 +683,10 @@ where
 
     // ── STT ──────────────────────────────────────────────────────────────────
     set_stt_state(&ctx.stt_state, SttState::Sending);
+    if reject_if_circuit_open(ctx, ProviderStage::Stt) {
+        ctx.loss_metrics.record_drop();
+        return;
+    }
 
     // Issue #80: approximate STT bytes sent = PCM samples × 2 bytes (i16).
     let stt_bytes_sent = (pcm.samples.len() as u64).saturating_mul(2);
@@ -620,6 +699,7 @@ where
     .await
     {
         Ok(r) if r.text.trim().is_empty() => {
+            record_provider_success(ctx, ProviderStage::Stt);
             // Silent / empty result — nothing to translate.
             let audio_ms = pcm.samples.len().saturating_mul(1_000) / 16_000;
             let rms_energy = if pcm.samples.is_empty() {
@@ -646,6 +726,7 @@ where
             return;
         }
         Ok(r) => {
+            record_provider_success(ctx, ProviderStage::Stt);
             let stt_latency_ms = stt_start.elapsed().as_millis() as u64;
             // Issue #80: approximate STT bytes received = transcript length.
             ctx.network_metrics.record_bytes_recv(r.text.len() as u64);
@@ -677,6 +758,7 @@ where
             return;
         }
         Err(err) => {
+            record_provider_failure(ctx, ProviderStage::Stt, &err);
             let warn_msg = format!("⚠ STT error: {err}");
             tracing::warn!("{warn_msg}");
             set_stt_state(&ctx.stt_state, SttState::Error(warn_msg));
@@ -782,11 +864,17 @@ where
     for seg in agg_segments {
         // Issue #80: approximate MT bytes sent = transcript byte length.
         ctx.network_metrics.record_bytes_sent(seg.text.len() as u64);
+        if reject_if_circuit_open(ctx, ProviderStage::Mt) {
+            set_stt_state(&ctx.stt_state, SttState::Listening);
+            ctx.loss_metrics.record_drop();
+            return;
+        }
 
         let mt_start = Instant::now();
         let translation =
             match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await {
                 Ok(r) => {
+                    record_provider_success(ctx, ProviderStage::Mt);
                     // Track MT input chars (billing basis: source chars sent to the API,
                     // matching the count used by GoogleMtProvider::translate).
                     {
@@ -809,6 +897,7 @@ where
                     return;
                 }
                 Err(err) => {
+                    record_provider_failure(ctx, ProviderStage::Mt, &err);
                     let warn_msg = format!("⚠ Translation error: {err}");
                     tracing::warn!("{warn_msg}");
                     set_stt_state(&ctx.stt_state, SttState::Listening);
@@ -878,11 +967,15 @@ where
             // Issue #80: approximate TTS bytes sent = translation text length.
             ctx.network_metrics
                 .record_bytes_sent(item.translation.translated_text.len() as u64);
+            if reject_if_circuit_open(ctx, ProviderStage::Tts) {
+                continue;
+            }
 
             match with_retry(|| tts.synthesise(&item.translation.translated_text, &target_lang))
                 .await
             {
                 Ok(r) => {
+                    record_provider_success(ctx, ProviderStage::Tts);
                     // Issue #80: approximate TTS bytes received = audio bytes length.
                     ctx.network_metrics
                         .record_bytes_recv(r.audio_bytes.len() as u64);
@@ -901,6 +994,7 @@ where
                     handle_auth_error(ctx, &format!("TTS: {msg}"));
                 }
                 Err(err) => {
+                    record_provider_failure(ctx, ProviderStage::Tts, &err);
                     // TTS failure is non-fatal: the subtitle was already shown.
                     let warn_msg = format!("⚠ TTS error: {err}");
                     tracing::warn!("{warn_msg}");
@@ -1023,11 +1117,16 @@ async fn commit_aggregated_segment<M, T>(
     let source_lang = lock_clone_str(&ctx.source_language);
     let target_lang = lock_clone_str(&ctx.target_language);
     ctx.network_metrics.record_bytes_sent(seg.text.len() as u64);
+    if reject_if_circuit_open(ctx, ProviderStage::Mt) {
+        ctx.loss_metrics.record_drop();
+        return;
+    }
 
     let mt_start = Instant::now();
     let translation = match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await
     {
         Ok(result) => {
+            record_provider_success(ctx, ProviderStage::Mt);
             {
                 let mut m = ctx
                     .session_metrics
@@ -1046,6 +1145,7 @@ async fn commit_aggregated_segment<M, T>(
             return;
         }
         Err(err) => {
+            record_provider_failure(ctx, ProviderStage::Mt, &err);
             let warn_msg = format!("⚠ Translation error: {err}");
             tracing::warn!("{warn_msg}");
             set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
@@ -1098,8 +1198,12 @@ async fn commit_aggregated_segment<M, T>(
     if ctx.tts_enabled.load(Ordering::Relaxed) {
         ctx.network_metrics
             .record_bytes_sent(translation.translated_text.len() as u64);
+        if reject_if_circuit_open(ctx, ProviderStage::Tts) {
+            return;
+        }
         match with_retry(|| tts.synthesise(&translation.translated_text, &target_lang)).await {
             Ok(result) => {
+                record_provider_success(ctx, ProviderStage::Tts);
                 ctx.network_metrics
                     .record_bytes_recv(result.audio_bytes.len() as u64);
                 clear_pipeline_error(&ctx.pipeline_error_msg);
@@ -1116,6 +1220,7 @@ async fn commit_aggregated_segment<M, T>(
                 handle_auth_error(ctx, &format!("TTS: {msg}"));
             }
             Err(err) => {
+                record_provider_failure(ctx, ProviderStage::Tts, &err);
                 let warn_msg = format!("⚠ TTS error: {err}");
                 tracing::warn!("{warn_msg}");
                 set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
@@ -1220,6 +1325,65 @@ fn set_pipeline_error(slot: &Arc<Mutex<Option<String>>>, msg: String) {
 
 fn clear_pipeline_error(slot: &Arc<Mutex<Option<String>>>) {
     *slot.lock().unwrap_or_else(|p| p.into_inner()) = None;
+}
+
+fn reject_if_circuit_open(ctx: &OrchestratorContext, stage: ProviderStage) -> bool {
+    let now = Instant::now();
+    let remaining = {
+        let mut circuits = ctx
+            .provider_circuits
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        circuits.circuit_mut(stage).remaining_open(now)
+    };
+
+    let Some(remaining) = remaining else {
+        return false;
+    };
+
+    let retry_secs = remaining.as_secs().max(1);
+    let msg = format!(
+        "⚠ {} paused after repeated provider failures; retrying in {retry_secs}s",
+        stage.label()
+    );
+    tracing::warn!(
+        provider_stage = stage.label(),
+        retry_secs,
+        "provider circuit open; skipping request"
+    );
+    if stage == ProviderStage::Stt {
+        set_stt_state(&ctx.stt_state, SttState::Error(msg.clone()));
+    }
+    set_pipeline_error(&ctx.pipeline_error_msg, msg);
+    true
+}
+
+fn record_provider_success(ctx: &OrchestratorContext, stage: ProviderStage) {
+    ctx.provider_circuits
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .circuit_mut(stage)
+        .record_success();
+    if stage == ProviderStage::Stt {
+        clear_pipeline_error(&ctx.pipeline_error_msg);
+    }
+}
+
+fn record_provider_failure(ctx: &OrchestratorContext, stage: ProviderStage, err: &ProviderError) {
+    let opened = ctx
+        .provider_circuits
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .circuit_mut(stage)
+        .record_failure(Instant::now());
+    if opened {
+        tracing::warn!(
+            provider_stage = stage.label(),
+            error = %err,
+            open_ms = PROVIDER_CIRCUIT_OPEN_MS,
+            "provider circuit opened after repeated failures"
+        );
+    }
 }
 
 fn lock_clone_str(slot: &Arc<Mutex<String>>) -> String {
@@ -1350,6 +1514,67 @@ mod tests {
         assert!(!is_transient(&ProviderError::Unknown("x".into())));
     }
 
+    #[test]
+    fn provider_circuit_opens_after_repeated_failures_and_expires() {
+        let now = Instant::now();
+        let mut circuit = ProviderCircuitBreaker::default();
+
+        for _ in 1..PROVIDER_CIRCUIT_FAILURE_THRESHOLD {
+            assert!(
+                !circuit.record_failure(now),
+                "circuit must stay closed before the threshold"
+            );
+        }
+        assert!(
+            circuit.record_failure(now),
+            "circuit must open once the failure threshold is reached"
+        );
+        assert!(
+            circuit.remaining_open(now).is_some(),
+            "circuit should reject requests while the open window is active"
+        );
+
+        let after_window = now + Duration::from_millis(PROVIDER_CIRCUIT_OPEN_MS + 1);
+        assert!(
+            circuit.remaining_open(after_window).is_none(),
+            "circuit should half-open after the open window expires"
+        );
+    }
+
+    #[test]
+    fn provider_circuit_success_resets_failure_count() {
+        let now = Instant::now();
+        let mut circuit = ProviderCircuitBreaker::default();
+
+        assert!(!circuit.record_failure(now));
+        circuit.record_success();
+
+        for _ in 1..PROVIDER_CIRCUIT_FAILURE_THRESHOLD {
+            assert!(!circuit.record_failure(now));
+        }
+        assert!(
+            circuit.record_failure(now),
+            "success must reset the failure count before a later failure streak"
+        );
+    }
+
+    #[test]
+    fn stt_success_clears_stale_circuit_error_banner() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(shutdown);
+        set_pipeline_error(
+            &ctx.pipeline_error_msg,
+            "STT paused after repeated provider failures; retrying in 0s".to_string(),
+        );
+
+        record_provider_success(&ctx, ProviderStage::Stt);
+
+        assert!(
+            ctx.pipeline_error_msg.lock().unwrap().is_none(),
+            "STT success must clear the stale open-circuit banner even when the transcript is empty"
+        );
+    }
+
     // ── Mock providers ────────────────────────────────────────────────────────
 
     /// Mock STT that always returns a fixed transcript.
@@ -1455,6 +1680,22 @@ mod tests {
         }
     }
 
+    struct CountingErrStt {
+        calls: Arc<AtomicU32>,
+        error: fn() -> ProviderError,
+    }
+
+    impl SttProvider for CountingErrStt {
+        async fn transcribe(
+            &self,
+            _chunk: &PcmChunk,
+            _lang: &str,
+        ) -> Result<SttResult, ProviderError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Err((self.error)())
+        }
+    }
+
     /// Mock MT that always returns a specific error.
     struct ErrMt(fn() -> ProviderError);
     impl MtProvider for ErrMt {
@@ -1489,6 +1730,7 @@ mod tests {
             pipeline_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
+            provider_circuits: Arc::new(Mutex::new(ProviderCircuitBreakers::default())),
             paused: Arc::new(AtomicBool::new(false)),
             tts_enabled: Arc::new(AtomicBool::new(false)),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
@@ -2616,6 +2858,63 @@ mod tests {
             pane.lock().unwrap().pair_count(),
             0,
             "failed chunk must be discarded"
+        );
+    }
+
+    #[tokio::test]
+    async fn stt_circuit_breaker_skips_provider_after_repeated_failures() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let calls = Arc::new(AtomicU32::new(0));
+        let loss_metrics = Arc::clone(&ctx.loss_metrics);
+        let stt_state = Arc::clone(&ctx.stt_state);
+        let err_msg = Arc::clone(&ctx.pipeline_error_msg);
+
+        let (inner_tx, inner_rx) = mpsc::channel::<AudioChunk>(8);
+        for _ in 0..usize::from(PROVIDER_CIRCUIT_FAILURE_THRESHOLD + 1) {
+            inner_tx
+                .send(speech_chunk_ms(STT_MAX_WINDOW_MS))
+                .await
+                .unwrap();
+        }
+        drop(inner_tx);
+
+        run_orchestrator(
+            inner_rx,
+            CountingErrStt {
+                calls: Arc::clone(&calls),
+                error: || ProviderError::InvalidInput("bad audio fixture".to_string()),
+            },
+            OkMt,
+            OkTts,
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            u32::from(PROVIDER_CIRCUIT_FAILURE_THRESHOLD),
+            "the chunk after the threshold should be dropped by the open circuit before STT"
+        );
+        assert_eq!(
+            loss_metrics.total_chunks(),
+            u64::from(PROVIDER_CIRCUIT_FAILURE_THRESHOLD + 1)
+        );
+        assert_eq!(
+            loss_metrics.dropped_chunks(),
+            u64::from(PROVIDER_CIRCUIT_FAILURE_THRESHOLD + 1)
+        );
+        let state = stt_state.lock().unwrap().clone();
+        assert!(
+            matches!(state, SttState::Error(ref msg) if msg.contains("paused after repeated provider failures")),
+            "open STT circuit should be visible in state; got {state:?}"
+        );
+        let msg = err_msg.lock().unwrap().clone();
+        assert!(
+            msg.as_deref()
+                .map(|m| m.contains("paused after repeated provider failures"))
+                .unwrap_or(false),
+            "open STT circuit should be visible in pipeline error: {msg:?}"
         );
     }
 
