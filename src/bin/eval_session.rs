@@ -474,6 +474,13 @@ fn parse_jsonl(path: &Path) -> Result<ParsedSession> {
                 header = Some(h);
             }
             SessionLogRecord::TranscriptSegment(seg) => {
+                if header.is_none() {
+                    bail!(
+                        "session JSONL {}: line {lineno}: no session_header record found before \
+                         transcript_segment; the first data line must be a session_header",
+                        path.display()
+                    );
+                }
                 segments.push(seg);
             }
         }
@@ -502,8 +509,6 @@ pub enum AlignmentCase {
     Merged,
     /// Segment does not overlap any truth row (extra/gapped segment).
     Gapped,
-    /// Truth row not covered by any segment (missing span).
-    Overlapped,
     /// Segment has empty source_text and/or target_text.
     Empty,
 }
@@ -549,9 +554,29 @@ fn align_segments(
 ) -> AlignmentResult {
     let mut seg_to_truth: Vec<Vec<usize>> = vec![Vec::new(); segments.len()];
     let mut truth_to_seg: Vec<Vec<usize>> = vec![Vec::new(); truth.len()];
+    let mut truth_order: Vec<usize> = (0..truth.len()).collect();
+    truth_order.sort_by_key(|&ti| (truth[ti].start_ms, truth[ti].end_ms, ti));
+    let mut segment_order: Vec<usize> = (0..segments.len()).collect();
+    segment_order.sort_by_key(|&si| (segments[si].audio_start_ms, segments[si].audio_end_ms, si));
 
-    for (si, seg) in segments.iter().enumerate() {
-        for (ti, tr) in truth.iter().enumerate() {
+    let mut first_candidate = 0usize;
+    for &si in &segment_order {
+        let seg = &segments[si];
+        let seg_start_t = seg.audio_start_ms.saturating_sub(tolerance_ms);
+        let seg_end_t = seg.audio_end_ms.saturating_add(tolerance_ms);
+        while first_candidate < truth_order.len()
+            && truth[truth_order[first_candidate]].end_ms <= seg_start_t
+        {
+            first_candidate += 1;
+        }
+
+        let mut pos = first_candidate;
+        while pos < truth_order.len() {
+            let ti = truth_order[pos];
+            let tr = &truth[ti];
+            if tr.start_ms >= seg_end_t {
+                break;
+            }
             if overlaps_with_tolerance(
                 seg.audio_start_ms,
                 seg.audio_end_ms,
@@ -562,12 +587,13 @@ fn align_segments(
                 seg_to_truth[si].push(ti);
                 truth_to_seg[ti].push(si);
             }
+            pos += 1;
         }
     }
 
     let mut pairs = Vec::new();
-    let mut matched_segment_indices = Vec::new();
-    let mut matched_truth_indices = Vec::new();
+    let mut matched_segment_flags = vec![false; segments.len()];
+    let mut matched_truth_flags = vec![false; truth.len()];
 
     for (si, matched_truths) in seg_to_truth.iter().enumerate() {
         let seg = &segments[si];
@@ -583,9 +609,7 @@ fn align_segments(
                 },
             });
         } else {
-            if !matched_segment_indices.contains(&si) {
-                matched_segment_indices.push(si);
-            }
+            matched_segment_flags[si] = true;
             let case = if is_empty {
                 AlignmentCase::Empty
             } else if matched_truths.len() > 1 {
@@ -599,9 +623,7 @@ fn align_segments(
                 }
             };
             for &ti in matched_truths {
-                if !matched_truth_indices.contains(&ti) {
-                    matched_truth_indices.push(ti);
-                }
+                matched_truth_flags[ti] = true;
                 pairs.push(AlignedPair {
                     segment_idx: si,
                     truth_idx: ti,
@@ -611,11 +633,21 @@ fn align_segments(
         }
     }
 
+    let matched_segment_indices: Vec<usize> = matched_segment_flags
+        .iter()
+        .enumerate()
+        .filter_map(|(i, matched)| matched.then_some(i))
+        .collect();
+    let matched_truth_indices: Vec<usize> = matched_truth_flags
+        .iter()
+        .enumerate()
+        .filter_map(|(i, matched)| matched.then_some(i))
+        .collect();
     let unaligned_segment_indices: Vec<usize> = (0..segments.len())
-        .filter(|i| !matched_segment_indices.contains(i))
+        .filter(|&i| !matched_segment_flags[i])
         .collect();
     let unaligned_truth_indices: Vec<usize> = (0..truth.len())
-        .filter(|i| !matched_truth_indices.contains(i))
+        .filter(|&i| !matched_truth_flags[i])
         .collect();
 
     AlignmentResult {
@@ -908,15 +940,14 @@ fn compute_metrics(
         Some(percentile(&latencies, 0.95))
     };
 
-    // Collect worst 5 pairs by mt_bleu (lowest first).
-    let mut sorted_pairs = pair_scores.clone();
-    sorted_pairs.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-    let mut worst: Vec<WorstSegment> = sorted_pairs
-        .iter()
-        .take(5)
-        .map(|(si, ti, b, ch, case)| {
-            let seg = &segments[*si];
-            let tr = &truth[*ti];
+    let mut worst_candidates: Vec<(u8, f64, u64, WorstSegment)> = Vec::new();
+    for (si, ti, b, ch, case) in &pair_scores {
+        let seg = &segments[*si];
+        let tr = &truth[*ti];
+        worst_candidates.push((
+            worst_case_priority(case),
+            *b,
+            seg.segment_id,
             WorstSegment {
                 segment_id: seg.segment_id,
                 audio_start_ms: seg.audio_start_ms,
@@ -927,26 +958,42 @@ fn compute_metrics(
                 mt_bleu: *b,
                 mt_chrf: *ch,
                 recommendation: recommend(*b, *ch, case),
-            }
-        })
-        .collect();
+            },
+        ));
+    }
 
-    // Add gapped segments (no truth to score against).
+    // Add gapped segments (no truth to score against) before taking top-N so
+    // extra/missing alignment evidence is not hidden by low-scoring matched rows.
     for pair in alignment.pairs.iter().filter(|p| p.truth_idx == usize::MAX) {
         let seg = &segments[pair.segment_idx];
-        worst.push(WorstSegment {
-            segment_id: seg.segment_id,
-            audio_start_ms: seg.audio_start_ms,
-            audio_end_ms: seg.audio_end_ms,
-            source_text: seg.source_text.clone(),
-            target_text: seg.target_text.clone(),
-            reference_translation: String::new(),
-            mt_bleu: 0.0,
-            mt_chrf: 0.0,
-            recommendation: recommend(0.0, 0.0, &pair.case),
-        });
+        worst_candidates.push((
+            worst_case_priority(&pair.case),
+            0.0,
+            seg.segment_id,
+            WorstSegment {
+                segment_id: seg.segment_id,
+                audio_start_ms: seg.audio_start_ms,
+                audio_end_ms: seg.audio_end_ms,
+                source_text: seg.source_text.clone(),
+                target_text: seg.target_text.clone(),
+                reference_translation: String::new(),
+                mt_bleu: 0.0,
+                mt_chrf: 0.0,
+                recommendation: recommend(0.0, 0.0, &pair.case),
+            },
+        ));
     }
-    worst.truncate(5);
+    worst_candidates.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    let worst: Vec<WorstSegment> = worst_candidates
+        .into_iter()
+        .take(5)
+        .map(|(_, _, _, segment)| segment)
+        .collect();
 
     let metrics = AggregateMetrics {
         stt_wer: stt_wer_avg,
@@ -962,6 +1009,15 @@ fn compute_metrics(
     };
 
     (metrics, worst)
+}
+
+fn worst_case_priority(case: &AlignmentCase) -> u8 {
+    match case {
+        AlignmentCase::Gapped => 0,
+        AlignmentCase::Empty => 1,
+        AlignmentCase::Split | AlignmentCase::Merged => 2,
+        AlignmentCase::Exact => 3,
+    }
 }
 
 // ── Confidence score ───────────────────────────────────────────────────────────
@@ -1918,7 +1974,7 @@ mod tests {
     }
 
     #[test]
-    fn alignment_overlapped_truth_no_segment() {
+    fn alignment_missing_truth_no_segment() {
         let truth = make_truth_rows();
         let segments = make_golden_segments(&truth[..1]);
         let result = align_segments(&segments, &truth, ALIGN_TOLERANCE_MS);
@@ -2055,6 +2111,44 @@ mod tests {
         let (metrics, _) = compute_metrics(&segments, &truth, &alignment);
         assert_eq!(metrics.latency_p50_ms, Some(300.0));
         assert_eq!(metrics.latency_p95_ms, Some(300.0));
+    }
+
+    #[test]
+    fn worst_segments_include_gapped_segments_before_truncation() {
+        let truth: Vec<TruthRow> = (0..5)
+            .map(|i| TruthRow {
+                start_ms: i * 1_000,
+                end_ms: i * 1_000 + 800,
+                source_text: format!("source {i}"),
+                reference_translation: format!("reference {i}"),
+            })
+            .collect();
+        let mut segments: Vec<TranscriptSegment> = truth
+            .iter()
+            .enumerate()
+            .map(|(i, tr)| {
+                make_segment(
+                    (i + 1) as u64,
+                    tr.start_ms,
+                    tr.end_ms,
+                    &tr.source_text,
+                    "unrelated output",
+                    None,
+                )
+            })
+            .collect();
+        segments.push(make_segment(99, 10_000, 10_800, "extra", "extra", None));
+
+        let alignment = align_segments(&segments, &truth, ALIGN_TOLERANCE_MS);
+        let (_, worst_segments) = compute_metrics(&segments, &truth, &alignment);
+
+        assert_eq!(worst_segments.len(), 5);
+        assert!(
+            worst_segments
+                .iter()
+                .any(|segment| segment.segment_id == 99),
+            "top-5 worst segments should retain an extra/gapped segment"
+        );
     }
 
     // ── Confidence score tests ─────────────────────────────────────────────────

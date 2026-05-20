@@ -165,7 +165,7 @@ Normal interactive runs use the **per-user config** at:
 |----------|------|
 | 1 | `TUI_TRANSLATOR_CONFIG` environment variable — set to override all other paths |
 | 2 | `<exe folder>\config.json` — portable ZIP mode when that side-by-side file exists |
-| 3 | `%APPDATA%\tui-translator\config.json` — default per-user location |
+| 3 | `%TUI_TRANSLATOR_CONFIG_DIR%\config.json` when that directory override is set; otherwise `%APPDATA%\tui-translator\config.json` — default per-user location |
 | 4 | `<exe folder>\config.json` — fallback when the OS per-user config directory cannot be resolved |
 | 5 | `config.json` in the current working directory — last resort |
 
