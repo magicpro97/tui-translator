@@ -1164,9 +1164,7 @@ fn run_model_list() -> Result<()> {
     // If migration failed and a legacy directory is still present, surface the
     // error so the user knows manual intervention may be needed.
     if let Some(ref err) = migration_err {
-        if let Ok(legacy) =
-            crate::config::home_dir().map(|h| h.join(".tui-translator").join("models"))
-        {
+        if let Ok(legacy) = providers::local::bootstrap::legacy_model_cache_dir() {
             if legacy.exists() {
                 writeln!(
                     stdout,

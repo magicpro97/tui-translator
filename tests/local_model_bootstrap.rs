@@ -236,7 +236,11 @@ async fn no_part_file_left_after_successful_install() {
         verify_result.is_ok(),
         "final file must pass SHA-256 verification; {verify_result:?}"
     );
-    let _ = part_path; // Part file is irrelevant when final file is present and valid.
+    // The .part file must not exist after a successful install.
+    assert!(
+        !part_path.exists(),
+        ".part file must not remain after a successful install"
+    );
 }
 
 // ── Stale .part file ──────────────────────────────────────────────────────────

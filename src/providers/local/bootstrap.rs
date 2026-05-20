@@ -253,13 +253,6 @@ pub fn consent_dir() -> Result<PathBuf> {
 
 /// Return the legacy model cache: `%USERPROFILE%\.tui-translator\models`.
 ///
-/// Used only during the one-time LF-01 migration.
-///
-/// # Errors
-///
-/// Returns an error when neither `USERPROFILE` nor `HOME` is set.
-/// Return the legacy model cache: `%USERPROFILE%\.tui-translator\models`.
-///
 /// Used only by the one-time LF-01 migration; prefer [`model_cache_root`] for
 /// all new code.
 ///

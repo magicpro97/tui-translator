@@ -27,6 +27,7 @@ mod paths;
 pub const CONFIG_DIR_OVERRIDE_ENV: &str = paths::CONFIG_DIR_OVERRIDE_ENV;
 
 /// Return the user's home directory.
+#[allow(dead_code)]
 pub fn home_dir() -> Result<PathBuf> {
     paths::home_dir()
 }
