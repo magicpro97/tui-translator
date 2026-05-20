@@ -3632,7 +3632,7 @@ fn stt_color(state: &SttState) -> Color {
 
 /// Format a byte count as a human-readable string for the storage metrics row.
 ///
-/// Uses binary prefixes: `B`, `KB` (1 024 B), `MB` (1 024 KB), `GB` (1 024 MB).
+/// Uses base-2 units with compact labels: `B`, `KB` (1 024 B), `MB` (1 024 KB), `GB` (1 024 MB).
 /// Returns `"0 B"` for zero so the row is always populated.
 pub fn format_storage_bytes(bytes: u64) -> String {
     const KB: u64 = 1_024;

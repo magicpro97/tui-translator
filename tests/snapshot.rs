@@ -553,7 +553,7 @@ fn snapshot_status_strip_expanded_idle() {
         archive_sealed: false,
         audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 7);
+    let rendered = render_strip(&strip, 80, 8);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -593,7 +593,7 @@ fn snapshot_status_strip_expanded_listening() {
         archive_sealed: false,
         audio_consent: false,
     };
-    let rendered = render_strip(&strip, 80, 7);
+    let rendered = render_strip(&strip, 80, 8);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
