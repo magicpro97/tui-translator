@@ -1145,6 +1145,15 @@ where
 
 /// Print a table of all built-in Whisper models and their cache status.
 fn run_model_list() -> Result<()> {
+    // LF-01: attempt one-time migration before inspecting cache state so the
+    // table reflects the canonical location that was populated from legacy files.
+    let migration_err = providers::local::try_migrate_legacy_cache()
+        .map(|_| ())
+        .err();
+    if let Some(ref err) = migration_err {
+        tracing::warn!(%err, "LF-01 legacy cache migration failed");
+    }
+
     let cache_dir = providers::local::model_cache_dir()
         .context("failed to resolve local model cache directory")?;
 
@@ -1152,16 +1161,21 @@ fn run_model_list() -> Result<()> {
     writeln!(stdout, "Model cache: {}", cache_dir.display())
         .context("failed to write model list header")?;
 
-    // Show legacy cache path when it exists so users know migration is available.
-    if let Ok(legacy) = crate::config::home_dir().map(|h| h.join(".tui-translator").join("models"))
-    {
-        if legacy.exists() {
-            writeln!(
-                stdout,
-                "Legacy cache: {} (run --model-verify to trigger migration)",
-                legacy.display()
-            )
-            .context("failed to write legacy cache path")?;
+    // If migration failed and a legacy directory is still present, surface the
+    // error so the user knows manual intervention may be needed.
+    if let Some(ref err) = migration_err {
+        if let Ok(legacy) =
+            crate::config::home_dir().map(|h| h.join(".tui-translator").join("models"))
+        {
+            if legacy.exists() {
+                writeln!(
+                    stdout,
+                    "Legacy cache: {} (migration failed: {err}; \
+                     models may need to be moved manually)",
+                    legacy.display()
+                )
+                .context("failed to write legacy cache warning")?;
+            }
         }
     }
 
@@ -1230,6 +1244,16 @@ where
 
 /// Verify a Whisper model in the cache directory and report the result.
 fn run_model_verify(args: &ModelVerifyArgs) -> Result<()> {
+    // LF-01: best-effort migration before we resolve the cache directory so that
+    // a model moved from the legacy location is visible to the verify step.
+    if let Err(err) = providers::local::try_migrate_legacy_cache() {
+        tracing::warn!(
+            %err,
+            "LF-01 legacy cache migration failed; \
+             verification may report model-not-found if the model is still in the legacy location"
+        );
+    }
+
     let cache_dir = match &args.model_cache_dir {
         Some(p) => p.clone(),
         None => providers::local::model_cache_dir()

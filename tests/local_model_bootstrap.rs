@@ -12,8 +12,9 @@
 mod providers;
 
 use providers::local::bootstrap::{
-    migrate_models, offline_guard, verify_cached_file, write_consent_record, BootstrapError,
-    ConsentRecord, ModelBootstrapManifest, LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
+    migrate_models, offline_guard, try_migrate_legacy_cache, verify_cached_file,
+    write_consent_record, BootstrapError, ConsentRecord, ModelBootstrapManifest,
+    LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
 };
 use providers::local::{
     install_model_bundle, model_cache_dir, ModelBundleFile, ModelBundleManifest,
@@ -445,6 +446,74 @@ fn migration_does_not_overwrite_canonical_file() {
 
     let content = std::fs::read(canonical.join("model.bin")).unwrap();
     assert_eq!(content, b"canonical-content");
+}
+
+/// `try_migrate_legacy_cache` must move files from the legacy path (derived
+/// from `USERPROFILE`/`HOME`) to the canonical path (derived from
+/// `LOCAL_DATA_DIR_OVERRIDE_ENV`) and write the migration marker.
+///
+/// This is the testable entry-point that `run_model_list` and `run_model_verify`
+/// call in production; proving it works with controlled env overrides confirms
+/// the production path is wired up correctly.
+#[test]
+fn try_migrate_legacy_cache_moves_files_with_env_overrides() {
+    let tmp = TempDir::new().unwrap();
+
+    // Hold the single env-mutation mutex for the duration of the test.
+    let _lock = TEST_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+    let prev_data_dir = std::env::var_os(LOCAL_DATA_DIR_OVERRIDE_ENV);
+    let prev_userprofile = std::env::var_os("USERPROFILE");
+    let prev_home = std::env::var_os("HOME");
+
+    let canonical_base = tmp.path().join("local_data");
+    let user_home = tmp.path().join("home");
+
+    std::env::set_var(LOCAL_DATA_DIR_OVERRIDE_ENV, &canonical_base);
+    // Override both USERPROFILE (Windows) and HOME (Unix) so legacy_model_cache_dir()
+    // resolves to our temp directory on every platform.
+    std::env::set_var("USERPROFILE", &user_home);
+    std::env::set_var("HOME", &user_home);
+
+    // Create a fake model file in the legacy location.
+    let legacy = user_home.join(".tui-translator").join("models");
+    std::fs::create_dir_all(&legacy).unwrap();
+    std::fs::write(legacy.join("ggml-tiny.en.bin"), b"fake-model-bytes").unwrap();
+
+    let result = try_migrate_legacy_cache();
+
+    // Restore env before asserting so a panic doesn't leave the env dirty.
+    match prev_data_dir {
+        Some(v) => std::env::set_var(LOCAL_DATA_DIR_OVERRIDE_ENV, v),
+        None => std::env::remove_var(LOCAL_DATA_DIR_OVERRIDE_ENV),
+    }
+    match prev_userprofile {
+        Some(v) => std::env::set_var("USERPROFILE", v),
+        None => std::env::remove_var("USERPROFILE"),
+    }
+    match prev_home {
+        Some(v) => std::env::set_var("HOME", v),
+        None => std::env::remove_var("HOME"),
+    }
+
+    let moved = result.expect("try_migrate_legacy_cache must succeed");
+    assert_eq!(moved, 1, "one model file must be migrated");
+
+    assert!(
+        canonical_base
+            .join("models")
+            .join("ggml-tiny.en.bin")
+            .exists(),
+        "model file must be present at the canonical location"
+    );
+    assert!(
+        !legacy.join("ggml-tiny.en.bin").exists(),
+        "model file must be removed from the legacy location"
+    );
+    assert!(
+        canonical_base.join(".lf01-migrated").exists(),
+        "migration marker must be written after a successful migration"
+    );
 }
 
 // ── Consent record ────────────────────────────────────────────────────────────
