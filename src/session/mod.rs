@@ -607,7 +607,7 @@ async fn run_writer(mut file: File, mut rx: mpsc::Receiver<WriterMessage>, write
                     let _ = done_tx.send(Err(m));
                     continue;
                 }
-                let new_path = new_session_dir.join(segment_file_name(1));
+                let new_path = new_session_dir.join(segment_file_name(1, slot_suffix.as_deref()));
                 match OpenOptions::new()
                     .write(true)
                     .create_new(true)

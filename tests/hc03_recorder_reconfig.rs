@@ -34,6 +34,8 @@ fn test_header(session_id: &str) -> SessionHeader {
         mt_provider: "test".to_string(),
         tts_enabled: false,
         capture_device: None,
+        slot_label: None,
+        slot_id: None,
     }
 }
 
@@ -171,6 +173,37 @@ async fn seal_and_reopen_updates_handle_metadata() {
     assert_eq!(recorder.session_id(), Some("metadata-new"));
     assert_eq!(recorder.session_dir(), Some(new_dir.as_path()));
     assert_eq!(recorder.path(), Some(new_path));
+
+    recorder.shutdown().await.expect("shutdown");
+}
+
+/// Slot-suffixed recorders keep the suffix after reopening.
+#[tokio::test]
+async fn seal_and_reopen_preserves_slot_suffix_file_name() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let sessions_dir = temp.path().join("sessions");
+
+    let config = SessionRecorderConfig::enabled(&sessions_dir)
+        .with_slot_suffix("a")
+        .expect("slot suffix");
+    let mut old_header = test_header("slot-old");
+    old_header.slot_label = Some("A".to_string());
+    old_header.slot_id = Some("a".to_string());
+    let mut recorder = SessionRecorder::start(config, old_header)
+        .await
+        .expect("start recorder");
+
+    let new_dir = sessions_dir.join("slot-new");
+    let mut new_header = test_header("slot-new");
+    new_header.slot_label = Some("A".to_string());
+    new_header.slot_id = Some("a".to_string());
+    let new_path = recorder
+        .seal_and_reopen(new_dir.clone(), new_header)
+        .await
+        .expect("seal_and_reopen");
+
+    assert_eq!(new_path, new_dir.join("00001-a.jsonl"));
+    assert!(new_path.exists(), "reopened slot-suffixed file must exist");
 
     recorder.shutdown().await.expect("shutdown");
 }
