@@ -47,8 +47,13 @@ It takes about ten minutes from start to finish.
 
 - A **Windows 10 or Windows 11** computer (64-bit).
 - **Zoom** installed and working normally on that computer.
-- A **Google Cloud account** with a project that has a billing method attached.
-- A **Google Cloud API key** for that project (you create this in the Google Cloud Console — see Step 3 below).
+- A **Google Cloud account** with a project that has a billing method attached,
+  unless you configure local machine translation. Speech-to-text runs locally by
+  default, but translation defaults to Google Cloud.
+- A **Google Cloud API key** for that project, unless `mt_provider = "local"` is
+  configured in a local-MT build with the OPUS-MT bundle installed. Without a
+  Google key or local MT, the app starts in metrics-only mode and shows no live
+  subtitles.
 
 ---
 
@@ -75,7 +80,7 @@ self-contained.
    |---------|-------------|---------|
    | `source_language` | The language spoken in the meeting (BCP-47 code) | `"ja-JP"` for Japanese |
    | `target_language` | The language you want to read subtitles in (BCP-47 code) | `"vi"` for Vietnamese |
-   | `google_api_key` | Your Google Cloud API key (see Step 3) | `"AIzaSy…"` |
+   | `google_api_key` | Your Google Cloud API key (see Step 3); required for cloud translation and TTS, not needed for local STT | `"AIzaSy…"` |
    | `tts_enabled` | `false` to show text subtitles only; `true` to also hear translation | `false` |
    | `capture_device` | Leave blank for the Windows default playback device, or choose a playback device in settings | blank |
 
@@ -556,22 +561,21 @@ With this configuration, Zoom audio flows through the virtual cable and TUI Tran
 
 ---
 
-## Optional: Offline / Local Speech-to-Text Mode
+## Local Speech-to-Text — Default Behaviour
 
-By default, TUI Translator sends audio to Google Cloud for transcription and translation.
-This works well but requires a Google API key and an active internet connection during the
-meeting.
+TUI Translator uses CPU-local Whisper for speech-to-text by default.
+When the subtitle pipeline is running with `stt_provider = "local"`, no audio is
+sent to any cloud service for transcription, and no API key is needed for speech
+recognition.
 
-**Local mode** lets you transcribe speech entirely on your own computer using a small
-AI model that runs on the CPU. No audio is sent to any cloud service for speech
-recognition, and no API key is needed for transcription.
-
-> **Translation still requires Google Cloud — for now.**
-> Local speech-to-text (STT) is available now. Local machine translation (MT)
-> is planned for a future release. Until then, translation still goes through
-> Google Cloud Translation and requires a Google API key and an internet connection.
-> If you do not supply an API key, the application shows a provider error and
-> keeps audio capture in metrics-only mode instead of producing subtitles.
+> **Translation still uses Google Cloud by default.**
+> Local speech-to-text (STT) is the default (`stt_provider = "local"`).
+> Machine translation defaults to `mt_provider = "google"` and requires a
+> Google API key and an internet connection for subtitle output.  To run
+> translation fully offline, set `mt_provider = "local"` and install the
+> OPUS-MT ONNX bundle.  Without a Google API key and without local MT
+> configured, the application starts in metrics-only mode and shows no live
+> subtitles.
 
 ---
 
@@ -643,7 +647,7 @@ Download this model file:
    the address bar):
 
    ```text
-   %USERPROFILE%\.tui-translator\models
+   %LOCALAPPDATA%\tui-translator\models
    ```
 
    If the `models` folder does not exist, create it now.
@@ -652,7 +656,7 @@ Download this model file:
    should look like this example:
 
    ```text
-   C:\Users\YourName\.tui-translator\models\ggml-tiny.bin
+   C:\Users\YourName\AppData\Local\tui-translator\models\ggml-tiny.bin
    ```
 
    Replace `YourName` with your Windows user name.
@@ -666,7 +670,7 @@ the download yourself before running the application, open **PowerShell** and
 run this command (adjust the file name if you downloaded a different model):
 
 ```powershell
-Get-FileHash "$env:USERPROFILE\.tui-translator\models\ggml-tiny.bin" -Algorithm SHA256
+Get-FileHash "$env:LOCALAPPDATA\tui-translator\models\ggml-tiny.bin" -Algorithm SHA256
 ```
 
 The `Hash` value in the output must match exactly:
@@ -696,7 +700,7 @@ Change or add the following settings:
 ```json
 {
   "stt_provider": "local",
-  "stt_fallback_policy": "none",
+  "stt_fallback_policy": "google-when-keyed",
   "cpu_budget_pct": 80.0,
   "ram_budget_mb": 6144
 }
@@ -706,16 +710,17 @@ What each setting does:
 
 | Setting | Recommended value | Purpose |
 |---------|------------------|---------|
-| `stt_provider` | `"local"` | Use the on-device Whisper model instead of Google Cloud STT |
-| `stt_fallback_policy` | `"none"` | Stay on local STT; or set `"local"` to auto-switch if Google auth fails |
+| `stt_provider` | `"local"` | Use the on-device Whisper model (already the default) |
+| `stt_fallback_policy` | `"google-when-keyed"` | `"google-when-keyed"` (the default): on the first permanent local model error, switches to cloud speech-to-text when a cloud API key is set; use `"none"` to stay on local speech-to-text always |
 | `cpu_budget_pct` | `80.0` | Pause recognition when your CPU is already above 80% — this protects Zoom call quality |
 | `ram_budget_mb` | `6144` | Show a status bar warning if the application uses more than 6 GB of RAM |
 
-> **Using local STT as a fallback only?**
-> If you want to keep Google STT normally and only switch to local STT when
-> your Google API key fails, leave `stt_provider` as `"google"` and set
-> `stt_fallback_policy` to `"local"`. The application will switch over
-> automatically on the first authentication error.
+> **Using Google STT as a fallback only?**
+> The default `stt_fallback_policy = "google-when-keyed"` already handles this:
+> if the local model file is missing or corrupted and `google_api_key` is set,
+> the application falls back to Google STT automatically.  Set
+> `stt_fallback_policy = "none"` to disable any automatic fallback and keep
+> local STT always active.
 
 > **Translation:** Keep `mt_provider` as `"google"` (the default) and supply
 > your Google API key in `google_api_key` to receive translated subtitles.
@@ -754,14 +759,13 @@ What each setting does:
 
 | Feature | Local mode | Still needs Google |
 |---------|:----------:|:-----------------:|
-| Speech-to-text | ✅ Runs on your CPU | — |
-| Machine translation | ❌ Not yet available locally | ✅ Google API key required |
+| Speech-to-text | ✅ Runs on your CPU (default) | — |
+| Machine translation | ✅ Available with `mt_provider = "local"` + OPUS-MT bundle | ✅ Google API key required when `mt_provider = "google"` (default) |
 | Text-to-speech (optional, `tts_enabled: true`) | ❌ Not yet available locally | ✅ Google API key required |
 
-Local machine translation is planned for a future release. Until it ships,
-`mt_provider` only accepts `"google"`. Setting it to `"local"` is not
-supported by release builds and will show a provider error until you switch it
-back to `"google"`.
+Local machine translation is available via `mt_provider = "local"` (LF-04).
+This requires the OPUS-MT ONNX bundle to be installed separately.  By default,
+`mt_provider = "google"` is used and requires a Google API key.
 
 ---
 
@@ -769,13 +773,13 @@ back to `"google"`.
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `model 'tiny' not found` error on startup | Model file missing or in the wrong folder | Check the file is at `%USERPROFILE%\.tui-translator\models\ggml-tiny.bin` |
+| `model 'tiny' not found` error on startup | Model file missing or in the wrong folder | Check the file is at `%LOCALAPPDATA%\tui-translator\models\ggml-tiny.bin` |
 | `checksum mismatch` error | Corrupted or partial download | Delete the `.bin` file and download it again |
 | `local-stt feature not available` message | Your build does not include local STT | Download a release that lists `local-stt` in the release notes |
 | Subtitles lag or pile up | CPU cannot keep up with local STT | Reduce other CPU-heavy apps or switch back to `stt_provider: "google"` |
 | Very high CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to `70.0` or `80.0` |
 | RAM warning in the status bar | Model + Zoom are using too much RAM | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or use `stt_provider: "google"` |
-| No translation output | Local MT is not yet implemented | Keep `mt_provider: "google"` and supply a valid Google API key |
+| No translation output | No translation provider is available | Keep `mt_provider: "google"` and supply a valid Google API key, or install the OPUS-MT bundle and set `mt_provider: "local"` |
 
 > **Model license note:** The GGML Whisper files are downloaded from the
 > external whisper.cpp/Hugging Face source, not from this repository. Review the
@@ -857,8 +861,8 @@ first and uses the newest one with a matching WAV stem:
 
 ```
 eval_session --latest ^
-             --sessions-dir "%APPDATA%\tui-translator\sessions" ^
-             --audio-dir "%APPDATA%\tui-translator\audio-archive" ^
+             --sessions-dir "%LOCALAPPDATA%\tui-translator\sessions" ^
+             --audio-dir "%LOCALAPPDATA%\tui-translator\audio-archive" ^
              --truth "truth\ja_sentences.tsv" ^
              --output-dir "target\eval" ^
              --min-confidence 0.90

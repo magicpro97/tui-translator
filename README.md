@@ -46,9 +46,10 @@ virtual microphone so meeting apps can receive the AI-translated voice.
 
 - **Windows 10 or Windows 11** (64-bit)
 - A terminal emulator — Windows Terminal (recommended), PowerShell, or cmd
-- A **Google Cloud API key** with Speech-to-Text and Translation enabled
-  (required from Phase 2 onwards)
-- An internet connection during the meeting
+- A **Google Cloud API key** with Translation (and optionally TTS) enabled —
+  needed for cloud translation; speech-to-text runs locally by default
+  and does not require a key or internet connection
+- An internet connection is only required while cloud translation or TTS is active
 
 ---
 
@@ -85,16 +86,19 @@ The packaged flow is documented in **[USAGE.md](USAGE.md)**.
 > First launch opens an onboarding flow and writes user config under
 > `%APPDATA%\tui-translator\config.json`.
 > The application captures Zoom audio through WASAPI loopback,
-> uses Google STT/MT/TTS when configured, and exposes the full TUI controls,
-> settings overlay, and metrics panels.
-> A valid Google Cloud API key and an active Windows playback device are
-> required for live subtitle generation.
+> uses local Whisper for speech-to-text by default and Google Translation
+> by default, and exposes the full TUI controls, settings overlay, and metrics
+> panels.  A Google Cloud API key is needed for translation (and TTS when
+> enabled); local STT runs without a key once `ggml-tiny.bin` is placed in
+> `%LOCALAPPDATA%\tui-translator\models\`.
 > Layer 5 human-acceptance (issues #115–#122) is not yet complete;
 > the release is marked *pre-release* on GitHub accordingly.
 
 If you want to try the current build from source:
 
 1. Build the project from source (see [Building from source](#building-from-source)).
+   Use `--features local-stt` if you want the local-first STT path in a source
+   build.
 2. Run the generated executable:
 
    ```
@@ -103,9 +107,12 @@ If you want to try the current build from source:
 
 3. The terminal window opens showing the subtitle area, audio-level bar,
    and status strip. The current WASAPI device name appears in the audio bar.
-4. If `config.json` does not contain a valid Google API key, the app still
-   launches and renders the TUI shell, but cloud transcription/translation
-   requests will not succeed.
+4. Local STT (`stt_provider: "local"`) does not need a Google API key once the
+   executable includes the `local-stt` feature and the model is installed.
+   Because translation defaults to `mt_provider: "google"`, the full subtitle
+   pipeline still needs either a Google API key or `mt_provider: "local"` in a
+   local-MT build with the OPUS-MT bundle installed. Without either translation
+   provider, the app opens in metrics-only mode and shows no live subtitles.
 5. Press `q` or `Ctrl+C` to close cleanly and show the session summary.
 
 ### Keyboard controls
@@ -181,9 +188,9 @@ before launch:
 {
   "source_language": "ja-JP",      // language spoken in the meeting (BCP-47)
   "target_language": "vi",         // language you want subtitles in (BCP-47)
-  "google_api_key": "YOUR_KEY",    // from Google Cloud Console
+  "google_api_key": "YOUR_KEY",    // optional for local STT; required for cloud translation and TTS
   "tts_enabled": false,            // set to true to hear translated audio
-  "cost_warning_usd": 1.00         // show a warning when session cost exceeds this
+  "cost_warning_usd": 0.0          // cost warning threshold in USD; 0 disables the warning
 }
 ```
 
@@ -195,44 +202,43 @@ Never put your real API key in `config.example.json`.
 
 ## CPU-only / offline mode
 
-> **This is an opt-in feature.** The default mode uses Google Cloud STT and
-> Translation and requires a Google API key and an internet connection. Offline
-> mode is an alternative for situations where a cloud key is unavailable or
-> undesirable.
+> **Local STT is the default.** TUI Translator uses CPU-local Whisper for
+> speech-to-text out of the box — no Google API key or internet connection is
+> needed for transcription in release builds that include the local-STT feature.
+> Translation uses Google Cloud by default and requires a Google API key for the
+> full subtitle pipeline.  Local machine translation is available when a
+> local-MT build is used and `mt_provider = "local"` is configured with the
+> OPUS-MT model installed.
 
-### When to use offline mode
+### When local STT is especially useful
 
-Use offline mode when:
+Local STT is always active by default.  It is particularly valuable when:
 
-- You are joining a Zoom or Microsoft Teams meeting **as a guest** and neither a
-  host account nor host-side translation controls are available to you.
 - You do not have a Google Cloud API key, or you prefer not to send audio to an
   external service.
 - Your internet connection is unreliable during the meeting.
-- You want local Japanese speech recognition now, with a migration path toward
-  fully local Japanese-to-Vietnamese captions as local MT lands.
+- You want zero per-session STT billing while keeping cloud translation.
 
-No Zoom host account or host privileges are needed. After models are downloaded,
-local STT can run without internet; translation still uses Google until local MT
-is implemented.
+No Zoom host account or host privileges are needed.  Local STT runs without
+internet after the model is downloaded; translation uses Google Cloud by default.
 
 ### Cloud vs local: quick comparison
 
-| Aspect | Google Cloud (default) | CPU-only offline (opt-in) |
-|--------|----------------------|--------------------------|
-| API key required | Yes | No |
-| Internet at runtime | Yes | STT: no after model download; MT: yes until local MT lands |
-| STT quality | High | Good — varies by model and hardware |
-| MT quality | High | Moderate (OPUS-MT, planned Phase 7) |
-| Setup | API key + billing | One-time model download |
-| Extra RAM | Minimal | ~300–600 MB (STT model) |
-| Extra CPU | Minimal | Moderate (INT8 inference on CPU) |
-| Cost per session | Per-API-call billing | Free after download |
+| Aspect | CPU-local Whisper STT (default) | Google Cloud speech-to-text (opt-in) |
+|--------|--------------------------------|--------------------------------------|
+| API key required for STT | No | Yes |
+| Internet for STT | No (after model download) | Yes |
+| STT quality | Good — varies by model and hardware | High |
+| MT (translation) | Google Cloud by default; local OPUS-MT when configured | Google Cloud |
+| Setup | One-time model download | API key + billing |
+| Extra RAM | ~300 MB (STT model) | Minimal |
+| Extra CPU | Moderate (INT8 inference on CPU) | Minimal |
+| STT cost per session | Free after download | Per-API-call billing |
 
-> **Note:** Local machine translation (MT) is planned for a future release
-> (Phase 7 / issue #217). Until then, offline STT is available but translation
-> still requires `mt_provider = "google"` and a Google API key, or translation
-> output must be omitted.
+> **Local MT:** `mt_provider = "local"` is available (LF-04) but not the default.
+> Set `mt_provider = "local"` and install the OPUS-MT ONNX bundle to run
+> translation entirely on your CPU.  Without that configuration, translation
+> uses `mt_provider = "google"` and requires a Google API key.
 
 ### Recommended model tier
 
@@ -272,10 +278,10 @@ they are not selected by the app today.
    Place the downloaded file in the per-user model cache directory:
 
    ```text
-   %USERPROFILE%\.tui-translator\models\
+   %LOCALAPPDATA%\tui-translator\models\
    ```
 
-   Example result: `C:\Users\YourName\.tui-translator\models\ggml-tiny.bin`
+   Example result: `C:\Users\YourName\AppData\Local\tui-translator\models\ggml-tiny.bin`
 
    The application verifies the SHA-256 checksum on startup and will report a
    clear error if the file is missing or corrupted. See `USAGE.md` for the
@@ -285,17 +291,17 @@ they are not selected by the app today.
 
    ```jsonc
    {
-     "stt_provider": "local",         // use CPU-local Whisper instead of Google STT
-     "stt_fallback_policy": "none",   // or "local" to auto-switch if Google auth fails
-     "cpu_budget_pct": 80.0,          // skip inference above this CPU % (protects Zoom/Teams)
-     "ram_budget_mb": 6144            // warn in the status bar when process RAM exceeds this MiB
+     "stt_provider": "local",                  // CPU-local Whisper (already the default)
+     "stt_fallback_policy": "google-when-keyed", // fall back to Google STT on first local error when key is set
+     "cpu_budget_pct": 80.0,                   // skip inference above this CPU % (protects Zoom/Teams)
+     "ram_budget_mb": 6144                     // warn in the status bar when process RAM exceeds this MiB
    }
    ```
 
 | Field | Values | Purpose |
 |-------|--------|---------|
-| `stt_provider` | `"google"` (default) / `"local"` | Select Google Cloud STT or CPU-local Whisper |
-| `stt_fallback_policy` | `"none"` (default) / `"local"` | `"local"` auto-switches to Whisper on Google auth error |
+| `stt_provider` | `"local"` (default) / `"google"` | Select CPU-local Whisper or Google Cloud speech-to-text |
+| `stt_fallback_policy` | `"google-when-keyed"` (default) / `"none"` | On a permanent local model error, `"google-when-keyed"` switches to cloud speech-to-text when `google_api_key` is set; `"none"` halts |
 | `cpu_budget_pct` | `0.0` (off) or a percentage | CPU ceiling; inference skips above this value to protect co-running apps |
 | `ram_budget_mb` | `0` (off) or MiB | Status bar warns when process RAM exceeds this value |
 
@@ -305,20 +311,20 @@ they are not selected by the app today.
   from a single high-end host. A slower CPU will have higher real-time factors
   (RTF). If RTF exceeds 1.0 the model cannot keep up with live audio and chunks
   will queue up.
-- **Local MT is not yet available.** Translation still requires
-  `mt_provider = "google"` and a valid API key. OPUS-MT (`mt_provider = "local"`)
-  is planned for Phase 7.
+- **Translation uses Google Cloud by default.** `mt_provider = "google"` is the
+  default and requires a valid API key.  Set `mt_provider = "local"` and install
+  the OPUS-MT ONNX bundle to run translation offline (LF-04 / issue #372).
 - **8 GB machines may hit swap** if Zoom, local STT, and local MT all run at
   once. Monitor RAM in Task Manager; switch to a smaller STT model or back to
   `stt_provider = "google"` if headroom is tight.
 - **One-time STT model download required.** Model files must be downloaded
   manually from Hugging Face and placed in
-  `%USERPROFILE%\.tui-translator\models\` before enabling local STT. The
+  `%LOCALAPPDATA%\tui-translator\models\` before local STT starts. The
   application verifies the SHA-256 checksum on startup and reports a clear
   error if the file is missing or corrupted. A dedicated model-download
   command (issue #236) is planned for a future release. After the model is
-  in place, local STT runs without internet; translation still requires
-  Google until local MT is implemented.
+  in place, local STT runs without internet; translation defaults to Google
+  unless `mt_provider = "local"` is configured.
 
 ### Troubleshooting
 
@@ -328,7 +334,7 @@ they are not selected by the app today.
 | High CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to 70–80 to throttle inference |
 | RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or switch back to Google STT |
 | "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
-| No translation output | Local MT not yet implemented | Use `mt_provider = "google"` with a valid Google API key |
+| No translation output | No translation provider is available | Use `mt_provider = "google"` with a valid Google API key, or install the OPUS-MT bundle and set `mt_provider = "local"` |
 
 ---
 
@@ -361,6 +367,13 @@ tui-translator/
 | 3 | Translation via Google | ✅ Done |
 | 4 | Full v1 — cost tracking, live controls, TTS | ✅ Done |
 | 5 | Post-v1 validation gates | ⏳ In progress |
+| LF-01 | Local Whisper STT provider | ✅ Done |
+| LF-02 | Local-first onboarding and model download | ✅ Done |
+| LF-03 | Local-first config defaults (stt_provider=local, fallback=google-when-keyed) | ✅ Done |
+| LF-04 | Local OPUS-MT translation provider | ✅ Done |
+| LF-05 | Session-store and audio-archive retention/caps | ✅ Done |
+| LF-06 | Dual-slot mode and advanced pipeline config | ✅ Done |
+| LF-07 | Docs and config example release gate (this release) | ✅ Done |
 | 6 | Azure and Ollama provider support | 🔲 Planned |
 
 Full details: [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadmap.md)
