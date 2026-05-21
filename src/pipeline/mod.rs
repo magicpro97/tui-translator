@@ -44,7 +44,8 @@ use tokio::sync::mpsc;
 use crate::{
     audio::{AudioChunk, VadConfig, VadDecision, VadGate},
     metrics::{
-        CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttState,
+        CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttSource,
+        SttState,
     },
     pipeline::cpu_gate::CpuGate,
     providers::{MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, TtsProvider},
@@ -342,6 +343,79 @@ pub struct OrchestratorContext {
 
     /// Optional transcript JSONL recorder. Disabled recorders do not create files.
     pub session_recorder: SessionRecorder,
+}
+
+// ── Per-slot orchestrator state (DM-03, issue #379) ───────────────────────────
+
+/// Which slot an orchestrator pipeline is serving.
+///
+/// In single-slot (legacy) mode the active slot is always [`SlotId::A`] and
+/// [`SlotId::B`] is never constructed.  In dual-slot mode each slot runs an
+/// independent `run_orchestrator` task with its own `SlotOrchestratorState`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SlotId {
+    /// Primary slot (always active; maps to the legacy single-slot pipeline).
+    #[default]
+    A,
+    /// Secondary slot (only active in dual-slot mode).
+    B,
+}
+
+impl SlotId {
+    /// Short ASCII label for tracing spans and status messages.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+        }
+    }
+}
+
+/// Per-slot mutable status state shared between an orchestrator task and the UI.
+///
+/// Each field is an `Arc`-wrapped value so that both the orchestrator task and
+/// future UI rendering code (DM-04) can hold independent references.
+///
+/// **Per-slot** (one instance per active slot, never shared across slots):
+/// `stt_state`, `subtitle_pane`, `session_metrics`, `pipeline_error_msg`,
+/// `auth_error_banner`, `pipeline_halted`, `stt_source`.
+///
+/// **Shared** fields (`audio_level`, `paused`, `shutdown`, `cost_counter`,
+/// aggregate metrics/gates) are **not** stored here; the caller passes them
+/// through the `OrchestratorContext` directly.
+pub struct SlotOrchestratorState {
+    /// Which slot this state belongs to.
+    pub slot_id: SlotId,
+    /// Current STT engine state for this slot.
+    pub stt_state: Arc<Mutex<SttState>>,
+    /// Subtitle display pane for this slot.
+    pub subtitle_pane: Arc<Mutex<SubtitlePane>>,
+    /// Accumulated session metrics for this slot.
+    pub session_metrics: Arc<Mutex<SessionMetrics>>,
+    /// Most recent pipeline error message for this slot, if any.
+    pub pipeline_error_msg: Arc<Mutex<Option<String>>>,
+    /// Auth-error banner for this slot; set on `AuthError`, cleared only on restart.
+    pub auth_error_banner: Arc<Mutex<Option<String>>>,
+    /// `true` while this slot's pipeline is halted due to an auth error.
+    pub pipeline_halted: Arc<AtomicBool>,
+    /// Which STT provider backend is currently active for this slot.
+    pub stt_source: Arc<Mutex<SttSource>>,
+}
+
+impl SlotOrchestratorState {
+    /// Construct a fresh, idle state for the given slot.
+    pub fn new(slot_id: SlotId) -> Self {
+        Self {
+            slot_id,
+            stt_state: Arc::new(Mutex::new(SttState::default())),
+            subtitle_pane: Arc::new(Mutex::new(SubtitlePane::new())),
+            session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
+            pipeline_error_msg: Arc::new(Mutex::new(None)),
+            auth_error_banner: Arc::new(Mutex::new(None)),
+            pipeline_halted: Arc::new(AtomicBool::new(false)),
+            stt_source: Arc::new(Mutex::new(SttSource::default())),
+        }
+    }
 }
 
 // ── Orchestrator task ─────────────────────────────────────────────────────────
