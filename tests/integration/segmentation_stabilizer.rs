@@ -276,6 +276,8 @@ async fn final_short_segment_flushes_on_shutdown() {
         mt_provider: "mock".to_string(),
         tts_enabled: false,
         capture_device: None,
+        slot_label: None,
+        slot_id: None,
     };
     let recorder = SessionRecorder::start(
         crate::session::SessionRecorderConfig::enabled(temp.path().join("sessions")),

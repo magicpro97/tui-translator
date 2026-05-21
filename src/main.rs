@@ -720,12 +720,16 @@ fn build_runtime_tts_provider(
         .map(RuntimeTtsProvider::Google)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_session_recorder(
     rt: &tokio::runtime::Runtime,
     cfg: &config::AppConfig,
     status_slot: &Arc<Mutex<Option<String>>>,
     started_at_unix_ms: u64,
     session_id: &str,
+    slot_suffix: Option<&str>,
+    slot_label: Option<&str>,
+    apply_retention: bool,
 ) -> session::SessionRecorder {
     if !cfg.session_store.enabled {
         return session::SessionRecorder::disabled();
@@ -759,16 +763,37 @@ fn start_session_recorder(
         mt_provider: cfg.mt_provider.clone(),
         tts_enabled: cfg.tts_enabled,
         capture_device: cfg.capture_device.clone(),
+        slot_label: slot_label.map(str::to_string),
+        slot_id: slot_suffix.map(str::to_string),
     };
 
-    match rt.block_on(session::SessionRecorder::start(
+    // For the primary slot (or single-slot): prune to max_sessions.
+    // For secondary slots: use no max_sessions cap to avoid double-pruning the
+    // shared session root (the primary recorder already handled it).
+    let recorder_config = if apply_retention {
         session::SessionRecorderConfig::enabled_with_max_sessions(
             directory.clone(),
             cfg.session_store.max_sessions,
         )
-        .with_per_session_bytes_cap(cfg.session_store.per_session_bytes_cap),
-        header,
-    )) {
+    } else {
+        session::SessionRecorderConfig::enabled(directory.clone())
+    };
+    let recorder_config =
+        recorder_config.with_per_session_bytes_cap(cfg.session_store.per_session_bytes_cap);
+    let recorder_config = match slot_suffix {
+        None => recorder_config,
+        Some(sfx) => match recorder_config.with_slot_suffix(sfx) {
+            Ok(c) => c,
+            Err(err) => {
+                let msg = session_recording_disabled_status(&err);
+                tracing::warn!("session recording disabled (invalid slot suffix): {err:#}");
+                *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+                return session::SessionRecorder::disabled();
+            }
+        },
+    };
+
+    match rt.block_on(session::SessionRecorder::start(recorder_config, header)) {
         Ok(recorder) => {
             if let Some(path) = recorder.path() {
                 tracing::info!(
@@ -778,13 +803,15 @@ fn start_session_recorder(
                 );
             }
             // LF-06: enforce total cap + TTL on transcript root at session start.
-            apply_storage_retention(
-                &directory,
-                cfg.session_store.total_bytes_cap,
-                cfg.session_store.retention_days,
-                "transcripts",
-                Some(session_id),
-            );
+            if apply_retention {
+                apply_storage_retention(
+                    &directory,
+                    cfg.session_store.total_bytes_cap,
+                    cfg.session_store.retention_days,
+                    "transcripts",
+                    Some(session_id),
+                );
+            }
             recorder
         }
         Err(err) => {
@@ -2396,12 +2423,21 @@ fn main() -> Result<()> {
                         );
                     }
                 };
+                let (recorder_slot_suffix, recorder_slot_label) =
+                    if slot_mode == config::SlotMode::Dual {
+                        (Some("a"), Some("A"))
+                    } else {
+                        (None, None)
+                    };
                 let session_recorder = start_session_recorder(
                     &rt,
                     &cfg_snapshot,
                     &state.pipeline_error_msg,
                     started_at_unix_ms,
                     &session_id,
+                    recorder_slot_suffix,
+                    recorder_slot_label,
+                    true,
                 );
                 log_measurement_mode_status(
                     &session_id,
@@ -2592,9 +2628,21 @@ fn main() -> Result<()> {
                                             ),
                                         ),
                                     )),
-                                    // Session recording for slot B is disabled in DM-03;
-                                    // DM-05 will wire per-slot recorders.
-                                    session_recorder: session::SessionRecorder::disabled(),
+                                    // DM-05: start per-slot session recorder for slot B.
+                                    // Uses the same session_id and directory as slot A
+                                    // (same per-session subdir) but writes to 00001-b.jsonl.
+                                    // apply_retention=false because slot A's recorder already
+                                    // ran the storage-cap/TTL sweep.
+                                    session_recorder: start_session_recorder(
+                                        &rt,
+                                        &cfg_snapshot,
+                                        &slot_b_state.pipeline_error_msg,
+                                        started_at_unix_ms,
+                                        &session_id,
+                                        Some("b"),
+                                        Some("B"),
+                                        false,
+                                    ),
                                 };
                                 orchestrator_join_b = Some(rt.spawn(pipeline::run_orchestrator(
                                     slot_b_rx,

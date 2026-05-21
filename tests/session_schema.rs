@@ -102,6 +102,8 @@ fn records_round_trip_with_expected_tagging_and_optional_omission() {
         mt_provider: "google".to_string(),
         tts_enabled: false,
         capture_device: None,
+        slot_label: None,
+        slot_id: None,
     });
     let encoded_header = serde_json::to_string(&header).expect("header must serialize");
 
