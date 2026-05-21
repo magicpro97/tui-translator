@@ -87,7 +87,10 @@ pub struct SessionHeader {
     /// Absent in single-slot sessions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_label: Option<String>,
-    /// Machine-readable slot identifier for dual-slot sessions ("a" or "b").
+    /// Machine-readable slot identifier for dual-slot sessions.
+    ///
+    /// This matches the lowercase filename suffix used by the recorder
+    /// (for example, built-in dual mode uses `"a"` and `"b"`).
     /// Absent in single-slot sessions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot_id: Option<String>,
@@ -604,7 +607,7 @@ fn segment_file_name(segment_index: u32, slot_suffix: Option<&str>) -> String {
 
 /// Validate a slot suffix to prevent path traversal and filesystem collisions.
 ///
-/// A valid suffix is 1–8 ASCII alphanumeric characters (e.g. `"a"`, `"b"`).
+/// A valid suffix is 1-8 lowercase ASCII alphanumeric characters (e.g. `"a"`, `"b"`).
 fn validate_slot_suffix(suffix: &str) -> anyhow::Result<()> {
     if suffix.is_empty() {
         anyhow::bail!("slot suffix must not be empty");
@@ -612,8 +615,13 @@ fn validate_slot_suffix(suffix: &str) -> anyhow::Result<()> {
     if suffix.len() > 8 {
         anyhow::bail!("slot suffix too long (max 8 chars): {suffix:?}");
     }
-    if !suffix.chars().all(|c| c.is_ascii_alphanumeric()) {
-        anyhow::bail!("slot suffix must contain only ASCII alphanumeric characters: {suffix:?}");
+    if !suffix
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+    {
+        anyhow::bail!(
+            "slot suffix must contain only lowercase ASCII alphanumeric characters: {suffix:?}"
+        );
     }
     Ok(())
 }
@@ -1712,6 +1720,7 @@ mod tests {
     #[test]
     fn validate_slot_suffix_rejects_invalid_values() {
         assert!(validate_slot_suffix("").is_err());
+        assert!(validate_slot_suffix("A").is_err());
         assert!(validate_slot_suffix("a/b").is_err());
         assert!(validate_slot_suffix("a-b").is_err());
         assert!(validate_slot_suffix("../x").is_err());
