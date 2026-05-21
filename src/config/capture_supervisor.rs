@@ -1,18 +1,16 @@
 //! HC-03: Capture stream change classifier.
 //!
 //! Classifies `capture_device` / `audio_source` config changes and returns a
-//! typed outcome so the caller can decide whether a capture restart is needed.
+//! typed outcome so the caller can route valid capture changes to
+//! `CaptureRouter` hot-swap without restarting the application.
 //!
 //! The actual `CaptureStreamSupervisor` (lifecycle + gap metrics) lives in
 //! `crate::audio::supervisor` to keep audio types out of this module.
 //!
-//! # BLOCKED / SPLIT_REQUIRED — orchestrator wiring
-//!
-//! Full hot-swap of the running orchestrator's audio receiver is **not
-//! implemented**.  `run_orchestrator(mut audio_rx: mpsc::Receiver<AudioChunk>, …)`
-//! owns the receiver by value.  Wiring the live swap requires either a
-//! `watch::Sender<mpsc::Receiver<AudioChunk>>` in `OrchestratorContext` or a
-//! full orchestrator restart — both exceed HC-03 scope.
+//! The live runtime keeps the orchestrator receiver stable by placing
+//! `crate::audio::router::CaptureRouter` before fanout.  This module remains
+//! config-only: it validates and describes capture changes without depending on
+//! audio types.
 
 #![allow(dead_code)]
 
@@ -23,7 +21,7 @@ use super::AppConfig;
 pub enum CaptureChangeOutcome {
     /// No capture-relevant fields changed; hot-reload can proceed unchanged.
     Unchanged,
-    /// The capture device or audio source changed and a capture restart is required.
+    /// The capture device or audio source changed and the capture stream must be swapped.
     NeedsCaptureRestart {
         /// Human-readable description of what changed.  Safe to surface in UI.
         reason: String,
@@ -86,7 +84,7 @@ pub fn classify_capture_change(old: &AppConfig, new: &AppConfig) -> CaptureChang
         parts.push("audio_file_path");
     }
     let reason = format!(
-        "capture config changed ({}); capture restart required",
+        "capture config changed ({}); capture hot-swap required",
         parts.join(", ")
     );
     CaptureChangeOutcome::NeedsCaptureRestart {
@@ -130,7 +128,7 @@ mod tests {
         assert_eq!(
             classify_capture_change(&old, &new),
             CaptureChangeOutcome::NeedsCaptureRestart {
-                reason: "capture config changed (capture_device); capture restart required"
+                reason: "capture config changed (capture_device); capture hot-swap required"
                     .to_string(),
                 new_device: Some("HDMI Output".to_string()),
             }

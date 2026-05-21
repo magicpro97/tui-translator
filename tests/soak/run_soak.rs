@@ -15,6 +15,11 @@
 //! Options:
 //!   --hours <N>          Total run duration in hours (default: 4)
 //!   --sample-mins <N>    Metric sample interval in minutes (default: 5)
+//!   --hot-swap-every-mins <N>
+//!                        Rewrite the soak config every N minutes to alternate
+//!                        file-source paths and exercise CaptureRouter hot-swap
+//!                        (default: 5; full mode only)
+//!   --no-hot-swap        Disable config-driven hot-swap events
 //!   --output <path>      Report output path
 //!                        (default: verification-evidence/<YYYY-MM-DD>/soak-report.json)
 //!   --bin <path>         Path to the tui-translator binary
@@ -118,6 +123,11 @@ Options:
                        Must be a finite positive number.
   --sample-mins <N>    Metric sample interval in minutes (default: 5)
                        Must be a finite positive number.
+  --hot-swap-every-mins <N>
+                       Trigger file-source hot-swap every N minutes by
+                       alternating audio_file_path in the soak config
+                       (default: 5; full mode only).
+  --no-hot-swap        Disable HC-03B hot-swap cycles.
   --output <path>      Report output path
                        (default: verification-evidence/<YYYY-MM-DD>/soak-report.json)
   --bin <path>         Path to the tui-translator binary
@@ -134,6 +144,7 @@ struct Args {
     output: PathBuf,
     bin_path: Option<PathBuf>,
     dry_run: bool,
+    hot_swap_every_mins: Option<f64>,
 }
 
 impl Args {
@@ -148,6 +159,7 @@ impl Args {
         ));
         let mut bin_path: Option<PathBuf> = None;
         let mut dry_run = false;
+        let mut hot_swap_every_mins = Some(5.0f64);
 
         let mut i = 0;
         while i < raw.len() {
@@ -189,6 +201,20 @@ impl Args {
                 "--dry-run" => {
                     dry_run = true;
                 }
+                "--hot-swap-every-mins" => {
+                    i += 1;
+                    hot_swap_every_mins = Some(
+                        raw.get(i)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("--hot-swap-every-mins requires a value")
+                            })?
+                            .parse()
+                            .context("--hot-swap-every-mins must be a number")?,
+                    );
+                }
+                "--no-hot-swap" => {
+                    hot_swap_every_mins = None;
+                }
                 unknown => {
                     bail!("unknown argument: {unknown}\nRun with --help for usage.");
                 }
@@ -199,6 +225,9 @@ impl Args {
         // Validate numeric arguments: must be finite and positive.
         validate_positive_finite(hours, "--hours")?;
         validate_positive_finite(sample_mins, "--sample-mins")?;
+        if let Some(mins) = hot_swap_every_mins {
+            validate_positive_finite(mins, "--hot-swap-every-mins")?;
+        }
 
         Ok(Args {
             hours,
@@ -206,6 +235,7 @@ impl Args {
             output,
             bin_path,
             dry_run,
+            hot_swap_every_mins,
         })
     }
 }
@@ -265,6 +295,10 @@ pub struct MetricSample {
     ///
     /// `None` only in dry-run or before the child writes its first snapshot.
     pub estimated_cost_usd: Option<f64>,
+    /// Successful capture hot-swaps completed by `CaptureRouter`.
+    pub capture_swap_count: Option<u64>,
+    /// Chunks dropped while draining old capture streams during hot-swap.
+    pub capture_swap_drops: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -274,6 +308,10 @@ struct AppMetricsSnapshot {
     e2e_latency_ms: Option<u64>,
     total_chunks: u64,
     dropped_chunks: u64,
+    #[serde(default)]
+    capture_swap_count: u64,
+    #[serde(default)]
+    capture_swap_drops: u64,
 }
 
 /// Outcome of the 30-second network-disconnect test.
@@ -290,6 +328,25 @@ pub struct NetworkDisconnectTest {
     /// Whether the child process was still alive after reconnection.
     pub process_recovered: Option<bool>,
     /// Error or informational note (e.g. insufficient privileges).
+    pub note: Option<String>,
+}
+
+/// One config-driven HC-03B hot-swap attempt during a full soak.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotSwapEvent {
+    /// Elapsed seconds from run start when the config rewrite was triggered.
+    pub triggered_at_elapsed_secs: u64,
+    /// Target `audio_file_path` written to the soak config.
+    pub target_audio_file_path: String,
+    /// Router swap count observed before rewriting config.
+    pub swap_count_before: Option<u64>,
+    /// Router swap count observed after waiting for the app metrics snapshot.
+    pub swap_count_after: Option<u64>,
+    /// Router drain-drop counter observed after the swap attempt.
+    pub capture_swap_drops_after: Option<u64>,
+    /// Whether `swap_count_after > swap_count_before` was observed.
+    pub observed: bool,
+    /// Error or informational note.
     pub note: Option<String>,
 }
 
@@ -321,6 +378,12 @@ pub struct SoakReport {
     pub final_subtitle_pair_count: Option<u64>,
     /// Maximum subtitle pair count observed across all samples.
     pub max_subtitle_pair_count: Option<u64>,
+    /// Final capture-router successful hot-swap count.
+    pub final_capture_swap_count: Option<u64>,
+    /// Final capture-router drain/drop count.
+    pub final_capture_swap_drops: Option<u64>,
+    /// Config-driven file-source hot-swap attempts made during this soak.
+    pub hot_swap_events: Vec<HotSwapEvent>,
     /// Periodic metric samples.
     pub samples: Vec<MetricSample>,
     /// Outcome of the network-disconnect test at the 2-hour mark.
@@ -355,6 +418,9 @@ impl SoakReport {
             metrics_snapshot_path: None,
             final_subtitle_pair_count: None,
             max_subtitle_pair_count: None,
+            final_capture_swap_count: None,
+            final_capture_swap_drops: None,
+            hot_swap_events: Vec::new(),
             samples: Vec::new(),
             network_disconnect_test: None,
             billing_actual_usd: None,
@@ -1015,6 +1081,8 @@ fn update_report_with_app_metrics(report: &mut SoakReport, metrics: &AppMetricsS
             .unwrap_or(0)
             .max(metrics.line_pairs_shown),
     );
+    report.final_capture_swap_count = Some(metrics.capture_swap_count);
+    report.final_capture_swap_drops = Some(metrics.capture_swap_drops);
 }
 
 /// Read normalised CPU % and RSS (MiB) for a process by PID.
@@ -1047,6 +1115,10 @@ fn poll_process(sys: &mut System, pid: u32, n_cores: usize) -> (Option<f32>, Opt
 ///
 /// The config uses `"audio_source": "file"` to bypass WASAPI capture and
 /// replay the WAV fixture instead (issue #110).
+/// It pins both providers to `"google"` without an API key and disables the
+/// local-only STT fallback policy so unattended soak runs enter the existing
+/// metrics-only capture path instead of the interactive local-model license
+/// review introduced by the local-first default.
 ///
 /// Path characters (including Windows backslashes) are escaped correctly
 /// because the struct is serialised via `serde_json` rather than by hand.
@@ -1055,6 +1127,9 @@ fn write_soak_config(dir: &Path, fixture_path: &str) -> Result<PathBuf> {
     struct SoakConfig<'a> {
         source_language: &'a str,
         target_language: &'a str,
+        stt_provider: &'a str,
+        mt_provider: &'a str,
+        stt_fallback_policy: &'a str,
         audio_source: &'a str,
         audio_file_path: &'a str,
         tts_enabled: bool,
@@ -1064,6 +1139,9 @@ fn write_soak_config(dir: &Path, fixture_path: &str) -> Result<PathBuf> {
     let config = SoakConfig {
         source_language: "ja-JP",
         target_language: "vi",
+        stt_provider: "google",
+        mt_provider: "google",
+        stt_fallback_policy: "none",
         audio_source: "file",
         audio_file_path: fixture_path,
         tts_enabled: false,
@@ -1072,6 +1150,79 @@ fn write_soak_config(dir: &Path, fixture_path: &str) -> Result<PathBuf> {
     std::fs::write(&cfg_path, json)
         .with_context(|| format!("cannot write soak config to {}", cfg_path.display()))?;
     Ok(cfg_path)
+}
+
+fn wait_for_capture_swap(
+    metrics_snapshot_path: &Path,
+    previous_swap_count: Option<u64>,
+    timeout: Duration,
+) -> Result<Option<AppMetricsSnapshot>> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if let Some(metrics) = read_app_metrics_snapshot(metrics_snapshot_path)? {
+            if previous_swap_count.is_none_or(|before| metrics.capture_swap_count > before) {
+                return Ok(Some(metrics));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    read_app_metrics_snapshot(metrics_snapshot_path)
+}
+
+fn trigger_file_hot_swap(
+    config_dir: &Path,
+    target_fixture_path: &Path,
+    metrics_snapshot_path: &Path,
+    elapsed_secs: u64,
+    previous_swap_count: Option<u64>,
+) -> HotSwapEvent {
+    let target = target_fixture_path.to_string_lossy().into_owned();
+    let mut event = HotSwapEvent {
+        triggered_at_elapsed_secs: elapsed_secs,
+        target_audio_file_path: target.clone(),
+        swap_count_before: previous_swap_count,
+        swap_count_after: None,
+        capture_swap_drops_after: None,
+        observed: false,
+        note: None,
+    };
+
+    if let Err(err) = write_soak_config(config_dir, &target) {
+        event.note = Some(format!("failed to rewrite soak config: {err:#}"));
+        return event;
+    }
+
+    match wait_for_capture_swap(
+        metrics_snapshot_path,
+        previous_swap_count,
+        Duration::from_secs(15),
+    ) {
+        Ok(Some(metrics)) => {
+            event.swap_count_after = Some(metrics.capture_swap_count);
+            event.capture_swap_drops_after = Some(metrics.capture_swap_drops);
+            event.observed = previous_swap_count
+                .is_some_and(|before| metrics.capture_swap_count > before)
+                || previous_swap_count.is_none() && metrics.capture_swap_count > 0;
+            if !event.observed {
+                event.note = Some(
+                    "metrics snapshot did not show capture_swap_count advancing within 15s"
+                        .to_string(),
+                );
+            }
+        }
+        Ok(None) => {
+            event.note = Some(
+                "metrics snapshot unavailable while waiting for hot-swap evidence".to_string(),
+            );
+        }
+        Err(err) => {
+            event.note = Some(format!(
+                "failed to read metrics snapshot after hot-swap: {err:#}"
+            ));
+        }
+    }
+
+    event
 }
 
 // ── Network disconnect simulation ─────────────────────────────────────────────
@@ -1242,6 +1393,8 @@ fn run_dry_run(args: Args) -> Result<()> {
             api_failures: None,               // Gap 1 — no IPC
             latest_subtitle_latency_ms: None, // Gap 1 — no IPC
             estimated_cost_usd: None,         // Gap 1 — no IPC
+            capture_swap_count: None,         // Gap 1 — no IPC
+            capture_swap_drops: None,         // Gap 1 — no IPC
         };
         println!(
             "[run_soak] sample {}/{}: elapsed={}s mem={:.1}MiB cpu={:.1}%",
@@ -1307,6 +1460,13 @@ fn run_full_soak(args: Args) -> Result<()> {
         std::fs::canonicalize(fixture_path).unwrap_or_else(|_| PathBuf::from(fixture_path));
     let cfg_path = write_soak_config(&config_dir, &fixture_abs.to_string_lossy())?;
     println!("[run_soak] soak config: {}", cfg_path.display());
+    let alternate_fixture_path = config_dir.join("soak_audio_alt.wav");
+    std::fs::copy(&fixture_abs, &alternate_fixture_path).with_context(|| {
+        format!(
+            "cannot copy fixture to alternate hot-swap path {}",
+            alternate_fixture_path.display()
+        )
+    })?;
     let metrics_snapshot_path = config_dir.join("soak-metrics-snapshot.json");
     let _ = std::fs::remove_file(&metrics_snapshot_path);
     println!(
@@ -1342,10 +1502,15 @@ fn run_full_soak(args: Args) -> Result<()> {
 
     let total_duration = Duration::from_secs_f64(args.hours * 3600.0);
     let sample_interval = Duration::from_secs_f64(args.sample_mins * 60.0);
+    let hot_swap_interval = args
+        .hot_swap_every_mins
+        .map(|mins| Duration::from_secs_f64(mins * 60.0));
     let disconnect_at = Duration::from_secs(2 * 3600);
 
     let start = Instant::now();
     let mut next_sample = start;
+    let mut next_hot_swap = hot_swap_interval.map(|interval| start + interval);
+    let mut use_alternate_fixture = true;
     let mut disconnect_done = false;
 
     loop {
@@ -1379,6 +1544,8 @@ fn run_full_soak(args: Args) -> Result<()> {
                 api_failures: None,
                 latest_subtitle_latency_ms: app_metrics.as_ref().and_then(|m| m.e2e_latency_ms),
                 estimated_cost_usd: app_metrics.as_ref().map(|m| m.estimated_cost_usd),
+                capture_swap_count: app_metrics.as_ref().map(|m| m.capture_swap_count),
+                capture_swap_drops: app_metrics.as_ref().map(|m| m.capture_swap_drops),
             };
             println!(
                 "[run_soak] sample at {}s: mem={:.1}MiB cpu={:.1}% chunks={:?} dropped={:?} pairs={:?}",
@@ -1398,6 +1565,48 @@ fn run_full_soak(args: Args) -> Result<()> {
             // null in any file written to disk).
             report.threshold_evaluation = Some(evaluate_thresholds(&report));
             let _ = write_json(&args.output, &report);
+        }
+
+        if let Some(deadline) = next_hot_swap {
+            if now >= deadline {
+                let previous_swap_count = read_app_metrics_snapshot(&metrics_snapshot_path)
+                    .ok()
+                    .flatten()
+                    .map(|m| m.capture_swap_count)
+                    .or(report.final_capture_swap_count);
+                let target_fixture = if use_alternate_fixture {
+                    alternate_fixture_path.as_path()
+                } else {
+                    fixture_abs.as_path()
+                };
+                println!(
+                    "[run_soak] triggering HC-03B file hot-swap at {}s -> {}",
+                    elapsed.as_secs(),
+                    target_fixture.display()
+                );
+                let event = trigger_file_hot_swap(
+                    &config_dir,
+                    target_fixture,
+                    &metrics_snapshot_path,
+                    elapsed.as_secs(),
+                    previous_swap_count,
+                );
+                println!(
+                    "[run_soak] hot-swap observed={} before={:?} after={:?} drops={:?}",
+                    event.observed,
+                    event.swap_count_before,
+                    event.swap_count_after,
+                    event.capture_swap_drops_after
+                );
+                if let Ok(Some(metrics)) = read_app_metrics_snapshot(&metrics_snapshot_path) {
+                    update_report_with_app_metrics(&mut report, &metrics);
+                }
+                report.hot_swap_events.push(event);
+                use_alternate_fixture = !use_alternate_fixture;
+                next_hot_swap = hot_swap_interval.map(|interval| deadline + interval);
+                report.threshold_evaluation = Some(evaluate_thresholds(&report));
+                let _ = write_json(&args.output, &report);
+            }
         }
 
         // Network disconnect test at the 2-hour mark.
@@ -1634,6 +1843,8 @@ mod tests {
             api_failures: None,
             latest_subtitle_latency_ms: None,
             estimated_cost_usd: None,
+            capture_swap_count: None,
+            capture_swap_drops: None,
         });
         r.samples.push(MetricSample {
             elapsed_secs: 14400,
@@ -1645,6 +1856,8 @@ mod tests {
             api_failures: None,
             latest_subtitle_latency_ms: None,
             estimated_cost_usd: None,
+            capture_swap_count: None,
+            capture_swap_drops: None,
         });
         let ev = evaluate_thresholds(&r);
         assert_eq!(ev.b09_memory_growth.verdict, ThresholdVerdict::Pass);
@@ -1670,6 +1883,8 @@ mod tests {
             api_failures: None,
             latest_subtitle_latency_ms: None,
             estimated_cost_usd: None,
+            capture_swap_count: None,
+            capture_swap_drops: None,
         });
         r.samples.push(MetricSample {
             elapsed_secs: 14400,
@@ -1681,6 +1896,8 @@ mod tests {
             api_failures: None,
             latest_subtitle_latency_ms: None,
             estimated_cost_usd: None,
+            capture_swap_count: None,
+            capture_swap_drops: None,
         });
         let ev = evaluate_thresholds(&r);
         assert_eq!(ev.b09_memory_growth.verdict, ThresholdVerdict::Fail);
@@ -1702,6 +1919,8 @@ mod tests {
                 api_failures: None,
                 latest_subtitle_latency_ms: None,
                 estimated_cost_usd: None,
+                capture_swap_count: None,
+                capture_swap_drops: None,
             });
         }
         let ev = evaluate_thresholds(&r);
@@ -1725,6 +1944,8 @@ mod tests {
                 api_failures: None,
                 latest_subtitle_latency_ms: None,
                 estimated_cost_usd: None,
+                capture_swap_count: None,
+                capture_swap_drops: None,
             });
         }
         let ev = evaluate_thresholds(&r);
@@ -1810,6 +2031,8 @@ mod tests {
             api_failures: None,
             latest_subtitle_latency_ms,
             estimated_cost_usd: Some(0.001),
+            capture_swap_count: Some(0),
+            capture_swap_drops: Some(0),
         }
     }
 
@@ -1951,6 +2174,9 @@ mod tests {
         let json = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["audio_source"], "file");
+        assert_eq!(v["stt_provider"], "google");
+        assert_eq!(v["mt_provider"], "google");
+        assert_eq!(v["stt_fallback_policy"], "none");
         assert!(v["audio_file_path"].is_string());
     }
 
@@ -2042,6 +2268,8 @@ mod tests {
                 api_failures: None,
                 latest_subtitle_latency_ms: None,
                 estimated_cost_usd: None,
+                capture_swap_count: None,
+                capture_swap_drops: None,
             });
         }
         let ev = evaluate_thresholds(&r);
@@ -2077,6 +2305,8 @@ mod tests {
                 api_failures: None,
                 latest_subtitle_latency_ms: None,
                 estimated_cost_usd: None,
+                capture_swap_count: None,
+                capture_swap_drops: None,
             });
         }
         let ev = evaluate_thresholds(&r);

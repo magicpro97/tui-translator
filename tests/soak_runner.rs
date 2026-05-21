@@ -98,6 +98,8 @@ fn dry_run_produces_valid_report() {
             "api_failures",
             "latest_subtitle_latency_ms",
             "estimated_cost_usd",
+            "capture_swap_count",
+            "capture_swap_drops",
         ] {
             assert!(
                 sample[key].is_null(),

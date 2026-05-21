@@ -44,7 +44,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc, Mutex, OnceLock,
     },
     time::{Duration, SystemTime},
 };
@@ -76,6 +76,15 @@ use tui::{
 const METRICS_SNAPSHOT_ENV: &str = "TUI_TRANSLATOR_METRICS_SNAPSHOT";
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
+
+struct CaptureHotSwapRuntime {
+    router_handle: Mutex<Option<audio::CaptureRouterHandle>>,
+    runtime_handle: tokio::runtime::Handle,
+    device_name: Arc<Mutex<String>>,
+    pipeline_error_msg: Arc<Mutex<Option<String>>>,
+}
+
+static CAPTURE_HOT_SWAP_RUNTIME: OnceLock<Arc<CaptureHotSwapRuntime>> = OnceLock::new();
 
 struct SlotAUiArcs {
     pipeline_halted: Arc<AtomicBool>,
@@ -153,6 +162,9 @@ struct MetricsSnapshotExport {
     // DM-02 (issue #378): fanout drop counters.
     fanout_slot_a_drops: u64,
     fanout_slot_b_drops: u64,
+    // HC-03B (issue #436): capture-router hot-swap counters.
+    capture_swap_count: u64,
+    capture_swap_drops: u64,
     // LF-02 (issue #370): local runtime caps observability.
     // `local_active_threads` is retained as the schema field name, but the
     // value is an in-flight local-inference operation count.
@@ -163,7 +175,7 @@ struct MetricsSnapshotExport {
 impl From<&MetricsSnapshot> for MetricsSnapshotExport {
     fn from(snapshot: &MetricsSnapshot) -> Self {
         Self {
-            schema_version: "3",
+            schema_version: "4",
             line_pairs_shown: snapshot.line_pairs_shown,
             estimated_cost_usd: snapshot.estimated_cost_usd,
             e2e_latency_ms: snapshot.e2e_latency_ms,
@@ -179,6 +191,8 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
             archive_sealed: snapshot.archive_sealed,
             fanout_slot_a_drops: snapshot.fanout_slot_a_drops,
             fanout_slot_b_drops: snapshot.fanout_slot_b_drops,
+            capture_swap_count: snapshot.capture_swap_count,
+            capture_swap_drops: snapshot.capture_swap_drops,
             local_cpu_pct: snapshot.local_cpu_pct,
             local_active_threads: snapshot.local_active_threads,
         }
@@ -248,6 +262,9 @@ struct FinishMainArgs<'a> {
     /// Both slots are zero when no fanout is active (onboarding / capture
     /// failure paths).
     fanout_counters: Arc<audio::FanoutDropCounters>,
+    // ── Capture router counters (HC-03B, issue #436) ──────────────────────
+    /// Shared router metrics when live capture has started.
+    capture_router_metrics: Option<Arc<audio::RouterMetrics>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1034,6 +1051,7 @@ fn log_measurement_mode_status(
     }
 }
 
+#[cfg(test)]
 fn attach_audio_archive(
     rt: &tokio::runtime::Runtime,
     stream: audio::CaptureStream,
@@ -2097,6 +2115,14 @@ fn main() -> Result<()> {
         .enable_all()
         .build()?;
 
+    let capture_hot_swap_runtime = Arc::new(CaptureHotSwapRuntime {
+        router_handle: Mutex::new(None),
+        runtime_handle: rt.handle().clone(),
+        device_name: Arc::clone(&state.device_name),
+        pipeline_error_msg: Arc::clone(&state.pipeline_error_msg),
+    });
+    let _ = CAPTURE_HOT_SWAP_RUNTIME.set(Arc::clone(&capture_hot_swap_runtime));
+
     if let Some(mut config_rx) = config_rx {
         let current_config = Arc::clone(&current_config);
         let target_language = Arc::clone(&state.target_language);
@@ -2173,6 +2199,7 @@ fn main() -> Result<()> {
     // started (onboarding, capture failure).  Reassigned after fanout wiring.
     let mut fanout_counters: Arc<audio::FanoutDropCounters> =
         Arc::new(audio::FanoutDropCounters::default());
+    let mut capture_router_metrics: Option<Arc<audio::RouterMetrics>> = None;
 
     if onboarding_required || config_recovery_required || license_review_required {
         let orchestrator_join = None;
@@ -2195,6 +2222,7 @@ fn main() -> Result<()> {
                 memory_guard,
                 storage: StorageMetricsHandles::default(),
                 fanout_counters,
+                capture_router_metrics: None,
             },
         );
     }
@@ -2238,28 +2266,34 @@ fn main() -> Result<()> {
                 start_audio_archive(&cfg_snapshot, &session_id, &state.pipeline_error_msg);
             let audio_archive_path = audio_archive.path().map(|p| p.to_path_buf());
             // Issue #393: extract shared storage handles before the archive writer
-            // is moved into attach_audio_archive.
+            // is moved into CaptureRouter.
             let audio_archive_bytes_arc = audio_archive.bytes_arc();
             let audio_archive_sealed_arc = audio_archive.sealed_arc();
             storage.archive_bytes = Arc::clone(&audio_archive_bytes_arc);
             storage.archive_sealed = Arc::clone(&audio_archive_sealed_arc);
             storage.archive_path = audio_archive_path.clone();
-            let stream = attach_audio_archive(
-                &rt,
-                stream,
-                audio_archive,
-                Arc::clone(&state.pipeline_error_msg),
-            );
 
-            // DM-02 (issue #378): insert fanout node after capture.
+            // HC-03B + DM-02: insert CaptureRouter before fanout.  The
+            // router keeps fanout/orchestrator receivers stable while
+            // capture_device/audio_source hot-swap reopens only the upstream.
+            let capture_info = stream.info.clone();
+            let (router_handle, capture_rx) = {
+                // rt.enter() sets the runtime context so tokio::spawn inside
+                // start_router resolves to the correct runtime.
+                let _guard = rt.enter();
+                audio::start_router(stream, DEFAULT_SILENCE_THRESHOLD, Some(audio_archive))
+            };
+            capture_router_metrics = Some(Arc::clone(router_handle.metrics()));
+            *capture_hot_swap_runtime
+                .router_handle
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some(router_handle);
+
+            // DM-02 (issue #378): insert fanout node after routed capture.
             // Slot A → primary consumer (orchestrator / metrics-only task).
             // DM-03 (issue #379): in dual-slot mode keep slot B for the second
             // orchestrator; drop it immediately in single-slot mode so the
             // fanout task takes the Closed branch and reports no false drops.
-            let audio::CaptureStream {
-                info: capture_info,
-                receiver: capture_rx,
-            } = stream;
             let fanout_handle = {
                 // rt.enter() sets the runtime context so tokio::spawn inside
                 // start_fanout resolves to the correct runtime.
@@ -2375,6 +2409,7 @@ fn main() -> Result<()> {
                                 memory_guard: Arc::clone(&memory_guard),
                                 storage,
                                 fanout_counters: Arc::clone(&fanout_counters),
+                                capture_router_metrics: capture_router_metrics.clone(),
                             },
                         );
                     }
@@ -2422,6 +2457,7 @@ fn main() -> Result<()> {
                                 memory_guard: Arc::clone(&memory_guard),
                                 storage,
                                 fanout_counters: Arc::clone(&fanout_counters),
+                                capture_router_metrics: capture_router_metrics.clone(),
                             },
                         );
                     }
@@ -2459,6 +2495,7 @@ fn main() -> Result<()> {
                                 memory_guard: Arc::clone(&memory_guard),
                                 storage,
                                 fanout_counters: Arc::clone(&fanout_counters),
+                                capture_router_metrics: capture_router_metrics.clone(),
                             },
                         );
                     }
@@ -2884,6 +2921,7 @@ fn main() -> Result<()> {
             memory_guard,
             storage,
             fanout_counters,
+            capture_router_metrics,
         },
     )
 }
@@ -2942,6 +2980,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         memory_guard,
         storage,
         fanout_counters,
+        capture_router_metrics,
     } = args;
 
     // ── Issues #61, #82: metrics observability background task ───────────────
@@ -2956,6 +2995,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let memory_guard = Arc::clone(&memory_guard);
         let current_config = Arc::clone(current_config);
         let fanout_counters = Arc::clone(&fanout_counters);
+        let capture_router_metrics = capture_router_metrics.clone();
         let mut process_rx = process_rx;
         let metrics_snapshot_path = std::env::var_os(METRICS_SNAPSHOT_ENV).map(PathBuf::from);
         // Issue #393: clone the storage handles for the publisher task.
@@ -3063,6 +3103,12 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     fanout_counters.drops(audio::SLOT_A),
                     fanout_counters.drops(audio::SLOT_B),
                 );
+                if let Some(router_metrics) = capture_router_metrics.as_ref() {
+                    snapshot.apply_capture_router_metrics(
+                        router_metrics.swap_count(),
+                        router_metrics.dropped_during_swap(),
+                    );
+                }
 
                 if let Some(path) = metrics_snapshot_path.as_deref() {
                     if let Err(err) = write_metrics_snapshot_export(path, &snapshot) {
@@ -3626,15 +3672,45 @@ fn apply_runtime_config(
     playback_service: &SharedPlaybackService,
     next_cfg: config::AppConfig,
 ) {
-    let requires_restart = {
-        let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
-        let requires_restart = current.requires_restart(&next_cfg);
-        *current = next_cfg.clone();
-        requires_restart
+    let (capture_change, requires_restart) = {
+        let current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        (
+            config::classify_capture_change(&current, &next_cfg),
+            current.requires_restart_ignoring_capture(&next_cfg),
+        )
     };
+
+    let mut capture_apply_failed = false;
+    match &capture_change {
+        config::CaptureChangeOutcome::Rejected { reason } => {
+            set_capture_hot_swap_status(format!("Capture config rejected: {reason}"));
+            tracing::warn!(reason = %reason, "capture config change rejected");
+            capture_apply_failed = true;
+        }
+        config::CaptureChangeOutcome::NeedsCaptureRestart { reason, .. } if !requires_restart => {
+            match apply_capture_hot_swap(&next_cfg, reason) {
+                CaptureHotSwapApply::Applied => {}
+                CaptureHotSwapApply::RestartRequired => {
+                    restart_required.store(true, Ordering::Relaxed);
+                }
+                CaptureHotSwapApply::Failed => {
+                    capture_apply_failed = true;
+                }
+            }
+        }
+        _ => {}
+    }
+
+    {
+        let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        *current = next_cfg.clone();
+    }
 
     if requires_restart {
         restart_required.store(true, Ordering::Relaxed);
+    }
+    if capture_apply_failed {
+        tracing::warn!("capture change was not applied; non-capture config updates still applied");
     }
 
     overwrite_target_language(target_language, &next_cfg.target_language);
@@ -3647,6 +3723,118 @@ fn apply_runtime_config(
     let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
     tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
     audio_consent.store(next_cfg.audio_archive.consent_given, Ordering::Relaxed);
+}
+
+enum CaptureHotSwapApply {
+    Applied,
+    RestartRequired,
+    Failed,
+}
+
+fn apply_capture_hot_swap(next_cfg: &config::AppConfig, reason: &str) -> CaptureHotSwapApply {
+    let spec = match capture_source_spec_from_config(next_cfg) {
+        Ok(spec) => spec,
+        Err(err) => {
+            set_capture_hot_swap_status(format!("Capture config rejected: {err}"));
+            tracing::warn!("capture config cannot be hot-swapped: {err:#}");
+            return CaptureHotSwapApply::Failed;
+        }
+    };
+
+    let Some(runtime) = CAPTURE_HOT_SWAP_RUNTIME.get().cloned() else {
+        tracing::warn!(
+            reason = %reason,
+            "capture router runtime is unavailable; restart required for capture change"
+        );
+        return CaptureHotSwapApply::RestartRequired;
+    };
+    let Some(router_handle) = runtime
+        .router_handle
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+    else {
+        tracing::warn!(
+            reason = %reason,
+            "capture router handle is unavailable; restart required for capture change"
+        );
+        return CaptureHotSwapApply::RestartRequired;
+    };
+
+    let spec_label = spec.label();
+    tracing::info!(reason = %reason, source = %spec_label, "capture hot-swap requested");
+    match runtime
+        .runtime_handle
+        .block_on(router_handle.hot_swap(spec, DEFAULT_SILENCE_THRESHOLD))
+    {
+        Ok(info) => {
+            overwrite_device_name(&runtime.device_name, &info.device_name);
+            clear_capture_hot_swap_status();
+            tracing::info!(
+                source = %spec_label,
+                device = %info.device_name,
+                "capture hot-swap applied"
+            );
+            CaptureHotSwapApply::Applied
+        }
+        Err(err) => {
+            set_capture_hot_swap_status(format!(
+                "Capture change failed; still using previous audio stream: {err}"
+            ));
+            tracing::warn!(
+                source = %spec_label,
+                error = %err,
+                "capture hot-swap failed; preserving previous stream"
+            );
+            CaptureHotSwapApply::Failed
+        }
+    }
+}
+
+fn capture_source_spec_from_config(cfg: &config::AppConfig) -> Result<audio::CaptureSourceSpec> {
+    match cfg.audio_source.as_str() {
+        "wasapi" => Ok(audio::CaptureSourceSpec::Wasapi {
+            device: cfg.capture_device.clone(),
+        }),
+        "file" => {
+            let path = cfg
+                .audio_file_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .context("audio_file_path is required when audio_source is \"file\"")?;
+            Ok(audio::CaptureSourceSpec::File {
+                path: path.to_string(),
+            })
+        }
+        other => bail!("audio_source must be \"wasapi\" or \"file\", got {other:?}"),
+    }
+}
+
+fn set_capture_hot_swap_status(message: String) {
+    if let Some(runtime) = CAPTURE_HOT_SWAP_RUNTIME.get() {
+        *runtime
+            .pipeline_error_msg
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(message);
+    } else {
+        tracing::warn!(message = %message, "capture hot-swap status unavailable");
+    }
+}
+
+fn clear_capture_hot_swap_status() {
+    if let Some(runtime) = CAPTURE_HOT_SWAP_RUNTIME.get() {
+        let mut slot = runtime
+            .pipeline_error_msg
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if slot
+            .as_deref()
+            .is_some_and(|message| message.starts_with("Capture change failed"))
+        {
+            *slot = None;
+        }
+    }
 }
 
 fn normalize_optional_field(value: &str) -> Option<String> {
@@ -4950,14 +5138,18 @@ mod tests {
         let snapshot = MetricsSnapshot {
             fanout_slot_a_drops: 3,
             fanout_slot_b_drops: 5,
+            capture_swap_count: 2,
+            capture_swap_drops: 1,
             ..MetricsSnapshot::default()
         };
         let value =
             serde_json::to_value(MetricsSnapshotExport::from(&snapshot)).expect("serialize export");
 
-        assert_eq!(value["schema_version"], "3");
+        assert_eq!(value["schema_version"], "4");
         assert_eq!(value["fanout_slot_a_drops"], 3);
         assert_eq!(value["fanout_slot_b_drops"], 5);
+        assert_eq!(value["capture_swap_count"], 2);
+        assert_eq!(value["capture_swap_drops"], 1);
         assert_eq!(value["local_cpu_pct"], 0.0);
         assert_eq!(value["local_active_threads"], 0);
     }
@@ -6275,6 +6467,59 @@ mod tests {
         );
 
         assert!(state.audio_consent.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn apply_runtime_config_rejected_capture_change_still_applies_hot_fields() {
+        let state = AppState::new();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let mut next = config::AppConfig::default();
+        next.audio_source = "alsa".to_string();
+        next.target_language = "en".to_string();
+
+        apply_runtime_config(
+            &current_config,
+            &state.target_language,
+            &state.source_language,
+            &state.capture_device_label,
+            &state.slot_a_provider_name,
+            &state.tts_enabled,
+            &state.audio_consent,
+            &restart_required,
+            &playback_service,
+            next,
+        );
+
+        assert_eq!(state.target_language(), "en");
+        assert_eq!(current_config.lock().unwrap().target_language, "en");
+    }
+
+    #[test]
+    fn capture_source_spec_from_config_maps_wasapi_device() {
+        let mut cfg = config::AppConfig::default();
+        cfg.capture_device = Some("Speakers (Realtek)".to_string());
+
+        assert_eq!(
+            capture_source_spec_from_config(&cfg).unwrap(),
+            audio::CaptureSourceSpec::Wasapi {
+                device: Some("Speakers (Realtek)".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn capture_source_spec_from_config_rejects_file_without_path() {
+        let mut cfg = config::AppConfig::default();
+        cfg.audio_source = "file".to_string();
+        cfg.audio_file_path = None;
+
+        let err = capture_source_spec_from_config(&cfg).unwrap_err();
+        assert!(
+            err.to_string().contains("audio_file_path"),
+            "error should mention missing audio_file_path; got: {err}"
+        );
     }
 
     #[test]

@@ -192,6 +192,13 @@ pub struct MetricsSnapshot {
     /// active or slot B has no consumer.
     pub fanout_slot_b_drops: u64,
 
+    // ── Capture router counters (HC-03B, issue #436) ─────────────────────────
+    /// Total successful capture hot-swaps completed by `CaptureRouter`.
+    pub capture_swap_count: u64,
+
+    /// Total chunks dropped while draining old capture streams during hot-swap.
+    pub capture_swap_drops: u64,
+
     // ── Local runtime caps (LF-02, issue #370) ────────────────────────────────
     /// Process CPU percentage attributed to local on-device inference.
     ///
@@ -247,6 +254,8 @@ impl Default for MetricsSnapshot {
             archive_sealed: false,
             fanout_slot_a_drops: 0,
             fanout_slot_b_drops: 0,
+            capture_swap_count: 0,
+            capture_swap_drops: 0,
             // LF-02 (issue #370): local runtime caps observability.
             local_cpu_pct: 0.0,
             local_active_threads: 0,
@@ -343,6 +352,12 @@ impl MetricsSnapshot {
         self.fanout_slot_b_drops = slot_b_drops;
     }
 
+    /// Apply capture-router hot-swap counters (HC-03B, issue #436).
+    pub fn apply_capture_router_metrics(&mut self, swap_count: u64, swap_drops: u64) {
+        self.capture_swap_count = swap_count;
+        self.capture_swap_drops = swap_drops;
+    }
+
     /// Apply LF-02 local-inference runtime observability (issue #370).
     ///
     /// `local_active_threads` is the in-flight operation count of Whisper STT +
@@ -404,6 +419,9 @@ mod tests {
         // Issue #378 (DM-02): fanout drop counters default to zero.
         assert_eq!(s.fanout_slot_a_drops, 0);
         assert_eq!(s.fanout_slot_b_drops, 0);
+        // HC-03B (issue #436): capture router counters default to zero.
+        assert_eq!(s.capture_swap_count, 0);
+        assert_eq!(s.capture_swap_drops, 0);
         // LF-02 (issue #370): local runtime caps default to zero.
         assert_eq!(s.local_cpu_pct, 0.0);
         assert_eq!(s.local_active_threads, 0);
@@ -729,5 +747,13 @@ mod tests {
         assert_eq!(s.loss_pct, 5.0);
         assert_eq!(s.total_chunks, 100);
         assert_eq!(s.dropped_chunks, 5);
+    }
+
+    #[test]
+    fn apply_capture_router_metrics_sets_swap_counters() {
+        let mut s = MetricsSnapshot::default();
+        s.apply_capture_router_metrics(6, 2);
+        assert_eq!(s.capture_swap_count, 6);
+        assert_eq!(s.capture_swap_drops, 2);
     }
 }

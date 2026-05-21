@@ -1224,9 +1224,9 @@ impl AppConfig {
     /// | `tts_routing` | **restart** | `sync_playback_service_state` does not rebuild an existing service on routing change; restart required. |
     /// | `virtual_mic_device` | **restart** | Virtual-mic output stream must be re-opened. |
     /// | `virtual_device_patterns` | **restart** | Custom patterns are loaded at startup for config validation and `--list-audio-devices`; the live probe currently uses the built-in registry, so this is conservative for future runtime wiring. |
-    /// | `capture_device` | **restart** | WASAPI loopback stream must be re-opened on the new device. |
-    /// | `audio_source` | **restart** | Input-source type is baked into pipeline construction. |
-    /// | `audio_file_path` | **restart (conditional)** | File source is opened once at pipeline start; restart is required only when either side uses `audio_source = "file"`. |
+    /// | `capture_device` | **hot (HC-03B)** | Runtime uses `CaptureRouter` to hot-swap the capture stream. |
+    /// | `audio_source` | **hot (HC-03B)** | Runtime uses `CaptureRouter` to switch WASAPI/file sources. |
+    /// | `audio_file_path` | **hot when file input is active (HC-03B)** | Runtime reopens the file source through `CaptureRouter`. |
     /// | `stt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_cloud_fallback` | **restart** | Cloud-fallback consent changes route resolution and provider construction. |
@@ -1246,16 +1246,22 @@ impl AppConfig {
     /// | `ram_budget_mb` | **hot** | UI threshold is read each render tick. |
     /// | `_comment` | **hot** | Documentation-only; never read at runtime. |
     pub fn requires_restart(&self, next: &AppConfig) -> bool {
+        self.requires_restart_ignoring_capture(next)
+    }
+
+    /// Return whether a config change requires restart for non-capture runtime state.
+    ///
+    /// HC-03B routes `capture_device`, `audio_source`, and `audio_file_path`
+    /// through `CaptureRouter` hot-swap.  Callers without a router should
+    /// combine this helper with [`requires_capture_hot_swap`](Self::requires_capture_hot_swap)
+    /// and set a restart banner when they cannot hot-swap.
+    pub fn requires_restart_ignoring_capture(&self, next: &AppConfig) -> bool {
         self.google_api_key != next.google_api_key
             || self.tts_output_device != next.tts_output_device
             || self.tts_routing != next.tts_routing
             || self.tts_source != next.tts_source
             || self.virtual_mic_device != next.virtual_mic_device
             || self.virtual_device_patterns != next.virtual_device_patterns
-            || self.capture_device != next.capture_device
-            || self.audio_source != next.audio_source
-            || (self.audio_file_path != next.audio_file_path
-                && (self.audio_source == "file" || next.audio_source == "file"))
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
             || self.mt_cloud_fallback != next.mt_cloud_fallback
@@ -1266,6 +1272,14 @@ impl AppConfig {
             || self.pipeline != next.pipeline
             || self.audio_archive != next.audio_archive
             || self.slots != next.slots
+    }
+
+    /// Return whether capture fields changed and need `CaptureRouter` hot-swap.
+    pub fn requires_capture_hot_swap(&self, next: &AppConfig) -> bool {
+        self.capture_device != next.capture_device
+            || self.audio_source != next.audio_source
+            || (self.audio_file_path != next.audio_file_path
+                && (self.audio_source == "file" || next.audio_source == "file"))
     }
 
     /// Return the active slot mode.
@@ -1715,11 +1729,13 @@ fn handle_watch_event(
                 provider_supervisor::SupervisorOutcome::Unchanged => {
                     // No provider change; fall through to the generic
                     // restart-required check for non-provider restart fields
-                    // (audio device, vad, session_store, …).
-                    if old_cfg.requires_restart(&new_cfg) {
+                    // (vad, session_store, slots, …).  Capture-only changes
+                    // are accepted here and hot-swapped in main via HC-03B's
+                    // CaptureRouter wiring.
+                    if old_cfg.requires_restart_ignoring_capture(&new_cfg) {
                         restart_required.store(true, Ordering::Relaxed);
                         tracing::warn!(
-                            "⚠ Restart required for audio-device or pipeline settings \
+                            "⚠ Restart required for pipeline settings \
                              to take effect"
                         );
                     }
@@ -2490,14 +2506,15 @@ mod tests {
     }
 
     #[test]
-    fn capture_device_change_requires_restart() {
+    fn capture_device_change_requires_capture_hot_swap_not_restart() {
         let current = AppConfig::default();
         let next = AppConfig {
             capture_device: Some("Speakers (Loopback Test)".to_string()),
             ..AppConfig::default()
         };
 
-        assert!(current.requires_restart(&next));
+        assert!(current.requires_capture_hot_swap(&next));
+        assert!(!current.requires_restart(&next));
     }
 
     #[test]
@@ -3603,9 +3620,9 @@ mod tests {
         );
     }
 
-    /// `audio_source` change must require restart (input-source type baked into pipeline).
+    /// `audio_source` change is a capture hot-swap in live runtime.
     #[test]
-    fn audio_source_change_requires_restart() {
+    fn audio_source_change_requires_capture_hot_swap_not_restart() {
         let current = AppConfig::default(); // "wasapi"
         let next = AppConfig {
             audio_source: "file".to_string(),
@@ -3613,14 +3630,18 @@ mod tests {
             ..AppConfig::default()
         };
         assert!(
-            current.requires_restart(&next),
-            "changing audio_source must require a restart"
+            current.requires_capture_hot_swap(&next),
+            "changing audio_source must require CaptureRouter hot-swap"
+        );
+        assert!(
+            !current.requires_restart(&next),
+            "capture-only audio_source change must not set the restart banner"
         );
     }
 
-    /// `audio_file_path` change must require restart when file input is active.
+    /// `audio_file_path` change is a capture hot-swap when file input is active.
     #[test]
-    fn audio_file_path_change_requires_restart_when_source_is_file() {
+    fn audio_file_path_change_requires_capture_hot_swap_when_source_is_file() {
         let current = AppConfig {
             audio_source: "file".to_string(),
             audio_file_path: Some("old.wav".to_string()),
@@ -3632,8 +3653,12 @@ mod tests {
             ..AppConfig::default()
         };
         assert!(
-            current.requires_restart(&next),
-            "changing audio_file_path must require a restart"
+            current.requires_capture_hot_swap(&next),
+            "changing audio_file_path must require CaptureRouter hot-swap"
+        );
+        assert!(
+            !current.requires_restart(&next),
+            "file-source path change must not set the restart banner"
         );
     }
 
@@ -3888,6 +3913,43 @@ mod tests {
         assert!(
             !restart_required.load(Ordering::Relaxed),
             "hot-field-only change must not set restart_required"
+        );
+    }
+
+    #[tokio::test]
+    async fn watcher_capture_only_change_broadcasts_without_restart_flag() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("config.json");
+
+        let initial = AppConfig::default();
+        write_config(&path, &initial).expect("write initial config");
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = watch::channel(initial.clone());
+        let event = notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![path.clone()],
+            attrs: Default::default(),
+        };
+
+        let next = AppConfig {
+            capture_device: Some("Speakers (Realtek Audio)".to_string()),
+            ..initial
+        };
+        write_config(&path, &next).expect("write capture-only change");
+
+        handle_watch_event(event, &path, &restart_required, &tx);
+
+        rx.changed().await.expect("config hot-reload signal");
+        assert_eq!(
+            rx.borrow().capture_device.as_deref(),
+            Some("Speakers (Realtek Audio)")
+        );
+        assert!(
+            !restart_required.load(Ordering::Relaxed),
+            "capture-only watcher change must be left for CaptureRouter hot-swap"
         );
     }
 

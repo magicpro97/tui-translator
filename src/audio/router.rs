@@ -16,10 +16,12 @@
 //!
 //! # Swap protocol
 //!
-//! 1. Drain the old upstream with a `DRAIN_TIMEOUT_MS` bounded timeout using
-//!    non-blocking `try_recv`.  Chunks that cannot be forwarded because the
-//!    downstream is full are counted in [`RouterMetrics::dropped_during_swap`].
-//! 2. Open the new source via [`open_source`].
+//! 1. Open the new source via [`open_source`] while keeping the old receiver
+//!    attached.  If opening fails, forwarding continues from the old stream.
+//! 2. After the new source is ready, drain the old upstream with a
+//!    `DRAIN_TIMEOUT_MS` bounded timeout using non-blocking `try_recv`.  Chunks
+//!    that cannot be forwarded because the downstream is full are counted in
+//!    [`RouterMetrics::dropped_during_swap`].
 //! 3. Resume forwarding from the new source; the downstream receiver is unchanged.
 //! 4. The optional archive writer remains attached throughout — it receives every
 //!    chunk *before* the orchestrator (design requirement).
@@ -165,8 +167,8 @@ impl CaptureRouterHandle {
     /// Hot-swap the capture source without restarting the orchestrator.
     ///
     /// Sends a swap request to the router task, which:
-    /// 1. Drains the old stream with a bounded timeout.
-    /// 2. Opens the new source described by `spec`.
+    /// 1. Opens the new source described by `spec` while the old stream remains active.
+    /// 2. Drains the old stream with a bounded timeout after the new source is ready.
     /// 3. Resumes forwarding to the fixed orchestrator receiver.
     ///
     /// Returns the [`CaptureInfo`] of the new source on success.
@@ -294,23 +296,21 @@ async fn run_router(
                 let spec_label = req.spec.label();
                 tracing::info!(source = %spec_label, "CaptureRouter: swap requested");
 
-                // 1. Drain the old stream (bounded, non-blocking for downstream).
-                if let Some(old_rx) = current.take() {
-                    router.state = RouterState::NoUpstream;
-                    drain_old(
-                        old_rx,
-                        &mut router.archive,
-                        &router.downstream_tx,
-                        &router.metrics,
-                    )
-                    .await;
-                }
-
-                // 2. Open the new source.
-                let result = open_source(&req.spec, req.silence_threshold).await;
-                match result {
+                // Open-before-drain preserves the old stream if the target
+                // device/file is invalid.  This keeps the app live instead of
+                // entering a silent NoUpstream state on failed hot-swap.
+                match open_source(&req.spec, req.silence_threshold).await {
                     Ok(new_stream) => {
                         let info = new_stream.info.clone();
+                        if let Some(old_rx) = current.take() {
+                            drain_old(
+                                old_rx,
+                                &mut router.archive,
+                                &router.downstream_tx,
+                                &router.metrics,
+                            )
+                            .await;
+                        }
                         tracing::info!(
                             source = %spec_label,
                             device = %info.device_name,
@@ -325,9 +325,13 @@ async fn run_router(
                         tracing::error!(
                             source = %spec_label,
                             error = %err,
-                            "CaptureRouter: failed to open new source — remaining NoUpstream"
+                            "CaptureRouter: failed to open new source — preserving existing upstream"
                         );
-                        router.state = RouterState::NoUpstream;
+                        router.state = if current.is_some() {
+                            RouterState::Active
+                        } else {
+                            RouterState::NoUpstream
+                        };
                         let _ = req.reply.send(Err(err));
                     }
                 }
@@ -505,6 +509,24 @@ mod tests {
         CaptureStream { info, receiver: rx }
     }
 
+    fn make_continuous_stream(value: i16) -> CaptureStream {
+        let (tx, rx) = mpsc::channel(128);
+        let info = CaptureInfo {
+            device_name: "continuous-stub".to_string(),
+            native_sample_rate: 16_000,
+        };
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(10));
+            loop {
+                interval.tick().await;
+                if tx.send(chunk(value)).await.is_err() {
+                    break;
+                }
+            }
+        });
+        CaptureStream { info, receiver: rx }
+    }
+
     fn chunk(n: i16) -> AudioChunk {
         AudioChunk::new(vec![n; 160]) // 10 ms at 16 kHz
     }
@@ -664,6 +686,38 @@ mod tests {
             !rx.is_closed(),
             "orchestrator receiver must stay open after failed swap"
         );
+    }
+
+    #[tokio::test]
+    async fn hc_03b_failed_swap_preserves_old_upstream_audio() {
+        let stream = make_continuous_stream(7);
+        let (handle, mut rx) = start_router(stream, 0.001, None);
+
+        let first = timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("initial stream should produce a chunk")
+            .expect("router downstream open");
+        assert_eq!(first.samples.first().copied(), Some(7));
+
+        let result = timeout(
+            Duration::from_secs(3),
+            handle.hot_swap(
+                CaptureSourceSpec::File {
+                    path: "nonexistent_hc03b_preserve_old.wav".to_string(),
+                },
+                0.001,
+            ),
+        )
+        .await
+        .expect("failed hot_swap should not time out");
+        assert!(result.is_err(), "bad target must fail the swap");
+
+        let after_failure = timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("old stream should still produce chunks after failed swap")
+            .expect("router downstream open after failed swap");
+        assert_eq!(after_failure.samples.first().copied(), Some(7));
+        assert_eq!(handle.metrics().swap_count(), 0);
     }
 
     #[test]
