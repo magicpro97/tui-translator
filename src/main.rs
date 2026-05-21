@@ -64,6 +64,7 @@ use metrics::{
     spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
     NetworkMetrics, ProcessSnapshot, SttSource,
 };
+use tui::frame_pacer::FramePacer;
 use tui::onboarding::{
     LocalModelLicense, OnboardingBranch, OnboardingEvent, OnboardingOutcome, OnboardingWizardState,
 };
@@ -4041,7 +4042,11 @@ fn run_tui(
 /// Main event loop: draw the UI, then process key actions from the keyboard
 /// task channel.
 ///
-/// The loop runs at approximately 20 fps (50 ms sleep between draws).
+/// The loop runs at approximately 60 fps (adaptive frame pacer; issue #383 /
+/// DM-07).  The pacer targets a ~16.6ms per-frame budget and records actual
+/// frame intervals in an HDR histogram so p50/p95/p99 evidence can be queried
+/// from the returned [`FramePacer`].
+///
 /// Key actions arrive on `key_rx` from the dedicated keyboard task (issue #63).
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -4049,6 +4054,7 @@ fn event_loop(
     context: &TuiRuntimeContext<'_>,
     key_rx: mpsc::Receiver<UserAction>,
 ) -> Result<()> {
+    let mut pacer = FramePacer::new();
     loop {
         // ── Issue #88 — check for Windows forced-close signal ─────────────────
         if FORCED_SHUTDOWN.load(Ordering::Relaxed) {
@@ -4124,8 +4130,19 @@ fn event_loop(
             break;
         }
 
-        std::thread::sleep(Duration::from_millis(50));
+        // Adaptive 60fps pacer (issue #383 / DM-07): replaces the fixed 50ms
+        // sleep.  Sleeps for the remaining frame budget and records the actual
+        // interval in the HDR histogram for p95 evidence.
+        pacer.end_frame();
     }
+    tracing::debug!(
+        p50_ms = pacer.p50_ms(),
+        p95_ms = pacer.p95_ms(),
+        p99_ms = pacer.p99_ms(),
+        total = pacer.total_frames(),
+        dropped = pacer.dropped_frames(),
+        "event loop frame-pacing summary"
+    );
     Ok(())
 }
 
