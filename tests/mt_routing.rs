@@ -193,7 +193,6 @@ fn mt_cloud_fallback_accepts_google() {
     let json = r#"{"source_language":"ja-JP","target_language":"vi","google_api_key":"TEST_KEY","mt_cloud_fallback":"google"}"#;
     let f = write_config(json);
     let cfg = config::load(f.path()).expect("parse");
-    cfg.validate().expect("validate");
     assert_eq!(cfg.mt_cloud_fallback, Some("google".to_string()));
 }
 

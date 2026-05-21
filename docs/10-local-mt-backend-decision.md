@@ -314,9 +314,10 @@ be recommended as a default or included in release notes with specific numbers:
 | Measurement | Method | Acceptance gate |
 |---|---|---|
 | ONNX model size post-export | Run `optimum-cli export onnx` on target model; report `.onnx` file sizes | Disk budget < 300 MB for direct model |
-| Per-sentence inference latency (ja→vi, batch=1) | `cargo bench` using `criterion`; run on target no-dGPU laptop | p95 < 500 ms on ≥ i5 8th-gen equivalent |
+| Real-time factor | `mt_bench` over the committed validation set on representative no-dGPU laptops | `realtime_factor ≤ 0.50` for every supported direct/pivot route |
+| Segment MT latency | `mt_bench` p95 wall-clock latency per segment | `p95_latency_ms ≤ 750` for every supported direct/pivot route |
 | RAM delta when model is loaded | Measure RSS before and after `ort::Session::new` | < 500 MB additional RSS |
-| Quality spot-check (direct vs pivot) | 20-sentence JLPT/business Japanese test set; human evaluation | Reviewer prefers direct ≥ 50% of sentences |
+| Quality vs Google baseline | Same bilingual validation set through local MT and Google Translation | Local `quality_score` must meet or exceed the Google baseline, or local MT remains opt-in with documented rationale |
 | Co-run CPU impact | Measure `tui-translator` CPU% with Zoom running + local MT active | CPU translator median ≤ 20% (existing target) |
 
 These are MT-specific benchmarks for issues #217–#218. They are separate from issue #206,
@@ -329,7 +330,7 @@ any release.
 
 **Issue:** [#372 LF-04 — Local MT routing + benchmark harness](https://github.com/magicpro97/tui-translator/issues/372)  
 **Status:** Routing table shipped; benchmark pending; default `mt_provider` remains `google`.  
-**Added:** 2026-05-xx
+**Added:** 2026-05-21
 
 ### 8.1 Why the default stays `google`
 
@@ -401,8 +402,11 @@ To change `AppConfig::default().mt_provider` from `"google"` to `"local"`:
 
 1. Run `cargo run --bin mt_bench --features local-mt -- --output docs/evidence/lf-04-benchmark.json`
    on ≥ two representative laptops.
-2. Verify all pairs in `results` show `realtime_factor ≤ 1.0`, `p95_latency_ms < 500`,
-   `quality_score ≥ 50.0`, and `sample_count ≥ 20`.
+2. Verify every supported direct/pivot route satisfies the §6 gates:
+   `realtime_factor ≤ 0.50`, `p95_latency_ms ≤ 750`, and local quality at or above
+   the Google baseline on the same validation set.  If local quality does not meet
+   the Google baseline, keep local MT opt-in and document the gap instead of flipping
+   the default.
 3. Set `status: "passed"` in the artifact.
 4. The verification gate test (`benchmark_artifact_pending_status_allows_google_default`) will
    then allow the default flip.

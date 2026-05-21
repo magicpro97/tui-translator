@@ -3,7 +3,7 @@
   "hardware_id": "pending",
   "status": "pending",
   "skipped": true,
-  "skipped_reason": "No benchmark runs have been executed yet.  The local OPUS-MT models (opus-mt-ja-vi, opus-mt-ja-en, opus-mt-en-vi) have not been downloaded and verified on representative hardware.  Real measurements must be collected and this file updated before the default mt_provider can be considered for a switch from 'google' to 'local'.  See docs/10-local-mt-backend-decision.md §7 (LF-04 addendum) for the required pass criteria.",
+  "skipped_reason": "No benchmark runs have been executed yet.  The local OPUS-MT models (opus-mt-ja-vi, opus-mt-ja-en, opus-mt-en-vi) have not been downloaded and verified on representative hardware.  Real measurements must be collected and this file updated before the default mt_provider can be considered for a switch from 'google' to 'local'.  See docs/10-local-mt-backend-decision.md §8.5 (LF-04 addendum) for the required pass criteria.",
   "results": [
     {
       "pair": "ja-vi",

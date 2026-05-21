@@ -27,21 +27,29 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
-fn parse_output_path() -> PathBuf {
-    let mut args = std::env::args().skip(1);
+fn parse_output_path() -> Result<PathBuf> {
+    parse_output_path_from(std::env::args().skip(1))
+}
+
+fn parse_output_path_from(args: impl IntoIterator<Item = String>) -> Result<PathBuf> {
+    let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         if arg == "--output" || arg == "-o" {
             if let Some(path) = args.next() {
-                return PathBuf::from(path);
+                if path.starts_with('-') {
+                    bail!("missing value for {arg}; usage: mt_bench [--output <path>]");
+                }
+                return Ok(PathBuf::from(path));
             }
+            bail!("missing value for {arg}; usage: mt_bench [--output <path>]");
         }
     }
-    PathBuf::from("docs/evidence/lf-04-benchmark.json")
+    Ok(PathBuf::from("docs/evidence/lf-04-benchmark.json"))
 }
 
 // ── Benchmark artifact schema ─────────────────────────────────────────────────
@@ -166,7 +174,7 @@ fn pending_fixture() -> BenchmarkArtifact {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
-    let output = parse_output_path();
+    let output = parse_output_path()?;
 
     // When compiled with `--features local-mt` and real models are present,
     // this function would run actual inference and return measured results.
@@ -194,4 +202,36 @@ fn build_artifact() -> BenchmarkArtifact {
     // implemented.  When models are downloaded and the pivot runtime ships,
     // replace this with actual inference calls.
     pending_fixture()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_arg_accepts_explicit_path() {
+        let path = parse_output_path_from(["--output".to_string(), "out.json".to_string()])
+            .expect("explicit output should parse");
+        assert_eq!(path, PathBuf::from("out.json"));
+    }
+
+    #[test]
+    fn output_arg_missing_value_is_error() {
+        let err = parse_output_path_from(["--output".to_string()])
+            .expect_err("missing output path should be rejected");
+        assert!(
+            err.to_string().contains("missing value"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn output_arg_followed_by_flag_is_error() {
+        let err = parse_output_path_from(["--output".to_string(), "--other".to_string()])
+            .expect_err("flag after --output should not become a path");
+        assert!(
+            err.to_string().contains("missing value"),
+            "unexpected error: {err:#}"
+        );
+    }
 }
