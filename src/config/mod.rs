@@ -22,6 +22,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 mod paths;
+pub mod provider_supervisor;
 
 #[allow(dead_code)]
 pub const CONFIG_DIR_OVERRIDE_ENV: &str = paths::CONFIG_DIR_OVERRIDE_ENV;
@@ -1593,12 +1594,45 @@ fn handle_watch_event(
             if old_cfg == new_cfg {
                 return;
             }
-            if old_cfg.requires_restart(&new_cfg) {
-                restart_required.store(true, Ordering::Relaxed);
-                tracing::warn!(
-                    "⚠ Restart required for provider or audio-device settings to take effect"
-                );
+
+            // ── HC-02 provider supervisor ─────────────────────────────────
+            // Classify provider-relevant changes before accepting the new
+            // config.  An invalid provider config is rejected (rollback) and
+            // the watch channel is NOT updated so apply_runtime_config in main
+            // never sees the bad value.
+            let old_bundle = provider_supervisor::ProviderBundle::from_config(&old_cfg);
+            match old_bundle.evaluate_change(&new_cfg) {
+                provider_supervisor::SupervisorOutcome::Rejected { reason } => {
+                    tracing::warn!(
+                        "⚠ Provider config change rejected — keeping previous config. \
+                         Reason: {reason}"
+                    );
+                    // Rollback: do not send the new config on the channel.
+                    return;
+                }
+                provider_supervisor::SupervisorOutcome::NeedsOrchestratorRestart { reason } => {
+                    // Valid provider change — set the restart flag with a
+                    // specific, informative message instead of the generic one.
+                    restart_required.store(true, Ordering::Relaxed);
+                    tracing::warn!(
+                        "⚠ Provider rebuild pending — application restart required. {reason}"
+                    );
+                }
+                provider_supervisor::SupervisorOutcome::Unchanged => {
+                    // No provider change; fall through to the generic
+                    // restart-required check for non-provider restart fields
+                    // (audio device, vad, session_store, …).
+                    if old_cfg.requires_restart(&new_cfg) {
+                        restart_required.store(true, Ordering::Relaxed);
+                        tracing::warn!(
+                            "⚠ Restart required for audio-device or pipeline settings \
+                             to take effect"
+                        );
+                    }
+                }
             }
+            // ─────────────────────────────────────────────────────────────
+
             if tx.send(new_cfg).is_err() {
                 tracing::info!("config watcher: channel closed");
             } else {
@@ -3625,5 +3659,161 @@ mod tests {
             !current.requires_restart(&next),
             "changing _comment must not require a restart"
         );
+    }
+
+    // ── HC-02 / issue #387: provider supervisor wiring tests ─────────────────
+
+    /// When `stt_provider` changes in the file watcher, `handle_watch_event`
+    /// must set `restart_required` and broadcast the new config (valid change).
+    #[tokio::test]
+    async fn watcher_accepts_valid_stt_provider_change_and_sets_restart_required() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("config.json");
+
+        // Write initial config: default stt_provider = "local".
+        let initial = AppConfig::default();
+        write_config(&path, &initial).expect("write initial config");
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = watch::channel(initial.clone());
+        let event = notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![path.clone()],
+            attrs: Default::default(),
+        };
+
+        // Write a valid provider change: switch stt_provider to "google" + add key.
+        // Also switch stt_fallback_policy to "none" because "google-when-keyed"
+        // is only valid when stt_provider = "local".
+        let next = AppConfig {
+            stt_provider: "google".to_string(),
+            stt_fallback_policy: "none".to_string(),
+            google_api_key: Some("AIzaSyDemoKey".to_string()),
+            ..initial.clone()
+        };
+        write_config(&path, &next).expect("write valid provider change");
+
+        handle_watch_event(event, &path, &restart_required, &tx);
+
+        // New config must have been broadcast.
+        rx.changed().await.expect("config changed signal");
+        assert_eq!(rx.borrow().stt_provider, "google");
+
+        // restart_required must be set.
+        assert!(
+            restart_required.load(Ordering::Relaxed),
+            "valid stt_provider change must set restart_required"
+        );
+    }
+
+    /// When the new config contains an invalid provider value, `handle_watch_event`
+    /// must NOT broadcast the bad config (rollback) and must NOT set
+    /// `restart_required`.
+    #[tokio::test]
+    async fn watcher_rejects_invalid_provider_config_with_rollback() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("config.json");
+
+        let initial = AppConfig::default();
+        write_config(&path, &initial).expect("write initial config");
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = watch::channel(initial.clone());
+        let event = notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![path.clone()],
+            attrs: Default::default(),
+        };
+
+        // Write a config that the supervisor must reject (unsupported stt_provider).
+        // Bypass write_config (which also validates) by writing raw JSON directly.
+        std::fs::write(
+            &path,
+            r#"{"source_language":"ja-JP","target_language":"vi","stt_provider":"azure"}"#,
+        )
+        .expect("write bad provider config");
+
+        let changed_before = rx.has_changed().unwrap_or(false);
+        handle_watch_event(event, &path, &restart_required, &tx);
+
+        // The watch channel must NOT have changed (rollback).
+        assert!(
+            !rx.has_changed().unwrap_or(changed_before),
+            "rejected provider config must not be broadcast on the watch channel"
+        );
+        // Drain any spurious prior changes so the assert is clean.
+        let _ = rx.borrow_and_update();
+
+        // restart_required must NOT be set.
+        assert!(
+            !restart_required.load(Ordering::Relaxed),
+            "rejected provider config must not set restart_required"
+        );
+    }
+
+    /// A hot-config-only change (e.g. `target_language`) must be broadcast
+    /// without setting `restart_required`, bypassing the supervisor path.
+    #[tokio::test]
+    async fn watcher_hot_field_change_bypasses_provider_supervisor() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("config.json");
+
+        let initial = AppConfig::default(); // target_language = "vi"
+        write_config(&path, &initial).expect("write initial config");
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = watch::channel(initial.clone());
+        let event = notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![path.clone()],
+            attrs: Default::default(),
+        };
+
+        let next = AppConfig {
+            target_language: "en".to_string(),
+            ..initial.clone()
+        };
+        write_config(&path, &next).expect("write hot-only change");
+
+        handle_watch_event(event, &path, &restart_required, &tx);
+
+        // Hot change must be broadcast.
+        rx.changed().await.expect("config hot-reload signal");
+        assert_eq!(rx.borrow().target_language, "en");
+
+        // restart_required must NOT be set for a hot-only change.
+        assert!(
+            !restart_required.load(Ordering::Relaxed),
+            "hot-field-only change must not set restart_required"
+        );
+    }
+
+    /// `google_api_key` must never appear in a rejected reason that reaches
+    /// the watcher's tracing output path (tested by asserting the
+    /// supervisor-level Rejected reason does not expose the key).
+    #[test]
+    fn rejected_provider_change_reason_does_not_expose_api_key() {
+        use super::provider_supervisor::{ProviderBundle, SupervisorOutcome};
+
+        let current = AppConfig::default();
+        let old_bundle = ProviderBundle::from_config(&current);
+        let mut next = current.clone();
+        next.stt_provider = "azure".to_string(); // invalid — triggers Rejected
+        next.google_api_key = Some("AIzaSySecretMustNeverLeak".to_string());
+
+        if let SupervisorOutcome::Rejected { reason } = old_bundle.evaluate_change(&next) {
+            assert!(
+                !reason.contains("AIzaSySecretMustNeverLeak"),
+                "Rejected reason must not expose the API key; got: {reason}"
+            );
+        } else {
+            panic!("expected Rejected outcome for invalid stt_provider");
+        }
     }
 }
