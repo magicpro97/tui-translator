@@ -399,6 +399,55 @@ trunc:12%  flicker:3  mt:47
 
 ---
 
+### Storage metrics (expanded panel)
+
+The expanded metrics panel also shows a **storage row** in the bottom section.
+It has two fields on one line:
+
+```
+transcripts: 12 KB at C:\...\sessions\session-…\00001.jsonl   audio archive: 3.4 MB at C:\...\audio-archive\session-…\00001.wav
+```
+
+#### Transcript (session recorder) fields
+
+| Field | What it shows |
+|-------|---------------|
+| `transcripts: <size>` | Total bytes handed to the OS for the active JSONL transcript file since the session started (monotonically non-decreasing; never resets mid-session). |
+| `at <path>` | Absolute path of the active transcript segment file (`00001.jsonl`, `00002.jsonl`, … when segment rotation is enabled). |
+| `transcripts: —` | Recording is disabled (`session_store.enabled: false`). |
+
+The counter is updated by the writer task via an `AtomicU64::fetch_add` on
+every successful write; it is always coherent with the next metrics-publisher
+tick (≤ 1 second).  The counter only grows — if the active session directory
+is evicted by `enforce_total_session_cap`, the in-memory counter is **not**
+affected.
+
+#### Audio archive fields
+
+| Field | What it shows |
+|-------|---------------|
+| `audio archive: <size>` | Total PCM bytes written to WAV data chunk(s) across all segments of the current session. |
+| `at <path>` | Absolute path of the WAV segment currently being written. |
+| `(sealed)` | Legacy single-file archive mode reached the per-file size quota and stopped appending.  In the LF-06 per-session layout, `audio_archive.max_size_mb` rotates to the next WAV segment instead of showing a permanent sealed state. |
+| `audio archive: —` | Archiving is disabled (`audio_archive.store_audio: false`) or the archive writer did not start. |
+| `audio archive: (consent revoked)` | `consent_given` was set to `false` in the loaded config.  **Bytes and path are hidden** to prevent accidental privacy disclosure. |
+
+#### Consent-gate timing
+
+The `(consent revoked)` state is driven by an `AtomicBool` updated when
+`config.json` is reloaded.  The TUI draw loop reads the same atomic on every
+render tick (at most 1 second apart), so the privacy gate takes effect within
+the next 1 Hz render tick in practice — no restart required.
+
+#### Update cadence
+
+Both storage counters are published once per second through the existing
+`AppState::metrics_tx` watch channel (the same 1 Hz cadence used for all
+other metrics fields).  The underlying atomics may advance faster than 1 Hz
+for high-volume sessions, but the **display** lags by at most one tick.
+
+---
+
 ### Diagnosing common quality problems
 
 **Word fragments in subtitles** (for example, subtitles show `会議` then `の結果です` as separate

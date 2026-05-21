@@ -98,9 +98,23 @@ consent (see §3.2 below).
 
 ### Retention
 
-Session logs are plain JSONL files in the sessions directory.  The application
-does not automatically delete them.  You are responsible for managing and
-deleting these files if retention is a concern.
+Session logs are plain JSONL files under per-session subdirectories in the
+sessions directory.
+
+The application **automatically evicts the oldest sealed sessions** (LF-06)
+when either of the following limits is reached:
+
+| Config key | Default | Effect |
+|------------|---------|--------|
+| `session_store.max_sessions` | `100` | Keep at most this many session directories; oldest sealed sessions are pruned first. |
+| `session_store.total_bytes_cap` | `0` (disabled) | Delete oldest sessions until total on-disk bytes are below this cap. |
+| `session_store.retention_days` | `0` (disabled) | Delete sessions whose newest file is older than this many days. |
+
+The **active session** is never deleted by eviction.  Set
+`session_store.total_bytes_cap` and `session_store.retention_days` to `0` to
+disable size- and age-based eviction; `session_store.max_sessions` still caps
+the number of retained sealed sessions.  You are always responsible for
+managing files beyond what these automatic limits cover.
 
 ---
 
@@ -134,12 +148,22 @@ It does **not** capture your microphone.
 | `audio_archive.consent_given` | `false` | Consent confirmation; must be `true` to enable. |
 | `audio_archive.directory` | `null` | Custom archive directory; omit for default. |
 | `audio_archive.max_size_mb` | `0` | Soft per-file quota in MiB; `0` = unlimited. |
+| `audio_archive.total_bytes_cap` | `0` | Total archive retention cap in bytes; `0` = unlimited. |
+| `audio_archive.retention_days` | `0` | Archive retention window in days; `0` = unlimited. |
 
 ### Retention
 
-WAV files are plain files in the archive directory.  The application does not
-automatically delete them.  Enable `max_size_mb` to cap the size of each
-session file.  You are responsible for managing and deleting archive files.
+WAV files are written under per-session subdirectories of the archive
+directory.
+
+The application **automatically evicts the oldest sealed archive sessions**
+(LF-06) using the archive-specific `audio_archive.total_bytes_cap` and
+`audio_archive.retention_days` limits.  These use the same oldest-sealed-session
+eviction mechanics as transcript retention, but they are configured separately
+from `session_store.total_bytes_cap` and `session_store.retention_days`.
+Enable `max_size_mb` to cap the size of each individual session's audio
+segments.  The active session is never deleted.  You are responsible for
+managing files beyond what these automatic limits cover.
 
 ---
 
