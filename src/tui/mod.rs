@@ -31,7 +31,7 @@ use unicode_width::UnicodeWidthChar;
 use crate::config::{AppConfig, TtsRouting};
 
 pub use crate::metrics::{
-    format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttState,
+    format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttSource, SttState,
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ const AUDIO_SOURCE_CHOICES: [&str; 2] = ["wasapi", "file"];
 const PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
 const BOOLEAN_CHOICES: [&str; 2] = ["false", "true"];
 const TTS_ROUTING_CHOICES: [&str; 3] = ["speakers", "virtual_mic", "both"];
-const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "local"];
+const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "google-when-keyed"];
 const CAPTURE_DEVICE_DEFAULT_LABEL: &str = "Windows default playback";
 const CAPTURE_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES: usize = 3;
@@ -1504,6 +1504,17 @@ pub struct AppState {
     /// gate archive bytes and path visibility in the metrics overlay within
     /// the existing 1 Hz render cadence.
     pub audio_consent: Arc<AtomicBool>,
+
+    // ── Issue #371 (LF-03) — STT source tracking ─────────────────────────
+    /// Which STT provider is currently active.
+    ///
+    /// Initialised from `AppConfig::stt_provider` at startup: `"google"` →
+    /// [`SttSource::GoogleConfigured`], `"local"` → [`SttSource::Local`].
+    /// Updated to [`SttSource::GoogleFallback`] by [`FallbackSttProvider`]
+    /// when the `google-when-keyed` policy activates.
+    ///
+    /// [`FallbackSttProvider`]: crate::pipeline::fallback::FallbackSttProvider
+    pub stt_source: Arc<Mutex<SttSource>>,
 }
 
 impl AppState {
@@ -1537,7 +1548,15 @@ impl AppState {
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
             audio_consent: Arc::new(AtomicBool::new(false)),
+            stt_source: Arc::new(Mutex::new(SttSource::Local)),
         }
+    }
+
+    /// Read the current [`SttSource`] without holding the lock.
+    ///
+    /// Called by the draw loop to snapshot the value once per frame.
+    pub fn stt_source_snapshot(&self) -> SttSource {
+        *self.stt_source.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     /// Current audio level as a ratio in `[0.0, 1.0]` suitable for
@@ -1858,6 +1877,10 @@ pub struct StatusMetricsStrip<'a> {
     /// render layer and updated at most 1 s after the config changes, matching
     /// the existing 1 Hz metrics-publisher cadence.
     pub audio_consent: bool,
+    // ── Issue #371 (LF-03): STT source label ─────────────────────────────────
+    /// Which STT provider is currently active.  Controls the source label shown
+    /// in the status span (e.g. `"STT: local"`, `"STT: google (fallback)"`).
+    pub stt_source: SttSource,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -1882,18 +1905,34 @@ impl StatusMetricsStrip<'_> {
 
     /// Abbreviated STT label for narrow terminals (< 80 columns, issue #60).
     ///
-    /// Uses plain ASCII text without Unicode geometric-shape prefixes so that
-    /// the label renders consistently on all fonts and terminal emulators.
+    /// Includes both the activity state and the source abbreviation.
     fn stt_abbrev(&self) -> String {
+        let src = self.stt_source.abbrev();
         match self.stt {
-            SttState::Idle => "idle".to_string(),
-            SttState::Listening => "listen".to_string(),
-            SttState::Sending => "send".to_string(),
-            SttState::Waiting => "wait".to_string(),
+            SttState::Idle => format!("idle/{src}"),
+            SttState::Listening => format!("listen/{src}"),
+            SttState::Sending => format!("send/{src}"),
+            SttState::Waiting => format!("wait/{src}"),
             SttState::Error(msg) => {
                 let short: String = msg.chars().take(6).collect();
                 format!("err:{short}")
             }
+        }
+    }
+
+    /// Format the STT span text, combining activity indicator with source label
+    /// (issue #371 / LF-03).
+    ///
+    /// * Error state preserves the existing error format unchanged.
+    /// * All other states prepend the Unicode activity indicator to the
+    ///   provider source label from [`SttSource::status_label`].
+    fn format_stt_span(&self) -> String {
+        match self.stt {
+            SttState::Error(msg) => format!("\u{2717} STT: error: {msg}"),
+            SttState::Idle => self.stt_source.status_label().to_string(),
+            SttState::Listening => format!("\u{25cf} {}", self.stt_source.status_label()),
+            SttState::Sending => format!("\u{25cc} {}", self.stt_source.status_label()),
+            SttState::Waiting => format!("\u{25cb} {}", self.stt_source.status_label()),
         }
     }
 
@@ -1933,7 +1972,7 @@ impl StatusMetricsStrip<'_> {
         } else if area.width >= 120 {
             format!(
                 " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} Route:{} \u{2502} {} pairs \u{2502} Audio:{:.0}s \u{2502} {} \u{2502} {}",
-                self.stt.label(),
+                self.format_stt_span(),
                 self.target_language,
                 tts_str,
                 route_str,
@@ -1945,7 +1984,7 @@ impl StatusMetricsStrip<'_> {
         } else {
             format!(
                 " {} \u{2502} Lang:{} \u{2502} TTS:{} \u{2502} Route:{} \u{2502} {} pairs \u{2502} {} \u{2502} {}",
-                self.stt.label(),
+                self.format_stt_span(),
                 self.target_language,
                 tts_str,
                 route_str,
@@ -2046,9 +2085,7 @@ impl StatusMetricsStrip<'_> {
 
         let mut lines: Vec<Line<'_>> = vec![
             Line::from(vec![
-                // Use the full label directly — no separate "STT: " prefix to
-                // avoid the double-prefix that was in the original snapshot.
-                Span::styled(self.stt.label(), Style::default().fg(stt_color)),
+                Span::styled(self.format_stt_span(), Style::default().fg(stt_color)),
                 Span::raw("   "),
                 Span::styled("TTS: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(
@@ -2247,6 +2284,21 @@ pub fn draw_ui(
     );
 }
 
+/// Format the STT span text for use outside of [`StatusMetricsStrip`], e.g. in
+/// the title bar.
+///
+/// Same logic as [`StatusMetricsStrip::format_stt_span`] but takes its inputs
+/// by value so it can be used as a free function in the draw loop.
+fn format_stt_span_standalone(stt: &SttState, source: SttSource) -> String {
+    match stt {
+        SttState::Error(msg) => format!("\u{2717} STT: error: {msg}"),
+        SttState::Idle => source.status_label().to_string(),
+        SttState::Listening => format!("\u{25cf} {}", source.status_label()),
+        SttState::Sending => format!("\u{25cc} {}", source.status_label()),
+        SttState::Waiting => format!("\u{25cb} {}", source.status_label()),
+    }
+}
+
 /// Render the full application UI with an explicit TTS route summary.
 pub fn draw_ui_with_route(
     frame: &mut ratatui::Frame,
@@ -2286,6 +2338,7 @@ pub fn draw_ui_with_route(
     let source_language = state.source_language();
     let target_language = state.target_language();
     let stt = state.stt_state_snapshot();
+    let stt_source = state.stt_source_snapshot();
     let metrics = state.metrics_snapshot();
     let pipeline_err = state
         .pipeline_error_msg
@@ -2343,7 +2396,7 @@ pub fn draw_ui_with_route(
         Span::styled(target_language.clone(), Style::default().fg(Color::Green)),
         Span::styled("   \u{2502}   ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            stt.label(),
+            format_stt_span_standalone(&stt, stt_source),
             Style::default()
                 .fg(stt_color_val)
                 .add_modifier(Modifier::BOLD),
@@ -2457,6 +2510,8 @@ pub fn draw_ui_with_route(
         archive_path: metrics.archive_path.clone(),
         archive_sealed: metrics.archive_sealed,
         audio_consent: state.audio_consent.load(Ordering::Relaxed),
+        // Issue #371 (LF-03): source label snapshotted above with stt state.
+        stt_source,
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -3725,6 +3780,7 @@ mod tests {
                     archive_path: None,
                     archive_sealed: false,
                     audio_consent: false,
+                    stt_source: SttSource::Local,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -4209,7 +4265,8 @@ mod tests {
             ConfigEditorMode::Settings,
         );
 
-        assert_eq!(editor.stt_provider, "google");
+        // stt_provider defaults to "local" (issue #371), mt_provider still "google".
+        assert_eq!(editor.stt_provider, "local");
         assert_eq!(editor.mt_provider, "google");
     }
 
@@ -4826,12 +4883,13 @@ mod tests {
             ConfigEditorMode::Settings,
         );
         editor.selected_field = ConfigEditorField::SttProvider.index();
-        assert_eq!(editor.stt_provider, "google");
+        // Default stt_provider is now "local" (issue #371).
+        assert_eq!(editor.stt_provider, "local");
 
         editor.cycle_active_field();
-        assert_eq!(editor.stt_provider, "local");
-        editor.cycle_active_field();
         assert_eq!(editor.stt_provider, "google");
+        editor.cycle_active_field();
+        assert_eq!(editor.stt_provider, "local");
     }
 
     #[test]
@@ -4892,12 +4950,12 @@ mod tests {
             ConfigEditorMode::Settings,
         );
         editor.selected_field = ConfigEditorField::SttFallbackPolicy.index();
-        assert_eq!(editor.stt_fallback_policy, "none");
+        assert_eq!(editor.stt_fallback_policy, "google-when-keyed");
 
         editor.cycle_active_field();
-        assert_eq!(editor.stt_fallback_policy, "local");
-        editor.cycle_active_field();
         assert_eq!(editor.stt_fallback_policy, "none");
+        editor.cycle_active_field();
+        assert_eq!(editor.stt_fallback_policy, "google-when-keyed");
     }
 
     #[test]
@@ -5014,7 +5072,8 @@ mod tests {
         );
 
         assert_eq!(editor.tts_enabled, "false");
-        assert_eq!(editor.stt_fallback_policy, "none");
+        // Default fallback policy is now "google-when-keyed" (issue #371).
+        assert_eq!(editor.stt_fallback_policy, "google-when-keyed");
     }
 
     // ── SubtitlePair ────────────────────────────────────────────────────────
@@ -5297,6 +5356,7 @@ mod tests {
             archive_path,
             archive_sealed,
             audio_consent,
+            stt_source: SttSource::Local,
         };
         let backend = TestBackend::new(120, 9);
         let mut terminal = Terminal::new(backend).expect("TestBackend terminal init must not fail");

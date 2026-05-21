@@ -552,8 +552,10 @@ pub struct AppConfig {
     pub capture_device: Option<String>,
 
     /// Speech-to-text provider backend.  Accepted values:
-    /// - `"google"` *(default)* — Google Cloud Speech-to-Text.
-    /// - `"local"` — CPU-local Whisper STT when built with `local-stt`.
+    /// - `"local"` *(default, issue #371)* — CPU-local Whisper STT when built
+    ///   with `local-stt`; falls back to Google on permanent local errors when
+    ///   `stt_fallback_policy` is `"google-when-keyed"`.
+    /// - `"google"` — Google Cloud Speech-to-Text.
     #[serde(default = "default_stt_provider")]
     pub stt_provider: String,
 
@@ -565,14 +567,18 @@ pub struct AppConfig {
     pub mt_provider: String,
 
     /// Fallback policy when the primary STT provider encounters a permanent
-    /// authentication error.  Accepted values:
-    /// - `"none"` *(default)* — no fallback; authentication errors halt the
-    ///   pipeline until the application is restarted with a valid key.
-    /// - `"local"` — switch to CPU-local Whisper STT on the first
-    ///   `AuthError` from the primary (Google) provider.  Requires the
-    ///   executable to be built with the `local-stt` Cargo feature and a
-    ///   Whisper model file in `~/.tui-translator/models/`.  Only meaningful
-    ///   when `stt_provider` is `"google"`.
+    /// error.  Accepted values:
+    /// - `"google-when-keyed"` *(default, issue #371)* — when `stt_provider`
+    ///   is `"local"`, switch to Google Cloud STT on the first permanent
+    ///   local-unavailable error (`ModelNotFound`, `ChecksumMismatch`,
+    ///   `Unimplemented`) only when `google_api_key` is configured.  Without a
+    ///   key, no cloud STT call is attempted.
+    /// - `"none"` — no fallback; permanent errors halt the pipeline until the
+    ///   application is restarted.
+    ///
+    /// The legacy value `"local"` is no longer accepted; it was valid when
+    /// `stt_provider` defaulted to `"google"` (issue #214).  Use
+    /// `"google-when-keyed"` with `stt_provider = "local"` instead.
     #[serde(default = "default_stt_fallback_policy")]
     pub stt_fallback_policy: String,
 
@@ -797,7 +803,7 @@ fn default_audio_source() -> String {
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_stt_provider() -> String {
-    "google".to_string()
+    "local".to_string()
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -807,7 +813,7 @@ fn default_mt_provider() -> String {
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_stt_fallback_policy() -> String {
-    "none".to_string()
+    "google-when-keyed".to_string()
 }
 
 // VAD default helpers — referenced via #[serde(default = "...")] attributes on VadConfigJson.
@@ -996,9 +1002,19 @@ impl AppConfig {
             );
         }
         match self.stt_fallback_policy.as_str() {
-            "none" | "local" => {}
+            "none" | "google-when-keyed" => {}
+            "local" => {
+                bail!(
+                    "`stt_fallback_policy` value \"local\" is no longer accepted; \
+                     use \"google-when-keyed\" with `stt_provider = \"local\"` instead \
+                     (issue #371)"
+                );
+            }
             other => {
-                bail!("`stt_fallback_policy` must be \"none\" or \"local\", got {other:?}");
+                bail!(
+                    "`stt_fallback_policy` must be \"none\" or \"google-when-keyed\", \
+                     got {other:?}"
+                );
             }
         }
         // ── Pipeline config validation (issue #270) ────────────────────────
@@ -1828,8 +1844,8 @@ mod tests {
         assert_eq!(cfg.target_language, "vi");
         assert!(!cfg.tts_enabled);
         assert!(cfg.capture_device.is_none());
-        // T1: provider fields must default to "google"
-        assert_eq!(cfg.stt_provider, "google");
+        // T1: provider fields must default to "local" for STT and "google" for MT (issue #371)
+        assert_eq!(cfg.stt_provider, "local");
         assert_eq!(cfg.mt_provider, "google");
         assert!(cfg.session_store.enabled, "LF-06: enabled by default");
         cfg.validate()
@@ -1894,15 +1910,18 @@ mod tests {
         assert_eq!(cfg.google_api_key.as_deref(), Some("TEST"));
     }
 
-    // T1: empty config JSON — stt_provider and mt_provider default to "google"
+    // T1: empty config JSON — stt_provider defaults to "local", mt_provider to "google" (issue #371)
     #[test]
-    fn provider_fields_default_to_google_when_absent() {
-        let mut f = NamedTempFile::new().unwrap();
-        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
-        let cfg = load(f.path()).unwrap();
+    fn provider_fields_default_correctly_when_absent() {
+        // OK: unwrap in test
+        let mut f = NamedTempFile::new().expect("temp file");
+        // OK: unwrap in test
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).expect("write");
+        // OK: unwrap in test
+        let cfg = load(f.path()).expect("load config");
         assert_eq!(
-            cfg.stt_provider, "google",
-            "stt_provider should default to google"
+            cfg.stt_provider, "local",
+            "stt_provider should default to local (issue #371)"
         );
         assert_eq!(
             cfg.mt_provider, "google",
@@ -2293,9 +2312,9 @@ mod tests {
 
     #[test]
     fn stt_provider_change_requires_restart() {
-        let current = AppConfig::default();
+        let current = AppConfig::default(); // stt_provider = "local" (issue #371)
         let next = AppConfig {
-            stt_provider: "local".to_string(),
+            stt_provider: "google".to_string(),
             ..AppConfig::default()
         };
 
@@ -3445,9 +3464,9 @@ mod tests {
     /// `stt_fallback_policy` change must require restart (fallback chain wired at init).
     #[test]
     fn stt_fallback_policy_change_requires_restart() {
-        let current = AppConfig::default(); // "none"
+        let current = AppConfig::default(); // "google-when-keyed"
         let next = AppConfig {
-            stt_fallback_policy: "local".to_string(),
+            stt_fallback_policy: "none".to_string(),
             ..AppConfig::default()
         };
         assert!(

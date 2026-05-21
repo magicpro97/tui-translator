@@ -62,7 +62,7 @@ mod tui;
 use audio::DEFAULT_SILENCE_THRESHOLD;
 use metrics::{
     spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
-    NetworkMetrics, ProcessSnapshot,
+    NetworkMetrics, ProcessSnapshot, SttSource,
 };
 use tui::{
     draw_session_summary, draw_ui_with_route, help_overlay_max_scroll, subtitle_inner_area,
@@ -363,12 +363,35 @@ enum RuntimeSttProvider {
     /// Active when `stt_provider = "google"` and `stt_fallback_policy =
     /// "local"`.  On the first `AuthError` from Google the provider switches
     /// permanently to local Whisper and writes a visible status message.
-    /// This variant is compiled in stub builds too so users receive the same
-    /// actionable local-STT setup error path as `stt_provider = "local"`.
     GoogleWithLocalFallback(
         pipeline::fallback::FallbackSttProvider<
             providers::google::stt::GoogleSttProvider,
             providers::local::LocalWhisperSttProvider,
+        >,
+    ),
+    /// Local Whisper STT with a Google fallback (issue #371 / LF-03).
+    ///
+    /// Active when `stt_provider = "local"` and `stt_fallback_policy =
+    /// "google-when-keyed"` and the local provider was successfully initialised
+    /// at startup.  On the first permanent local-unavailable error the provider
+    /// switches permanently to Google STT.
+    #[cfg(feature = "local-stt")]
+    LocalWithGoogleFallback(
+        pipeline::fallback::FallbackSttProvider<
+            providers::local::LocalWhisperSttProvider,
+            providers::google::stt::GoogleSttProvider,
+        >,
+    ),
+    /// Like [`LocalWithGoogleFallback`] but the local provider failed to
+    /// initialise at startup (issue #371 / LF-03, Opus decision #2).
+    ///
+    /// The stub primary always returns `ModelNotFound`, which immediately
+    /// activates the Google fallback on the first `transcribe` call.
+    #[cfg(feature = "local-stt")]
+    LocalFailedWithGoogleFallback(
+        pipeline::fallback::FallbackSttProvider<
+            pipeline::fallback::FailedLocalSttProvider,
+            providers::google::stt::GoogleSttProvider,
         >,
     ),
 }
@@ -456,6 +479,14 @@ impl providers::SttProvider for RuntimeSttProvider {
             Self::GoogleWithLocalFallback(provider) => {
                 providers::SttProvider::transcribe(provider, chunk, language_code).await
             }
+            #[cfg(feature = "local-stt")]
+            Self::LocalWithGoogleFallback(provider) => {
+                providers::SttProvider::transcribe(provider, chunk, language_code).await
+            }
+            #[cfg(feature = "local-stt")]
+            Self::LocalFailedWithGoogleFallback(provider) => {
+                providers::SttProvider::transcribe(provider, chunk, language_code).await
+            }
         }
     }
 }
@@ -465,6 +496,7 @@ fn build_runtime_stt_provider(
     google_api_key: Option<&str>,
     status_msg: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     local_provider_active: Arc<AtomicBool>,
+    stt_source: Arc<Mutex<SttSource>>,
 ) -> std::result::Result<RuntimeSttProvider, providers::ProviderError> {
     match cfg.stt_provider.as_str() {
         "google" => {
@@ -507,6 +539,7 @@ fn build_runtime_stt_provider(
                         policy,
                         status_msg,
                         local_provider_active,
+                        stt_source,
                     ),
                 ))
             } else {
@@ -514,8 +547,82 @@ fn build_runtime_stt_provider(
             }
         }
         #[cfg(feature = "local-stt")]
-        "local" => providers::local::LocalWhisperSttProvider::new(providers::local::ModelId::Tiny)
-            .map(RuntimeSttProvider::Local),
+        "local" => {
+            // Issue #371 / LF-03: local-primary with optional Google fallback.
+            let policy =
+                pipeline::fallback::SttFallbackPolicy::from_config(&cfg.stt_fallback_policy)
+                    .unwrap_or(pipeline::fallback::SttFallbackPolicy::None);
+
+            if policy == pipeline::fallback::SttFallbackPolicy::GoogleWhenKeyed {
+                let Some(key) = google_api_key else {
+                    tracing::info!(
+                        "stt_fallback_policy is google-when-keyed but no google_api_key is \
+                         configured; running local STT without cloud fallback (issue #371)"
+                    );
+                    return providers::local::LocalWhisperSttProvider::new(
+                        providers::local::ModelId::Tiny,
+                    )
+                    .map(|p| {
+                        local_provider_active.store(true, Ordering::Relaxed);
+                        RuntimeSttProvider::Local(p)
+                    });
+                };
+
+                let google = providers::google::stt::GoogleSttProvider::new(key)?
+                    .with_phrase_hints(cfg.stt_phrase_hints.clone());
+
+                match providers::local::LocalWhisperSttProvider::new(
+                    providers::local::ModelId::Tiny,
+                ) {
+                    Ok(local) => {
+                        tracing::info!(
+                            "local Whisper (tiny) ready as primary STT; Google as fallback \
+                             (google-when-keyed, issue #371)"
+                        );
+                        local_provider_active.store(true, Ordering::Relaxed);
+                        Ok(RuntimeSttProvider::LocalWithGoogleFallback(
+                            pipeline::fallback::FallbackSttProvider::new(
+                                local,
+                                Some(google),
+                                None,
+                                policy,
+                                status_msg,
+                                local_provider_active,
+                                stt_source,
+                            ),
+                        ))
+                    }
+                    Err(e) => {
+                        // Local init failed at startup → use stub primary so
+                        // Google activates on the first transcribe call (Opus
+                        // decision #2, issue #371).
+                        tracing::warn!(
+                            "local STT unavailable at startup; will use Google fallback \
+                             immediately (google-when-keyed, issue #371): {e}"
+                        );
+                        Ok(RuntimeSttProvider::LocalFailedWithGoogleFallback(
+                            pipeline::fallback::FallbackSttProvider::new(
+                                pipeline::fallback::FailedLocalSttProvider::new(e.to_string()),
+                                Some(google),
+                                None,
+                                policy,
+                                status_msg,
+                                local_provider_active,
+                                stt_source,
+                            ),
+                        ))
+                    }
+                }
+            } else {
+                // policy=none or any other value: simple local-only provider.
+                providers::local::LocalWhisperSttProvider::new(providers::local::ModelId::Tiny).map(
+                    |p| {
+                        local_provider_active.store(true, Ordering::Relaxed);
+                        RuntimeSttProvider::Local(p)
+                    },
+                )
+            }
+        }
         #[cfg(not(feature = "local-stt"))]
         "local" => Err(providers::ProviderError::Unimplemented(
             "local Whisper STT requires a build compiled with `--features local-stt`".to_string(),
@@ -2067,24 +2174,49 @@ fn main() -> Result<()> {
                 let google_api_key = cfg_snapshot.google_api_key.as_deref();
                 let source_language = Arc::clone(&state.source_language);
 
-                // Issue #230 + #214: shared STT-local flag read by the CPU gate.
-                // It starts true only for configured local STT, then flips true
-                // if Google falls back to local Whisper at runtime. Local MT does
-                // not drop audio before Google STT has a chance to transcribe it.
+                // Initialise stt_source from config before building the
+                // provider so the TUI shows the right label immediately (LF-03).
+                {
+                    let initial_source = if cfg_snapshot.stt_provider == "google" {
+                        SttSource::GoogleConfigured
+                    } else {
+                        SttSource::Local
+                    };
+                    *state.stt_source.lock().unwrap_or_else(|p| p.into_inner()) = initial_source;
+                }
+
+                // Issue #230 + #214 + #371: shared STT-local flag read by the
+                // CPU gate.  Starts true only for configured local STT; may be
+                // updated by the fallback provider at runtime.
                 let provider_is_local =
                     Arc::new(AtomicBool::new(cfg_snapshot.stt_provider == "local"));
-                let local_unavailable_is_fatal = cfg_snapshot.stt_provider == "google"
-                    && cfg_snapshot.stt_fallback_policy == "local";
+
+                // local_unavailable_is_fatal: when true, a local-unavailable
+                // error should halt the pipeline (no fallback available).
+                // With google-when-keyed, the FallbackSttProvider handles the
+                // switch, so the pipeline-level fatal flag must be false.
+                let local_unavailable_is_fatal = (cfg_snapshot.stt_provider == "google"
+                    && cfg_snapshot.stt_fallback_policy == "local")
+                    || (cfg_snapshot.stt_provider == "local"
+                        && cfg_snapshot.stt_fallback_policy == "none");
 
                 let stt_provider = match build_runtime_stt_provider(
                     &cfg_snapshot,
                     google_api_key,
                     Arc::clone(&state.pipeline_error_msg),
                     Arc::clone(&provider_is_local),
+                    Arc::clone(&state.stt_source),
                 ) {
                     Ok(p) => p,
                     Err(err) => {
                         tracing::error!("failed to create STT provider: {err}");
+                        let provider_msg = format!("Speech-to-text unavailable: {err}");
+                        *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                            metrics::SttState::Error(provider_msg.clone());
+                        *state
+                            .pipeline_error_msg
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
                         // Fall back to metrics-only audio task.
                         spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                         orchestrator_join = None;
@@ -4922,14 +5054,18 @@ mod tests {
 
     #[test]
     fn runtime_provider_error_allows_default_google_mode() {
-        let cfg = config::AppConfig::default();
+        // Test that pure google mode has no runtime provider error.
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "google".to_string();
         assert!(runtime_provider_error(&cfg).is_none());
     }
 
     #[test]
     fn missing_google_api_key_error_preserves_default_metrics_only_without_key() {
-        let cfg = config::AppConfig::default();
-
+        // Pure google-only mode (no key) runs in metrics-only mode — no error.
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "google".to_string();
+        // mt_provider defaults to "google", tts_enabled defaults to false.
         assert!(missing_google_api_key_error(&cfg).is_none());
     }
 
@@ -4950,6 +5086,7 @@ mod tests {
     #[test]
     fn missing_google_api_key_error_gives_tts_specific_action() {
         let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "google".to_string();
         cfg.tts_enabled = true;
 
         let msg = missing_google_api_key_error(&cfg)
@@ -5070,7 +5207,7 @@ mod tests {
             &cfg_path,
         );
         let _ = state.with_config_editor_mut(|editor| {
-            editor.stt_provider = "local".to_string();
+            editor.stt_provider = "google".to_string();
         });
 
         handle_action(
@@ -6232,12 +6369,13 @@ mod tests {
         let current = config::AppConfig::default();
         let mut editor =
             tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
-        editor.stt_fallback_policy = "local".to_string();
+        editor.stt_fallback_policy = "none".to_string();
 
-        let result = build_config_from_editor(&editor, &current).unwrap();
+        // OK: unwrap in test assertion
+        let result = build_config_from_editor(&editor, &current).expect("build config");
 
         assert_eq!(
-            result.stt_fallback_policy, "local",
+            result.stt_fallback_policy, "none",
             "stt_fallback_policy must be persisted from editor"
         );
     }
@@ -6266,14 +6404,15 @@ mod tests {
         let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
         let mut cfg = config::AppConfig::default();
         cfg.tts_enabled = true;
-        cfg.stt_fallback_policy = "local".to_string();
+        cfg.stt_fallback_policy = "none".to_string();
 
         let editor =
             tui::ConfigEditorState::from_config(&cfg, cfg_path, ConfigEditorMode::Settings);
-        let result = build_config_from_editor(&editor, &cfg).unwrap();
+        // OK: unwrap in test assertion
+        let result = build_config_from_editor(&editor, &cfg).expect("build config");
 
         assert!(result.tts_enabled);
-        assert_eq!(result.stt_fallback_policy, "local");
+        assert_eq!(result.stt_fallback_policy, "none");
     }
 
     // ── Replay CLI parsing tests (issue #226) ─────────────────────────────────

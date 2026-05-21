@@ -11,12 +11,12 @@ expression: "render_config_editor(&editor, 90, 20)"
        │> Audio source    : file_                                                 │
        │  Capture device  : Windows default playback                              │
        │  Audio file path : C:\capture\meeting.wav                                │
-       │  STT provider    : google                                                │
+       │  STT provider    : local                                                 │
        │  MT provider     : google                                                │
        │  TTS enabled     : false                                                 │
        │  TTS routing     : speakers                                              │
        │  Virtual mic     : not configured                                        │
-       │  STT fallback    : none                                                  │
+       │  STT fallback    : google-when-keyed                                     │
        │  VAD pre-roll ms : 200                                                   │
        │  Max window ms   : 3000                                                  │
        │  Early VAD flush : true                                                  │

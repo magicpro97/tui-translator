@@ -3,7 +3,7 @@ source: tests/snapshot.rs
 expression: rendered
 ---
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                TUI Translator   │   ja-JP → vi   │   STT: idle               │
+│               TUI Translator   │   ja-JP → vi   │   STT: local               │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌ Audio — Default device ──────────────────────────────────────────────────────┐
 │                                      0%                                      │
@@ -23,6 +23,6 @@ expression: rendered
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ STT: idle │ Lang:vi │ TTS:off │ Route:spk │ 0 pairs │ no charges │ 0:00      │
+│ STT: local │ Lang:vi │ TTS:off │ Route:spk │ 0 pairs │ no charges │ 0:00     │
 └──────────────────────────────────────────────────────────────────────────────┘
  ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit

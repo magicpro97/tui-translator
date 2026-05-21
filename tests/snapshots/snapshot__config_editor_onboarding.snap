@@ -12,12 +12,12 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  Audio source    : wasapi                                                │
        │  Capture device  : Windows default playback                              │
        │  Audio file path : C:\capture\fixture.wav                                │
-       │  STT provider    : google                                                │
+       │  STT provider    : local                                                 │
        │  MT provider     : google                                                │
        │  TTS enabled     : false                                                 │
        │  TTS routing     : speakers                                              │
        │  Virtual mic     : not configured                                        │
-       │  STT fallback    : none                                                  │
+       │  STT fallback    : google-when-keyed                                     │
        │ Ready to save.                                                           │
        │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
        │                                                                          │
