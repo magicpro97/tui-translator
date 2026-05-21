@@ -5,4 +5,6 @@
 //! of `config` imports and to match the HC-02 pattern used by
 //! [`crate::config::provider_supervisor`].
 //!
-//! Re-export the types here for convenience when only `session` is in scope.
+//! This module intentionally contains no re-exports: several standalone test
+//! binaries include `session` without `config`, so re-exporting config types
+//! here would break those crates.

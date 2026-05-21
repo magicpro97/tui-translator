@@ -34,17 +34,12 @@ pub enum RecorderChangeOutcome {
 
 /// Compare old and new [`AppConfig`] and return a typed [`RecorderChangeOutcome`].
 ///
-/// Only `session_store.directory` triggers a path switch.  Changing
-/// `enabled`, `max_sessions`, `per_session_bytes_cap`, `total_bytes_cap`, or
-/// `retention_days` while a session is active is handled by the recorder`s
-/// internal cap logic and does not require a file switch.
+/// Only `session_store.directory` triggers a path switch in this foundation
+/// classifier. Other `session_store` fields do not imply a new JSONL path;
+/// applying them to an already-running writer is a separate supervisor concern.
 pub fn classify_recorder_change(old: &AppConfig, new: &AppConfig) -> RecorderChangeOutcome {
     let old_dir = old.session_store.directory.as_deref().unwrap_or("");
     let new_dir = new.session_store.directory.as_deref().unwrap_or("");
-
-    if old_dir == new_dir {
-        return RecorderChangeOutcome::Unchanged;
-    }
 
     if let Some(dir) = &new.session_store.directory {
         if dir.trim().is_empty() {
@@ -52,6 +47,10 @@ pub fn classify_recorder_change(old: &AppConfig, new: &AppConfig) -> RecorderCha
                 reason: "session_store.directory is present but empty".to_string(),
             };
         }
+    }
+
+    if old_dir == new_dir {
+        return RecorderChangeOutcome::Unchanged;
     }
 
     RecorderChangeOutcome::NeedsPathSwitch {
@@ -128,6 +127,18 @@ mod tests {
         let old = base();
         let mut new = base();
         new.session_store.directory = Some("   ".to_string());
+        assert!(matches!(
+            classify_recorder_change(&old, &new),
+            RecorderChangeOutcome::Rejected { .. }
+        ));
+    }
+
+    #[test]
+    fn rejected_when_empty_directory_is_same_as_absent_after_normalization() {
+        let mut old = base();
+        old.session_store.directory = None;
+        let mut new = base();
+        new.session_store.directory = Some(String::new());
         assert!(matches!(
             classify_recorder_change(&old, &new),
             RecorderChangeOutcome::Rejected { .. }

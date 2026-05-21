@@ -8,7 +8,7 @@
 //!
 //! # BLOCKED / SPLIT_REQUIRED — orchestrator wiring
 //!
-//! Full hot-swap of the running orchestrator`s audio receiver is **not
+//! Full hot-swap of the running orchestrator's audio receiver is **not
 //! implemented**.  `run_orchestrator(mut audio_rx: mpsc::Receiver<AudioChunk>, …)`
 //! owns the receiver by value.  Wiring the live swap requires either a
 //! `watch::Sender<mpsc::Receiver<AudioChunk>>` in `OrchestratorContext` or a

@@ -473,8 +473,10 @@ impl SessionRecorder {
     /// 5. Returns the new file path on `Ok`.
     ///
     /// The recorder continues to accept [`record_segment`](Self::record_segment)
-    /// calls; records queued *before* this call land in the old file, records
-    /// queued *after* land in the new file.
+    /// calls. Records that the writer processes before the seal message stay
+    /// in the old file; records submitted after this method returns are written
+    /// to the new file. Callers that need strict old/new ordering must await
+    /// this method before queueing records for the new session.
     ///
     /// Does nothing and returns `Err(WriterStopped)` when the recorder is
     /// disabled.
