@@ -1,0 +1,42 @@
+{
+  "schema_version": "lf-04-v1",
+  "hardware_id": "pending",
+  "status": "pending",
+  "skipped": true,
+  "skipped_reason": "No benchmark runs have been executed yet.  The local OPUS-MT models (opus-mt-ja-vi, opus-mt-ja-en, opus-mt-en-vi) have not been downloaded and verified on representative hardware.  Real measurements must be collected and this file updated before the default mt_provider can be considered for a switch from 'google' to 'local'.  See docs/10-local-mt-backend-decision.md §7 (LF-04 addendum) for the required pass criteria.",
+  "results": [
+    {
+      "pair": "ja-vi",
+      "route": "LocalDirect",
+      "model_id": "opus-mt-ja-vi",
+      "realtime_factor": null,
+      "p95_latency_ms": null,
+      "quality_score": null,
+      "sample_count": 0,
+      "skipped": true,
+      "skipped_reason": "Model not yet downloaded; run with --features local-mt after installing the opus-mt-ja-vi ONNX bundle."
+    },
+    {
+      "pair": "ja-en",
+      "route": "PivotLegPlanned",
+      "model_id": "opus-mt-ja-en",
+      "realtime_factor": null,
+      "p95_latency_ms": null,
+      "quality_score": null,
+      "sample_count": 0,
+      "skipped": true,
+      "skipped_reason": "Benchmark leg for future pivot runtime; user routing is not wired yet."
+    },
+    {
+      "pair": "en-vi",
+      "route": "PivotLegPlanned",
+      "model_id": "opus-mt-en-vi",
+      "realtime_factor": null,
+      "p95_latency_ms": null,
+      "quality_score": null,
+      "sample_count": 0,
+      "skipped": true,
+      "skipped_reason": "Benchmark leg for future pivot runtime; user routing is not wired yet."
+    }
+  ]
+}

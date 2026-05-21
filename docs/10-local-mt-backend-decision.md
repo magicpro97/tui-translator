@@ -325,6 +325,88 @@ any release.
 
 ---
 
+## 8. LF-04 Addendum — Routing Table, Cloud Fallback Config, and Benchmark Gate
+
+**Issue:** [#372 LF-04 — Local MT routing + benchmark harness](https://github.com/magicpro97/tui-translator/issues/372)  
+**Status:** Routing table shipped; benchmark pending; default `mt_provider` remains `google`.  
+**Added:** 2026-05-xx
+
+### 8.1 Why the default stays `google`
+
+The local OPUS-MT backend (`mt_provider = "local"`) has no passing benchmark evidence and
+covers only the `ja→vi` pair directly.  Until `docs/evidence/lf-04-benchmark.json` shows
+`status: "passed"` for all advertised pairs against the thresholds in §6, flipping the default
+would expose users to:
+
+- Unmeasured latency (the p95 < 500 ms gate has not been run).
+- Unmeasured quality (no BLEU/chrF numbers for domain-specific meeting text).
+- Unsupported pairs silently falling through with no output.
+
+The verification gate test (`tests/mt_routing.rs::benchmark_artifact_pending_status_allows_google_default`)
+enforces this invariant: **if `docs/evidence/lf-04-benchmark.json` has `status != "passed"`,
+`AppConfig::default().mt_provider` must be `"google"`.**
+
+### 8.2 Routing table (LF-04, initial)
+
+The routing table lives in `src/providers/mt/routing.rs`.
+
+| Source | Target | Decision | Status |
+|--------|--------|----------|--------|
+| `ja` | `vi` | `Direct { "opus-mt-ja-vi" }` | ✅ Model exists; benchmark pending |
+| *any other* | *any* | `UnsupportedLocal` | ❌ Explicit error or cloud fallback |
+
+`opus-mt-ja-en` and `opus-mt-en-vi` are tracked in the benchmark artifact as
+`PivotLegPlanned`, not returned as user routes. This avoids telling a user who requests
+`ja→en` or `en→vi` that their translation is "via English"; those pairs should use cloud
+fallback until the local runtime grows direct support or a real pivot-mode selector.
+
+### 8.3 Cloud fallback config (`mt_cloud_fallback`)
+
+A new optional config field `mt_cloud_fallback: Option<String>` controls whether an unsupported
+pair can fall back to a cloud provider:
+
+```json
+{
+  "mt_provider": "local",
+  "google_api_key": "YOUR_GOOGLE_API_KEY_HERE",
+  "mt_cloud_fallback": "google"
+}
+```
+
+- **Absent (default):** unsupported pairs return a visible "unsupported pair" error.  No silent
+  best-effort cloud call is made.
+- **`"google"`:** unsupported pairs fall back to Google Translation.  The API key
+  (`google_api_key`) is still required.
+- Any other value is rejected by `AppConfig::validate`.
+
+**Key presence alone is not consent to network.**  This field must be set deliberately.
+
+### 8.4 TUI status labels
+
+The routing helper exposes `ResolvedRoute::status_label()` with these exact strings:
+
+| Route | Label |
+|-------|-------|
+| `LocalDirect` | `MT: local (direct)` |
+| `LocalPivotPlanned` | `MT: local (via en)` |
+| `CloudFallback` | `MT: google (unsupported pair)` |
+| `Unsupported` | *(none — surface error)* |
+
+`LocalPivotPlanned` is reserved for the future two-model pivot route; the initial LF-04 table
+does not emit it for `ja→en` or `en→vi`. Full footer rendering is deferred to a follow-up issue.
+
+### 8.5 Passing criteria for default flip
+
+To change `AppConfig::default().mt_provider` from `"google"` to `"local"`:
+
+1. Run `cargo run --bin mt_bench --features local-mt -- --output docs/evidence/lf-04-benchmark.json`
+   on ≥ two representative laptops.
+2. Verify all pairs in `results` show `realtime_factor ≤ 1.0`, `p95_latency_ms < 500`,
+   `quality_score ≥ 50.0`, and `sample_count ≥ 20`.
+3. Set `status: "passed"` in the artifact.
+4. The verification gate test (`benchmark_artifact_pending_status_allows_google_default`) will
+   then allow the default flip.
+
 ## 7. Sources
 
 | Claim | Source |
