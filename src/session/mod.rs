@@ -83,6 +83,14 @@ pub struct SessionHeader {
     /// Capture device label if one was selected; absent means Windows default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capture_device: Option<String>,
+    /// Human-readable slot label for dual-slot sessions ("A" for slot A, "B" for slot B).
+    /// Absent in single-slot sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_label: Option<String>,
+    /// Machine-readable slot identifier for dual-slot sessions ("a" or "b").
+    /// Absent in single-slot sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_id: Option<String>,
 }
 
 /// One committed bilingual subtitle segment and its replay/export metadata.
@@ -171,6 +179,10 @@ pub struct SessionRecorderConfig {
     /// many bytes, the writer task seals it and starts a new segment under
     /// the same session directory.  `0` disables segment rollover.
     pub per_session_bytes_cap: u64,
+    /// Optional slot suffix appended to segment file names for dual-slot sessions
+    /// (e.g. `"a"` → `00001-a.jsonl`, `"b"` → `00001-b.jsonl`).
+    /// `None` (default) produces standard `00001.jsonl` segments.
+    pub slot_suffix: Option<String>,
 }
 
 impl SessionRecorderConfig {
@@ -181,6 +193,7 @@ impl SessionRecorderConfig {
             directory: directory.into(),
             max_sessions: None,
             per_session_bytes_cap: 0,
+            slot_suffix: None,
         }
     }
 
@@ -191,6 +204,7 @@ impl SessionRecorderConfig {
             directory: directory.into(),
             max_sessions: Some(max_sessions),
             per_session_bytes_cap: 0,
+            slot_suffix: None,
         }
     }
 
@@ -200,6 +214,22 @@ impl SessionRecorderConfig {
         self
     }
 
+    /// Builder: set the slot suffix for dual-slot sessions.
+    ///
+    /// Suffix must be 1–8 ASCII alphanumeric characters (e.g. `"a"`, `"b"`).
+    /// Produces segment files like `00001-a.jsonl` instead of `00001.jsonl`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the suffix contains path-traversal characters or
+    /// is otherwise unsafe to use as a file-name component.
+    pub fn with_slot_suffix(mut self, suffix: impl Into<String>) -> anyhow::Result<Self> {
+        let suffix = suffix.into();
+        validate_slot_suffix(&suffix)?;
+        self.slot_suffix = Some(suffix);
+        Ok(self)
+    }
+
     /// Create a disabled recorder config. The directory is kept for tests and diagnostics.
     pub fn disabled(directory: impl Into<PathBuf>) -> Self {
         Self {
@@ -207,6 +237,7 @@ impl SessionRecorderConfig {
             directory: directory.into(),
             max_sessions: None,
             per_session_bytes_cap: 0,
+            slot_suffix: None,
         }
     }
 }
@@ -280,7 +311,7 @@ impl SessionRecorder {
             )
         })?;
 
-        let path = session_dir.join(segment_file_name(1));
+        let path = session_dir.join(segment_file_name(1, config.slot_suffix.as_deref()));
         let session_id = header.session_id.clone();
         let mut file = OpenOptions::new()
             .write(true)
@@ -314,6 +345,7 @@ impl SessionRecorder {
                 initial_segment_bytes: header_byte_count as u64,
                 per_session_bytes_cap: config.per_session_bytes_cap,
                 bytes_written: Arc::clone(&bytes_written),
+                slot_suffix: config.slot_suffix,
             },
         ));
 
@@ -435,6 +467,7 @@ struct WriterRuntime {
     initial_segment_bytes: u64,
     per_session_bytes_cap: u64,
     bytes_written: Arc<AtomicU64>,
+    slot_suffix: Option<String>,
 }
 
 async fn run_writer(
@@ -449,6 +482,7 @@ async fn run_writer(
         initial_segment_bytes,
         per_session_bytes_cap,
         bytes_written,
+        slot_suffix,
     } = writer;
     let mut current_segment: u32 = 1;
     let mut current_segment_bytes: u64 = initial_segment_bytes;
@@ -456,7 +490,9 @@ async fn run_writer(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone()
-        .unwrap_or_else(|| session_dir.join(segment_file_name(current_segment)));
+        .unwrap_or_else(|| {
+            session_dir.join(segment_file_name(current_segment, slot_suffix.as_deref()))
+        });
 
     while let Some(record) = rx.recv().await {
         // Pre-serialise to know the line length so we can rotate before writing.
@@ -488,7 +524,8 @@ async fn run_writer(
                 break;
             }
             current_segment = current_segment.saturating_add(1);
-            let next_path = session_dir.join(segment_file_name(current_segment));
+            let next_path =
+                session_dir.join(segment_file_name(current_segment, slot_suffix.as_deref()));
             match OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -558,8 +595,27 @@ async fn write_record_line(file: &mut File, record: &SessionLogRecord) -> std::i
     Ok(len)
 }
 
-fn segment_file_name(segment_index: u32) -> String {
-    format!("{segment_index:05}.jsonl")
+fn segment_file_name(segment_index: u32, slot_suffix: Option<&str>) -> String {
+    match slot_suffix {
+        None => format!("{segment_index:05}.jsonl"),
+        Some(s) => format!("{segment_index:05}-{s}.jsonl"),
+    }
+}
+
+/// Validate a slot suffix to prevent path traversal and filesystem collisions.
+///
+/// A valid suffix is 1–8 ASCII alphanumeric characters (e.g. `"a"`, `"b"`).
+fn validate_slot_suffix(suffix: &str) -> anyhow::Result<()> {
+    if suffix.is_empty() {
+        anyhow::bail!("slot suffix must not be empty");
+    }
+    if suffix.len() > 8 {
+        anyhow::bail!("slot suffix too long (max 8 chars): {suffix:?}");
+    }
+    if !suffix.chars().all(|c| c.is_ascii_alphanumeric()) {
+        anyhow::bail!("slot suffix must contain only ASCII alphanumeric characters: {suffix:?}");
+    }
+    Ok(())
 }
 
 fn sanitize_session_id_for_fs(session_id: &str) -> String {
@@ -732,7 +788,23 @@ pub fn session_id_from_jsonl_path(path: &Path) -> Option<&str> {
 }
 
 fn looks_like_segment_stem(stem: &str) -> bool {
-    !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit())
+    if stem.is_empty() {
+        return false;
+    }
+    // Handle plain "00001" and slot-suffixed "00001-a" patterns.
+    let digit_part = if let Some((digits, suffix)) = stem.split_once('-') {
+        // suffix must be 1–8 ASCII alphanumeric chars with no path-traversal chars.
+        if suffix.is_empty()
+            || suffix.len() > 8
+            || !suffix.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            return false;
+        }
+        digits
+    } else {
+        stem
+    };
+    !digit_part.is_empty() && digit_part.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Error returned when a JSONL transcript and a WAV audio-archive path-pair do
@@ -1394,6 +1466,8 @@ mod tests {
             mt_provider: "google".to_string(),
             tts_enabled: false,
             capture_device: None,
+            slot_label: None,
+            slot_id: None,
         }
     }
 
@@ -1572,6 +1646,220 @@ mod tests {
                 } if version == future_version
             ),
             "future schema version must fail replay load, got {err:?}"
+        );
+    }
+
+    // ── DM-05: per-slot recorder tests ────────────────────────────────────────
+
+    #[test]
+    fn slot_suffix_absent_in_single_slot_header() {
+        let header = test_header("single-session");
+        assert!(header.slot_label.is_none());
+        assert!(header.slot_id.is_none());
+        let encoded = serde_json::to_string(&SessionLogRecord::SessionHeader(header))
+            .expect("header must serialize");
+        assert!(!encoded.contains("slot_label"));
+        assert!(!encoded.contains("slot_id"));
+    }
+
+    #[test]
+    fn slot_fields_serialize_and_round_trip_for_dual_slot_header() {
+        let header = SessionHeader {
+            schema_version: SESSION_LOG_SCHEMA_VERSION,
+            session_id: "dual-session".to_string(),
+            app_version: "test".to_string(),
+            started_at_unix_ms: 1_710_000_000_000,
+            source_language: "ja-JP".to_string(),
+            target_language: "vi".to_string(),
+            stt_provider: "google".to_string(),
+            mt_provider: "google".to_string(),
+            tts_enabled: false,
+            capture_device: None,
+            slot_label: Some("A".to_string()),
+            slot_id: Some("a".to_string()),
+        };
+        let encoded = serde_json::to_string(&SessionLogRecord::SessionHeader(header.clone()))
+            .expect("must serialize");
+        assert!(encoded.contains(r#""slot_label":"A""#));
+        assert!(encoded.contains(r#""slot_id":"a""#));
+        let decoded: SessionLogRecord = serde_json::from_str(&encoded).expect("must round-trip");
+        let SessionLogRecord::SessionHeader(h) = decoded else {
+            panic!("must be SessionHeader");
+        };
+        assert_eq!(h.slot_label, Some("A".to_string()));
+        assert_eq!(h.slot_id, Some("a".to_string()));
+    }
+
+    #[test]
+    fn old_v1_header_without_slot_fields_deserializes_with_none() {
+        let json = r#"{"record_type":"session_header","schema_version":1,"session_id":"old-session","app_version":"0.1.0","started_at_unix_ms":1710000000000,"source_language":"ja-JP","target_language":"vi","stt_provider":"google","mt_provider":"google","tts_enabled":false}"#;
+        let record: SessionLogRecord = serde_json::from_str(json).expect("must deserialize");
+        let SessionLogRecord::SessionHeader(h) = record else {
+            panic!("must be SessionHeader");
+        };
+        assert_eq!(h.slot_label, None);
+        assert_eq!(h.slot_id, None);
+        assert_eq!(h.session_id, "old-session");
+    }
+
+    #[test]
+    fn validate_slot_suffix_accepts_known_values() {
+        assert!(validate_slot_suffix("a").is_ok());
+        assert!(validate_slot_suffix("b").is_ok());
+        assert!(validate_slot_suffix("01").is_ok());
+    }
+
+    #[test]
+    fn validate_slot_suffix_rejects_invalid_values() {
+        assert!(validate_slot_suffix("").is_err());
+        assert!(validate_slot_suffix("a/b").is_err());
+        assert!(validate_slot_suffix("a-b").is_err());
+        assert!(validate_slot_suffix("../x").is_err());
+        assert!(validate_slot_suffix("toolongsuffix").is_err());
+    }
+
+    #[test]
+    fn segment_file_name_without_suffix_is_standard() {
+        assert_eq!(segment_file_name(1, None), "00001.jsonl");
+        assert_eq!(segment_file_name(2, None), "00002.jsonl");
+    }
+
+    #[test]
+    fn segment_file_name_with_suffix_appends_dash_suffix() {
+        assert_eq!(segment_file_name(1, Some("a")), "00001-a.jsonl");
+        assert_eq!(segment_file_name(1, Some("b")), "00001-b.jsonl");
+        assert_eq!(segment_file_name(2, Some("a")), "00002-a.jsonl");
+    }
+
+    #[test]
+    fn looks_like_segment_stem_handles_plain_and_suffixed() {
+        assert!(looks_like_segment_stem("00001"));
+        assert!(looks_like_segment_stem("00001-a"));
+        assert!(looks_like_segment_stem("00001-b"));
+        assert!(looks_like_segment_stem("00002-a"));
+        assert!(!looks_like_segment_stem(""));
+        assert!(!looks_like_segment_stem("session-123"));
+        assert!(!looks_like_segment_stem("00001-"));
+    }
+
+    #[tokio::test]
+    async fn dual_slot_recorders_produce_a_and_b_files_under_same_session_dir() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let session_id = "dual-test-session";
+        let header_a = SessionHeader {
+            slot_label: Some("A".to_string()),
+            slot_id: Some("a".to_string()),
+            ..test_header(session_id)
+        };
+        let header_b = SessionHeader {
+            slot_label: Some("B".to_string()),
+            slot_id: Some("b".to_string()),
+            ..test_header(session_id)
+        };
+        let cfg_a = SessionRecorderConfig::enabled(sessions_dir.clone())
+            .with_slot_suffix("a")
+            .expect("suffix a is valid");
+        let cfg_b = SessionRecorderConfig::enabled(sessions_dir.clone())
+            .with_slot_suffix("b")
+            .expect("suffix b is valid");
+        let recorder_a = SessionRecorder::start(cfg_a, header_a)
+            .await
+            .expect("start slot-A recorder");
+        let recorder_b = SessionRecorder::start(cfg_b, header_b)
+            .await
+            .expect("start slot-B recorder");
+        recorder_a
+            .record_segment(test_segment(1))
+            .expect("record A");
+        recorder_b
+            .record_segment(test_segment(1))
+            .expect("record B");
+        recorder_a.shutdown().await.expect("shutdown A");
+        recorder_b.shutdown().await.expect("shutdown B");
+
+        let session_dir = sessions_dir.join(session_id);
+        let path_a = session_dir.join("00001-a.jsonl");
+        let path_b = session_dir.join("00001-b.jsonl");
+        assert!(path_a.exists(), "00001-a.jsonl must exist");
+        assert!(path_b.exists(), "00001-b.jsonl must exist");
+
+        for (path, exp_label, exp_id) in [(&path_a, "A", "a"), (&path_b, "B", "b")] {
+            let first_line = std::fs::read_to_string(path)
+                .expect("read file")
+                .lines()
+                .next()
+                .expect("file has at least one line")
+                .to_string();
+            let rec: SessionLogRecord = serde_json::from_str(&first_line).expect("parses");
+            let SessionLogRecord::SessionHeader(h) = rec else {
+                panic!("first record must be SessionHeader");
+            };
+            assert_eq!(h.slot_label.as_deref(), Some(exp_label));
+            assert_eq!(h.slot_id.as_deref(), Some(exp_id));
+            assert_eq!(h.session_id, session_id);
+        }
+        // Every JSONL line must parse.
+        for path in [&path_a, &path_b] {
+            let content = std::fs::read_to_string(path).expect("read");
+            for line in content.lines() {
+                serde_json::from_str::<SessionLogRecord>(line)
+                    .unwrap_or_else(|e| panic!("parse error in {path:?}: {e}"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn dual_slot_rollover_produces_suffixed_segment_files() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let header_a = SessionHeader {
+            slot_label: Some("A".to_string()),
+            slot_id: Some("a".to_string()),
+            ..test_header("rollover-dual")
+        };
+        let cfg_a = SessionRecorderConfig::enabled(sessions_dir.clone())
+            .with_per_session_bytes_cap(128)
+            .with_slot_suffix("a")
+            .expect("suffix a is valid");
+        let rec = SessionRecorder::start(cfg_a, header_a)
+            .await
+            .expect("start recorder");
+        for id in 0..6u64 {
+            rec.record_segment(test_segment(id)).expect("record");
+        }
+        rec.shutdown().await.expect("shutdown");
+        let session_dir = sessions_dir.join("rollover-dual");
+        let entries: Vec<String> = std::fs::read_dir(&session_dir)
+            .expect("read dir")
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            entries.iter().any(|n| n == "00001-a.jsonl"),
+            "got {entries:?}"
+        );
+        assert!(
+            entries.iter().any(|n| n == "00002-a.jsonl"),
+            "got {entries:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn single_slot_lf06_layout_unchanged_by_dm05() {
+        let temp = TempDir::new().expect("create tempdir");
+        let sessions_dir = temp.path().join("sessions");
+        let rec = SessionRecorder::start(
+            SessionRecorderConfig::enabled(sessions_dir.clone()),
+            test_header("single-unchanged"),
+        )
+        .await
+        .expect("start recorder");
+        let path = rec.path().expect("path must be set");
+        rec.shutdown().await.expect("shutdown");
+        assert_eq!(
+            path,
+            sessions_dir.join("single-unchanged").join("00001.jsonl")
         );
     }
 }

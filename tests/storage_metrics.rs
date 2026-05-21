@@ -56,6 +56,8 @@ fn test_header(session_id: &str) -> SessionHeader {
         mt_provider: "google".to_string(),
         tts_enabled: false,
         capture_device: None,
+        slot_label: None,
+        slot_id: None,
     }
 }
 
