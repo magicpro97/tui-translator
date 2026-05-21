@@ -151,6 +151,30 @@ async fn new_file_starts_with_session_header() {
     }
 }
 
+/// The recorder handle metadata follows the reopened session.
+#[tokio::test]
+async fn seal_and_reopen_updates_handle_metadata() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let sessions_dir = temp.path().join("sessions");
+
+    let config = SessionRecorderConfig::enabled(&sessions_dir);
+    let mut recorder = SessionRecorder::start(config, test_header("metadata-old"))
+        .await
+        .expect("start recorder");
+
+    let new_dir = sessions_dir.join("metadata-new");
+    let new_path = recorder
+        .seal_and_reopen(new_dir.clone(), test_header("metadata-new"))
+        .await
+        .expect("seal_and_reopen");
+
+    assert_eq!(recorder.session_id(), Some("metadata-new"));
+    assert_eq!(recorder.session_dir(), Some(new_dir.as_path()));
+    assert_eq!(recorder.path(), Some(new_path));
+
+    recorder.shutdown().await.expect("shutdown");
+}
+
 /// Segments recorded BEFORE `seal_and_reopen` appear in the old file, not the new one.
 #[tokio::test]
 async fn segments_recorded_before_seal_land_in_old_file() {

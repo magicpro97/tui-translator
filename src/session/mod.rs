@@ -493,6 +493,7 @@ impl SessionRecorder {
                 "recorder is disabled".to_string(),
             ));
         };
+        let new_session_id = new_header.session_id.clone();
         let (done_tx, done_rx) = oneshot::channel();
         sender
             .send(WriterMessage::SealAndReopen {
@@ -507,8 +508,9 @@ impl SessionRecorder {
         match done_rx.await {
             Ok(Ok(new_path)) => {
                 // Update the recorder's session_dir so path() / session_dir()
-                // reflect the new location.
+                // / session_id() reflect the new location.
                 self.session_dir = Some(new_session_dir);
+                self.session_id = Some(new_session_id);
                 Ok(new_path)
             }
             Ok(Err(msg)) => Err(SessionRecorderError::WriterStopped(msg)),
