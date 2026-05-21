@@ -40,6 +40,10 @@ path = "src/bin/vbcable_ci_probe.rs"
 name = "eval_session"
 path = "src/bin/eval_session.rs"
 
+[[bin]]
+name = "mt_bench"
+path = "src/bin/mt_bench.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.30"
