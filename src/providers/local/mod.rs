@@ -38,6 +38,22 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "local-stt")]
 use std::sync::Arc;
 
+/// Verbatim MIT license text bundled with the built-in Whisper model specs.
+///
+/// Embedded at compile time from `assets/licenses/whisper-mit.txt` so the
+/// application can display the full license body before any download begins.
+const WHISPER_MIT_LICENSE: &str = include_str!("../../../assets/licenses/whisper-mit.txt");
+
+/// Verbatim Apache 2.0 license text bundled with the OPUS-MT model specs.
+const OPUS_MT_APACHE_LICENSE: &str = include_str!("../../../assets/licenses/opus-mt-apache.txt");
+
+/// Stable version string for the built-in OPUS-MT ja→vi consent manifest.
+pub const OPUS_MT_JA_VI_VERSION: &str = "2024-01-01";
+
+/// License URL for the Helsinki-NLP OPUS-MT ja→vi model.
+pub const OPUS_MT_JA_VI_LICENSE_URL: &str =
+    "https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi/blob/main/LICENSE";
+
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
@@ -51,8 +67,9 @@ pub mod runtime_caps;
 
 #[allow(unused_imports)]
 pub use bootstrap::{
-    migrate_models, offline_guard, try_migrate_legacy_cache, write_consent_record, BootstrapError,
-    ConsentRecord, ModelBootstrapManifest, LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
+    consent_status, migrate_models, model_consent_status, offline_guard, try_migrate_legacy_cache,
+    write_consent_record, write_model_consent_record, BootstrapError, ConsentRecord, ConsentStatus,
+    ModelBootstrapManifest, ModelConsentManifest, LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
 };
 #[allow(unused_imports)]
 pub use model_download::{
@@ -165,6 +182,18 @@ pub struct ModelSpec {
     /// Verified by [`verify_model_checksum`] before the file is passed to the
     /// inference engine.
     pub sha256: &'static str,
+
+    /// URL pointing to the license text for this model.
+    ///
+    /// Shown to the user before the first download so they can review the
+    /// license terms. Also stored in the consent record.
+    pub license_url: &'static str,
+
+    /// Full license text for this model, embedded at compile time.
+    ///
+    /// Displayed to the user during first-run onboarding so they can read and
+    /// accept the license without a network request.
+    pub license_text: &'static str,
 }
 
 // ── Built-in manifest ────────────────────────────────────────────────────────
@@ -203,6 +232,19 @@ impl ModelManifest {
     }
 }
 
+/// Consent metadata for the OPUS-MT ja→vi local MT model.
+///
+/// OPUS-MT is a multi-file local model, so it intentionally uses the
+/// consent-only shape instead of fabricating single-file checksum metadata.
+pub fn opus_mt_ja_vi_consent_manifest() -> bootstrap::ModelConsentManifest {
+    bootstrap::ModelConsentManifest {
+        name: "opus-mt-ja-vi".to_string(),
+        version: OPUS_MT_JA_VI_VERSION.to_string(),
+        license_url: OPUS_MT_JA_VI_LICENSE_URL.to_string(),
+        license_text: OPUS_MT_APACHE_LICENSE.to_string(),
+    }
+}
+
 /// Static array backing [`ModelManifest::builtin`].
 ///
 /// Sources:
@@ -216,6 +258,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
         size_bytes: 77_704_715,
         sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::Tiny,
@@ -223,6 +267,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
         size_bytes: 77_691_713,
         sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::BaseEn,
@@ -230,6 +276,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
         size_bytes: 147_964_211,
         sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::Base,
@@ -237,6 +285,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
         size_bytes: 147_951_465,
         sha256: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::SmallEn,
@@ -244,6 +294,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
         size_bytes: 487_614_201,
         sha256: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::Small,
@@ -251,6 +303,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
         size_bytes: 487_601_967,
         sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::MediumEn,
@@ -259,6 +313,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin",
         size_bytes: 1_533_774_781,
         sha256: "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
     ModelSpec {
         id: ModelId::Medium,
@@ -266,6 +322,8 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
         size_bytes: 1_533_763_059,
         sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
     },
 ];
 
@@ -961,6 +1019,8 @@ mod tests {
             download_url: "https://example.com/dummy.bin",
             size_bytes: 5,
             sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
 
         assert!(verify_model_checksum(&spec, f.path()).is_ok());
@@ -979,6 +1039,8 @@ mod tests {
             size_bytes: 5,
             // deliberately wrong
             sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
 
         let err = verify_model_checksum(&spec, f.path()).unwrap_err();
@@ -996,6 +1058,8 @@ mod tests {
             download_url: "https://example.com/ggml-base.en.bin",
             size_bytes: 147_964_211,
             sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
 
         let missing = Path::new(r"C:\does\not\exist\ggml-base.en.bin");
@@ -1017,6 +1081,8 @@ mod tests {
             download_url: "https://example.com/ggml-tiny.bin",
             size_bytes: 77_691_713,
             sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
         assert!(check_model_present(&spec, f.path()).is_ok());
     }
@@ -1029,6 +1095,8 @@ mod tests {
             download_url: "https://example.com/ggml-tiny.bin",
             size_bytes: 77_691_713,
             sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
         let missing = Path::new(r"C:\does\not\exist\ggml-tiny.bin");
         let err = check_model_present(&spec, missing).unwrap_err();

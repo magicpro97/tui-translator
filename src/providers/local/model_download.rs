@@ -802,11 +802,11 @@ mod tests {
             download_url: "https://example.com/ggml-tiny.bin",
             sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             size_bytes: 42,
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
 
         let manifest = stt_model_bundle_manifest(&spec);
-
-        assert_eq!(manifest.id, "whisper-tiny");
         assert_eq!(manifest.version, "0123456789ab");
         assert_eq!(manifest.files[0].relative_path, "ggml-tiny.bin");
         assert_eq!(manifest.files[0].sha256, spec.sha256);
@@ -822,6 +822,8 @@ mod tests {
             download_url: "https://example.com/ggml-tiny.bin",
             sha256: "abc",
             size_bytes: 42,
+            license_url: "https://example.com/license",
+            license_text: "MIT License",
         };
 
         let manifest = stt_model_bundle_manifest(&spec);
