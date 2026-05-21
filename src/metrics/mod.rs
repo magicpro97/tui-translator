@@ -74,9 +74,9 @@ impl SttSource {
     /// Very short abbreviation used in narrow (< 80-column) terminal layouts.
     pub fn abbrev(self) -> &'static str {
         match self {
-            SttSource::Local => "local",
-            SttSource::GoogleConfigured => "goog",
-            SttSource::GoogleFallback => "goog!",
+            SttSource::Local => "L",
+            SttSource::GoogleConfigured => "G",
+            SttSource::GoogleFallback => "G!",
         }
     }
 }

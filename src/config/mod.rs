@@ -1055,6 +1055,12 @@ impl AppConfig {
                 );
             }
         }
+        if self.stt_fallback_policy == "google-when-keyed" && self.stt_provider != "local" {
+            bail!(
+                "`stt_fallback_policy = \"google-when-keyed\"` requires \
+                 `stt_provider = \"local\"`; use \"none\" for Google STT configs"
+            );
+        }
         // ── Pipeline config validation (issue #270) ────────────────────────
         if !(500..=60_000).contains(&self.pipeline.max_window_ms) {
             bail!(
@@ -2167,6 +2173,22 @@ mod tests {
                 "error should mention {field}, got: {err}"
             );
         }
+    }
+
+    #[test]
+    fn google_when_keyed_fallback_requires_local_stt_provider() {
+        let cfg = AppConfig {
+            stt_provider: "google".to_string(),
+            stt_fallback_policy: "google-when-keyed".to_string(),
+            google_api_key: Some("demo-key".to_string()),
+            ..AppConfig::default()
+        };
+
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("stt_provider = \"local\""),
+            "error should explain google-when-keyed only applies to local STT; got: {err}"
+        );
     }
 
     #[test]

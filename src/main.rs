@@ -3196,6 +3196,9 @@ fn build_config_from_editor(
     next_cfg.tts_routing = parse_editor_tts_routing(&editor.tts_routing)?;
     next_cfg.virtual_mic_device = normalize_optional_field(&editor.virtual_mic_device);
     next_cfg.stt_fallback_policy = editor.stt_fallback_policy.trim().to_string();
+    if next_cfg.stt_provider == "google" && next_cfg.stt_fallback_policy == "google-when-keyed" {
+        next_cfg.stt_fallback_policy = "none".to_string();
+    }
     // Pipeline knobs (issue #270).
     next_cfg.vad.pre_roll_ms = parse_editor_u32("vad.pre_roll_ms", &editor.vad_pre_roll_ms)?;
     next_cfg.pipeline.max_window_ms =
@@ -5068,6 +5071,21 @@ mod tests {
 
         assert_eq!(next.stt_provider, "local");
         assert_eq!(next.mt_provider, "local");
+    }
+
+    #[test]
+    fn build_config_from_editor_normalizes_google_stt_fallback_policy() {
+        let current = config::AppConfig::default();
+        let cfg_path = Path::new(r"C:\Users\demo\.tui-translator\config.json");
+        let mut editor =
+            tui::ConfigEditorState::from_config(&current, cfg_path, ConfigEditorMode::Settings);
+        editor.stt_provider = "google".to_string();
+        editor.stt_fallback_policy = "google-when-keyed".to_string();
+
+        let next = build_config_from_editor(&editor, &current).unwrap();
+
+        assert_eq!(next.stt_provider, "google");
+        assert_eq!(next.stt_fallback_policy, "none");
     }
 
     #[test]

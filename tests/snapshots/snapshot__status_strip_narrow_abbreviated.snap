@@ -3,5 +3,5 @@ source: tests/snapshot.rs
 expression: "render_strip(&strip, 60, 3)"
 ---
 ┌──────────────────────────────────────────────────────────┐
-│ listen/local | Lang:en | TTS:on/spk | 4p | ~$0.008 | 0:20│
+│ L/L | Lang:en | TTS:on/spk | 4p | ~$0.008 | 0:20         │
 └──────────────────────────────────────────────────────────┘

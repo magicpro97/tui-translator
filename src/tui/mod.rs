@@ -1893,6 +1893,18 @@ impl Widget for &StatusMetricsStrip<'_> {
     }
 }
 
+/// Format the STT span text, combining activity indicator with source label
+/// (issue #371 / LF-03).
+fn format_stt_span(stt: &SttState, source: SttSource) -> String {
+    match stt {
+        SttState::Error(msg) => format!("\u{2717} STT: error: {msg}"),
+        SttState::Idle => source.status_label().to_string(),
+        SttState::Listening => format!("\u{25cf} {}", source.status_label()),
+        SttState::Sending => format!("\u{25cc} {}", source.status_label()),
+        SttState::Waiting => format!("\u{25cb} {}", source.status_label()),
+    }
+}
+
 impl StatusMetricsStrip<'_> {
     /// Row count needed for the expanded block, including the optional warning row.
     ///
@@ -1909,31 +1921,19 @@ impl StatusMetricsStrip<'_> {
     fn stt_abbrev(&self) -> String {
         let src = self.stt_source.abbrev();
         match self.stt {
-            SttState::Idle => format!("idle/{src}"),
-            SttState::Listening => format!("listen/{src}"),
-            SttState::Sending => format!("send/{src}"),
-            SttState::Waiting => format!("wait/{src}"),
+            SttState::Idle => format!("I/{src}"),
+            SttState::Listening => format!("L/{src}"),
+            SttState::Sending => format!("S/{src}"),
+            SttState::Waiting => format!("W/{src}"),
             SttState::Error(msg) => {
                 let short: String = msg.chars().take(6).collect();
-                format!("err:{short}")
+                format!("E:{short}")
             }
         }
     }
 
-    /// Format the STT span text, combining activity indicator with source label
-    /// (issue #371 / LF-03).
-    ///
-    /// * Error state preserves the existing error format unchanged.
-    /// * All other states prepend the Unicode activity indicator to the
-    ///   provider source label from [`SttSource::status_label`].
     fn format_stt_span(&self) -> String {
-        match self.stt {
-            SttState::Error(msg) => format!("\u{2717} STT: error: {msg}"),
-            SttState::Idle => self.stt_source.status_label().to_string(),
-            SttState::Listening => format!("\u{25cf} {}", self.stt_source.status_label()),
-            SttState::Sending => format!("\u{25cc} {}", self.stt_source.status_label()),
-            SttState::Waiting => format!("\u{25cb} {}", self.stt_source.status_label()),
-        }
+        format_stt_span(self.stt, self.stt_source)
     }
 
     fn render_compact(&self, area: Rect, buf: &mut Buffer) {
@@ -2284,21 +2284,6 @@ pub fn draw_ui(
     );
 }
 
-/// Format the STT span text for use outside of [`StatusMetricsStrip`], e.g. in
-/// the title bar.
-///
-/// Same logic as [`StatusMetricsStrip::format_stt_span`] but takes its inputs
-/// by value so it can be used as a free function in the draw loop.
-fn format_stt_span_standalone(stt: &SttState, source: SttSource) -> String {
-    match stt {
-        SttState::Error(msg) => format!("\u{2717} STT: error: {msg}"),
-        SttState::Idle => source.status_label().to_string(),
-        SttState::Listening => format!("\u{25cf} {}", source.status_label()),
-        SttState::Sending => format!("\u{25cc} {}", source.status_label()),
-        SttState::Waiting => format!("\u{25cb} {}", source.status_label()),
-    }
-}
-
 /// Render the full application UI with an explicit TTS route summary.
 pub fn draw_ui_with_route(
     frame: &mut ratatui::Frame,
@@ -2396,7 +2381,7 @@ pub fn draw_ui_with_route(
         Span::styled(target_language.clone(), Style::default().fg(Color::Green)),
         Span::styled("   \u{2502}   ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format_stt_span_standalone(&stt, stt_source),
+            format_stt_span(&stt, stt_source),
             Style::default()
                 .fg(stt_color_val)
                 .add_modifier(Modifier::BOLD),

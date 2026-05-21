@@ -3,5 +3,5 @@ source: tests/snapshot.rs
 expression: rendered
 ---
 ┌────────────────────────────┐
-│ listen/local Lang:ja 1p    │
+│ L/L Lang:ja 1p             │
 └────────────────────────────┘
