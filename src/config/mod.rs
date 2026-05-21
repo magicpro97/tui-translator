@@ -426,6 +426,67 @@ fn tts_routing_is_default(r: &TtsRouting) -> bool {
     *r == TtsRouting::Speakers
 }
 
+// ─── TTS source slot selection (DM-06, issue #382) ───────────────────────────
+
+/// Which slot synthesises TTS audio in dual-slot mode.
+///
+/// In **single-slot mode** this field is ignored: TTS is synthesised
+/// whenever `tts_enabled` is `true`, preserving the pre-DM-06 behaviour.
+///
+/// In **dual-slot mode** exactly one slot synthesises audio at a time:
+/// - `"off"` *(default in dual mode)* — TTS is suppressed for both slots
+///   even when `tts_enabled` is `true`.
+/// - `"a"` — only slot A calls the TTS provider and plays audio; slot B
+///   never sends text to TTS.
+/// - `"b"` — only slot B synthesises; slot A is silent.
+///
+/// The active slot is consulted at synthesis time, so changing this value
+/// while the application is running takes effect on the next subtitle pair.
+///
+/// Serde representation uses lowercase letters: `"off"`, `"a"`, `"b"`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TtsSource {
+    /// TTS is off for all slots (dual-mode default).
+    ///
+    /// In single-slot mode this value is not meaningful; TTS is controlled
+    /// entirely by the `tts_enabled` flag.
+    #[default]
+    Off,
+    /// Slot A synthesises; slot B is silent.
+    A,
+    /// Slot B synthesises; slot A is silent.
+    B,
+}
+
+impl TtsSource {
+    /// Returns `true` when this slot should synthesise TTS audio.
+    ///
+    /// `slot_is_a` should be `true` when the caller is slot A, `false` for slot B.
+    /// In single-slot mode pass `is_dual = false` and the function always returns
+    /// `true` so existing behaviour is preserved: TTS is fully controlled by
+    /// `tts_enabled`.
+    // Used in main.rs pipeline wiring; test binaries that include config/mod.rs via
+    // `#[path]` do not call it directly, so suppress the dead-code lint there.
+    #[allow(dead_code)]
+    pub fn is_active_for_slot(self, slot_is_a: bool, is_dual: bool) -> bool {
+        if !is_dual {
+            return true;
+        }
+        match self {
+            Self::Off => false,
+            Self::A => slot_is_a,
+            Self::B => !slot_is_a,
+        }
+    }
+}
+
+/// `skip_serializing_if` predicate: omit `tts_source` when it holds the
+/// default (`Off`) to keep existing config files tidy.
+fn tts_source_is_default(s: &TtsSource) -> bool {
+    *s == TtsSource::Off
+}
+
 // ─── Slot mode (DM-01) ───────────────────────────────────────────────────────
 
 /// Operational slot mode, determined by whether the `slots` block is present.
@@ -531,6 +592,18 @@ pub struct AppConfig {
     ///   `virtual_mic_device` simultaneously.  Requires `virtual_mic_device`.
     #[serde(default, skip_serializing_if = "tts_routing_is_default")]
     pub tts_routing: TtsRouting,
+
+    /// Which slot synthesises TTS audio in dual-slot mode (DM-06, issue #382).
+    ///
+    /// - `"off"` *(default)* — TTS is suppressed for both slots when running in
+    ///   dual mode; ignored in single-slot mode (TTS is controlled by
+    ///   `tts_enabled` only).
+    /// - `"a"` — only slot A synthesises audio; slot B is silent.
+    /// - `"b"` — only slot B synthesises audio; slot A is silent.
+    ///
+    /// This field has no effect in single-slot mode.
+    #[serde(default, skip_serializing_if = "tts_source_is_default")]
+    pub tts_source: TtsSource,
 
     /// Name of the virtual microphone device for TTS routing (VMIC-A2, issue #314).
     ///
@@ -778,6 +851,7 @@ impl Default for AppConfig {
             pipeline: PipelineConfigJson::default(),
             audio_archive: AudioArchiveConfig::default(),
             slots: None,
+            tts_source: TtsSource::default(),
         }
     }
 }
@@ -810,6 +884,7 @@ impl std::fmt::Debug for AppConfig {
             .field("pipeline", &self.pipeline)
             .field("audio_archive", &self.audio_archive)
             .field("slots", &self.slots)
+            .field("tts_source", &self.tts_source)
             .finish()
     }
 }
@@ -1119,6 +1194,17 @@ impl AppConfig {
             validate_slot_config("slots.slot_a", &slots.slot_a)?;
             validate_slot_config("slots.slot_b", &slots.slot_b)?;
         }
+        // ── TTS source slot validation (DM-06, issue #382) ─────────────────
+        // `tts_source = "a"` or `"b"` only makes sense in dual-slot mode;
+        // warn rather than reject in single mode so migrated configs with
+        // stale values still load (the field is silently ignored at runtime).
+        if self.slots.is_none() && self.tts_source != TtsSource::Off {
+            tracing::warn!(
+                tts_source = ?self.tts_source,
+                "`tts_source` is set but has no effect in single-slot mode; \
+                 TTS is controlled by `tts_enabled` only"
+            );
+        }
         Ok(())
     }
 
@@ -1155,6 +1241,7 @@ impl AppConfig {
     /// | `source_language` | **hot** | Forwarded to provider calls per-request; no stream rebuild needed. |
     /// | `target_language` | **hot** | Forwarded to MT calls per-request; no stream rebuild needed. |
     /// | `tts_enabled` | **hot** | Playback toggle is checked at synthesis time. |
+    /// | `tts_source` | **hot** | Slot-gate flag is checked at synthesis time via `OrchestratorContext::tts_active_for_slot`. |
     /// | `cost_warning_usd` | **hot** | UI threshold is read each render tick. |
     /// | `ram_budget_mb` | **hot** | UI threshold is read each render tick. |
     /// | `_comment` | **hot** | Documentation-only; never read at runtime. |

@@ -2517,6 +2517,12 @@ fn main() -> Result<()> {
                         ),
                     )),
                     session_recorder,
+                    // DM-06 (issue #382): compute whether this slot should call TTS.
+                    // Slot A is `slot_is_a = true`; mode is single unless slot_mode == Dual.
+                    tts_active_for_slot: cfg_snapshot
+                        .tts_source
+                        .is_active_for_slot(true, slot_mode == config::SlotMode::Dual),
+                    tts_status: Arc::new(Mutex::new(pipeline::SlotProviderStatus::Ok)),
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
@@ -2650,6 +2656,11 @@ fn main() -> Result<()> {
                                         Some("B"),
                                         false,
                                     ),
+                                    // DM-06 (issue #382): slot B is always dual; slot_is_a = false.
+                                    tts_active_for_slot: cfg_snapshot
+                                        .tts_source
+                                        .is_active_for_slot(false, true),
+                                    tts_status: Arc::clone(&slot_b_state.tts_status),
                                 };
                                 orchestrator_join_b = Some(rt.spawn(pipeline::run_orchestrator(
                                     slot_b_rx,
