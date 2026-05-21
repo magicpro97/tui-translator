@@ -16,8 +16,8 @@
 //!
 //! The supervisor therefore implements a *scoped restart-based* strategy:
 //!
-//! 1. **Detect** — compare old and new [`AppConfig`] over the five
-//!    provider-relevant fields (see [`ProviderBundle`]).
+//! 1. **Detect** — compare old and new [`AppConfig`] over the top-level and
+//!    dual-slot provider-relevant fields (see [`ProviderBundle`]).
 //! 2. **Validate** — run [`AppConfig::validate`] on the new config so
 //!    structural errors are caught *before* the change is accepted.
 //! 3. **Outcome** — return one of three typed outcomes:
@@ -38,24 +38,28 @@
 //! with a `provider_rebuild_reason: Arc<Mutex<Option<String>>>` and updating
 //! `draw_ui_with_route` — deferred to a subsequent issue.
 
-use super::AppConfig;
+use std::collections::hash_map::DefaultHasher;
+use std::fmt;
+use std::hash::{Hash, Hasher};
+
+use super::{AppConfig, DualSlotConfig};
 
 // ── Provider bundle ───────────────────────────────────────────────────────────
 
 /// Snapshot of the provider-relevant fields from [`AppConfig`].
 ///
-/// Only the five fields that drive provider construction are captured.
+/// Only the fields that drive provider construction are captured.
 /// Non-provider hot fields (`source_language`, `target_language`,
 /// `tts_enabled`, `cost_warning_usd`, `_comment`, …) are intentionally
 /// excluded so unrelated hot-reloads bypass the supervisor path entirely.
 ///
 /// # Credential handling
 ///
-/// The raw `google_api_key` value is **never stored** in this struct.  Only
-/// its *presence* (non-empty, non-None) is recorded as a boolean.  This
-/// ensures that `Debug` output, test failures, and log lines can never
-/// inadvertently expose the credential.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The raw `google_api_key` value is **never stored** in this struct.  The
+/// supervisor records only presence plus an in-process fingerprint used for
+/// equality.  The fingerprint is intentionally omitted from [`fmt::Debug`] so
+/// debug output, test failures, and log lines never expose credential material.
+#[derive(Clone, PartialEq, Eq)]
 pub struct ProviderBundle {
     /// `stt_provider` field value (e.g. `"local"`, `"google"`).
     pub stt_provider: String,
@@ -63,17 +67,58 @@ pub struct ProviderBundle {
     pub mt_provider: String,
     /// `true` iff `google_api_key` is `Some` with a non-empty trimmed value.
     pub has_google_api_key: bool,
+    google_api_key_fingerprint: Option<u64>,
     /// `mt_cloud_fallback` field (e.g. `Some("google")` or `None`).
     pub mt_cloud_fallback: Option<String>,
     /// `stt_fallback_policy` field (e.g. `"google-when-keyed"`, `"none"`).
     pub stt_fallback_policy: String,
+    /// Explicit dual-slot provider selectors, when `slots` is configured.
+    pub slots: Option<SlotProviderBundle>,
+}
+
+impl fmt::Debug for ProviderBundle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProviderBundle")
+            .field("stt_provider", &self.stt_provider)
+            .field("mt_provider", &self.mt_provider)
+            .field("has_google_api_key", &self.has_google_api_key)
+            .field("mt_cloud_fallback", &self.mt_cloud_fallback)
+            .field("stt_fallback_policy", &self.stt_fallback_policy)
+            .field("slots", &self.slots)
+            .finish()
+    }
+}
+
+/// Explicit dual-slot provider selectors that affect provider construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotProviderBundle {
+    /// `slots.slot_a.stt_provider`.
+    pub slot_a_stt_provider: String,
+    /// `slots.slot_a.mt_provider`.
+    pub slot_a_mt_provider: String,
+    /// `slots.slot_b.stt_provider`.
+    pub slot_b_stt_provider: String,
+    /// `slots.slot_b.mt_provider`.
+    pub slot_b_mt_provider: String,
+}
+
+impl SlotProviderBundle {
+    fn from_slots(slots: &DualSlotConfig) -> Self {
+        Self {
+            slot_a_stt_provider: slots.slot_a.stt_provider.clone(),
+            slot_a_mt_provider: slots.slot_a.mt_provider.clone(),
+            slot_b_stt_provider: slots.slot_b.stt_provider.clone(),
+            slot_b_mt_provider: slots.slot_b.mt_provider.clone(),
+        }
+    }
 }
 
 impl ProviderBundle {
     /// Snapshot the provider-relevant fields from `cfg`.
     ///
-    /// The raw `google_api_key` value is not stored; only its *presence* is
-    /// captured so accidental debug output never leaks a credential.
+    /// The raw `google_api_key` value is not stored; only its presence plus an
+    /// in-process fingerprint are captured, and the fingerprint is omitted from
+    /// `Debug` output.
     pub fn from_config(cfg: &AppConfig) -> Self {
         Self {
             stt_provider: cfg.stt_provider.clone(),
@@ -82,8 +127,10 @@ impl ProviderBundle {
                 .google_api_key
                 .as_deref()
                 .is_some_and(|k| !k.trim().is_empty()),
+            google_api_key_fingerprint: google_api_key_fingerprint(cfg.google_api_key.as_deref()),
             mt_cloud_fallback: cfg.mt_cloud_fallback.clone(),
             stt_fallback_policy: cfg.stt_fallback_policy.clone(),
+            slots: cfg.slots.as_ref().map(SlotProviderBundle::from_slots),
         }
     }
 
@@ -181,6 +228,17 @@ pub fn redact_api_key(msg: &str, key: Option<&str>) -> String {
     }
 }
 
+fn google_api_key_fingerprint(key: Option<&str>) -> Option<u64> {
+    let key = key?.trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    Some(hasher.finish())
+}
+
 /// Build a human-readable description of what provider fields changed.
 fn describe_change(old: &ProviderBundle, new: &ProviderBundle) -> String {
     let mut parts: Vec<&str> = Vec::new();
@@ -190,7 +248,9 @@ fn describe_change(old: &ProviderBundle, new: &ProviderBundle) -> String {
     if old.mt_provider != new.mt_provider {
         parts.push("mt_provider");
     }
-    if old.has_google_api_key != new.has_google_api_key {
+    if old.has_google_api_key != new.has_google_api_key
+        || old.google_api_key_fingerprint != new.google_api_key_fingerprint
+    {
         parts.push("google_api_key");
     }
     if old.mt_cloud_fallback != new.mt_cloud_fallback {
@@ -198,6 +258,24 @@ fn describe_change(old: &ProviderBundle, new: &ProviderBundle) -> String {
     }
     if old.stt_fallback_policy != new.stt_fallback_policy {
         parts.push("stt_fallback_policy");
+    }
+    match (&old.slots, &new.slots) {
+        (Some(old_slots), Some(new_slots)) => {
+            if old_slots.slot_a_stt_provider != new_slots.slot_a_stt_provider {
+                parts.push("slots.slot_a.stt_provider");
+            }
+            if old_slots.slot_a_mt_provider != new_slots.slot_a_mt_provider {
+                parts.push("slots.slot_a.mt_provider");
+            }
+            if old_slots.slot_b_stt_provider != new_slots.slot_b_stt_provider {
+                parts.push("slots.slot_b.stt_provider");
+            }
+            if old_slots.slot_b_mt_provider != new_slots.slot_b_mt_provider {
+                parts.push("slots.slot_b.mt_provider");
+            }
+        }
+        (None, Some(_)) | (Some(_), None) => parts.push("slots"),
+        (None, None) => {}
     }
     if parts.is_empty() {
         return "provider configuration changed".to_owned();
@@ -213,10 +291,30 @@ fn describe_change(old: &ProviderBundle, new: &ProviderBundle) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AppConfig;
+    use crate::config::{AppConfig, DualSlotConfig, SlotConfig};
 
     fn base() -> AppConfig {
         AppConfig::default()
+    }
+
+    fn dual_slots(
+        slot_a_stt_provider: &str,
+        slot_a_mt_provider: &str,
+        slot_b_stt_provider: &str,
+        slot_b_mt_provider: &str,
+    ) -> DualSlotConfig {
+        DualSlotConfig {
+            slot_a: SlotConfig {
+                stt_provider: slot_a_stt_provider.to_string(),
+                mt_provider: slot_a_mt_provider.to_string(),
+                target_language: "vi".to_string(),
+            },
+            slot_b: SlotConfig {
+                stt_provider: slot_b_stt_provider.to_string(),
+                mt_provider: slot_b_mt_provider.to_string(),
+                target_language: "en".to_string(),
+            },
+        }
     }
 
     // ── T-01: provider change detection ──────────────────────────────────────
@@ -289,6 +387,50 @@ mod tests {
             old.has_provider_change(&next_bundle),
             "mt_cloud_fallback change must be flagged as a provider change"
         );
+    }
+
+    /// Dual-slot provider selector changes are provider changes, not generic
+    /// slot-topology changes.
+    #[test]
+    fn dual_slot_provider_selector_change_is_detected() {
+        let mut current = base();
+        current.slots = Some(dual_slots("local", "google", "local", "google"));
+        let old = ProviderBundle::from_config(&current);
+        let mut next = current.clone();
+        next.slots = Some(dual_slots("local", "google", "google", "google"));
+        let next_bundle = ProviderBundle::from_config(&next);
+        assert!(
+            old.has_provider_change(&next_bundle),
+            "slots.slot_b.stt_provider change must be flagged as a provider change"
+        );
+        let reason = super::describe_change(&old, &next_bundle);
+        assert!(
+            reason.contains("slots.slot_b.stt_provider"),
+            "reason must mention the changed slot provider selector; got: {reason}"
+        );
+    }
+
+    /// Rotating a non-empty Google key is still a provider/key change even
+    /// though the raw key is never stored in the bundle.
+    #[test]
+    fn google_api_key_value_change_is_detected_without_storing_raw_key() {
+        let mut current = base();
+        current.google_api_key = Some("AIzaSyFirstKeyMustNotLeak".to_string());
+        let old = ProviderBundle::from_config(&current);
+        let mut next = current.clone();
+        next.google_api_key = Some("AIzaSySecondKeyMustNotLeak".to_string());
+        let next_bundle = ProviderBundle::from_config(&next);
+        assert!(
+            old.has_provider_change(&next_bundle),
+            "rotating google_api_key must be flagged as a provider change"
+        );
+        let reason = super::describe_change(&old, &next_bundle);
+        assert!(
+            reason.contains("google_api_key"),
+            "reason must mention google_api_key without exposing a value; got: {reason}"
+        );
+        assert!(!format!("{old:?}").contains("AIzaSyFirstKeyMustNotLeak"));
+        assert!(!format!("{next_bundle:?}").contains("AIzaSySecondKeyMustNotLeak"));
     }
 
     // ── T-02: hot fields bypass the supervisor ────────────────────────────────
@@ -518,20 +660,11 @@ mod tests {
     /// The `describe_change` helper names fields symbolically, not by value.
     #[test]
     fn describe_change_mentions_changed_field_names() {
-        let old = ProviderBundle {
-            stt_provider: "local".to_string(),
-            mt_provider: "google".to_string(),
-            has_google_api_key: false,
-            mt_cloud_fallback: None,
-            stt_fallback_policy: "google-when-keyed".to_string(),
-        };
-        let new = ProviderBundle {
-            stt_provider: "google".to_string(),
-            mt_provider: "google".to_string(),
-            has_google_api_key: true,
-            mt_cloud_fallback: None,
-            stt_fallback_policy: "google-when-keyed".to_string(),
-        };
+        let old = ProviderBundle::from_config(&base());
+        let mut next = base();
+        next.stt_provider = "google".to_string();
+        next.google_api_key = Some("AIzaSySecretKeyMustNotLeak".to_string());
+        let new = ProviderBundle::from_config(&next);
         let reason = super::describe_change(&old, &new);
         assert!(
             reason.contains("stt_provider"),
@@ -542,7 +675,7 @@ mod tests {
             "reason must mention google_api_key; got: {reason}"
         );
         assert!(
-            !reason.contains("AIzaSy"),
+            !reason.contains("AIzaSySecretKeyMustNotLeak"),
             "reason must not contain any key value"
         );
     }
