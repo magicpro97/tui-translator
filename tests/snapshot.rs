@@ -2200,6 +2200,8 @@ fn snapshot_config_apply_status_ok_compact() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
         config_apply_status: Some(ConfigApplyStatus::Ok {
             reason: "settings reloaded".to_string(),
         }),
@@ -2247,6 +2249,8 @@ fn snapshot_config_apply_status_rolled_back_compact() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
         config_apply_status: Some(ConfigApplyStatus::RolledBack {
             reason: "unsupported provider value".to_string(),
         }),
@@ -2294,6 +2298,8 @@ fn snapshot_config_apply_status_restart_required_compact() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
         config_apply_status: Some(ConfigApplyStatus::RestartRequired {
             reason: "stt_provider changed".to_string(),
         }),
@@ -2341,6 +2347,8 @@ fn snapshot_config_apply_status_restart_required_expanded_metrics_row() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
         config_apply_status: Some(ConfigApplyStatus::RestartRequired {
             reason: "stt_provider changed".to_string(),
         }),

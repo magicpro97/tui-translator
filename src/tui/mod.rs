@@ -4554,6 +4554,8 @@ mod tests {
                     stt_source: SttSource::Local,
                     slot_a_tts_status: "ok".to_string(),
                     slot_b_tts_status: Some("degraded: auth timeout".to_string()),
+                    config_apply_status: None,
+                    config_apply_count: 0,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -4633,6 +4635,8 @@ mod tests {
                     stt_source: SttSource::Local,
                     slot_a_tts_status: "ok".to_string(),
                     slot_b_tts_status: None,
+                    config_apply_status: None,
+                    config_apply_count: 0,
                 };
                 frame.render_widget(&strip, frame.area());
             })
