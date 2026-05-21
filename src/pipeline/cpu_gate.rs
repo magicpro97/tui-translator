@@ -41,15 +41,23 @@ use std::sync::Arc;
 /// [`OrchestratorContext`]: crate::pipeline::OrchestratorContext
 #[derive(Debug)]
 pub struct CpuGate {
-    /// Maximum CPU usage percentage above which local inference is skipped.
+    /// Maximum CPU usage percentage above which local inference is skipped,
+    /// stored as `(pct * 100.0) as u32` for lock-free hot updates.
     ///
-    /// `0.0` disables throttling entirely (gate never fires).  On multi-core
+    /// `0` disables throttling entirely (gate never fires).  On multi-core
     /// hosts `sysinfo` may report values greater than `100.0` (percentage is
-    /// relative to a single logical core); set `cpu_budget_pct` accordingly —
+    /// relative to a single logical core); set `cpu_budget_pct` accordingly --
     /// e.g. `200.0` to allow 2 full cores before throttling.
-    cpu_budget_pct: f32,
+    ///
+    /// Updated at runtime via [`update_budget_pct`] without requiring a
+    /// process restart, mirroring the [`MemoryGuard::update_budget_bytes`]
+    /// API for symmetry.
+    ///
+    /// [`update_budget_pct`]: CpuGate::update_budget_pct
+    /// [`MemoryGuard::update_budget_bytes`]: crate::metrics::memory_guard::MemoryGuard::update_budget_bytes
+    cpu_budget_pct_x100: AtomicU32,
 
-    /// Current process CPU usage stored as `(pct × 100.0) as u32`.
+    /// Current process CPU usage stored as `(pct * 100.0) as u32`.
     ///
     /// Written by the metrics-publisher task via [`update_cpu_pct`];
     /// read by the orchestrator via [`is_throttled`].  `Ordering::Relaxed`
@@ -70,7 +78,7 @@ impl CpuGate {
     /// * `cpu_budget_pct` — upper CPU-usage bound; `0.0` disables throttling.
     pub fn new(cpu_budget_pct: f32) -> Self {
         Self {
-            cpu_budget_pct,
+            cpu_budget_pct_x100: AtomicU32::new((cpu_budget_pct * 100.0) as u32),
             cpu_pct_x100: Arc::new(AtomicU32::new(0)),
             skipped: AtomicU64::new(0),
         }
@@ -81,11 +89,26 @@ impl CpuGate {
     ///
     /// Always returns `false` when `cpu_budget_pct` is `0.0` (disabled).
     pub fn is_throttled(&self) -> bool {
-        if self.cpu_budget_pct <= 0.0 {
+        let budget_x100 = self.cpu_budget_pct_x100.load(Ordering::Relaxed);
+        if budget_x100 == 0 {
             return false;
         }
-        let current = self.cpu_pct_x100.load(Ordering::Relaxed) as f32 / 100.0;
-        current > self.cpu_budget_pct
+        let current_x100 = self.cpu_pct_x100.load(Ordering::Relaxed);
+        current_x100 > budget_x100
+    }
+
+    /// Replace the configured CPU budget while preserving the latest reading.
+    ///
+    /// This mirrors [`MemoryGuard::update_budget_bytes`] for API symmetry and
+    /// is used by config hot-reload paths: changing `cpu_budget_pct` takes
+    /// effect on the next [`is_throttled`] call without requiring a process
+    /// restart.  A zero budget disables throttling.
+    ///
+    /// [`MemoryGuard::update_budget_bytes`]: crate::metrics::memory_guard::MemoryGuard::update_budget_bytes
+    /// [`is_throttled`]: CpuGate::is_throttled
+    pub fn update_budget_pct(&self, pct: f32) {
+        self.cpu_budget_pct_x100
+            .store((pct * 100.0) as u32, Ordering::Relaxed);
     }
 
     /// Increment the skip counter after a chunk is dropped due to CPU pressure.
@@ -206,6 +229,41 @@ mod tests {
         assert!(
             !gate.is_throttled(),
             "60% with 70% budget must not be throttled"
+        );
+    }
+
+    /// HC-04: replacing the budget with `update_budget_pct` takes effect
+    /// immediately on the next `is_throttled` call -- no sleep or restart needed.
+    #[test]
+    fn update_budget_pct_changes_throttle_state() {
+        // Start with a high budget (80 %) and CPU at 75 % -- not throttled.
+        let gate = CpuGate::new(80.0);
+        gate.update_cpu_pct(75.0);
+        assert!(
+            !gate.is_throttled(),
+            "75% CPU with 80% budget must not be throttled"
+        );
+
+        // Lower the budget to 70 % -- immediately throttled.
+        gate.update_budget_pct(70.0);
+        assert!(
+            gate.is_throttled(),
+            "75% CPU with reduced 70% budget must be throttled"
+        );
+
+        // Raise the budget to 90 % -- immediately safe.
+        gate.update_budget_pct(90.0);
+        assert!(
+            !gate.is_throttled(),
+            "75% CPU with raised 90% budget must not be throttled"
+        );
+
+        // Set budget to 0.0 (disabled) -- never throttled regardless of CPU.
+        gate.update_cpu_pct(999.0);
+        gate.update_budget_pct(0.0);
+        assert!(
+            !gate.is_throttled(),
+            "disabled budget (0.0) must never throttle"
         );
     }
 

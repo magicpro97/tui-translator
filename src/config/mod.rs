@@ -1138,7 +1138,7 @@ impl AppConfig {
     /// | `mt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_cloud_fallback` | **restart** | Cloud-fallback consent changes route resolution and provider construction. |
     /// | `stt_fallback_policy` | **restart** | Fallback chain is wired at pipeline initialisation. |
-    /// | `cpu_budget_pct` | **restart** | Budget guard is initialised at pipeline start. |
+    /// | `cpu_budget_pct` | **hot** | Budget atomic is updated via `CpuGate::update_budget_pct` on each metrics tick; no pipeline rebuild required. |
     /// | `vad` | **restart** | VAD filter is wired at pipeline construction. |
     /// | `stt_phrase_hints` | **restart** | Hints are embedded in the Google STT session context at init. |
     /// | `session_store` | **restart** | Store handle is opened once at startup. |
@@ -1164,7 +1164,6 @@ impl AppConfig {
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
             || self.mt_cloud_fallback != next.mt_cloud_fallback
-            || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
             || self.stt_fallback_policy != next.stt_fallback_policy
             || self.vad != next.vad
             || self.stt_phrase_hints != next.stt_phrase_hints
@@ -2437,14 +2436,17 @@ mod tests {
     }
 
     #[test]
-    fn cpu_budget_change_requires_restart() {
+    fn cpu_budget_change_does_not_require_restart() {
         let current = AppConfig::default();
         let next = AppConfig {
             cpu_budget_pct: 80.0,
             ..AppConfig::default()
         };
 
-        assert!(current.requires_restart(&next));
+        assert!(
+            !current.requires_restart(&next),
+            "changing cpu_budget_pct must not require a restart (HC-04 hot apply)"
+        );
     }
 
     #[test]

@@ -2745,6 +2745,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         rt.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             let mut last_ram_budget_bytes = u64::MAX;
+            let mut last_cpu_budget_pct_x100 = u32::MAX;
             let mut last_local_inferences_skipped = 0_u64;
             loop {
                 interval.tick().await;
@@ -2792,6 +2793,19 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                 if ram_budget_bytes != last_ram_budget_bytes {
                     memory_guard.update_budget_bytes(ram_budget_bytes);
                     last_ram_budget_bytes = ram_budget_bytes;
+                }
+                // HC-04 (issue #389): hot-apply cpu_budget_pct changes without
+                // restart.  Mirrors the RAM budget pattern above for symmetry.
+                let cpu_budget_pct_x100 = {
+                    let pct = current_config
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .cpu_budget_pct;
+                    (pct * 100.0) as u32
+                };
+                if cpu_budget_pct_x100 != last_cpu_budget_pct_x100 {
+                    cpu_gate.update_budget_pct(cpu_budget_pct_x100 as f32 / 100.0);
+                    last_cpu_budget_pct_x100 = cpu_budget_pct_x100;
                 }
                 memory_guard.update_ram_bytes(snapshot.ram_bytes);
                 snapshot.apply_memory_guard(&memory_guard);
