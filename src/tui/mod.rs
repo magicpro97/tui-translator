@@ -118,15 +118,16 @@ pub const REASON_MAX_LEN: usize = 120;
 /// If truncation occurs an ellipsis (`…`) is appended.  The returned string
 /// is always valid UTF-8 regardless of the input length.
 pub fn truncate_reason(s: &str) -> String {
-    if s.chars().count() <= REASON_MAX_LEN {
-        return s.to_string();
+    let mut result = String::new();
+    for (idx, ch) in s.chars().enumerate() {
+        if idx >= REASON_MAX_LEN {
+            result.pop();
+            result.push('\u{2026}');
+            return result;
+        }
+        result.push(ch);
     }
-    let head: String = s.chars().take(REASON_MAX_LEN.saturating_sub(1)).collect();
-    if head.is_empty() {
-        "\u{2026}".to_string()
-    } else {
-        format!("{head}\u{2026}")
-    }
+    result
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -2021,7 +2022,7 @@ impl AppState {
     /// Record a config apply result.
     ///
     /// Increments the apply counter and stores the status with the current
-    /// timestamp so auto-dismiss can be applied on read.
+    /// monotonic timestamp so auto-dismiss can be applied on read.
     ///
     /// A persistent [`ConfigApplyStatus::RestartRequired`] can only be replaced
     /// by another `RestartRequired`; transient statuses (`Ok`, `RolledBack`)
