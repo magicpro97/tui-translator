@@ -2019,9 +2019,34 @@ fn main() -> Result<()> {
     let license_review_required = !pending_consent_manifests.is_empty();
     let current_config = Arc::new(Mutex::new(cfg.clone()));
     let restart_required = Arc::new(AtomicBool::new(false));
+    let state = AppState::new();
 
     // Start the hot-reload watcher; keep the receiver alive for the process lifetime.
-    let config_rx = match config::start_watcher(&cfg_path, cfg.clone(), restart_required.clone()) {
+    let watcher_notifier: Option<config::WatchApplyNotifier> = {
+        let cas = Arc::clone(&state.config_apply_status);
+        let cac = Arc::clone(&state.config_apply_count);
+        Some(std::sync::Arc::new(
+            move |notif: config::WatchApplyNotification| {
+                let status = match notif {
+                    config::WatchApplyNotification::Rejected { reason } => {
+                        tui::ConfigApplyStatus::RolledBack { reason }
+                    }
+                    config::WatchApplyNotification::ParseError { reason } => {
+                        tui::ConfigApplyStatus::RolledBack {
+                            reason: format!("parse error: {reason}"),
+                        }
+                    }
+                };
+                tui::record_config_apply_to(&cas, &cac, status);
+            },
+        ))
+    };
+    let config_rx = match config::start_watcher(
+        &cfg_path,
+        cfg.clone(),
+        restart_required.clone(),
+        watcher_notifier,
+    ) {
         Ok(rx) => Some(rx),
         Err(err) => {
             tracing::warn!("config hot-reload unavailable: {err:#}");
@@ -2029,7 +2054,6 @@ fn main() -> Result<()> {
         }
     };
 
-    let state = AppState::new();
     if let Some(notice) = legacy_migration_notice {
         *state
             .startup_notice_msg
@@ -2133,6 +2157,8 @@ fn main() -> Result<()> {
         let audio_consent = Arc::clone(&state.audio_consent);
         let restart_required = Arc::clone(&restart_required);
         let playback_service = Arc::clone(&playback_service);
+        let config_apply_status = Arc::clone(&state.config_apply_status);
+        let config_apply_count = Arc::clone(&state.config_apply_count);
         rt.spawn(async move {
             while config_rx.changed().await.is_ok() {
                 let next_cfg = config_rx.borrow().clone();
@@ -2147,8 +2173,22 @@ fn main() -> Result<()> {
                 let ac = Arc::clone(&audio_consent);
                 let rr = Arc::clone(&restart_required);
                 let ps = Arc::clone(&playback_service);
+                let cas = Arc::clone(&config_apply_status);
+                let cac = Arc::clone(&config_apply_count);
                 tokio::task::spawn_blocking(move || {
-                    apply_runtime_config(&cc, &tl, &sl, &cdl, &sap, &te, &ac, &rr, &ps, next_cfg);
+                    let apply_requires_restart = apply_runtime_config(
+                        &cc, &tl, &sl, &cdl, &sap, &te, &ac, &rr, &ps, next_cfg,
+                    );
+                    let status = if apply_requires_restart {
+                        tui::ConfigApplyStatus::RestartRequired {
+                            reason: "restart required for settings to take effect".to_string(),
+                        }
+                    } else {
+                        tui::ConfigApplyStatus::Ok {
+                            reason: "settings hot-reloaded".to_string(),
+                        }
+                    };
+                    tui::record_config_apply_to(&cas, &cac, status);
                 })
                 .await
                 .ok();
@@ -3671,7 +3711,7 @@ fn apply_runtime_config(
     restart_required: &Arc<AtomicBool>,
     playback_service: &SharedPlaybackService,
     next_cfg: config::AppConfig,
-) {
+) -> bool {
     let (
         capture_change,
         requires_restart,
@@ -3689,6 +3729,7 @@ fn apply_runtime_config(
         )
     };
 
+    let mut apply_requires_restart = requires_restart;
     let mut capture_apply_failed = false;
     match &capture_change {
         config::CaptureChangeOutcome::Rejected { reason } => {
@@ -3701,6 +3742,7 @@ fn apply_runtime_config(
                 CaptureHotSwapApply::Applied => {}
                 CaptureHotSwapApply::RestartRequired => {
                     restart_required.store(true, Ordering::Relaxed);
+                    apply_requires_restart = true;
                 }
                 CaptureHotSwapApply::Failed => {
                     capture_apply_failed = true;
@@ -3740,6 +3782,7 @@ fn apply_runtime_config(
         sync_playback_service_state(playback_service, &effective_cfg, effective_cfg.tts_enabled);
     tts_enabled.store(effective_cfg.tts_enabled && service_ok, Ordering::Relaxed);
     audio_consent.store(effective_cfg.audio_archive.consent_given, Ordering::Relaxed);
+    apply_requires_restart
 }
 
 enum CaptureHotSwapApply {
@@ -4082,7 +4125,7 @@ fn save_config_editor(
     };
 
     config::write_config(cfg_path, &next_cfg)?;
-    apply_runtime_config(
+    let requires_restart = apply_runtime_config(
         current_config,
         &state.target_language,
         &state.source_language,
@@ -4094,6 +4137,16 @@ fn save_config_editor(
         playback_service,
         next_cfg,
     );
+    let apply_status = if requires_restart {
+        tui::ConfigApplyStatus::RestartRequired {
+            reason: "restart required for settings to take effect".to_string(),
+        }
+    } else {
+        tui::ConfigApplyStatus::Ok {
+            reason: "settings saved".to_string(),
+        }
+    };
+    state.record_config_apply(apply_status);
     state.close_config_editor();
     tracing::info!(path = %cfg_path.display(), mode = ?editor.mode, "config saved from UI");
     Ok(())
@@ -4689,7 +4742,7 @@ fn apply_wizard_patch_to_config(
 
     config::apply_editor_defaults(cfg_path, &mut cfg)?;
     config::write_config(cfg_path, &cfg)?;
-    apply_runtime_config(
+    let requires_restart = apply_runtime_config(
         current_config,
         &state.target_language,
         &state.source_language,
@@ -4701,6 +4754,16 @@ fn apply_wizard_patch_to_config(
         playback_service,
         cfg,
     );
+    let apply_status = if requires_restart {
+        tui::ConfigApplyStatus::RestartRequired {
+            reason: "restart required for settings to take effect".to_string(),
+        }
+    } else {
+        tui::ConfigApplyStatus::Ok {
+            reason: "settings saved".to_string(),
+        }
+    };
+    state.record_config_apply(apply_status);
     tracing::info!(branch = ?patch.branch, "first-run wizard config applied");
     Ok(())
 }
@@ -4996,7 +5059,7 @@ fn handle_action(
         // R — signal config reload (issue #64)
         UserAction::ReloadConfig => match config::load(cfg_path) {
             Ok(next_cfg) => {
-                apply_runtime_config(
+                let requires_restart = apply_runtime_config(
                     current_config,
                     &state.target_language,
                     &state.source_language,
@@ -5008,6 +5071,16 @@ fn handle_action(
                     playback_service,
                     next_cfg,
                 );
+                let apply_status = if requires_restart {
+                    tui::ConfigApplyStatus::RestartRequired {
+                        reason: "restart required for settings to take effect".to_string(),
+                    }
+                } else {
+                    tui::ConfigApplyStatus::Ok {
+                        reason: "settings reloaded".to_string(),
+                    }
+                };
+                state.record_config_apply(apply_status);
                 // Issue #86 — auth-error recovery requires a full restart.
                 // Providers still hold the old (possibly invalid) credential
                 // in-process; no un-halt is possible here regardless of
@@ -5017,6 +5090,9 @@ fn handle_action(
             }
             Err(err) => {
                 tracing::warn!("config reload requested with R key failed: {err:#}");
+                state.record_config_apply(tui::ConfigApplyStatus::RolledBack {
+                    reason: format!("reload failed: {err:#}"),
+                });
             }
         },
 

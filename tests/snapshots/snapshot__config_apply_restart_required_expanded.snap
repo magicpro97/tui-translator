@@ -1,0 +1,13 @@
+---
+source: tests/snapshot.rs
+expression: rendered
+---
+┌ Metrics ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│STT: local   TTS: off   Route: Speakers                                                                               │
+│Target: vi   Pairs: 5   Audio: 30s   Cost: ~$0.010                                                                    │
+│Elapsed: 0:30   ⚠ Restart required for some settings   Config: 3 applies │ last: restart required: stt_provider change│
+│CPU:0%  RAM:0MB  Net:↑0/↓0 kbps  E2E:—  Loss:0.0%                                                                     │
+│trunc:0%  flicker:0  mt:0                                                                                             │
+│local CPU:0%  local inflight:0                                                                                        │
+│transcripts: —  audio archive: (consent revoked)                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

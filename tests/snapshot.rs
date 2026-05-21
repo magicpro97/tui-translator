@@ -28,8 +28,9 @@ use metrics::{SttSource, SttState};
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
-    render_language_prompt, truncate_device_name, AppState, ConfigEditorMode, ConfigEditorState,
-    ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane, TtsRouteStatus,
+    render_language_prompt, truncate_device_name, AppState, ConfigApplyStatus, ConfigEditorMode,
+    ConfigEditorState, ControlHintsBar, StatusMetricsStrip, SubtitlePair, SubtitlePane,
+    TtsRouteStatus,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -337,6 +338,8 @@ fn snapshot_status_strip_compact_idle() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -377,6 +380,8 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -420,6 +425,8 @@ fn snapshot_status_strip_compact_restart_notice() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -465,6 +472,8 @@ fn snapshot_status_strip_compact_sending() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -505,6 +514,8 @@ fn snapshot_status_strip_compact_waiting() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -545,6 +556,8 @@ fn snapshot_status_strip_compact_error() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -587,6 +600,8 @@ fn snapshot_status_strip_expanded_idle() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -632,6 +647,8 @@ fn snapshot_status_strip_expanded_listening() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -679,6 +696,8 @@ fn snapshot_status_strip_expanded_with_warning() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -730,6 +749,8 @@ fn snapshot_status_strip_narrow_abbreviated() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -774,6 +795,8 @@ fn snapshot_status_strip_wide_full_labels() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -947,6 +970,8 @@ fn stt_error_state_label_contains_message() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -992,6 +1017,8 @@ fn narrow_strip_uses_abbreviated_labels() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
@@ -1053,6 +1080,8 @@ fn expanded_warning_renders_when_over_threshold() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
 
     // Height accounting must be 10 when warning is active.
@@ -1133,6 +1162,8 @@ fn snapshot_status_strip_zero_state_narrow() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -1177,6 +1208,8 @@ fn snapshot_status_strip_zero_state_expanded() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -1268,6 +1301,8 @@ fn narrow_compact_strip_uses_lang_label() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1317,6 +1352,8 @@ fn narrow_compact_strip_uses_tts_label() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1366,6 +1403,8 @@ fn compact_restart_notice_is_spelled_out() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1415,6 +1454,8 @@ fn snapshot_status_strip_very_narrow_30cols() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1624,6 +1665,8 @@ fn expanded_metrics_narrow_uses_lang_label() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 60, 7);
     assert!(
@@ -1948,6 +1991,8 @@ fn snapshot_status_strip_compact_ram_warning() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -2003,6 +2048,8 @@ fn snapshot_status_strip_expanded_ram_warning() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -2059,6 +2106,8 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     assert_eq!(strip.expanded_height(), 10);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
@@ -2105,10 +2154,206 @@ fn expanded_metrics_height_is_9_without_any_warning() {
         stt_source: SttSource::Local,
         slot_a_tts_status: "ok".to_string(),
         slot_b_tts_status: None,
+        config_apply_status: None,
+        config_apply_count: 0,
     };
     assert_eq!(
         strip.expanded_height(),
         9,
         "no warnings -> expanded_height() must be 9"
     );
+}
+
+// ── HC-05 (issue #390) — config apply status banner ──────────────────────────
+
+#[test]
+fn snapshot_config_apply_status_ok_compact() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        tts_route: TtsRouteStatus::default(),
+        target_language: "vi".to_string(),
+        pairs: 5,
+        audio_secs: 30.0,
+        cost_usd: 0.01,
+        elapsed: "0:30".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+        ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
+        stt_source: SttSource::Local,
+        config_apply_status: Some(ConfigApplyStatus::Ok {
+            reason: "settings reloaded".to_string(),
+        }),
+        config_apply_count: 1,
+    };
+    let rendered = render_strip(&strip, 120, 3);
+    assert!(
+        rendered.contains("config: ok"),
+        "ok status missing from compact strip: {rendered:?}"
+    );
+    insta::assert_snapshot!("config_apply_ok_compact", rendered);
+}
+
+#[test]
+fn snapshot_config_apply_status_rolled_back_compact() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        tts_route: TtsRouteStatus::default(),
+        target_language: "vi".to_string(),
+        pairs: 5,
+        audio_secs: 30.0,
+        cost_usd: 0.01,
+        elapsed: "0:30".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+        ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
+        stt_source: SttSource::Local,
+        config_apply_status: Some(ConfigApplyStatus::RolledBack {
+            reason: "unsupported provider value".to_string(),
+        }),
+        config_apply_count: 2,
+    };
+    let rendered = render_strip(&strip, 120, 3);
+    assert!(
+        rendered.contains("rolled back"),
+        "rolled back status missing from compact strip: {rendered:?}"
+    );
+    insta::assert_snapshot!("config_apply_rolled_back_compact", rendered);
+}
+
+#[test]
+fn snapshot_config_apply_status_restart_required_compact() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        tts_route: TtsRouteStatus::default(),
+        target_language: "vi".to_string(),
+        pairs: 5,
+        audio_secs: 30.0,
+        cost_usd: 0.01,
+        elapsed: "0:30".to_string(),
+        show_restart: false,
+        expanded: false,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+        ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
+        stt_source: SttSource::Local,
+        config_apply_status: Some(ConfigApplyStatus::RestartRequired {
+            reason: "stt_provider changed".to_string(),
+        }),
+        config_apply_count: 3,
+    };
+    let rendered = render_strip(&strip, 120, 3);
+    assert!(
+        rendered.contains("restart required"),
+        "restart required status missing from compact strip: {rendered:?}"
+    );
+    insta::assert_snapshot!("config_apply_restart_required_compact", rendered);
+}
+
+#[test]
+fn snapshot_config_apply_status_restart_required_expanded_metrics_row() {
+    let stt = SttState::Idle;
+    let strip = StatusMetricsStrip {
+        stt: &stt,
+        tts_on: false,
+        tts_route: TtsRouteStatus::default(),
+        target_language: "vi".to_string(),
+        pairs: 5,
+        audio_secs: 30.0,
+        cost_usd: 0.01,
+        elapsed: "0:30".to_string(),
+        show_restart: true,
+        expanded: true,
+        cost_warning_usd: 0.0,
+        cpu_pct: 0.0,
+        ram_bytes: 0,
+        net_kbps_tx: 0.0,
+        net_kbps_rx: 0.0,
+        e2e_latency_ms: None,
+        loss_pct: 0.0,
+        ram_warning: false,
+        truncation_rate: 0.0,
+        flicker_count: 0,
+        mt_call_count: 0,
+        local_cpu_pct: 0.0,
+        local_active_threads: 0,
+        recorder_bytes: 0,
+        recorder_path: None,
+        archive_bytes: 0,
+        archive_path: None,
+        archive_sealed: false,
+        audio_consent: false,
+        stt_source: SttSource::Local,
+        config_apply_status: Some(ConfigApplyStatus::RestartRequired {
+            reason: "stt_provider changed".to_string(),
+        }),
+        config_apply_count: 3,
+    };
+    let rendered = render_strip(&strip, 120, 9);
+    assert!(
+        rendered.contains("Config: 3 applies"),
+        "config apply count missing from expanded metrics: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("restart required"),
+        "restart required missing from expanded metrics: {rendered:?}"
+    );
+    insta::assert_snapshot!("config_apply_restart_required_expanded", rendered);
 }
