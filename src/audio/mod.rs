@@ -72,6 +72,18 @@ pub mod supervisor;
 #[allow(unused_imports)]
 pub use supervisor::{CaptureMetrics, CaptureStreamSupervisor};
 
+/// HC-03B: CaptureRouter — switchable upstream forwarder (issue #436).
+///
+/// Provides channel-indirection so `run_orchestrator` keeps a fixed
+/// `mpsc::Receiver<AudioChunk>` while the upstream capture source can be
+/// hot-swapped at runtime without restarting the orchestrator.
+pub mod router;
+#[allow(unused_imports)]
+pub use router::{
+    start_router, CaptureRouterHandle, CaptureSourceSpec, RouterMetrics, RouterState,
+    ROUTER_CHANNEL_CAPACITY,
+};
+
 // Virtual audio device enumeration and classification — VMIC-A1 (issue #313)
 pub mod virtual_device;
 #[allow(unused_imports)]
