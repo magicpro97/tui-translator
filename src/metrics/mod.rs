@@ -39,6 +39,48 @@ pub use snapshot::MetricsSnapshot;
 
 use std::time::Instant;
 
+// ── SttSource ────────────────────────────────────────────────────────────────
+
+/// Which STT provider is currently active (issue #371 / LF-03).
+///
+/// Written once at startup from config and updated on fallback activation.
+/// Read by the TUI renderer to show the source label in the STT status span.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SttSource {
+    /// Local Whisper STT is the active provider (default, issue #371).
+    #[default]
+    Local,
+    /// Google Cloud STT is the active provider as explicitly configured.
+    GoogleConfigured,
+    /// Google Cloud STT was activated by fallback from local (policy
+    /// `google-when-keyed`), replacing a failed local provider.
+    GoogleFallback,
+}
+
+impl SttSource {
+    /// Short status label for the STT provider span.
+    ///
+    /// Rendered directly as the span content so "STT:" appears exactly once —
+    /// avoids the double-prefix `STT: STT:` that would arise from combining
+    /// this with [`SttState::label`].
+    pub fn status_label(self) -> &'static str {
+        match self {
+            SttSource::Local => "STT: local",
+            SttSource::GoogleConfigured => "STT: google (configured)",
+            SttSource::GoogleFallback => "STT: google (fallback)",
+        }
+    }
+
+    /// Very short abbreviation used in narrow (< 80-column) terminal layouts.
+    pub fn abbrev(self) -> &'static str {
+        match self {
+            SttSource::Local => "L",
+            SttSource::GoogleConfigured => "G",
+            SttSource::GoogleFallback => "G!",
+        }
+    }
+}
+
 // ── SttState ─────────────────────────────────────────────────────────────────
 
 /// Current state of the speech-to-text engine.

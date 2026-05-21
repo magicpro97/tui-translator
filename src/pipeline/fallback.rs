@@ -23,33 +23,75 @@ use std::sync::{
     Arc, Mutex,
 };
 
+use crate::metrics::SttSource;
 use crate::providers::{PcmChunk, ProviderError, SttProvider, SttResult};
 
 // ── Policy ────────────────────────────────────────────────────────────────────
 
-/// Policy governing what happens when the primary STT provider returns a
-/// permanent [`ProviderError::AuthError`].
+/// Policy governing fallback between the primary and secondary STT providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SttFallbackPolicy {
-    /// No fallback — `AuthError` is propagated to the pipeline, which halts
+    /// No fallback — errors are propagated to the pipeline, which halts
     /// until the application is restarted (default behaviour).
     None,
     /// Switch to a local STT provider on the first `AuthError` from the
-    /// primary.  All subsequent calls go to the local provider; the bad key
-    /// is never retried.
+    /// primary Google provider.  All subsequent calls go to the local
+    /// provider; the bad key is never retried.
+    ///
+    /// Legacy variant for `stt_provider = "google"` configs (issue #214).
     Local,
+    /// Switch to Google STT on the first permanent local-unavailable error
+    /// (`ModelNotFound`, `ChecksumMismatch`, `Unimplemented`) when a Google
+    /// API key is configured (issue #371 / LF-03).
+    ///
+    /// Used when `stt_provider = "local"` and `stt_fallback_policy =
+    /// "google-when-keyed"`.  Transient errors do **not** activate the
+    /// fallback; only permanent local-setup failures do.
+    GoogleWhenKeyed,
 }
 
 impl SttFallbackPolicy {
     /// Parse the string value from [`AppConfig::stt_fallback_policy`].
     ///
     /// Returns `None` when the value is not a recognised policy name.
+    /// The legacy `"local"` string is rejected at the config-validation layer
+    /// before this function is called for valid configs.
     pub fn from_config(value: &str) -> Option<Self> {
         match value {
             "none" => Some(Self::None),
             "local" => Some(Self::Local),
+            "google-when-keyed" => Some(Self::GoogleWhenKeyed),
             _ => None,
         }
+    }
+}
+
+// ── Stub primary for failed-at-startup local providers ───────────────────────
+
+/// A stub `SttProvider` that always returns `ModelNotFound`.
+///
+/// Used when the local Whisper provider could not be initialised at startup
+/// (e.g. model file missing) but a Google fallback is available.  Wrapping
+/// this in a [`FallbackSttProvider`] with policy [`SttFallbackPolicy::GoogleWhenKeyed`]
+/// causes the fallback to activate on the very first transcription call.
+pub struct FailedLocalSttProvider {
+    message: String,
+}
+
+impl FailedLocalSttProvider {
+    /// Create a stub that always returns `ModelNotFound(message)`.
+    pub fn new(message: String) -> Self {
+        Self { message }
+    }
+}
+
+impl SttProvider for FailedLocalSttProvider {
+    async fn transcribe(
+        &self,
+        _chunk: &PcmChunk,
+        _language_code: &str,
+    ) -> Result<SttResult, ProviderError> {
+        Err(ProviderError::ModelNotFound(self.message.clone()))
     }
 }
 
@@ -74,53 +116,65 @@ pub fn is_local_unavailable(err: &ProviderError) -> bool {
 /// Returns `true` when `err` from the **primary** provider should activate the
 /// fallback given `policy`.
 ///
-/// Only [`ProviderError::AuthError`] triggers a fallback — transient errors are
-/// retried by the caller and only reach this predicate after all retries are
-/// exhausted, at which point they are handled as non-fallback errors.
+/// * [`SttFallbackPolicy::Local`] (legacy Google-primary): activates on
+///   `AuthError` only.
+/// * [`SttFallbackPolicy::GoogleWhenKeyed`] (LF-03 local-primary): activates
+///   on permanent local-unavailable errors ([`is_local_unavailable`]).
+///   Transient errors such as `NetworkError` or `RateLimitError` are **not**
+///   eligible; `AuthError` from a local provider is not eligible either.
+/// * [`SttFallbackPolicy::None`]: never activates.
 pub fn should_activate_fallback(policy: SttFallbackPolicy, err: &ProviderError) -> bool {
-    policy == SttFallbackPolicy::Local && matches!(err, ProviderError::AuthError(_))
+    match policy {
+        SttFallbackPolicy::Local => matches!(err, ProviderError::AuthError(_)),
+        SttFallbackPolicy::GoogleWhenKeyed => is_local_unavailable(err),
+        SttFallbackPolicy::None => false,
+    }
 }
 
 // ── Composite provider ────────────────────────────────────────────────────────
 
-/// Composite STT provider that switches from a primary cloud provider to a
-/// local fallback on the first permanent authentication failure.
+/// Composite STT provider that switches between a primary and a fallback
+/// provider on the first eligible permanent error.
 ///
-/// # Type parameters
-///
-/// * `P` — primary STT provider (normally `GoogleSttProvider`).
-/// * `F` — fallback STT provider (normally `LocalWhisperSttProvider`).
+/// Supports two directions (issue #214 and #371 / LF-03):
+/// * `policy = Local` — P=Google primary, F=Local fallback, activates on
+///   `AuthError`.
+/// * `policy = GoogleWhenKeyed` — P=Local primary, F=Google fallback,
+///   activates on permanent local-unavailable errors.
 ///
 /// # Thread safety
 ///
 /// `using_fallback` is a single-writer atomic that is only ever flipped once
 /// from `false` to `true`.  Concurrent `transcribe` calls on different Tokio
 /// tasks are safe.  Concurrent in-flight requests may each observe the
-/// primary's `AuthError` before the flag is set; after any caller stores the
-/// flag, later requests bypass the primary and call the local fallback.
+/// primary's error before the flag is set; after any caller stores the flag,
+/// later requests bypass the primary and call the fallback.
 pub struct FallbackSttProvider<P, F> {
     primary: P,
-    /// `Some` when the local provider initialised successfully at startup,
-    /// `None` when it could not (model missing, checksum wrong, etc.).
+    /// `Some` when the fallback provider initialised successfully at startup,
+    /// `None` when it could not.
     fallback: Option<F>,
     /// Human-readable description of why `fallback` is `None`.  Used to
-    /// construct an actionable [`ProviderError::ModelNotFound`] when the
-    /// fallback is needed but unavailable.
+    /// construct an actionable error when the fallback is needed but
+    /// unavailable.
     fallback_unavailable_msg: Option<String>,
     policy: SttFallbackPolicy,
-    /// Set to `true` permanently on the first primary `AuthError` with
-    /// `policy = Local`.  Relaxed ordering is safe because the flag is
-    /// write-once and the worst case of a data race is a single redundant
-    /// call to `call_fallback`.
+    /// Set to `true` permanently on the first eligible primary error.
+    /// Relaxed ordering is safe because the flag is write-once.
     using_fallback: AtomicBool,
     /// Shared with the pipeline's `pipeline_error_msg` so the TUI displays a
     /// notification whenever the active provider changes.
     status_msg: Arc<Mutex<Option<String>>>,
-    /// Shared with [`OrchestratorContext`] so CPU throttling starts applying
-    /// once this provider switches to the local fallback.
+    /// Shared with [`OrchestratorContext`] so CPU throttling applies when
+    /// local Whisper is the active provider.
     ///
     /// [`OrchestratorContext`]: crate::pipeline::OrchestratorContext
     local_provider_active: Arc<AtomicBool>,
+    /// Tracks which provider is currently active for TUI display (issue #371).
+    ///
+    /// Written once at construction from config and updated when fallback
+    /// activates so the status span always reflects the live provider.
+    stt_source: Arc<Mutex<SttSource>>,
 }
 
 impl<P, F> FallbackSttProvider<P, F>
@@ -131,15 +185,15 @@ where
     /// Construct a new `FallbackSttProvider`.
     ///
     /// * `primary` — called first on every `transcribe` request.
-    /// * `fallback` — called when `policy` requires a fallback.  Pass `None`
-    ///   when the local provider could not be initialised at startup.
+    /// * `fallback` — called when `policy` requires it.  Pass `None` when the
+    ///   fallback provider could not be initialised at startup.
     /// * `fallback_unavailable_msg` — included in the returned error when
-    ///   `fallback` is `None` and the policy requires a fallback.  Should
-    ///   contain the actionable error from the failed local-provider
-    ///   construction (e.g. model path and download URL).
+    ///   `fallback` is `None` and the policy requires a fallback.
     /// * `policy` — when to activate the fallback.
     /// * `status_msg` — shared status slot; written before the first fallback
     ///   call so the UI always shows a notification (AC3).
+    /// * `stt_source` — shared source tracker updated when fallback activates.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         primary: P,
         fallback: Option<F>,
@@ -147,6 +201,7 @@ where
         policy: SttFallbackPolicy,
         status_msg: Arc<Mutex<Option<String>>>,
         local_provider_active: Arc<AtomicBool>,
+        stt_source: Arc<Mutex<SttSource>>,
     ) -> Self {
         Self {
             primary,
@@ -156,11 +211,16 @@ where
             using_fallback: AtomicBool::new(false),
             status_msg,
             local_provider_active,
+            stt_source,
         }
     }
 
     fn write_status(&self, msg: String) {
         *self.status_msg.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+    }
+
+    fn write_stt_source(&self, source: SttSource) {
+        *self.stt_source.lock().unwrap_or_else(|p| p.into_inner()) = source;
     }
 
     async fn call_fallback(
@@ -170,12 +230,23 @@ where
     ) -> Result<SttResult, ProviderError> {
         match &self.fallback {
             Some(fb) => {
-                self.local_provider_active.store(true, Ordering::Relaxed);
+                match self.policy {
+                    SttFallbackPolicy::GoogleWhenKeyed => {
+                        // LF-03: fallback is Google; local is no longer active.
+                        self.local_provider_active.store(false, Ordering::Relaxed);
+                        self.write_stt_source(SttSource::GoogleFallback);
+                    }
+                    _ => {
+                        // Legacy Local fallback: the fallback is local Whisper.
+                        self.local_provider_active.store(true, Ordering::Relaxed);
+                        self.write_stt_source(SttSource::Local);
+                    }
+                }
                 let result = fb.transcribe(chunk, language_code).await;
                 if let Err(ref err) = result {
                     if is_local_unavailable(err) {
-                        // AC2: surface the actionable setup error; the
-                        // pipeline's permanent-error handler will halt on it.
+                        // Surface the actionable setup error; the pipeline's
+                        // permanent-error handler will halt on it.
                         let msg = format!("⚠ STT local unavailable: {err}");
                         tracing::error!("{}", msg);
                         self.write_status(msg);
@@ -212,6 +283,9 @@ where
     ///   delegates to the fallback.  If the fallback is unavailable, a
     ///   [`ProviderError::ModelNotFound`] with an actionable message is
     ///   returned (AC2).
+    /// * Primary returns a permanent local-unavailable error with
+    ///   `policy = GoogleWhenKeyed`: same switch-and-delegate logic, but the
+    ///   status message describes the Google fallback activation (LF-03).
     /// * Any other primary error: returned unchanged.
     async fn transcribe(
         &self,
@@ -230,10 +304,16 @@ where
                 // message and calling the fallback so any concurrent caller
                 // that checks the flag after this point bypasses the primary.
                 self.using_fallback.store(true, Ordering::Relaxed);
-                let notice = format!(
-                    "⚠ STT fallback: primary auth error — switched to local Whisper. \
-                     Original error: {err}"
-                );
+                let notice = match self.policy {
+                    SttFallbackPolicy::GoogleWhenKeyed => format!(
+                        "⚠ STT fallback: local provider unavailable — switched to Google \
+                         (google-when-keyed). Original error: {err}"
+                    ),
+                    _ => format!(
+                        "⚠ STT fallback: primary auth error — switched to local Whisper. \
+                         Original error: {err}"
+                    ),
+                };
                 tracing::warn!("{}", notice);
                 self.write_status(notice);
                 self.call_fallback(chunk, language_code).await
@@ -330,8 +410,18 @@ mod tests {
         Arc::new(AtomicBool::new(false))
     }
 
+    fn make_stt_source() -> Arc<Mutex<SttSource>> {
+        Arc::new(Mutex::new(SttSource::Local))
+    }
+
+    fn read_stt_source(slot: &Arc<Mutex<SttSource>>) -> SttSource {
+        // OK: test-only helper, mutex cannot be poisoned in single-threaded tests
+        *slot.lock().expect("test stt_source mutex")
+    }
+
     fn read_status(slot: &Arc<Mutex<Option<String>>>) -> Option<String> {
-        slot.lock().unwrap().clone()
+        // OK: test-only helper, mutex cannot be poisoned in single-threaded tests
+        slot.lock().expect("test status mutex").clone()
     }
 
     // ── T1: Google key expired with fallback=local ────────────────────────────
@@ -342,6 +432,7 @@ mod tests {
     async fn t1_google_auth_error_falls_back_to_local_with_visible_status() {
         let status = make_status();
         let local_active = make_local_active();
+        let stt_source = Arc::new(Mutex::new(SttSource::GoogleConfigured));
         let provider = FallbackSttProvider::new(
             AuthErrStt,
             Some(OkStt),
@@ -349,6 +440,7 @@ mod tests {
             SttFallbackPolicy::Local,
             Arc::clone(&status),
             Arc::clone(&local_active),
+            Arc::clone(&stt_source),
         );
 
         let result = provider.transcribe(&make_chunk(), "en").await;
@@ -357,14 +449,16 @@ mod tests {
             result.is_ok(),
             "fallback to local should succeed: {result:?}"
         );
-        assert_eq!(result.unwrap().text, "hello from local");
+        // OK: unwrap in test assertion
+        assert_eq!(result.expect("fallback result").text, "hello from local");
 
         let msg = read_status(&status);
         assert!(
             msg.is_some(),
             "status message must be set when fallback activates (AC3)"
         );
-        let msg = msg.unwrap();
+        // OK: unwrap in test assertion
+        let msg = msg.expect("status message");
         assert!(
             msg.contains("fallback") || msg.contains("auth error"),
             "status should mention the fallback reason: {msg}"
@@ -372,6 +466,11 @@ mod tests {
         assert!(
             local_active.load(AtomicOrdering::Relaxed),
             "fallback activation must mark the STT path as local so CPU throttling applies"
+        );
+        assert_eq!(
+            read_stt_source(&stt_source),
+            SttSource::Local,
+            "fallback activation must update the status label to the active local provider"
         );
     }
 
@@ -388,6 +487,7 @@ mod tests {
             SttFallbackPolicy::Local,
             Arc::clone(&status),
             make_local_active(),
+            make_stt_source(),
         );
 
         // First call activates the fallback.
@@ -417,6 +517,7 @@ mod tests {
             SttFallbackPolicy::Local,
             Arc::clone(&status),
             make_local_active(),
+            make_stt_source(),
         );
 
         let result = provider.transcribe(&make_chunk(), "en").await;
@@ -452,6 +553,7 @@ mod tests {
             SttFallbackPolicy::Local,
             Arc::clone(&status),
             make_local_active(),
+            make_stt_source(),
         );
 
         let result = provider.transcribe(&make_chunk(), "en").await;
@@ -482,6 +584,7 @@ mod tests {
             SttFallbackPolicy::None,
             Arc::clone(&status),
             Arc::clone(&local_active),
+            make_stt_source(),
         );
 
         let result = provider.transcribe(&make_chunk(), "en").await;
@@ -497,6 +600,123 @@ mod tests {
         assert!(
             !local_active.load(AtomicOrdering::Relaxed),
             "policy=None must not mark the provider as local"
+        );
+    }
+
+    // ── LF-03: GoogleWhenKeyed policy ────────────────────────────────────────
+
+    /// LF-03 T1: Local primary returns ModelNotFound → activates Google
+    /// fallback; stt_source updated to GoogleFallback; status message written.
+    #[tokio::test]
+    async fn lf03_local_model_not_found_activates_google_fallback() {
+        let status = make_status();
+        let local_active = make_local_active();
+        let stt_source = make_stt_source();
+
+        let provider = FallbackSttProvider::new(
+            ModelNotFoundStt,
+            Some(OkStt),
+            None,
+            SttFallbackPolicy::GoogleWhenKeyed,
+            Arc::clone(&status),
+            Arc::clone(&local_active),
+            Arc::clone(&stt_source),
+        );
+
+        let result = provider.transcribe(&make_chunk(), "en").await;
+
+        assert!(
+            result.is_ok(),
+            "fallback to Google should succeed: {result:?}"
+        );
+        // OK: expect in test assertion
+        assert_eq!(result.expect("lf03 result").text, "hello from local");
+
+        let msg = read_status(&status);
+        assert!(
+            msg.is_some(),
+            "status message must be written on fallback activation (AC3)"
+        );
+        // OK: expect in test assertion
+        let msg = msg.expect("status message");
+        assert!(
+            msg.contains("google-when-keyed") || msg.contains("Google"),
+            "status must mention Google fallback: {msg}"
+        );
+
+        assert_eq!(
+            read_stt_source(&stt_source),
+            SttSource::GoogleFallback,
+            "stt_source must be updated to GoogleFallback on activation"
+        );
+        assert!(
+            !local_active.load(AtomicOrdering::Relaxed),
+            "local_provider_active must be false when Google is the active fallback"
+        );
+    }
+
+    /// LF-03 T2: Local primary returns a transient error → fallback NOT
+    /// activated (only permanent local-unavailable errors trigger GoogleWhenKeyed).
+    #[tokio::test]
+    async fn lf03_transient_local_error_does_not_activate_google_fallback() {
+        struct NetworkErrStt;
+        impl SttProvider for NetworkErrStt {
+            async fn transcribe(
+                &self,
+                _chunk: &PcmChunk,
+                _lang: &str,
+            ) -> Result<SttResult, ProviderError> {
+                Err(ProviderError::NetworkError("timeout".to_string()))
+            }
+        }
+
+        let status = make_status();
+        let provider = FallbackSttProvider::new(
+            NetworkErrStt,
+            Some(OkStt),
+            None,
+            SttFallbackPolicy::GoogleWhenKeyed,
+            Arc::clone(&status),
+            make_local_active(),
+            make_stt_source(),
+        );
+
+        let result = provider.transcribe(&make_chunk(), "en").await;
+        assert!(
+            matches!(result, Err(ProviderError::NetworkError(_))),
+            "transient errors must be propagated unchanged: {result:?}"
+        );
+        assert!(
+            read_status(&status).is_none(),
+            "status must not be written for transient errors"
+        );
+    }
+
+    /// LF-03 T3: FailedLocalSttProvider + GoogleWhenKeyed → Google activated on
+    /// first call (startup-failure case).
+    #[tokio::test]
+    async fn lf03_failed_local_provider_activates_google_on_first_call() {
+        let status = make_status();
+        let stt_source = make_stt_source();
+        let provider = FallbackSttProvider::new(
+            FailedLocalSttProvider::new("model not found at startup".to_string()),
+            Some(OkStt),
+            None,
+            SttFallbackPolicy::GoogleWhenKeyed,
+            Arc::clone(&status),
+            make_local_active(),
+            Arc::clone(&stt_source),
+        );
+
+        let result = provider.transcribe(&make_chunk(), "en").await;
+        assert!(
+            result.is_ok(),
+            "startup-failed local → Google must succeed: {result:?}"
+        );
+        assert_eq!(
+            read_stt_source(&stt_source),
+            SttSource::GoogleFallback,
+            "stt_source must be GoogleFallback after startup-failure activation"
         );
     }
 
@@ -523,6 +743,31 @@ mod tests {
         assert!(!should_activate_fallback(
             SttFallbackPolicy::Local,
             &ProviderError::NetworkError("timeout".to_string())
+        ));
+    }
+
+    #[test]
+    fn helper_google_when_keyed_activates_on_local_unavailable_errors() {
+        assert!(should_activate_fallback(
+            SttFallbackPolicy::GoogleWhenKeyed,
+            &ProviderError::ModelNotFound("x".to_string())
+        ));
+        assert!(should_activate_fallback(
+            SttFallbackPolicy::GoogleWhenKeyed,
+            &ProviderError::ChecksumMismatch("x".to_string())
+        ));
+        assert!(should_activate_fallback(
+            SttFallbackPolicy::GoogleWhenKeyed,
+            &ProviderError::Unimplemented("x".to_string())
+        ));
+        // Transient / auth errors must NOT activate GoogleWhenKeyed.
+        assert!(!should_activate_fallback(
+            SttFallbackPolicy::GoogleWhenKeyed,
+            &ProviderError::NetworkError("x".to_string())
+        ));
+        assert!(!should_activate_fallback(
+            SttFallbackPolicy::GoogleWhenKeyed,
+            &ProviderError::AuthError("x".to_string())
         ));
     }
 
@@ -561,6 +806,10 @@ mod tests {
         assert_eq!(
             SttFallbackPolicy::from_config("local"),
             Some(SttFallbackPolicy::Local)
+        );
+        assert_eq!(
+            SttFallbackPolicy::from_config("google-when-keyed"),
+            Some(SttFallbackPolicy::GoogleWhenKeyed)
         );
         assert_eq!(SttFallbackPolicy::from_config("azure"), None);
         assert_eq!(SttFallbackPolicy::from_config(""), None);

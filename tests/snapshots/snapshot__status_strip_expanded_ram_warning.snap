@@ -1,10 +1,9 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1904
 expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
-│● STT: listening   TTS: off   Route: Speakers                                 │
+│● STT: local   TTS: off   Route: Speakers                                     │
 │Target: vi   Pairs: 10   Cost: ~$0.024                                        │
 │Elapsed: 1:00                                                                 │
 │CPU:45%  RAM:600MB  Net:↑8/↓32 kbps  E2E:420ms  Loss:0.0%                     │

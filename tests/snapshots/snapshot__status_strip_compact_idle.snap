@@ -3,5 +3,5 @@ source: tests/snapshot.rs
 expression: "render_strip(&strip, 120, 3)"
 ---
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ STT: idle │ Lang:vi │ TTS:off │ Route:Speakers │ 0 pairs │ Audio:0s │ no charges │ 0:00                              │
+│ STT: local │ Lang:vi │ TTS:off │ Route:Speakers │ 0 pairs │ Audio:0s │ no charges │ 0:00                             │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

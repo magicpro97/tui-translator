@@ -10,11 +10,11 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  Audio source    : wasapi                                │
 │  Capture device  : Windows default playback              │
 │  Audio file path : —                                     │
-│  STT provider    : google                                │
+│  STT provider    : local                                 │
 │  MT provider     : google                                │
 │  TTS enabled     : false                                 │
 │  TTS routing     : speakers                              │
 │  Virtual mic     : not configured                        │
-│  STT fallback    : none                                  │
+│  STT fallback    : google-when-keyed                     │
 │  VAD pre-roll ms : 200                                   │
 └──────────────────────────────────────────────────────────┘

@@ -24,7 +24,7 @@ mod config;
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
-use metrics::SttState;
+use metrics::{SttSource, SttState};
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
@@ -334,6 +334,7 @@ fn snapshot_status_strip_compact_idle() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -371,6 +372,7 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -411,6 +413,7 @@ fn snapshot_status_strip_compact_restart_notice() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -453,6 +456,7 @@ fn snapshot_status_strip_compact_sending() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -490,6 +494,7 @@ fn snapshot_status_strip_compact_waiting() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -527,6 +532,7 @@ fn snapshot_status_strip_compact_error() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -566,6 +572,7 @@ fn snapshot_status_strip_expanded_idle() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -608,6 +615,7 @@ fn snapshot_status_strip_expanded_listening() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -652,6 +660,7 @@ fn snapshot_status_strip_expanded_with_warning() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -700,6 +709,7 @@ fn snapshot_status_strip_narrow_abbreviated() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -741,6 +751,7 @@ fn snapshot_status_strip_wide_full_labels() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -911,6 +922,7 @@ fn stt_error_state_label_contains_message() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -953,18 +965,19 @@ fn narrow_strip_uses_abbreviated_labels() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
-    // Narrow version should not contain the full "listening" word.
+    // Narrow version uses abbreviated form "listen/local" (no "STT:" prefix).
     assert!(
-        !narrow.contains("listening"),
-        "narrow strip must abbreviate; got: {narrow:?}"
+        !narrow.contains("STT:"),
+        "narrow strip must abbreviate (no 'STT:' prefix); got: {narrow:?}"
     );
-    // Wide version should contain the full label.
+    // Wide version (≥120 cols) shows the source label via format_stt_span (LF-03).
     assert!(
-        wide.contains("listening"),
-        "wide strip must use full label; got: {wide:?}"
+        wide.contains("STT: local"),
+        "wide strip must use source label; got: {wide:?}"
     );
 }
 
@@ -1011,6 +1024,7 @@ fn expanded_warning_renders_when_over_threshold() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
 
     // Height accounting must be 10 when warning is active.
@@ -1088,6 +1102,7 @@ fn snapshot_status_strip_zero_state_narrow() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -1129,6 +1144,7 @@ fn snapshot_status_strip_zero_state_expanded() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -1217,6 +1233,7 @@ fn narrow_compact_strip_uses_lang_label() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1263,6 +1280,7 @@ fn narrow_compact_strip_uses_tts_label() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1309,6 +1327,7 @@ fn compact_restart_notice_is_spelled_out() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1355,6 +1374,7 @@ fn snapshot_status_strip_very_narrow_30cols() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1561,6 +1581,7 @@ fn expanded_metrics_narrow_uses_lang_label() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 60, 7);
     assert!(
@@ -1882,6 +1903,7 @@ fn snapshot_status_strip_compact_ram_warning() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1934,6 +1956,7 @@ fn snapshot_status_strip_expanded_ram_warning() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -1987,6 +2010,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     assert_eq!(strip.expanded_height(), 10);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
@@ -2030,6 +2054,7 @@ fn expanded_metrics_height_is_9_without_any_warning() {
         archive_path: None,
         archive_sealed: false,
         audio_consent: false,
+        stt_source: SttSource::Local,
     };
     assert_eq!(
         strip.expanded_height(),
