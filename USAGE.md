@@ -428,17 +428,16 @@ affected.
 |-------|---------------|
 | `audio archive: <size>` | Total PCM bytes written to WAV data chunk(s) across all segments of the current session. |
 | `at <path>` | Absolute path of the WAV segment currently being written. |
-| `(sealed)` | The per-segment size quota (`audio_archive.max_size_mb`) was reached; no further audio will be appended to this segment.  LF-06 session-dir layout rotates to the next segment instead of sealing permanently. |
-| `audio archive: —` | Archiving is disabled (`audio_archive.store_audio: false` or `consent_given: false`). |
+| `(sealed)` | Legacy single-file archive mode reached the per-file size quota and stopped appending.  In the LF-06 per-session layout, `audio_archive.max_size_mb` rotates to the next WAV segment instead of showing a permanent sealed state. |
+| `audio archive: —` | Archiving is disabled (`audio_archive.store_audio: false`) or the archive writer did not start. |
 | `audio archive: (consent revoked)` | `consent_given` was set to `false` in the loaded config.  **Bytes and path are hidden** to prevent accidental privacy disclosure. |
 
 #### Consent-gate timing
 
-The `(consent revoked)` state is driven by an `AtomicBool` that is updated
-synchronously when `config.json` is reloaded.  The TUI draw loop reads the
-same atomic on every render tick (at most 1 second apart), so the privacy gate
-takes effect within the current render cycle — no restart required, no delay
-beyond one tick.
+The `(consent revoked)` state is driven by an `AtomicBool` updated when
+`config.json` is reloaded.  The TUI draw loop reads the same atomic on every
+render tick (at most 1 second apart), so the privacy gate takes effect within
+the next 1 Hz render tick in practice — no restart required.
 
 #### Update cadence
 

@@ -106,12 +106,15 @@ when either of the following limits is reached:
 
 | Config key | Default | Effect |
 |------------|---------|--------|
+| `session_store.max_sessions` | `100` | Keep at most this many session directories; oldest sealed sessions are pruned first. |
 | `session_store.total_bytes_cap` | `0` (disabled) | Delete oldest sessions until total on-disk bytes are below this cap. |
 | `session_store.retention_days` | `0` (disabled) | Delete sessions whose newest file is older than this many days. |
 
-The **active session** is never deleted by eviction.  Set both values to `0`
-(the default) to keep all sessions indefinitely.  You are always responsible
-for managing files beyond what these automatic limits cover.
+The **active session** is never deleted by eviction.  Set
+`session_store.total_bytes_cap` and `session_store.retention_days` to `0` to
+disable size- and age-based eviction; `session_store.max_sessions` still caps
+the number of retained sealed sessions.  You are always responsible for
+managing files beyond what these automatic limits cover.
 
 ---
 

@@ -6,17 +6,17 @@
 //! |------|----------------|
 //! | [`bytes_written_is_monotonic`] | `SessionRecorder::bytes_written_arc` never decreases across multiple segment writes |
 //! | [`archive_quota_seal_freezes_bytes`] | Appending past quota flips `sealed_arc` and stops incrementing `bytes_arc` |
-//! | [`consent_gate_is_synchronous`] | `AppState::set_audio_consent` stores to an `AtomicBool`; the read is instantaneous — no tick delay |
-//! | [`retention_eviction_does_not_decrease_atomics`] | `enforce_total_session_cap` deletes old dirs on disk; in-memory recorder/archive atomics are unaffected |
+//! | [`consent_gate_atomic_round_trip_is_coherent`] | The consent gate's atomic handle reflects store/load updates without sleeping |
+//! | [`retention_eviction_preserves_active_recorder_metrics`] | `enforce_total_session_cap` deletes old dirs on disk while preserving active recorder metrics |
 //!
 //! # No sleeps required
 //!
 //! * `bytes_written` is updated by `AtomicU64::fetch_add`; the test flushes the
 //!   writer queue by calling `recorder.shutdown()` and then reads the arc.
-//! * The consent gate is a single `AtomicBool`; `store` + `load` on the same
-//!   thread are always coherent — no tick needed.
-//! * `enforce_total_session_cap` is a synchronous filesystem call; atomics are
-//!   never touched inside it.
+//! * The consent gate is a single `AtomicBool`; the display observes it on the
+//!   next 1 Hz render tick, so no test sleeps are needed here.
+//! * `enforce_total_session_cap` is a synchronous filesystem call; the active
+//!   recorder handle remains intact while old sealed directories are evicted.
 
 // ── Path imports (mirror the pattern used in session_schema.rs) ──────────────
 
@@ -223,20 +223,15 @@ fn archive_quota_seal_freezes_bytes() {
     );
 }
 
-// ── Test 3: consent gate is synchronous ──────────────────────────────────────
+// ── Test 3: consent gate atomic round-trip is coherent ──────────────────────
 
-/// Evidence: the audio-consent gate is backed by `AtomicBool::store`; the
-/// value is visible to the TUI render thread on the very next read with no
-/// additional synchronisation or tick required.
+/// Evidence: the audio-consent gate is backed by an `Arc<AtomicBool>`; cloned
+/// handles observe store/load updates without sleeping.
 ///
-/// Proof mechanism: `AppState::set_audio_consent` stores to an
-/// `Arc<AtomicBool>` with `Ordering::Relaxed`.  On x86-64 (TSO model) relaxed
-/// stores are sequentially consistent within a single thread; the TUI draw
-/// loop reading the same arc in the same turn always observes the new value.
-/// This test proves the round-trip at the atomic level without spawning tasks
-/// or sleeping.
+/// Cross-thread render timing is covered by the 1 Hz metrics/render cadence
+/// rather than a strict instant-visibility claim.
 #[test]
-fn consent_gate_is_synchronous() {
+fn consent_gate_atomic_round_trip_is_coherent() {
     // Simulate the consent Arc held by AppState and its clone held by the
     // metrics publisher.  Matches the field type declared at tui/mod.rs line
     // ~1510: `pub audio_consent: Arc<AtomicBool>`.
@@ -249,42 +244,53 @@ fn consent_gate_is_synchronous() {
         "consent must start as false"
     );
 
-    // Simulate `AppState::set_audio_consent(true)` — one store.
+    // Simulate the single store performed by the runtime consent setter.
     consent_arc.store(true, Ordering::Relaxed);
 
-    // Simulate TUI draw reading the consent gate on the same CPU tick.
-    // On x86-64 TSO, a store is immediately visible to the same thread
-    // without any barrier; relaxed load suffices here.
+    // Same-thread store/load coherence is enough for this no-sleep evidence
+    // test; cross-thread UI visibility is bounded by the next render tick.
     assert!(
         read_handle.load(Ordering::Relaxed),
-        "consent gate must be true immediately after store — no sleep or tick needed"
+        "consent gate handle must reflect the store without sleeping"
     );
 
     // Revoke consent: next render hides archive bytes/path.
     consent_arc.store(false, Ordering::Relaxed);
     assert!(
         !read_handle.load(Ordering::Relaxed),
-        "consent gate must be false immediately after revoke"
+        "consent gate handle must reflect revoke without sleeping"
     );
 }
 
-// ── Test 4: retention eviction does not affect in-memory atomics ─────────────
+// ── Test 4: retention eviction preserves active recorder metrics ─────────────
 
-/// Evidence: `enforce_total_session_cap` deletes the oldest on-disk session
-/// directories but does NOT read or modify the in-memory recorder/archive
-/// byte counters.
-///
-/// Proof mechanism: the function in `storage/mod.rs` operates entirely on the
-/// filesystem — it calls `list_session_dirs`, `remove_dir_all`, and nothing
-/// else.  There is no reference to any `AtomicU64`/`AtomicBool` inside it.
-/// This test populates two old session directories on disk, pre-loads the
-/// recorder and archive atomics with non-zero counts, calls
-/// `enforce_total_session_cap` with a cap that forces eviction of the oldest
-/// directory, then asserts the atomics are completely unchanged.
-#[test]
-fn retention_eviction_does_not_decrease_atomics() {
+/// Evidence: `enforce_total_session_cap` deletes old sealed session
+/// directories while the active session directory and its real
+/// `SessionRecorder::bytes_written_arc` metric remain intact.
+#[tokio::test]
+async fn retention_eviction_preserves_active_recorder_metrics() {
     let temp = tempfile::tempdir().expect("create temp dir");
     let sessions_root = temp.path().join("sessions");
+    std::fs::create_dir_all(&sessions_root).expect("create sessions root");
+
+    let active_session_id = "session-active";
+    let recorder = SessionRecorder::start(
+        SessionRecorderConfig::enabled(&sessions_root),
+        test_header(active_session_id),
+    )
+    .await
+    .expect("start active recorder");
+    recorder
+        .record_segment(test_segment(active_session_id, 1))
+        .expect("record active segment");
+    let recorder_bytes = recorder.bytes_written_arc();
+    let active_session_dir = recorder
+        .session_dir()
+        .expect("active recorder has session dir")
+        .to_path_buf();
+    recorder.shutdown().await.expect("flush active recorder");
+    let recorder_before = recorder_bytes.load(Ordering::Relaxed);
+    assert!(recorder_before > 0, "active recorder must write bytes");
 
     // Create two old sealed session directories with dummy content.
     let old_session_a = sessions_root.join("session-old-a");
@@ -297,18 +303,8 @@ fn retention_eviction_does_not_decrease_atomics() {
     std::fs::write(old_session_a.join("00001.jsonl"), &payload).expect("write payload a");
     std::fs::write(old_session_b.join("00001.jsonl"), &payload).expect("write payload b");
 
-    // Pre-load in-memory byte counters (simulating a live recorder and archive).
-    let recorder_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(4_096));
-    let archive_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(65_536));
-    let archive_sealed: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-
-    let recorder_before = recorder_bytes.load(Ordering::Relaxed);
-    let archive_before = archive_bytes.load(Ordering::Relaxed);
-    let sealed_before = archive_sealed.load(Ordering::Relaxed);
-
-    // Enforce a 300-byte cap with no active session (active session protected
-    // by the `active_session_id` guard inside enforce_total_session_cap).
-    let evicted = enforce_total_session_cap(&sessions_root, 300, None)
+    // Enforce a 300-byte cap while protecting the active session by id.
+    let evicted = enforce_total_session_cap(&sessions_root, 300, Some(active_session_id))
         .expect("enforce_total_session_cap must succeed");
 
     // At least one session should have been evicted.
@@ -318,20 +314,17 @@ fn retention_eviction_does_not_decrease_atomics() {
         200 * 2
     );
 
-    // The in-memory counters must be completely unaffected.
+    assert!(
+        active_session_dir.exists(),
+        "active session directory must not be removed by retention"
+    );
+    assert!(
+        !old_session_a.exists() || !old_session_b.exists(),
+        "at least one old sealed session directory must be removed"
+    );
     assert_eq!(
         recorder_bytes.load(Ordering::Relaxed),
         recorder_before,
-        "recorder bytes_written_arc must be unaffected by filesystem eviction"
-    );
-    assert_eq!(
-        archive_bytes.load(Ordering::Relaxed),
-        archive_before,
-        "archive bytes_arc must be unaffected by filesystem eviction"
-    );
-    assert_eq!(
-        archive_sealed.load(Ordering::Relaxed),
-        sealed_before,
-        "archive sealed_arc must be unaffected by filesystem eviction"
+        "active recorder bytes_written_arc must not decrease during filesystem eviction"
     );
 }
