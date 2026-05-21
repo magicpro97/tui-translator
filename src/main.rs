@@ -2896,12 +2896,17 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     // DM-03: both slot A and slot B orchestrators are drained concurrently.
     rt.block_on(async {
         let timeout = Duration::from_secs(2);
-        if let Some(join_a) = orchestrator_join {
-            let _ = tokio::time::timeout(timeout, join_a).await;
-        }
-        if let Some(join_b) = orchestrator_join_b {
-            let _ = tokio::time::timeout(timeout, join_b).await;
-        }
+        let join_a = async {
+            if let Some(join_a) = orchestrator_join {
+                let _ = tokio::time::timeout(timeout, join_a).await;
+            }
+        };
+        let join_b = async {
+            if let Some(join_b) = orchestrator_join_b {
+                let _ = tokio::time::timeout(timeout, join_b).await;
+            }
+        };
+        tokio::join!(join_a, join_b);
     });
 
     // Cancel remaining background tasks without waiting for them to finish.
