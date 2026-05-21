@@ -491,6 +491,43 @@ impl providers::SttProvider for RuntimeSttProvider {
     }
 }
 
+impl RuntimeSttProvider {
+    fn initial_stt_source(&self) -> SttSource {
+        match self {
+            Self::Google(_) | Self::GoogleWithLocalFallback(_) => SttSource::GoogleConfigured,
+            #[cfg(feature = "local-stt")]
+            Self::Local(_) | Self::LocalWithGoogleFallback(_) => SttSource::Local,
+            #[cfg(feature = "local-stt")]
+            Self::LocalFailedWithGoogleFallback(_) => SttSource::GoogleFallback,
+        }
+    }
+
+    fn initial_provider_is_local(&self) -> bool {
+        match self {
+            #[cfg(feature = "local-stt")]
+            Self::Local(_) => true,
+            #[cfg(feature = "local-stt")]
+            Self::LocalWithGoogleFallback(_) => true,
+            _ => false,
+        }
+    }
+}
+
+fn has_google_api_key(google_api_key: Option<&str>) -> bool {
+    google_api_key
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty())
+}
+
+fn stt_local_unavailable_is_fatal(cfg: &config::AppConfig) -> bool {
+    match (cfg.stt_provider.as_str(), cfg.stt_fallback_policy.as_str()) {
+        ("google", "local") => true,
+        ("local", "none") => true,
+        ("local", "google-when-keyed") => !has_google_api_key(cfg.google_api_key.as_deref()),
+        _ => false,
+    }
+}
+
 fn build_runtime_stt_provider(
     cfg: &config::AppConfig,
     google_api_key: Option<&str>,
@@ -2174,17 +2211,6 @@ fn main() -> Result<()> {
                 let google_api_key = cfg_snapshot.google_api_key.as_deref();
                 let source_language = Arc::clone(&state.source_language);
 
-                // Initialise stt_source from config before building the
-                // provider so the TUI shows the right label immediately (LF-03).
-                {
-                    let initial_source = if cfg_snapshot.stt_provider == "google" {
-                        SttSource::GoogleConfigured
-                    } else {
-                        SttSource::Local
-                    };
-                    *state.stt_source.lock().unwrap_or_else(|p| p.into_inner()) = initial_source;
-                }
-
                 // Issue #230 + #214 + #371: shared STT-local flag read by the
                 // CPU gate.  Starts true only for configured local STT; may be
                 // updated by the fallback provider at runtime.
@@ -2193,12 +2219,10 @@ fn main() -> Result<()> {
 
                 // local_unavailable_is_fatal: when true, a local-unavailable
                 // error should halt the pipeline (no fallback available).
-                // With google-when-keyed, the FallbackSttProvider handles the
-                // switch, so the pipeline-level fatal flag must be false.
-                let local_unavailable_is_fatal = (cfg_snapshot.stt_provider == "google"
-                    && cfg_snapshot.stt_fallback_policy == "local")
-                    || (cfg_snapshot.stt_provider == "local"
-                        && cfg_snapshot.stt_fallback_policy == "none");
+                // With google-when-keyed and a key, the FallbackSttProvider handles the
+                // switch. Without a key, no cloud fallback is wired, so a permanent local
+                // setup error must halt instead of spinning on every audio window.
+                let local_unavailable_is_fatal = stt_local_unavailable_is_fatal(&cfg_snapshot);
 
                 let stt_provider = match build_runtime_stt_provider(
                     &cfg_snapshot,
@@ -2242,6 +2266,10 @@ fn main() -> Result<()> {
                         );
                     }
                 };
+                *state.stt_source.lock().unwrap_or_else(|p| p.into_inner()) =
+                    stt_provider.initial_stt_source();
+                provider_is_local
+                    .store(stt_provider.initial_provider_is_local(), Ordering::Relaxed);
                 // Issue #71–#76 and #217: wire the configured MT provider.
                 // Google reports billable character usage; local OPUS-MT ignores
                 // the reporter but shares the same runtime trait.
@@ -4153,6 +4181,30 @@ mod tests {
         assert_eq!(
             startup_config_mode(config::LoadState::Invalid, false, true),
             StartupConfigMode::Normal
+        );
+    }
+
+    #[test]
+    fn stt_local_unavailable_is_fatal_when_no_fallback_can_be_wired() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.stt_fallback_policy = "google-when-keyed".to_string();
+        cfg.google_api_key = None;
+        assert!(
+            stt_local_unavailable_is_fatal(&cfg),
+            "google-when-keyed without a key has no fallback and must halt on permanent local errors"
+        );
+
+        cfg.google_api_key = Some("demo-key".to_string());
+        assert!(
+            !stt_local_unavailable_is_fatal(&cfg),
+            "google-when-keyed with a key is handled by FallbackSttProvider"
+        );
+
+        cfg.stt_fallback_policy = "none".to_string();
+        assert!(
+            stt_local_unavailable_is_fatal(&cfg),
+            "local-only policy must halt on permanent local errors"
         );
     }
 
