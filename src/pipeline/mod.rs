@@ -248,7 +248,7 @@ pub struct OrchestratorContext {
     // ── TTS slot selection (DM-06, issue #382) ─────────────────────────────
     /// `true` when this orchestrator slot is the designated TTS synthesiser.
     ///
-    /// Set at construction time from [`crate::config::TtsSource::is_active_for`].
+    /// Set at construction time from [`crate::config::TtsSource::is_active_for_slot`].
     /// In single-slot mode this is always `true` so existing behaviour is
     /// preserved.  In dual-slot mode it is `true` for at most one slot.
     ///

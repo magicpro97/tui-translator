@@ -440,8 +440,8 @@ fn tts_routing_is_default(r: &TtsRouting) -> bool {
 ///   never sends text to TTS.
 /// - `"b"` — only slot B synthesises; slot A is silent.
 ///
-/// The active slot is consulted at synthesis time, so changing this value
-/// while the application is running takes effect on the next subtitle pair.
+/// The active slot is captured when the orchestrator starts, so changing this
+/// value requires an application restart to take effect.
 ///
 /// Serde representation uses lowercase letters: `"off"`, `"a"`, `"b"`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -1241,7 +1241,7 @@ impl AppConfig {
     /// | `source_language` | **hot** | Forwarded to provider calls per-request; no stream rebuild needed. |
     /// | `target_language` | **hot** | Forwarded to MT calls per-request; no stream rebuild needed. |
     /// | `tts_enabled` | **hot** | Playback toggle is checked at synthesis time. |
-    /// | `tts_source` | **hot** | Slot-gate flag is checked at synthesis time via `OrchestratorContext::tts_active_for_slot`. |
+    /// | `tts_source` | **restart** | Slot-gate flag is captured when the orchestrator starts. |
     /// | `cost_warning_usd` | **hot** | UI threshold is read each render tick. |
     /// | `ram_budget_mb` | **hot** | UI threshold is read each render tick. |
     /// | `_comment` | **hot** | Documentation-only; never read at runtime. |
@@ -1249,6 +1249,7 @@ impl AppConfig {
         self.google_api_key != next.google_api_key
             || self.tts_output_device != next.tts_output_device
             || self.tts_routing != next.tts_routing
+            || self.tts_source != next.tts_source
             || self.virtual_mic_device != next.virtual_mic_device
             || self.virtual_device_patterns != next.virtual_device_patterns
             || self.capture_device != next.capture_device

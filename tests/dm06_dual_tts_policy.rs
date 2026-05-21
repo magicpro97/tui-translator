@@ -7,7 +7,7 @@
 //! - `TtsSource` serde round-trip (all three variants).
 //! - `TtsSource::is_active_for_slot` truth table (off/a/b × single/dual × slot-A/B).
 //! - `tts_source` JSON field parsing in `AppConfig`.
-//! - `requires_restart` is false for `tts_source` mutations (hot field).
+//! - `requires_restart` is true for `tts_source` mutations (orchestrator-captured field).
 //!
 //! Note: halt aggregation and orchestrator TTS gating tests live in
 //! `src/pipeline/mod.rs` unit tests where all pipeline dependencies are
@@ -126,16 +126,16 @@ fn app_config_tts_source_omitted_defaults_to_off() {
     assert_eq!(cfg.tts_source, TtsSource::Off);
 }
 
-// ─── requires_restart: tts_source is hot (no restart needed) ─────────────────
+// ─── requires_restart: tts_source is orchestrator-captured ───────────────────
 
 #[test]
-fn tts_source_change_does_not_require_restart() {
+fn tts_source_change_requires_restart() {
     let mut cfg_a = AppConfig::default();
     cfg_a.tts_source = TtsSource::A;
     let mut cfg_b = AppConfig::default();
     cfg_b.tts_source = TtsSource::B;
     assert!(
-        !cfg_a.requires_restart(&cfg_b),
-        "tts_source change must be a hot reload"
+        cfg_a.requires_restart(&cfg_b),
+        "tts_source changes require restart because orchestrators capture the slot gate"
     );
 }

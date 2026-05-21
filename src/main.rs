@@ -2469,6 +2469,18 @@ fn main() -> Result<()> {
                 } else {
                     Arc::clone(&state.pipeline_halted)
                 };
+                let slot_a_pipeline_error_msg_arc: Arc<Mutex<Option<String>>> =
+                    if slot_mode == config::SlotMode::Dual {
+                        Arc::new(Mutex::new(None))
+                    } else {
+                        Arc::clone(&state.pipeline_error_msg)
+                    };
+                let slot_a_auth_error_banner_arc: Arc<Mutex<Option<String>>> =
+                    if slot_mode == config::SlotMode::Dual {
+                        Arc::new(Mutex::new(None))
+                    } else {
+                        Arc::clone(&state.auth_error_banner)
+                    };
 
                 // DM-06 (issue #382): per-slot TTS status Arc shared with a label
                 // copier task so the UI can observe it.  Previously this was a fresh
@@ -2482,8 +2494,8 @@ fn main() -> Result<()> {
                     subtitle_pane: Arc::clone(&state.subtitle_pane),
                     session_metrics: Arc::clone(&state.session_metrics),
                     cost_counter: Arc::clone(&state.cost_counter),
-                    pipeline_error_msg: Arc::clone(&state.pipeline_error_msg),
-                    auth_error_banner: Arc::clone(&state.auth_error_banner),
+                    pipeline_error_msg: Arc::clone(&slot_a_pipeline_error_msg_arc),
+                    auth_error_banner: Arc::clone(&slot_a_auth_error_banner_arc),
                     pipeline_halted: Arc::clone(&slot_a_halt_arc),
                     provider_circuits: Arc::new(std::sync::Mutex::new(
                         pipeline::ProviderCircuitBreakers::default(),
@@ -7633,6 +7645,28 @@ mod tests {
             !Arc::ptr_eq(&slot_a_halt, &global_halt),
             "slot A halt arc must be a distinct object from the global halt arc"
         );
+    }
+
+    #[test]
+    fn dual_mode_slot_a_error_arcs_are_independent_from_global() {
+        let global_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let global_auth: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let slot_a_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let slot_a_auth: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+        *slot_a_error.lock().expect("lock slot_a_error") = Some("slot A failed".to_string());
+        *slot_a_auth.lock().expect("lock slot_a_auth") = Some("slot A auth failed".to_string());
+
+        assert!(
+            global_error.lock().expect("lock global_error").is_none(),
+            "slot A pipeline error must not write the global error banner in dual mode"
+        );
+        assert!(
+            global_auth.lock().expect("lock global_auth").is_none(),
+            "slot A auth error must not write the global auth banner in dual mode"
+        );
+        assert!(!Arc::ptr_eq(&slot_a_error, &global_error));
+        assert!(!Arc::ptr_eq(&slot_a_auth, &global_auth));
     }
 
     /// Slot A's `tts_status` Arc must be shared (not orphaned): writing to the
