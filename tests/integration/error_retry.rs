@@ -509,6 +509,7 @@ fn make_orch_context() -> TestCtx {
     let loss_metrics = Arc::new(crate::metrics::LossMetrics::new());
 
     let ctx = crate::pipeline::OrchestratorContext {
+        slot_id: crate::pipeline::SlotId::A,
         audio_level: Arc::new(AtomicU32::new(0)),
         stt_state: Arc::clone(&stt_state),
         subtitle_pane: Arc::clone(&subtitle_pane),

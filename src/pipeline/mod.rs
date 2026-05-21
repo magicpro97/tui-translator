@@ -179,6 +179,9 @@ impl std::fmt::Display for PipelineState {
 /// [`crate::tui::AppState`].  Keeping only the fields the orchestrator
 /// actually needs prevents a circular `pipeline → tui → pipeline` dependency.
 pub struct OrchestratorContext {
+    /// Logical pipeline slot for tracing and per-slot diagnostics.
+    pub slot_id: SlotId,
+
     // ── Audio ──────────────────────────────────────────────────────────────
     /// RMS energy encoded as `(rms * AUDIO_LEVEL_SCALE) as u32`.
     pub audio_level: Arc<AtomicU32>,
@@ -437,7 +440,7 @@ impl SlotOrchestratorState {
 /// | Transient exhausted (MT)       | Show `⚠ Translation error: …`, discard chunk (#85)     |
 /// | Transient exhausted (TTS)      | Show `⚠ TTS error: …`, subtitle already shown (#85)    |
 /// | `InvalidInput` / `Unimplemented` | Same as exhausted transient for the relevant stage    |
-#[tracing::instrument(skip_all, name = "orchestrator")]
+#[tracing::instrument(skip_all, name = "orchestrator", fields(slot = %ctx.slot_id.label()))]
 pub async fn run_orchestrator<S, M, T>(
     mut audio_rx: mpsc::Receiver<AudioChunk>,
     stt: S,
@@ -1796,6 +1799,7 @@ mod tests {
     fn make_context(shutdown: Arc<AtomicBool>) -> (OrchestratorContext, mpsc::Sender<AudioChunk>) {
         let (tx, _rx) = mpsc::channel::<AudioChunk>(16);
         let ctx = OrchestratorContext {
+            slot_id: SlotId::A,
             audio_level: Arc::new(AtomicU32::new(0)),
             stt_state: Arc::new(Mutex::new(SttState::Idle)),
             subtitle_pane: Arc::new(Mutex::new(crate::tui::SubtitlePane::new())),

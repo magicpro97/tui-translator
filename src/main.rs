@@ -539,10 +539,6 @@ fn stt_local_unavailable_is_fatal_for_slot(stt_provider: &str, cfg: &config::App
     }
 }
 
-fn stt_local_unavailable_is_fatal(cfg: &config::AppConfig) -> bool {
-    stt_local_unavailable_is_fatal_for_slot(&cfg.stt_provider, cfg)
-}
-
 /// Build the runtime STT provider for a single slot, using `stt_provider` from
 /// the slot config and shared settings (`stt_fallback_policy`, `stt_phrase_hints`,
 /// `google_api_key`) from the top-level `AppConfig` (DM-03, issue #379).
@@ -678,23 +674,6 @@ fn build_slot_stt_provider(
     }
 }
 
-fn build_runtime_stt_provider(
-    cfg: &config::AppConfig,
-    google_api_key: Option<&str>,
-    status_msg: std::sync::Arc<std::sync::Mutex<Option<String>>>,
-    local_provider_active: Arc<AtomicBool>,
-    stt_source: Arc<Mutex<SttSource>>,
-) -> std::result::Result<RuntimeSttProvider, providers::ProviderError> {
-    build_slot_stt_provider(
-        &cfg.stt_provider,
-        cfg,
-        google_api_key,
-        status_msg,
-        local_provider_active,
-        stt_source,
-    )
-}
-
 /// Build the runtime MT provider for a single slot using `mt_provider` from the
 /// slot config and the shared `google_api_key` (DM-03, issue #379).
 fn build_slot_mt_provider(
@@ -719,14 +698,6 @@ fn build_slot_mt_provider(
             "unsupported MT provider {other:?}"
         ))),
     }
-}
-
-fn build_runtime_mt_provider(
-    cfg: &config::AppConfig,
-    google_api_key: Option<&str>,
-    cost_reporter: Arc<dyn providers::CostReporter>,
-) -> std::result::Result<RuntimeMtProvider, providers::ProviderError> {
-    build_slot_mt_provider(&cfg.mt_provider, google_api_key, cost_reporter)
 }
 
 fn build_runtime_tts_provider(
@@ -2230,6 +2201,7 @@ fn main() -> Result<()> {
             };
             fanout_counters = Arc::clone(&fanout_handle.counters);
             let slot_mode = cfg_snapshot.slot_mode();
+            let slot_a_cfg = cfg_snapshot.slot_a();
             let slot_b_receiver = if slot_mode == config::SlotMode::Dual {
                 Some(fanout_handle.slot_b)
             } else {
@@ -2261,8 +2233,9 @@ fn main() -> Result<()> {
                 spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                 orchestrator_join = None;
             } else if cfg_snapshot.google_api_key.is_none()
-                && cfg_snapshot.stt_provider == "google"
-                && cfg_snapshot.mt_provider == "google"
+                && slot_a_cfg.stt_provider == "google"
+                && slot_a_cfg.mt_provider == "google"
+                && !cfg_snapshot.tts_enabled
             {
                 // Preserve the no-key startup path: users can still verify
                 // audio capture and settings before adding a Google key.
@@ -2283,16 +2256,20 @@ fn main() -> Result<()> {
                 // CPU gate.  Starts true only for configured local STT; may be
                 // updated by the fallback provider at runtime.
                 let provider_is_local =
-                    Arc::new(AtomicBool::new(cfg_snapshot.stt_provider == "local"));
+                    Arc::new(AtomicBool::new(slot_a_cfg.stt_provider == "local"));
 
                 // local_unavailable_is_fatal: when true, a local-unavailable
                 // error should halt the pipeline (no fallback available).
                 // With google-when-keyed and a key, the FallbackSttProvider handles the
                 // switch. Without a key, no cloud fallback is wired, so a permanent local
                 // setup error must halt instead of spinning on every audio window.
-                let local_unavailable_is_fatal = stt_local_unavailable_is_fatal(&cfg_snapshot);
+                let local_unavailable_is_fatal = stt_local_unavailable_is_fatal_for_slot(
+                    &slot_a_cfg.stt_provider,
+                    &cfg_snapshot,
+                );
 
-                let stt_provider = match build_runtime_stt_provider(
+                let stt_provider = match build_slot_stt_provider(
+                    &slot_a_cfg.stt_provider,
                     &cfg_snapshot,
                     google_api_key,
                     Arc::clone(&state.pipeline_error_msg),
@@ -2342,8 +2319,8 @@ fn main() -> Result<()> {
                 // Issue #71–#76 and #217: wire the configured MT provider.
                 // Google reports billable character usage; local OPUS-MT ignores
                 // the reporter but shares the same runtime trait.
-                let mt_provider = match build_runtime_mt_provider(
-                    &cfg_snapshot,
+                let mt_provider = match build_slot_mt_provider(
+                    &slot_a_cfg.mt_provider,
                     google_api_key,
                     Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
                 ) {
@@ -2439,6 +2416,7 @@ fn main() -> Result<()> {
                 storage.recorder_path = session_recorder.path();
 
                 let ctx = pipeline::OrchestratorContext {
+                    slot_id: pipeline::SlotId::A,
                     audio_level: Arc::clone(&state.audio_level),
                     stt_state: Arc::clone(&state.stt_state),
                     subtitle_pane: Arc::clone(&state.subtitle_pane),
@@ -2453,9 +2431,13 @@ fn main() -> Result<()> {
                     paused: Arc::clone(&state.paused),
                     tts_enabled: Arc::clone(&state.tts_enabled),
                     source_language,
-                    target_language: Arc::clone(&state.target_language),
-                    stt_provider_name: cfg_snapshot.stt_provider.clone(),
-                    mt_provider_name: cfg_snapshot.mt_provider.clone(),
+                    target_language: if slot_mode == config::SlotMode::Dual {
+                        Arc::new(std::sync::Mutex::new(slot_a_cfg.target_language.clone()))
+                    } else {
+                        Arc::clone(&state.target_language)
+                    },
+                    stt_provider_name: slot_a_cfg.stt_provider.clone(),
+                    mt_provider_name: slot_a_cfg.mt_provider.clone(),
                     playback: Arc::clone(&playback_service),
                     shutdown: Arc::clone(&orchestrator_shutdown),
                     e2e_latency: Arc::clone(&e2e_latency),
@@ -2541,11 +2523,19 @@ fn main() -> Result<()> {
                         match (stt_b, mt_b) {
                             (Ok(stt_b), Ok(mt_b)) => {
                                 *slot_b_state
+                                    .stt_source
+                                    .lock()
+                                    .unwrap_or_else(|p| p.into_inner()) =
+                                    stt_b.initial_stt_source();
+                                provider_is_local_b
+                                    .store(stt_b.initial_provider_is_local(), Ordering::Relaxed);
+                                *slot_b_state
                                     .stt_state
                                     .lock()
                                     .unwrap_or_else(|p| p.into_inner()) =
                                     metrics::SttState::Listening;
                                 let ctx_b = pipeline::OrchestratorContext {
+                                    slot_id: pipeline::SlotId::B,
                                     audio_level: Arc::clone(&state.audio_level),
                                     stt_state: Arc::clone(&slot_b_state.stt_state),
                                     subtitle_pane: Arc::clone(&slot_b_state.subtitle_pane),
@@ -3543,7 +3533,8 @@ fn build_config_from_editor(
 
 fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
     let mut unsupported = Vec::new();
-    match cfg.stt_provider.as_str() {
+    let slot_a_cfg = cfg.slot_a();
+    match slot_a_cfg.stt_provider.as_str() {
         "google" => {}
         #[cfg(feature = "local-stt")]
         "local" => {}
@@ -3551,9 +3542,9 @@ fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
         "local" => {
             unsupported.push("stt_provider=\"local\" (requires a local-stt build)".to_string())
         }
-        _ => unsupported.push(format!("stt_provider={:?}", cfg.stt_provider)),
+        _ => unsupported.push(format!("stt_provider={:?}", slot_a_cfg.stt_provider)),
     }
-    match cfg.mt_provider.as_str() {
+    match slot_a_cfg.mt_provider.as_str() {
         "google" => {}
         #[cfg(feature = "local-mt")]
         "local" => {}
@@ -3561,7 +3552,7 @@ fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
         "local" => {
             unsupported.push("mt_provider=\"local\" (requires a local-mt build)".to_string())
         }
-        _ => unsupported.push(format!("mt_provider={:?}", cfg.mt_provider)),
+        _ => unsupported.push(format!("mt_provider={:?}", slot_a_cfg.mt_provider)),
     }
 
     if unsupported.is_empty() {
@@ -3578,15 +3569,17 @@ fn missing_google_api_key_error(cfg: &config::AppConfig) -> Option<String> {
     if cfg.google_api_key.is_some() {
         return None;
     }
-    if cfg.stt_provider == "google" && cfg.mt_provider == "google" && !cfg.tts_enabled {
+    let slot_a_cfg = cfg.slot_a();
+    if slot_a_cfg.stt_provider == "google" && slot_a_cfg.mt_provider == "google" && !cfg.tts_enabled
+    {
         return None;
     }
 
     let mut requires_key = Vec::new();
-    if cfg.stt_provider == "google" {
+    if slot_a_cfg.stt_provider == "google" {
         requires_key.push("Google STT");
     }
-    if cfg.mt_provider == "google" {
+    if slot_a_cfg.mt_provider == "google" {
         requires_key.push("Google Translation");
     }
     if cfg.tts_enabled {
@@ -3601,10 +3594,10 @@ fn missing_google_api_key_error(cfg: &config::AppConfig) -> Option<String> {
         };
         let mut actions = vec!["add google_api_key".to_string()];
         let mut local_switches = Vec::new();
-        if cfg.stt_provider == "google" {
+        if slot_a_cfg.stt_provider == "google" {
             local_switches.push("stt_provider");
         }
-        if cfg.mt_provider == "google" {
+        if slot_a_cfg.mt_provider == "google" {
             local_switches.push("mt_provider");
         }
         if !local_switches.is_empty() {
@@ -4748,19 +4741,19 @@ mod tests {
         cfg.stt_fallback_policy = "google-when-keyed".to_string();
         cfg.google_api_key = None;
         assert!(
-            stt_local_unavailable_is_fatal(&cfg),
+            stt_local_unavailable_is_fatal_for_slot("local", &cfg),
             "google-when-keyed without a key has no fallback and must halt on permanent local errors"
         );
 
         cfg.google_api_key = Some("demo-key".to_string());
         assert!(
-            !stt_local_unavailable_is_fatal(&cfg),
+            !stt_local_unavailable_is_fatal_for_slot("local", &cfg),
             "google-when-keyed with a key is handled by FallbackSttProvider"
         );
 
         cfg.stt_fallback_policy = "none".to_string();
         assert!(
-            stt_local_unavailable_is_fatal(&cfg),
+            stt_local_unavailable_is_fatal_for_slot("local", &cfg),
             "local-only policy must halt on permanent local errors"
         );
     }
@@ -5745,6 +5738,54 @@ mod tests {
         cfg.google_api_key = Some("demo-key".to_string());
 
         assert!(missing_google_api_key_error(&cfg).is_none());
+    }
+
+    #[test]
+    fn missing_google_api_key_error_uses_dual_slot_a_not_flat_fields() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "google".to_string();
+        cfg.mt_provider = "google".to_string();
+        cfg.slots = Some(config::DualSlotConfig {
+            slot_a: config::SlotConfig {
+                stt_provider: "local".to_string(),
+                mt_provider: "local".to_string(),
+                target_language: "vi".to_string(),
+            },
+            slot_b: config::SlotConfig {
+                stt_provider: "google".to_string(),
+                mt_provider: "google".to_string(),
+                target_language: "en".to_string(),
+            },
+        });
+
+        assert!(
+            missing_google_api_key_error(&cfg).is_none(),
+            "slot A is fully local, so flat Google fields and slot B must not block startup"
+        );
+    }
+
+    #[test]
+    fn missing_google_api_key_error_reports_dual_slot_a_requirements() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "local".to_string();
+        cfg.slots = Some(config::DualSlotConfig {
+            slot_a: config::SlotConfig {
+                stt_provider: "local".to_string(),
+                mt_provider: "google".to_string(),
+                target_language: "vi".to_string(),
+            },
+            slot_b: config::SlotConfig {
+                stt_provider: "local".to_string(),
+                mt_provider: "local".to_string(),
+                target_language: "en".to_string(),
+            },
+        });
+
+        let msg = missing_google_api_key_error(&cfg)
+            .expect("slot A Google Translation should require google_api_key");
+        assert!(msg.contains("Google Translation"));
+        assert!(msg.contains("switch mt_provider to \"local\""));
     }
 
     #[cfg(not(feature = "local-stt"))]
