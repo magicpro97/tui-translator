@@ -1773,12 +1773,14 @@ impl AppState {
         *self.wizard_state.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
-    /// Snapshot the current wizard state.
-    pub fn wizard_state_snapshot(&self) -> Option<onboarding::OnboardingWizardState> {
-        self.wizard_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+    /// Run `f` with read-only access to the wizard state.
+    pub fn with_wizard<R>(
+        &self,
+        f: impl FnOnce(&onboarding::OnboardingWizardState) -> R,
+    ) -> Option<R> {
+        let guard = self.wizard_state.lock().unwrap_or_else(|p| p.into_inner());
+        let state = guard.as_ref()?;
+        Some(f(state))
     }
 
     /// Run `f` with mutable access to the wizard state.
@@ -2586,9 +2588,7 @@ pub fn draw_ui_with_route(
     }
 
     if wizard_active {
-        if let Some(wiz) = state.wizard_state_snapshot() {
-            render_wizard_overlay(frame, area, &wiz);
-        }
+        let _ = state.with_wizard(|wiz| render_wizard_overlay(frame, area, wiz));
     }
 
     // ── Help overlay ─────────────────────────────────────────────────────────
@@ -2604,7 +2604,10 @@ pub fn render_wizard_overlay(
     state: &onboarding::OnboardingWizardState,
 ) {
     let panel_w = 64u16.min(area.width);
-    let panel_h = area.height.clamp(6, 32);
+    let panel_h = area.height.min(32);
+    if panel_w == 0 || panel_h == 0 {
+        return;
+    }
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {

@@ -3906,6 +3906,29 @@ fn handle_wizard_outcome(
 ) {
     match outcome {
         OnboardingOutcome::Cancelled => {
+            let config_missing = match cfg_path.try_exists() {
+                Ok(exists) => !exists,
+                Err(err) => {
+                    tracing::warn!(
+                        path = %cfg_path.display(),
+                        "failed to check config before cancelling wizard: {err:#}"
+                    );
+                    true
+                }
+            };
+            if config_missing {
+                state.open_wizard(OnboardingWizardState::new(build_local_model_licenses()));
+                *state
+                    .startup_notice_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) =
+                    Some("Setup is required before translation can start.".to_string());
+                tracing::info!(
+                    path = %cfg_path.display(),
+                    "first-run setup cancellation ignored because config is missing"
+                );
+                return;
+            }
             state.close_wizard();
             tracing::info!("onboarding wizard cancelled by user");
         }

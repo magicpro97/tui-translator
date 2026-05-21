@@ -155,8 +155,9 @@ pub struct OnboardingConfigPatch {
     pub branch: OnboardingBranch,
     /// Google API key entered by the user, if required.
     ///
-    /// `None` for [`OnboardingBranch::LocalOnly`] or when the user left the
-    /// field blank (integration should prompt at startup in that case).
+    /// `None` for [`OnboardingBranch::LocalOnly`] and consent-only review flows.
+    /// Full onboarding keeps this non-empty for key-required branches before
+    /// returning a completed patch.
     pub google_api_key: Option<String>,
 }
 
