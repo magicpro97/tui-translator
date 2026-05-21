@@ -245,6 +245,24 @@ pub struct OrchestratorContext {
     /// Shared playback service; `None` when TTS is unavailable.
     pub playback: Arc<Mutex<Option<playback::PlaybackService>>>,
 
+    // ── TTS slot selection (DM-06, issue #382) ─────────────────────────────
+    /// `true` when this orchestrator slot is the designated TTS synthesiser.
+    ///
+    /// Set at construction time from [`crate::config::TtsSource::is_active_for_slot`].
+    /// In single-slot mode this is always `true` so existing behaviour is
+    /// preserved.  In dual-slot mode it is `true` for at most one slot.
+    ///
+    /// The orchestrator ANDs this flag with `tts_enabled` before calling the
+    /// TTS provider, ensuring the non-selected slot never sends text to TTS
+    /// even when TTS is globally enabled.
+    pub tts_active_for_slot: bool,
+
+    /// Per-slot TTS / provider health status (DM-06, issue #382).
+    ///
+    /// Shared with [`SlotOrchestratorState::tts_status`] so the UI can read
+    /// the same value without access to the full context.
+    pub tts_status: Arc<Mutex<SlotProviderStatus>>,
+
     // ── Shutdown (#87) ─────────────────────────────────────────────────────
     /// Set to `true` to request a clean exit after the current chunk.
     pub shutdown: Arc<AtomicBool>,
@@ -350,6 +368,34 @@ pub struct OrchestratorContext {
 
 // ── Per-slot orchestrator state (DM-03, issue #379) ───────────────────────────
 
+/// Per-slot TTS/provider health status, updated by the orchestrator as
+/// provider calls succeed, fail transiently, or hit a permanent auth error.
+///
+/// The UI reads this from [`SlotOrchestratorState::tts_status`] to show a
+/// per-slot health indicator without exposing internal error details.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SlotProviderStatus {
+    /// All recent provider calls succeeded; no errors to report.
+    #[default]
+    Ok,
+    /// A non-fatal (transient / circuit-open) error occurred; the slot is
+    /// still active and will recover automatically.
+    Degraded(String),
+    /// A permanent auth failure halted this slot; it will not recover without
+    /// an application restart.
+    Halted(String),
+}
+
+impl std::fmt::Display for SlotProviderStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ok => write!(f, "ok"),
+            Self::Degraded(reason) => write!(f, "degraded: {reason}"),
+            Self::Halted(reason) => write!(f, "halted: {reason}"),
+        }
+    }
+}
+
 /// Which slot an orchestrator pipeline is serving.
 ///
 /// In single-slot (legacy) mode the active slot is always [`SlotId::A`] and
@@ -381,7 +427,7 @@ impl SlotId {
 ///
 /// **Per-slot** (one instance per active slot, never shared across slots):
 /// `stt_state`, `subtitle_pane`, `session_metrics`, `pipeline_error_msg`,
-/// `auth_error_banner`, `pipeline_halted`, `stt_source`.
+/// `auth_error_banner`, `pipeline_halted`, `stt_source`, `tts_status`.
 ///
 /// **Shared** fields (`audio_level`, `paused`, `shutdown`, `cost_counter`,
 /// aggregate metrics/gates) are **not** stored here; the caller passes them
@@ -403,6 +449,12 @@ pub struct SlotOrchestratorState {
     pub pipeline_halted: Arc<AtomicBool>,
     /// Which STT provider backend is currently active for this slot.
     pub stt_source: Arc<Mutex<SttSource>>,
+    /// Per-slot TTS / provider health status (DM-06, issue #382).
+    ///
+    /// Starts as [`SlotProviderStatus::Ok`].  Updated by the orchestrator:
+    /// - TTS auth error → `Halted(reason)` (never clears without restart).
+    /// - TTS transient error → `Degraded(reason)` (cleared on next success).
+    pub tts_status: Arc<Mutex<SlotProviderStatus>>,
 }
 
 impl SlotOrchestratorState {
@@ -417,6 +469,7 @@ impl SlotOrchestratorState {
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
             stt_source: Arc::new(Mutex::new(SttSource::default())),
+            tts_status: Arc::new(Mutex::new(SlotProviderStatus::Ok)),
         }
     }
 }
@@ -1039,7 +1092,7 @@ where
     );
 
     // ── TTS (optional, non-fatal) ─────────────────────────────────────────────
-    if ctx.tts_enabled.load(Ordering::Relaxed) {
+    if ctx.tts_enabled.load(Ordering::Relaxed) && ctx.tts_active_for_slot {
         for item in &produced {
             // Issue #80: approximate TTS bytes sent = translation text length.
             ctx.network_metrics
@@ -1057,6 +1110,8 @@ where
                     ctx.network_metrics
                         .record_bytes_recv(r.audio_bytes.len() as u64);
                     clear_pipeline_error(&ctx.pipeline_error_msg);
+                    *ctx.tts_status.lock().unwrap_or_else(|p| p.into_inner()) =
+                        SlotProviderStatus::Ok;
                     if let Some(svc) = ctx
                         .playback
                         .lock()
@@ -1068,14 +1123,19 @@ where
                 }
                 Err(ProviderError::AuthError(msg)) => {
                     // Even a TTS AuthError halts the pipeline (#86).
-                    handle_auth_error(ctx, &format!("TTS: {msg}"));
+                    let halt_msg = format!("TTS: {msg}");
+                    *ctx.tts_status.lock().unwrap_or_else(|p| p.into_inner()) =
+                        SlotProviderStatus::Halted(halt_msg.clone());
+                    handle_auth_error(ctx, &halt_msg);
                 }
                 Err(err) => {
                     record_provider_failure(ctx, ProviderStage::Tts, &err);
                     // TTS failure is non-fatal: the subtitle was already shown.
                     let warn_msg = format!("⚠ TTS error: {err}");
                     tracing::warn!("{warn_msg}");
-                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg.clone());
+                    *ctx.tts_status.lock().unwrap_or_else(|p| p.into_inner()) =
+                        SlotProviderStatus::Degraded(warn_msg);
                 }
             }
         }
@@ -1272,7 +1332,7 @@ async fn commit_aggregated_segment<M, T>(
         }
     }
 
-    if ctx.tts_enabled.load(Ordering::Relaxed) {
+    if ctx.tts_enabled.load(Ordering::Relaxed) && ctx.tts_active_for_slot {
         ctx.network_metrics
             .record_bytes_sent(translation.translated_text.len() as u64);
         if reject_if_circuit_open(ctx, ProviderStage::Tts) {
@@ -1284,6 +1344,7 @@ async fn commit_aggregated_segment<M, T>(
                 ctx.network_metrics
                     .record_bytes_recv(result.audio_bytes.len() as u64);
                 clear_pipeline_error(&ctx.pipeline_error_msg);
+                *ctx.tts_status.lock().unwrap_or_else(|p| p.into_inner()) = SlotProviderStatus::Ok;
                 if let Some(svc) = ctx
                     .playback
                     .lock()
@@ -1294,13 +1355,18 @@ async fn commit_aggregated_segment<M, T>(
                 }
             }
             Err(ProviderError::AuthError(msg)) => {
-                handle_auth_error(ctx, &format!("TTS: {msg}"));
+                let halt_msg = format!("TTS: {msg}");
+                *ctx.tts_status.lock().unwrap_or_else(|p| p.into_inner()) =
+                    SlotProviderStatus::Halted(halt_msg.clone());
+                handle_auth_error(ctx, &halt_msg);
             }
             Err(err) => {
                 record_provider_failure(ctx, ProviderStage::Tts, &err);
                 let warn_msg = format!("⚠ TTS error: {err}");
                 tracing::warn!("{warn_msg}");
-                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg.clone());
+                *ctx.tts_status.lock().unwrap_or_else(|p| p.into_inner()) =
+                    SlotProviderStatus::Degraded(warn_msg);
             }
         }
     }
@@ -1486,6 +1552,29 @@ impl AudioChunk {
             samples: self.samples,
             sequence_number,
         }
+    }
+}
+
+// ── Dual-slot halt aggregation (DM-06, issue #382) ────────────────────────────
+
+/// Determine the global halt state from per-slot halt flags.
+///
+/// | slot mode | A halted | B halted | global halted |
+/// |-----------|----------|----------|---------------|
+/// | single    | false    | N/A      | false         |
+/// | single    | true     | N/A      | true          |
+/// | dual      | false    | false    | false         |
+/// | dual      | true     | false    | false         |
+/// | dual      | false    | true     | false         |
+/// | dual      | true     | true     | true          |
+///
+/// In dual mode the application keeps running as long as at least one slot is
+/// still active.  Only when **all** configured slots are halted should the
+/// caller consider terminating or showing a global halt banner.
+pub fn aggregate_halt_state(slot_a_halted: bool, slot_b_halted: Option<bool>) -> bool {
+    match slot_b_halted {
+        None => slot_a_halted,         // single-slot mode
+        Some(b) => slot_a_halted && b, // dual-slot: both must halt
     }
 }
 
@@ -1837,6 +1926,9 @@ mod tests {
                 crate::pipeline::sentence_aggregator::SentenceAggregator::new(),
             )),
             session_recorder: SessionRecorder::disabled(),
+            // TTS slot selection — single-slot mode in tests: always active.
+            tts_active_for_slot: true,
+            tts_status: Arc::new(Mutex::new(SlotProviderStatus::Ok)),
         };
         (ctx, tx)
     }
@@ -3952,12 +4044,176 @@ mod tests {
             1,
             "channel close must flush the accumulated speech window exactly once"
         );
-        let counts = sample_counts.lock().unwrap();
+        // OK: test-only lock; never poisoned
+        let counts = sample_counts.lock().expect("counts lock");
         assert_eq!(
             counts[0], 16_000_usize,
             "flush must contain 9 × 100 ms speech + 1 × 100 ms trailing-pad speech \
              (16 000 samples); the Speech→PadOpen transition always forwards the \
              first silence chunk as Speech"
+        );
+    }
+
+    // ── DM-06 / issue #382: halt aggregation truth table ─────────────────────
+
+    #[test]
+    fn aggregate_halt_single_slot_not_halted() {
+        assert!(!aggregate_halt_state(false, None));
+    }
+
+    #[test]
+    fn aggregate_halt_single_slot_halted() {
+        assert!(aggregate_halt_state(true, None));
+    }
+
+    #[test]
+    fn aggregate_halt_dual_both_ok() {
+        assert!(!aggregate_halt_state(false, Some(false)));
+    }
+
+    #[test]
+    fn aggregate_halt_dual_only_a_halted() {
+        assert!(!aggregate_halt_state(true, Some(false)));
+    }
+
+    #[test]
+    fn aggregate_halt_dual_only_b_halted() {
+        assert!(!aggregate_halt_state(false, Some(true)));
+    }
+
+    #[test]
+    fn aggregate_halt_dual_both_halted() {
+        assert!(aggregate_halt_state(true, Some(true)));
+    }
+
+    // ── DM-06 / issue #382: TTS slot gating ──────────────────────────────────
+
+    /// When `tts_active_for_slot = false` the TTS provider must not be called
+    /// even when `tts_enabled = true`.
+    #[tokio::test]
+    async fn tts_inactive_slot_does_not_call_tts() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        // Enable TTS globally but mark this slot as non-synthesising.
+        ctx.tts_enabled.store(true, Ordering::Relaxed);
+        ctx.tts_active_for_slot = false;
+
+        let tts_calls = Arc::new(AtomicU32::new(0));
+
+        struct CountingTts {
+            calls: Arc<AtomicU32>,
+        }
+        impl TtsProvider for CountingTts {
+            async fn synthesise(
+                &self,
+                _text: &str,
+                _lang: &str,
+            ) -> Result<TtsResult, ProviderError> {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                Ok(TtsResult {
+                    audio_bytes: b"STUB".to_vec(),
+                    mime_type: "audio/pcm".to_string(),
+                })
+            }
+        }
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.expect("send chunk");
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("hello world"),
+            OkMt,
+            CountingTts {
+                calls: Arc::clone(&tts_calls),
+            },
+            ctx,
+        )
+        .await;
+
+        assert_eq!(
+            tts_calls.load(Ordering::Relaxed),
+            0,
+            "non-selected slot must not call TTS provider"
+        );
+    }
+
+    /// When `tts_active_for_slot = true` the TTS provider IS called.
+    #[tokio::test]
+    async fn tts_active_slot_calls_tts() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.tts_enabled.store(true, Ordering::Relaxed);
+        ctx.tts_active_for_slot = true;
+
+        let tts_calls = Arc::new(AtomicU32::new(0));
+
+        struct CountingTts {
+            calls: Arc<AtomicU32>,
+        }
+        impl TtsProvider for CountingTts {
+            async fn synthesise(
+                &self,
+                _text: &str,
+                _lang: &str,
+            ) -> Result<TtsResult, ProviderError> {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                Ok(TtsResult {
+                    audio_bytes: b"STUB".to_vec(),
+                    mime_type: "audio/pcm".to_string(),
+                })
+            }
+        }
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.expect("send chunk");
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("hello world"),
+            OkMt,
+            CountingTts {
+                calls: Arc::clone(&tts_calls),
+            },
+            ctx,
+        )
+        .await;
+
+        assert!(
+            tts_calls.load(Ordering::Relaxed) >= 1,
+            "selected slot must call TTS provider"
+        );
+    }
+
+    /// TTS auth error sets the per-slot status to `Halted`.
+    #[tokio::test]
+    async fn tts_auth_error_sets_slot_status_to_halted() {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.tts_enabled.store(true, Ordering::Relaxed);
+        ctx.tts_active_for_slot = true;
+        let tts_status = Arc::clone(&ctx.tts_status);
+
+        let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);
+        tx2.send(speech_chunk()).await.expect("send chunk");
+        drop(tx2);
+
+        run_orchestrator(
+            rx2,
+            OkStt("hello"),
+            OkMt,
+            ErrTts(|| ProviderError::AuthError("bad key".to_string())),
+            ctx,
+        )
+        .await;
+
+        // OK: test-only lock; never poisoned in a single-threaded test
+        let status = tts_status.lock().expect("lock tts_status").clone();
+        assert!(
+            matches!(status, SlotProviderStatus::Halted(_)),
+            "TTS auth error must set slot status to Halted, got: {status:?}"
         );
     }
 }

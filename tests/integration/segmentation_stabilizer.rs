@@ -125,6 +125,8 @@ fn make_context() -> OrchestratorContext {
             crate::pipeline::sentence_aggregator::SentenceAggregator::new(),
         )),
         session_recorder: SessionRecorder::disabled(),
+        tts_active_for_slot: true,
+        tts_status: Arc::new(Mutex::new(crate::pipeline::SlotProviderStatus::Ok)),
     }
 }
 

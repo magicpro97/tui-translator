@@ -1267,9 +1267,14 @@ fn subtitle_block_for_pane(
     label: &str,
     provider: &str,
     target: &str,
+    status: &str,
     focused: bool,
 ) -> Block<'static> {
-    let title = format!(" [{label}] {provider} \u{2192} {target} ");
+    let title = if status.is_empty() {
+        format!(" [{label}] {provider} \u{2192} {target} ")
+    } else {
+        format!(" [{label}] {provider} \u{2192} {target} | {status} ")
+    };
     Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -1570,6 +1575,19 @@ pub struct AppState {
     /// Only relevant when slot B is wired; toggled by
     /// [`UserAction::TogglePaneFocus`].
     pub focused_pane: AtomicU8,
+
+    // DM-06 (issue #382): per-slot TTS health labels.
+    /// Formatted TTS health label for slot A (e.g. `"ok"`, `"degraded: ..."`,
+    /// `"halted: ..."`).  Written by a background copier task in main.rs that
+    /// formats the orchestrator's `SlotProviderStatus`.
+    pub slot_a_tts_status_label: Arc<Mutex<String>>,
+    /// Same as `slot_a_tts_status_label` for slot B.  Stays `"ok"` in
+    /// single-slot mode because the copier is only spawned in dual mode.
+    pub slot_b_tts_status_label: Arc<Mutex<String>>,
+    /// Slot A pipeline/auth error summary shown in the pane title in dual mode.
+    pub slot_a_error_status_label: Arc<Mutex<String>>,
+    /// Slot B pipeline/auth error summary shown in the pane title in dual mode.
+    pub slot_b_error_status_label: Arc<Mutex<String>>,
 }
 
 impl AppState {
@@ -1612,6 +1630,10 @@ impl AppState {
             slot_b_target_language: Mutex::new(String::new()),
             slot_a_provider_name: Arc::new(Mutex::new(String::new())),
             focused_pane: AtomicU8::new(0),
+            slot_a_tts_status_label: Arc::new(Mutex::new("ok".to_string())),
+            slot_b_tts_status_label: Arc::new(Mutex::new("ok".to_string())),
+            slot_a_error_status_label: Arc::new(Mutex::new(String::new())),
+            slot_b_error_status_label: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -2030,6 +2052,13 @@ pub struct StatusMetricsStrip<'a> {
     /// Which STT provider is currently active.  Controls the source label shown
     /// in the status span (e.g. `"STT: local"`, `"STT: google (fallback)"`).
     pub stt_source: SttSource,
+    // ── DM-06 (issue #382): per-slot TTS health ──────────────────────────────
+    /// Formatted TTS health label for slot A (e.g. `"ok"`, `"degraded: …"`).
+    /// Always populated; shown alongside slot-B label when dual mode is active.
+    pub slot_a_tts_status: String,
+    /// Formatted TTS health label for slot B.  `None` in single-slot mode;
+    /// when `Some`, the expanded metrics strip shows both slot labels.
+    pub slot_b_tts_status: Option<String>,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -2233,22 +2262,47 @@ impl StatusMetricsStrip<'_> {
         };
 
         let mut lines: Vec<Line<'_>> = vec![
-            Line::from(vec![
-                Span::styled(self.format_stt_span(), Style::default().fg(stt_color)),
-                Span::raw("   "),
-                Span::styled("TTS: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    if self.tts_on { "on" } else { "off" },
-                    Style::default().fg(tts_color),
-                ),
-                Span::raw("   "),
-                Span::styled("Route: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(
-                    self.tts_route
-                        .expanded_label(if area.width >= 120 { 36 } else { 18 }),
-                    Style::default().fg(route_color),
-                ),
-            ]),
+            {
+                let mut spans = vec![
+                    Span::styled(self.format_stt_span(), Style::default().fg(stt_color)),
+                    Span::raw("   "),
+                    Span::styled("TTS: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        if self.tts_on { "on" } else { "off" },
+                        Style::default().fg(tts_color),
+                    ),
+                    Span::raw("   "),
+                    Span::styled("Route: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        self.tts_route
+                            .expanded_label(if area.width >= 120 { 36 } else { 18 }),
+                        Style::default().fg(route_color),
+                    ),
+                ];
+                // DM-06 (issue #382): per-slot TTS health, appended in dual mode.
+                if let Some(ref b_status) = self.slot_b_tts_status {
+                    let a_color = tts_slot_status_color(&self.slot_a_tts_status);
+                    let b_color = tts_slot_status_color(b_status);
+                    spans.push(Span::raw("   "));
+                    spans.push(Span::styled(
+                        "TTS-A:",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(
+                        self.slot_a_tts_status.clone(),
+                        Style::default().fg(a_color),
+                    ));
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(
+                        "TTS-B:",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(b_status.clone(), Style::default().fg(b_color)));
+                }
+                Line::from(spans)
+            },
             metrics_line,
             Line::from(vec![
                 Span::raw(format!("Elapsed: {}", self.elapsed)),
@@ -2631,6 +2685,16 @@ pub fn draw_ui_with_route(
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .clone();
+            let slot_a_status = state
+                .slot_a_error_status_label
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            let slot_b_status = state
+                .slot_b_error_status_label
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
 
             if chunks[2].width >= DUAL_PANE_MIN_WIDTH {
                 // Wide: side-by-side A | B split.
@@ -2645,6 +2709,7 @@ pub fn draw_ui_with_route(
                         "A",
                         &slot_a_provider,
                         &slot_a_target,
+                        &slot_a_status,
                         focused == 0,
                     );
                     let inner_a = block_a.inner(pane_chunks[0]);
@@ -2662,6 +2727,7 @@ pub fn draw_ui_with_route(
                         "B",
                         &slot_b_provider,
                         &slot_b_target,
+                        &slot_b_status,
                         focused == 1,
                     );
                     let inner_b = block_b.inner(pane_chunks[1]);
@@ -2671,12 +2737,13 @@ pub fn draw_ui_with_route(
                 }
             } else {
                 // Narrow: show only the focused pane with an A/B indicator.
-                let (active_arc, indicator, provider, tgt) = if focused == 0 {
+                let (active_arc, indicator, provider, tgt, status) = if focused == 0 {
                     (
                         &state.subtitle_pane,
                         "[A] \u{25C0}  B",
                         slot_a_provider.as_str(),
                         slot_a_target.as_str(),
+                        slot_a_status.as_str(),
                     )
                 } else {
                     (
@@ -2684,9 +2751,14 @@ pub fn draw_ui_with_route(
                         "A  \u{25B6} [B]",
                         slot_b_provider.as_str(),
                         slot_b_target.as_str(),
+                        slot_b_status.as_str(),
                     )
                 };
-                let title = format!(" {indicator} | {provider} \u{2192} {tgt} ");
+                let title = if status.is_empty() {
+                    format!(" {indicator} | {provider} \u{2192} {tgt} ")
+                } else {
+                    format!(" {indicator} | {provider} \u{2192} {tgt} | {status} ")
+                };
                 let block = Block::default()
                     .title(title)
                     .borders(Borders::ALL)
@@ -2744,6 +2816,31 @@ pub fn draw_ui_with_route(
         audio_consent: state.audio_consent.load(Ordering::Relaxed),
         // Issue #371 (LF-03): source label snapshotted above with stt state.
         stt_source,
+        // DM-06 (issue #382): per-slot TTS health labels for expanded view.
+        slot_a_tts_status: state
+            .slot_a_tts_status_label
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone(),
+        slot_b_tts_status: {
+            // Only show per-slot TTS status when slot B is wired (dual mode).
+            let has_slot_b = state
+                .slot_b_subtitle_pane
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .is_some();
+            if has_slot_b {
+                Some(
+                    state
+                        .slot_b_tts_status_label
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .clone(),
+                )
+            } else {
+                None
+            }
+        },
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -3981,6 +4078,22 @@ fn stt_color(state: &SttState) -> Color {
     }
 }
 
+/// Choose a colour for a per-slot TTS status label (DM-06, issue #382).
+///
+/// The label is the `Display` output of `pipeline::SlotProviderStatus`:
+/// - `"ok"` → green
+/// - starts with `"degraded"` → yellow
+/// - starts with `"halted"` → red
+fn tts_slot_status_color(label: &str) -> Color {
+    if label == "ok" {
+        Color::Green
+    } else if label.starts_with("halted") {
+        Color::Red
+    } else {
+        Color::Yellow
+    }
+}
+
 /// Format a byte count as a human-readable string for the storage metrics row.
 ///
 /// Uses base-2 units with compact labels: `B`, `KB` (1 024 B), `MB` (1 024 KB), `GB` (1 024 MB).
@@ -4057,6 +4170,9 @@ mod tests {
                     archive_sealed: false,
                     audio_consent: false,
                     stt_source: SttSource::Local,
+                    // DM-06 (issue #382): single-slot default; no slot-B status.
+                    slot_a_tts_status: "ok".to_string(),
+                    slot_b_tts_status: None,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -4171,6 +4287,179 @@ mod tests {
         assert!(
             rendered.contains("missing virtual mic"),
             "missing virtual mic warning should be visible; got:\n{rendered}"
+        );
+    }
+
+    // ── DM-06 (issue #382): per-slot TTS status in expanded metrics ─────────
+
+    /// Per-slot TTS status labels appear in the expanded metrics strip when
+    /// slot B is configured (dual mode).  The labels reflect the current health
+    /// reported by each orchestrator slot.
+    #[test]
+    fn expanded_metrics_shows_per_slot_tts_status_in_dual_mode() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let backend = TestBackend::new(160, 11);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let stt = SttState::Listening;
+        terminal
+            .draw(|frame| {
+                let strip = StatusMetricsStrip {
+                    stt: &stt,
+                    tts_on: true,
+                    tts_route: TtsRouteStatus::default(),
+                    target_language: "vi".to_string(),
+                    pairs: 0,
+                    audio_secs: 0.0,
+                    cost_usd: 0.0,
+                    elapsed: "00:00".to_string(),
+                    show_restart: false,
+                    expanded: true,
+                    cost_warning_usd: 0.0,
+                    cpu_pct: 0.0,
+                    ram_bytes: 0,
+                    net_kbps_tx: 0.0,
+                    net_kbps_rx: 0.0,
+                    e2e_latency_ms: None,
+                    loss_pct: 0.0,
+                    ram_warning: false,
+                    truncation_rate: 0.0,
+                    flicker_count: 0,
+                    mt_call_count: 0,
+                    local_cpu_pct: 0.0,
+                    local_active_threads: 0,
+                    recorder_bytes: 0,
+                    recorder_path: None,
+                    archive_bytes: 0,
+                    archive_path: None,
+                    archive_sealed: false,
+                    audio_consent: false,
+                    stt_source: SttSource::Local,
+                    slot_a_tts_status: "ok".to_string(),
+                    slot_b_tts_status: Some("degraded: auth timeout".to_string()),
+                };
+                frame.render_widget(&strip, frame.area());
+            })
+            .expect("draw strip");
+
+        let area = terminal.backend().buffer().area;
+        let rendered: String = (0..area.height)
+            .flat_map(|y| {
+                let row: String = (0..area.width)
+                    .map(|x| {
+                        terminal.backend().buffer()[(x, y)]
+                            .symbol()
+                            .chars()
+                            .next()
+                            .unwrap_or(' ')
+                    })
+                    .collect();
+                [row, "\n".to_string()]
+            })
+            .collect();
+
+        assert!(
+            rendered.contains("TTS-A:"),
+            "expanded dual-mode strip must contain 'TTS-A:'; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("TTS-B:"),
+            "expanded dual-mode strip must contain 'TTS-B:'; got:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("degraded"),
+            "slot B degraded status must be visible; got:\n{rendered}"
+        );
+    }
+
+    /// In single-slot mode (slot_b_tts_status = None), the expanded metrics
+    /// strip must NOT show per-slot TTS-A/TTS-B labels.
+    #[test]
+    fn expanded_metrics_hides_per_slot_tts_status_in_single_mode() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let backend = TestBackend::new(160, 11);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let stt = SttState::Listening;
+        terminal
+            .draw(|frame| {
+                let strip = StatusMetricsStrip {
+                    stt: &stt,
+                    tts_on: false,
+                    tts_route: TtsRouteStatus::default(),
+                    target_language: "vi".to_string(),
+                    pairs: 0,
+                    audio_secs: 0.0,
+                    cost_usd: 0.0,
+                    elapsed: "00:00".to_string(),
+                    show_restart: false,
+                    expanded: true,
+                    cost_warning_usd: 0.0,
+                    cpu_pct: 0.0,
+                    ram_bytes: 0,
+                    net_kbps_tx: 0.0,
+                    net_kbps_rx: 0.0,
+                    e2e_latency_ms: None,
+                    loss_pct: 0.0,
+                    ram_warning: false,
+                    truncation_rate: 0.0,
+                    flicker_count: 0,
+                    mt_call_count: 0,
+                    local_cpu_pct: 0.0,
+                    local_active_threads: 0,
+                    recorder_bytes: 0,
+                    recorder_path: None,
+                    archive_bytes: 0,
+                    archive_path: None,
+                    archive_sealed: false,
+                    audio_consent: false,
+                    stt_source: SttSource::Local,
+                    slot_a_tts_status: "ok".to_string(),
+                    slot_b_tts_status: None,
+                };
+                frame.render_widget(&strip, frame.area());
+            })
+            .expect("draw strip");
+
+        let area = terminal.backend().buffer().area;
+        let rendered: String = (0..area.height)
+            .flat_map(|y| {
+                let row: String = (0..area.width)
+                    .map(|x| {
+                        terminal.backend().buffer()[(x, y)]
+                            .symbol()
+                            .chars()
+                            .next()
+                            .unwrap_or(' ')
+                    })
+                    .collect();
+                [row, "\n".to_string()]
+            })
+            .collect();
+
+        assert!(
+            !rendered.contains("TTS-A:"),
+            "single-mode strip must NOT contain per-slot TTS labels; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("TTS-B:"),
+            "single-mode strip must NOT contain per-slot TTS labels; got:\n{rendered}"
+        );
+    }
+
+    /// AppState starts with the expected default per-slot TTS status labels.
+    #[test]
+    fn app_state_default_tts_status_labels_are_ok() {
+        let state = AppState::new();
+        assert_eq!(
+            *state.slot_a_tts_status_label.lock().expect("lock slot_a"),
+            "ok",
+            "slot_a_tts_status_label must default to 'ok'"
+        );
+        assert_eq!(
+            *state.slot_b_tts_status_label.lock().expect("lock slot_b"),
+            "ok",
+            "slot_b_tts_status_label must default to 'ok'"
         );
     }
 
@@ -5633,6 +5922,8 @@ mod tests {
             archive_sealed,
             audio_consent,
             stt_source: SttSource::Local,
+            slot_a_tts_status: "ok".to_string(),
+            slot_b_tts_status: None,
         };
         let backend = TestBackend::new(120, 9);
         let mut terminal = Terminal::new(backend).expect("TestBackend terminal init must not fail");
@@ -5866,6 +6157,45 @@ mod tests {
         assert!(
             rendered.contains("[B]"),
             "wide dual-pane: pane B label should be visible"
+        );
+    }
+
+    #[test]
+    fn dual_pane_wide_renders_per_slot_error_status() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(160, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new();
+        let b_pane = Arc::new(Mutex::new(SubtitlePane::new()));
+
+        *state.slot_a_provider_name.lock().unwrap() = "google".to_string();
+        state.wire_slot_b(
+            Arc::clone(&b_pane),
+            "en-US".to_string(),
+            "local".to_string(),
+        );
+        *state.slot_a_error_status_label.lock().unwrap() = "auth: bad key".to_string();
+        *state.slot_b_error_status_label.lock().unwrap() = "error: timeout".to_string();
+
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("auth: bad key"),
+            "wide dual-pane: slot A error status should be visible"
+        );
+        assert!(
+            rendered.contains("error: timeout"),
+            "wide dual-pane: slot B error status should be visible"
         );
     }
 

@@ -335,6 +335,8 @@ fn snapshot_status_strip_compact_idle() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -373,6 +375,8 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -414,6 +418,8 @@ fn snapshot_status_strip_compact_restart_notice() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -457,6 +463,8 @@ fn snapshot_status_strip_compact_sending() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -495,6 +503,8 @@ fn snapshot_status_strip_compact_waiting() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -533,6 +543,8 @@ fn snapshot_status_strip_compact_error() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -573,6 +585,8 @@ fn snapshot_status_strip_expanded_idle() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -616,6 +630,8 @@ fn snapshot_status_strip_expanded_listening() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -661,6 +677,8 @@ fn snapshot_status_strip_expanded_with_warning() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -710,6 +728,8 @@ fn snapshot_status_strip_narrow_abbreviated() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -752,6 +772,8 @@ fn snapshot_status_strip_wide_full_labels() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -923,6 +945,8 @@ fn stt_error_state_label_contains_message() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -966,6 +990,8 @@ fn narrow_strip_uses_abbreviated_labels() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
@@ -1025,6 +1051,8 @@ fn expanded_warning_renders_when_over_threshold() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
 
     // Height accounting must be 10 when warning is active.
@@ -1103,6 +1131,8 @@ fn snapshot_status_strip_zero_state_narrow() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -1145,6 +1175,8 @@ fn snapshot_status_strip_zero_state_expanded() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 80, 9);
     assert!(
@@ -1234,6 +1266,8 @@ fn narrow_compact_strip_uses_lang_label() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1281,6 +1315,8 @@ fn narrow_compact_strip_uses_tts_label() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1328,6 +1364,8 @@ fn compact_restart_notice_is_spelled_out() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1375,6 +1413,8 @@ fn snapshot_status_strip_very_narrow_30cols() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1582,6 +1622,8 @@ fn expanded_metrics_narrow_uses_lang_label() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 60, 7);
     assert!(
@@ -1904,6 +1946,8 @@ fn snapshot_status_strip_compact_ram_warning() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1957,6 +2001,8 @@ fn snapshot_status_strip_expanded_ram_warning() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     let height = strip.expanded_height();
     assert_eq!(
@@ -2011,6 +2057,8 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     assert_eq!(strip.expanded_height(), 10);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
@@ -2055,6 +2103,8 @@ fn expanded_metrics_height_is_9_without_any_warning() {
         archive_sealed: false,
         audio_consent: false,
         stt_source: SttSource::Local,
+        slot_a_tts_status: "ok".to_string(),
+        slot_b_tts_status: None,
     };
     assert_eq!(
         strip.expanded_height(),
