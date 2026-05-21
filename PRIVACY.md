@@ -34,49 +34,51 @@ Data flow depends on which providers are enabled in `config.json`.  Data stays
 on your device except when it is sent to the cloud providers you choose in that
 file.
 
-### Default mode (Google Cloud)
+### Default mode (local-first)
 
 | Data | Destination | When |
 |------|-------------|------|
-| Raw audio chunks (PCM) | Google Speech-to-Text API | Continuously while listening |
-| Recognised transcript text | Google Cloud Translation API | After each utterance |
+| Raw audio chunks (PCM) | Local Whisper STT (CPU only) | Continuously while listening — audio never leaves the device by default |
+| Recognised transcript text | Google Cloud Translation API | After each utterance (default `mt_provider = "google"`) |
 | Translated text | Google Text-to-Speech API | Only when `tts_enabled: true` |
 
-Google Cloud processes these requests under Google's standard terms of service
-and privacy policy.  TUI Translator never sends audio or text to any other
-third party.
+Audio never leaves your device for transcription when `stt_provider = "local"`
+(the default).  Transcript text is sent to Google Cloud Translation unless
+`mt_provider = "local"` is configured.  TUI Translator never sends audio or
+text to any third party other than the cloud providers you configure.
 
-Your **Google Cloud API key** is stored in plain text in
+When `google_api_key` is set, it is stored in plain text in
 `%APPDATA%\tui-translator\config.json`.  It is never transmitted anywhere
 except as an API key on HTTPS requests to Google APIs.
 
-### Offline / CPU-only mode (`stt_provider: "local"`)
+### Local STT mode (`stt_provider: "local"`, the default)
 
-When local Whisper STT is enabled:
+With the default `stt_provider: "local"`:
 
 - **Audio never leaves your device** for transcription — the Whisper model runs
   entirely on your CPU.
-- Transcript text is still sent to **Google Cloud Translation** unless a local
-  machine-translation provider is also active.
+- Transcript text is sent to **Google Cloud Translation** by default unless
+  `mt_provider: "local"` is configured with the OPUS-MT model installed.
 - Text-to-speech audio synthesis (if enabled) still uses Google Cloud.
 
 Once the Whisper model file (`ggml-tiny.bin`) is downloaded, local STT needs
 no internet connection.
 
 **Full offline** (no data leaving your device at all) requires both
-`stt_provider: "local"` and a local MT provider.  Local machine translation is
-not yet implemented; see the roadmap in `README.md`.
+`stt_provider: "local"` and `mt_provider: "local"`.  Local machine translation
+is available (LF-04); set `mt_provider: "local"` and install the OPUS-MT ONNX
+bundle to run completely without a network connection.
 
 ---
 
 ## 3. Session transcript recording
 
-Recording is **disabled by default**.
+Session recording is **enabled by default** (up to 100 sessions retained).
 
 | Setting | Effect |
 |---------|--------|
-| `session_store.enabled: false` (default) | No session files are written to disk at all. |
-| `session_store.enabled: true` | A JSONL transcript log is written to `%APPDATA%\tui-translator\sessions\` (or a custom directory). |
+| `session_store.enabled: true` (default) | A JSONL transcript log is written to `%LOCALAPPDATA%\tui-translator\sessions\` (or a custom directory). Up to `max_sessions` files are retained; default 100. |
+| `session_store.enabled: false` | No session files are written to disk at all. |
 
 ### What is recorded
 
@@ -118,7 +120,7 @@ archiving is active.
 ### What is archived
 
 A single WAV file per session is written to
-`%APPDATA%\tui-translator\audio-archive\` (or a custom directory).  The
+`%LOCALAPPDATA%\tui-translator\audio-archive\` (or a custom directory).  The
 WAV contains **every sound that played through your speakers or headphones**
 during the session — meeting audio, system sounds, notification chimes, music.
 It does **not** capture your microphone.
@@ -144,9 +146,9 @@ The table below summarises which data touches external networks.
 
 | Item | Stays local | Leaves device |
 |------|:-----------:|:-------------:|
-| Audio captured from speakers | ✅ (processed in RAM only) | Sent to Google STT (default mode) |
+| Audio captured from speakers | ✅ processed by local Whisper — audio never leaves the device (`stt_provider = "local"`, the default) | Only sent to cloud speech recognition when `stt_provider = "google"` |
 | Whisper model file | ✅ | Never |
-| Transcript text | ✅ | Sent to Google MT (all modes until local MT lands) |
+| Transcript text | ✅ | Sent to Google MT when `mt_provider = "google"` (default); stays local when `mt_provider = "local"` |
 | Translated text | ✅ | Sent to Google TTS if `tts_enabled: true` |
 | Session JSONL log | ✅ | Never |
 | `config.json` (incl. API key) | ✅ | Never |
@@ -179,8 +181,8 @@ The only external services contacted at runtime are:
 
 | Service | Provider | Purpose | Optional |
 |---------|----------|---------|----------|
-| Speech-to-Text API | Google Cloud | Convert audio to text | Yes — disable with `stt_provider: "local"` |
-| Cloud Translation API | Google Cloud | Translate transcript | Yes — disabled once local MT is available |
+| Speech-to-Text API | Google Cloud | Convert audio to text | Disabled by default (`stt_provider: "local"`); enable with `stt_provider: "google"` |
+| Cloud Translation API | Google Cloud | Translate transcript | Default when `mt_provider: "google"`; disable with `mt_provider: "local"` (requires OPUS-MT bundle) |
 | Text-to-Speech API | Google Cloud | Speak translated text | Yes — disabled by default (`tts_enabled: false`) |
 
 No other network connections are made.

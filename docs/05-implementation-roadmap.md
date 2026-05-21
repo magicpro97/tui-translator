@@ -333,6 +333,15 @@ The project currently delivers in eight phases (Phase 0 through Phase 7). Each p
 
 ### Phase 7 — CPU Offline Provider (v2-cpu-offline milestone)
 
+> **Status note:** Local Whisper STT (EP-A.3, EP-A.4) and local OPUS-MT
+> translation (EP-D.1) capability were delivered ahead of schedule via the
+> **LF local-first track** (LF-01 through LF-06).  The LF track shipped
+> `stt_provider = "local"` as the default, `stt_fallback_policy =
+> "google-when-keyed"`, local OPUS-MT translation, session-store retention
+> with per-session caps, dual-slot pipeline, and the LF-07 docs/config
+> release gate.  The formal Phase 6 prerequisite and the items below that
+> were *not* part of the LF track still apply.
+
 Phase 7 is part of the current Phase 0 through Phase 7 delivery order, with
 Phase 6 still required before Phase 7 implementation work begins.
 
@@ -413,6 +422,25 @@ collected. See `docs/09-cpu-model-benchmark.md` for STT benchmark methodology,
 
 ---
 
+## LF Local-First Track (shipped alongside Phase 5)
+
+The LF issues (LF-01 through LF-07) were implemented in parallel with Phase 5
+validation work and landed independently of the Phase 6 / Phase 7 sequencing.
+They add a parallel local-first delivery track and do not change the Phase 0–6
+order for the items below them.
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| LF-01 | Local Whisper STT provider | ✅ Shipped |
+| LF-02 | Local-first onboarding and model download | ✅ Shipped |
+| LF-03 | Local-first config defaults (`stt_provider = "local"`, `stt_fallback_policy = "google-when-keyed"`) | ✅ Shipped |
+| LF-04 | Local OPUS-MT translation provider | ✅ Shipped |
+| LF-05 | Session-store and audio-archive retention/caps | ✅ Shipped |
+| LF-06 | Dual-slot mode and advanced pipeline config | ✅ Shipped |
+| LF-07 | Docs and config example release gate (issue #375) | ✅ Shipped |
+
+---
+
 ## Dependency Map Summary
 
 The following shows which phases depend on which. Implementation work for a phase
@@ -446,9 +474,11 @@ The cost counter built in Phase 4 is the foundation for this. It already tracks 
 
 ---
 
-## What Is Explicitly Not in Scope for v1
+## What Remains Explicitly Not in Scope for v1
 
-The following items will not be delivered in v1. They are listed here so there is no ambiguity about what "done" means for the first release.
+The following items remain outside v1 after the LF local-first track. They are
+listed here so there is no ambiguity about what "done" means for the first
+release.
 
 - Azure Speech or Translation integration.
 - Ollama-assisted translation quality improvement.
@@ -456,9 +486,11 @@ The following items will not be delivered in v1. They are listed here so there i
 - Streaming gRPC speech transcription (deferred to Phase 5 validation gate).
 - A graphical user interface.
 - A web interface or mobile companion app.
-- Multi-language simultaneous translation in a single session.
-- Saving a meeting transcript to a file (the terminal scroll history is available, but no structured export).
 - Any feature that requires Zoom host cooperation or Zoom developer credentials.
+
+Previously excluded items that are now available are tracked in the
+LF Local-First Track section above: dual-slot translation via `slots` (LF-06) and
+structured JSONL session transcripts via `session_store` (LF-05).
 
 ---
 
