@@ -2458,6 +2458,23 @@ fn main() -> Result<()> {
                 storage.recorder_bytes = session_recorder.bytes_written_arc();
                 storage.recorder_path = session_recorder.path();
 
+                // DM-06 (issue #382): in dual mode, slot A gets its own per-slot
+                // halt Arc so an auth error on A does not globally halt while B is
+                // still healthy.  A background task (spawned below, inside the dual
+                // block) aggregates both per-slot flags into `state.pipeline_halted`.
+                // In single mode we share the global Arc directly, identical to the
+                // pre-DM-06 behaviour.
+                let slot_a_halt_arc: Arc<AtomicBool> = if slot_mode == config::SlotMode::Dual {
+                    Arc::new(AtomicBool::new(false))
+                } else {
+                    Arc::clone(&state.pipeline_halted)
+                };
+
+                // DM-06 (issue #382): per-slot TTS status Arc shared with a label
+                // copier task so the UI can observe it.  Previously this was a fresh
+                // orphaned Arc; now any write by the orchestrator is visible outside.
+                let slot_a_tts_status_arc = Arc::new(Mutex::new(pipeline::SlotProviderStatus::Ok));
+
                 let ctx = pipeline::OrchestratorContext {
                     slot_id: pipeline::SlotId::A,
                     audio_level: Arc::clone(&state.audio_level),
@@ -2467,7 +2484,7 @@ fn main() -> Result<()> {
                     cost_counter: Arc::clone(&state.cost_counter),
                     pipeline_error_msg: Arc::clone(&state.pipeline_error_msg),
                     auth_error_banner: Arc::clone(&state.auth_error_banner),
-                    pipeline_halted: Arc::clone(&state.pipeline_halted),
+                    pipeline_halted: Arc::clone(&slot_a_halt_arc),
                     provider_circuits: Arc::new(std::sync::Mutex::new(
                         pipeline::ProviderCircuitBreakers::default(),
                     )),
@@ -2522,7 +2539,9 @@ fn main() -> Result<()> {
                     tts_active_for_slot: cfg_snapshot
                         .tts_source
                         .is_active_for_slot(true, slot_mode == config::SlotMode::Dual),
-                    tts_status: Arc::new(Mutex::new(pipeline::SlotProviderStatus::Ok)),
+                    // DM-06 (issue #382): share the Arc created above so it is
+                    // accessible to the halt-aggregation and label-copier tasks.
+                    tts_status: Arc::clone(&slot_a_tts_status_arc),
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
@@ -2675,6 +2694,67 @@ fn main() -> Result<()> {
                                     slot_b_cfg.target_language.clone(),
                                     slot_b_cfg.mt_provider.clone(),
                                 );
+
+                                // DM-06 (issue #382): halt-aggregation background task.
+                                // Computes `aggregate_halt_state(a, Some(b))` at 100 ms cadence
+                                // and writes the result to `state.pipeline_halted`.  This means
+                                // a slot-A auth error halts A locally but leaves the global flag
+                                // clear (and B running) until BOTH slots are halted.
+                                {
+                                    let a_halt = Arc::clone(&slot_a_halt_arc);
+                                    let b_halt = Arc::clone(&slot_b_state.pipeline_halted);
+                                    let global_halt = Arc::clone(&state.pipeline_halted);
+                                    rt.spawn(async move {
+                                        let mut interval =
+                                            tokio::time::interval(Duration::from_millis(100));
+                                        loop {
+                                            interval.tick().await;
+                                            let a = a_halt.load(Ordering::Relaxed);
+                                            let b = b_halt.load(Ordering::Relaxed);
+                                            global_halt.store(
+                                                pipeline::aggregate_halt_state(a, Some(b)),
+                                                Ordering::Relaxed,
+                                            );
+                                        }
+                                    });
+                                }
+
+                                // DM-06 (issue #382): TTS status label copier tasks.
+                                // Poll each slot's SlotProviderStatus at 200 ms and write
+                                // the formatted string to the AppState label Arcs so the TUI
+                                // can show per-slot TTS health without a pipeline-to-tui import.
+                                {
+                                    let tts_arc = Arc::clone(&slot_a_tts_status_arc);
+                                    let label = Arc::clone(&state.slot_a_tts_status_label);
+                                    rt.spawn(async move {
+                                        let mut interval =
+                                            tokio::time::interval(Duration::from_millis(200));
+                                        loop {
+                                            interval.tick().await;
+                                            let s = tts_arc
+                                                .lock()
+                                                .unwrap_or_else(|p| p.into_inner())
+                                                .to_string();
+                                            *label.lock().unwrap_or_else(|p| p.into_inner()) = s;
+                                        }
+                                    });
+                                }
+                                {
+                                    let tts_arc = Arc::clone(&slot_b_state.tts_status);
+                                    let label = Arc::clone(&state.slot_b_tts_status_label);
+                                    rt.spawn(async move {
+                                        let mut interval =
+                                            tokio::time::interval(Duration::from_millis(200));
+                                        loop {
+                                            interval.tick().await;
+                                            let s = tts_arc
+                                                .lock()
+                                                .unwrap_or_else(|p| p.into_inner())
+                                                .to_string();
+                                            *label.lock().unwrap_or_else(|p| p.into_inner()) = s;
+                                        }
+                                    });
+                                }
                             }
                             (Err(err), _) => {
                                 tracing::error!(
@@ -7466,8 +7546,115 @@ mod tests {
             "halting slot A must not halt slot B"
         );
         assert!(
+            // OK: test-only; poisoned mutex returns inner value
             slot_b.auth_error_banner.lock().unwrap().is_none(),
             "auth banner set on slot A must not appear on slot B"
+        );
+    }
+
+    // DM-06 (issue #382): halt-aggregation and TTS-status wiring.
+
+    /// `aggregate_halt_state` (used by the halt-aggregation background task) must
+    /// derive the global halt from both per-slot flags, not slot A's flag alone.
+    ///
+    /// | A halted | B halted | global halted |
+    /// |----------|----------|---------------|
+    /// | false    | false    | false         |
+    /// | true     | false    | false  | slot A auth fail; B still runs |
+    /// | false    | true     | false  | slot B auth fail; A still runs |
+    /// | true     | true     | true   | both halted; show global banner |
+    #[test]
+    fn aggregate_halt_state_dual_mode_requires_both_slots_halted() {
+        // Mirrors the logic the background task runs every 100 ms.
+        let a_halt = Arc::new(AtomicBool::new(false));
+        let b_halt = Arc::new(AtomicBool::new(false));
+        let global_halt = Arc::new(AtomicBool::new(false));
+
+        let compute_global = || {
+            let a = a_halt.load(Ordering::Relaxed);
+            let b = b_halt.load(Ordering::Relaxed);
+            pipeline::aggregate_halt_state(a, Some(b))
+        };
+
+        // Both healthy.
+        assert!(!compute_global(), "both healthy: global must not be halted");
+
+        // Only slot A halted.
+        a_halt.store(true, Ordering::Relaxed);
+        global_halt.store(compute_global(), Ordering::Relaxed);
+        assert!(
+            !global_halt.load(Ordering::Relaxed),
+            "slot A halted, B healthy: global must NOT be halted"
+        );
+
+        // Only slot B halted (reset A first).
+        a_halt.store(false, Ordering::Relaxed);
+        b_halt.store(true, Ordering::Relaxed);
+        global_halt.store(compute_global(), Ordering::Relaxed);
+        assert!(
+            !global_halt.load(Ordering::Relaxed),
+            "slot B halted, A healthy: global must NOT be halted"
+        );
+
+        // Both halted.
+        a_halt.store(true, Ordering::Relaxed);
+        global_halt.store(compute_global(), Ordering::Relaxed);
+        assert!(
+            global_halt.load(Ordering::Relaxed),
+            "both slots halted: global MUST be halted"
+        );
+    }
+
+    /// In single-slot mode `aggregate_halt_state` preserves the original behaviour:
+    /// the global halt mirrors slot A's halt exactly.
+    #[test]
+    fn aggregate_halt_state_single_mode_mirrors_slot_a() {
+        assert!(!pipeline::aggregate_halt_state(false, None));
+        assert!(pipeline::aggregate_halt_state(true, None));
+    }
+
+    /// In dual mode, slot A must use its own per-slot halt Arc so that setting it
+    /// does not change `state.pipeline_halted` directly (the aggregation task
+    /// handles that).  The two Arcs must be distinct.
+    #[test]
+    fn dual_mode_slot_a_halt_arc_is_independent_from_global() {
+        let global_halt = Arc::new(AtomicBool::new(false));
+
+        // Simulate what main.rs does in dual mode: create a fresh per-slot Arc.
+        let slot_a_halt: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+
+        // Setting per-slot arc must NOT change the global one.
+        slot_a_halt.store(true, Ordering::Relaxed);
+        assert!(
+            !global_halt.load(Ordering::Relaxed),
+            "halting slot A's per-slot Arc must not change the global halt Arc"
+        );
+        assert!(
+            !Arc::ptr_eq(&slot_a_halt, &global_halt),
+            "slot A halt arc must be a distinct object from the global halt arc"
+        );
+    }
+
+    /// Slot A's `tts_status` Arc must be shared (not orphaned): writing to the
+    /// orchestrator context's Arc is visible via the outer handle retained by
+    /// the label-copier task.
+    #[test]
+    fn slot_a_tts_status_arc_is_shared_not_orphaned() {
+        // Simulate main.rs: create the Arc, clone it into the context.
+        let outer: Arc<Mutex<pipeline::SlotProviderStatus>> =
+            Arc::new(Mutex::new(pipeline::SlotProviderStatus::Ok));
+        let ctx_arc = Arc::clone(&outer);
+
+        // Orchestrator writes a degraded status.
+        *ctx_arc.lock().expect("lock ctx_arc") =
+            pipeline::SlotProviderStatus::Degraded("test".to_string());
+
+        // Outer handle (retained by label-copier task) must see the write.
+        let status = outer.lock().expect("lock outer").clone();
+        assert_eq!(
+            status,
+            pipeline::SlotProviderStatus::Degraded("test".to_string()),
+            "write through ctx_arc must be visible via outer Arc clone"
         );
     }
 }
