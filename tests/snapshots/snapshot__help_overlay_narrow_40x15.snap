@@ -1,8 +1,9 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1393
 expression: rendered
 ---
-┌ Help [0/1] — ↑↓ scroll · Esc close ──┐
+┌ Help [0/2] — ↑↓ scroll · Esc close ──┐
 │ Keyboard Shortcuts                   │
 │                                      │
 │  ↑ / ↓     Scroll subtitles/help     │

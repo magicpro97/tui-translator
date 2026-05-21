@@ -1,9 +1,8 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1335
+assertion_line: 1626
 expression: "render_help(80, 24, 0)"
 ---
-                                                                                
                                                                                 
                                                                                 
                                                                                 
@@ -21,5 +20,6 @@ expression: "render_help(80, 24, 0)"
             │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            
+            │  Tab        Switch A/B pane focus (dual-slot mode)   │            
             │  q / Ctrl+C Quit — shows session summary             │            
             └──────────────────────────────────────────────────────┘

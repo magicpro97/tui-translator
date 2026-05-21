@@ -1990,6 +1990,11 @@ fn main() -> Result<()> {
         .unwrap_or_else(|p| p.into_inner())
         .clone();
     state.set_target_language(loaded_config.target_language.clone());
+    // DM-04: remember slot-A MT provider so dual-pane titles can show it.
+    *state
+        .slot_a_provider_name
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = loaded_config.mt_provider.clone();
     // Initialise source_language from the loaded config so AppState and the
     // orchestrator start with the same value.
     overwrite_source_language(&state.source_language, &loaded_config.source_language);
@@ -2064,6 +2069,7 @@ fn main() -> Result<()> {
         let target_language = Arc::clone(&state.target_language);
         let source_language = Arc::clone(&state.source_language);
         let capture_device_label = Arc::clone(&state.capture_device_label);
+        let slot_a_provider_name = Arc::clone(&state.slot_a_provider_name);
         let tts_enabled = Arc::clone(&state.tts_enabled);
         let audio_consent = Arc::clone(&state.audio_consent);
         let restart_required = Arc::clone(&restart_required);
@@ -2077,12 +2083,13 @@ fn main() -> Result<()> {
                 let tl = Arc::clone(&target_language);
                 let sl = Arc::clone(&source_language);
                 let cdl = Arc::clone(&capture_device_label);
+                let sap = Arc::clone(&slot_a_provider_name);
                 let te = Arc::clone(&tts_enabled);
                 let ac = Arc::clone(&audio_consent);
                 let rr = Arc::clone(&restart_required);
                 let ps = Arc::clone(&playback_service);
                 tokio::task::spawn_blocking(move || {
-                    apply_runtime_config(&cc, &tl, &sl, &cdl, &te, &ac, &rr, &ps, next_cfg);
+                    apply_runtime_config(&cc, &tl, &sl, &cdl, &sap, &te, &ac, &rr, &ps, next_cfg);
                 })
                 .await
                 .ok();
@@ -2652,6 +2659,11 @@ fn main() -> Result<()> {
                                     ctx_b,
                                 )));
                                 tracing::info!("dual-slot mode: slot B orchestrator started");
+                                state.wire_slot_b(
+                                    Arc::clone(&slot_b_state.subtitle_pane),
+                                    slot_b_cfg.target_language.clone(),
+                                    slot_b_cfg.mt_provider.clone(),
+                                );
                             }
                             (Err(err), _) => {
                                 tracing::error!(
@@ -3443,6 +3455,7 @@ fn apply_runtime_config(
     target_language: &Arc<std::sync::Mutex<String>>,
     source_language: &Arc<std::sync::Mutex<String>>,
     capture_device_label: &Arc<std::sync::Mutex<String>>,
+    slot_a_provider_name: &Arc<Mutex<String>>,
     tts_enabled: &Arc<AtomicBool>,
     audio_consent: &Arc<AtomicBool>,
     restart_required: &Arc<AtomicBool>,
@@ -3463,6 +3476,9 @@ fn apply_runtime_config(
     overwrite_target_language(target_language, &next_cfg.target_language);
     overwrite_source_language(source_language, &next_cfg.source_language);
     overwrite_capture_device_label(capture_device_label, &next_cfg.capture_device);
+    *slot_a_provider_name
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = next_cfg.slot_a().mt_provider.clone();
     // Sync the backend first; only set the UI flag to match what actually succeeded.
     let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
     tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
@@ -3701,6 +3717,7 @@ fn save_config_editor(
         &state.target_language,
         &state.source_language,
         &state.capture_device_label,
+        &state.slot_a_provider_name,
         &state.tts_enabled,
         &state.audio_consent,
         restart_required,
@@ -4076,6 +4093,10 @@ fn key_to_action(
         KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
         KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
         KeyCode::Char('?') => Some(UserAction::ToggleHelp),
+        // Tab — toggle A/B pane focus (DM-04, issue #380).
+        // Config editor handles its own Tab (ConfigNextField) in the branch
+        // above, so this only fires in normal mode.
+        KeyCode::Tab => Some(UserAction::TogglePaneFocus),
         // Scrolling
         KeyCode::Up => Some(UserAction::ScrollUp),
         KeyCode::Down => Some(UserAction::ScrollDown),
@@ -4287,6 +4308,7 @@ fn apply_wizard_patch_to_config(
         &state.target_language,
         &state.source_language,
         &state.capture_device_label,
+        &state.slot_a_provider_name,
         &state.tts_enabled,
         &state.audio_consent,
         restart_required,
@@ -4566,6 +4588,11 @@ fn handle_action(
 
         UserAction::AnyKey => {}
 
+        // Tab — DM-04 dual-pane focus toggle.
+        UserAction::TogglePaneFocus => {
+            state.toggle_pane_focus();
+        }
+
         UserAction::WizardKey(event) => {
             let outcome = state.with_wizard_mut(|wiz| wiz.handle(event.clone()));
             if let Some(Some(outcome)) = outcome {
@@ -4588,6 +4615,7 @@ fn handle_action(
                     &state.target_language,
                     &state.source_language,
                     &state.capture_device_label,
+                    &state.slot_a_provider_name,
                     &state.tts_enabled,
                     &state.audio_consent,
                     restart_required,
@@ -6028,6 +6056,7 @@ mod tests {
             &state.target_language,
             &state.source_language,
             &state.capture_device_label,
+            &state.slot_a_provider_name,
             &state.tts_enabled,
             &state.audio_consent,
             &restart_required,
@@ -6057,6 +6086,7 @@ mod tests {
             &state.target_language,
             &state.source_language,
             &state.capture_device_label,
+            &state.slot_a_provider_name,
             &state.tts_enabled,
             &state.audio_consent,
             &restart_required,
@@ -6065,6 +6095,32 @@ mod tests {
         );
 
         assert!(state.audio_consent.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn apply_runtime_config_updates_slot_a_provider_title() {
+        let state = AppState::new();
+        *state.slot_a_provider_name.lock().unwrap() = "google".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+        let mut next = config::AppConfig::default();
+        next.mt_provider = "local".to_string();
+
+        apply_runtime_config(
+            &current_config,
+            &state.target_language,
+            &state.source_language,
+            &state.capture_device_label,
+            &state.slot_a_provider_name,
+            &state.tts_enabled,
+            &state.audio_consent,
+            &restart_required,
+            &playback_service,
+            next,
+        );
+
+        assert_eq!(state.slot_a_provider_name.lock().unwrap().as_str(), "local");
     }
 
     #[test]
