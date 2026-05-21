@@ -12,13 +12,13 @@
 mod providers;
 
 use providers::local::bootstrap::{
-    migrate_models, offline_guard, try_migrate_legacy_cache, verify_cached_file,
-    write_consent_record, BootstrapError, ConsentRecord, ModelBootstrapManifest,
+    consent_status, migrate_models, offline_guard, try_migrate_legacy_cache, verify_cached_file,
+    write_consent_record, BootstrapError, ConsentRecord, ConsentStatus, ModelBootstrapManifest,
     LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
 };
 use providers::local::{
     install_model_bundle, model_cache_dir, ModelBundleFile, ModelBundleManifest,
-    ModelDownloadError, INSTALLED_MANIFEST_FILE,
+    ModelDownloadError, ModelId, ModelManifest, INSTALLED_MANIFEST_FILE,
 };
 
 use tempfile::TempDir;
@@ -33,6 +33,7 @@ fn manifest_all_required_fields_accepted() {
         "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
         "size_bytes": 77704715,
         "license_url": "https://huggingface.co/openai/whisper-tiny/blob/main/LICENSE",
+        "license_text": "MIT License\n\nCopyright (c) 2022 OpenAI\n",
         "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
     }"#;
     let m = ModelBootstrapManifest::from_json(json).expect("valid manifest must parse");
@@ -40,6 +41,7 @@ fn manifest_all_required_fields_accepted() {
     assert_eq!(m.version, "2026-01-01");
     assert_eq!(m.size_bytes, 77_704_715);
     assert!(!m.license_url.is_empty(), "license_url must be present");
+    assert!(!m.license_text.is_empty(), "license_text must be present");
     assert!(!m.source_url.is_empty(), "source_url must be present");
 }
 
@@ -598,6 +600,203 @@ fn model_cache_dir_respects_local_data_dir_override() {
     );
 }
 
+// ── LF-05: license_text validation ───────────────────────────────────────────
+
+#[test]
+fn manifest_missing_license_text_is_rejected_at_parse() {
+    // JSON has all fields except license_text — serde must fail.
+    let json = r#"{"name":"m","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":1,"license_url":"https://x.com","source_url":"https://x.com"}"#;
+    let err = ModelBootstrapManifest::from_json(json);
+    assert!(
+        err.is_err(),
+        "manifest without license_text must be rejected at parse"
+    );
+    assert!(
+        matches!(err.unwrap_err(), BootstrapError::InvalidManifest(_)),
+        "parse failure must produce InvalidManifest"
+    );
+}
+
+#[test]
+fn manifest_empty_license_text_is_rejected_at_validate() {
+    let json = r#"{"name":"m","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":1,"license_url":"https://x.com","license_text":"","source_url":"https://x.com"}"#;
+    let err = ModelBootstrapManifest::from_json(json)
+        .expect_err("manifest with empty license_text must be rejected");
+    assert!(
+        matches!(err, BootstrapError::InvalidManifest(_)),
+        "empty license_text must produce InvalidManifest; got {err:?}"
+    );
+}
+
+#[test]
+fn manifest_whitespace_only_license_text_is_rejected_at_validate() {
+    let json = r#"{"name":"m","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":1,"license_url":"https://x.com","license_text":"   \n\t  ","source_url":"https://x.com"}"#;
+    let err = ModelBootstrapManifest::from_json(json)
+        .expect_err("manifest with whitespace-only license_text must be rejected");
+    assert!(
+        matches!(err, BootstrapError::InvalidManifest(_)),
+        "whitespace license_text must produce InvalidManifest; got {err:?}"
+    );
+}
+
+#[test]
+fn manifest_control_char_in_license_text_is_rejected() {
+    // NUL byte (U+0000) — must be rejected.
+    let json = "{\"name\":\"m\",\"version\":\"1\",\"sha256\":\"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f\",\"size_bytes\":1,\"license_url\":\"https://x.com\",\"license_text\":\"MIT\\u0000License\",\"source_url\":\"https://x.com\"}";
+    let err = ModelBootstrapManifest::from_json(json)
+        .expect_err("manifest with NUL in license_text must be rejected");
+    assert!(
+        matches!(err, BootstrapError::InvalidManifest(_)),
+        "NUL in license_text must produce InvalidManifest; got {err:?}"
+    );
+}
+
+#[test]
+fn manifest_esc_in_license_text_is_rejected() {
+    // ESC (U+001B) — must be rejected.
+    let json = "{\"name\":\"m\",\"version\":\"1\",\"sha256\":\"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f\",\"size_bytes\":1,\"license_url\":\"https://x.com\",\"license_text\":\"MIT\\u001bLicense\",\"source_url\":\"https://x.com\"}";
+    let err = ModelBootstrapManifest::from_json(json)
+        .expect_err("manifest with ESC in license_text must be rejected");
+    assert!(
+        matches!(err, BootstrapError::InvalidManifest(_)),
+        "ESC in license_text must produce InvalidManifest; got {err:?}"
+    );
+}
+
+#[test]
+fn manifest_del_in_license_text_is_rejected() {
+    // DEL (U+007F) — must be rejected even though it is not in the 0x00–0x1F range.
+    let json = "{\"name\":\"m\",\"version\":\"1\",\"sha256\":\"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f\",\"size_bytes\":1,\"license_url\":\"https://x.com\",\"license_text\":\"MIT\\u007fLicense\",\"source_url\":\"https://x.com\"}";
+    let err = ModelBootstrapManifest::from_json(json)
+        .expect_err("manifest with DEL in license_text must be rejected");
+    assert!(
+        matches!(err, BootstrapError::InvalidManifest(_)),
+        "DEL in license_text must produce InvalidManifest; got {err:?}"
+    );
+}
+
+#[test]
+fn manifest_license_text_with_tab_newline_cr_is_accepted() {
+    // \t, \n, \r are explicitly allowed even though they are control characters.
+    let json = r#"{"name":"m","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":1,"license_url":"https://x.com","license_text":"MIT License\r\n\tCopyright 2022","source_url":"https://x.com"}"#;
+    ModelBootstrapManifest::from_json(json)
+        .expect("license_text with \\t, \\n, \\r must be accepted");
+}
+
+// ── LF-05: built-in ModelSpec license fields ──────────────────────────────────
+
+#[test]
+fn builtin_specs_all_have_non_empty_license_url_and_text() {
+    let manifest = ModelManifest::builtin();
+    for spec in manifest.iter() {
+        assert!(
+            !spec.license_url.is_empty(),
+            "spec {:?} must have a non-empty license_url",
+            spec.id
+        );
+        assert!(
+            !spec.license_text.trim().is_empty(),
+            "spec {:?} must have non-empty license_text",
+            spec.id
+        );
+    }
+}
+
+#[test]
+fn from_spec_produces_valid_manifest() {
+    let manifest = ModelManifest::builtin();
+    let spec = manifest
+        .find(ModelId::TinyEn)
+        .expect("TinyEn must be in builtin manifest");
+    let m = ModelBootstrapManifest::from_spec(spec, "2024-02-01");
+    m.validate()
+        .expect("manifest built from builtin spec must be valid");
+    assert_eq!(m.name, "tiny.en");
+    assert_eq!(m.version, "2024-02-01");
+    assert!(!m.license_url.is_empty());
+    assert!(!m.license_text.trim().is_empty());
+}
+
+// ── LF-05: consent status ─────────────────────────────────────────────────────
+
+#[test]
+fn consent_status_missing_when_no_file_exists() {
+    let tmp = TempDir::new().unwrap();
+    let _dir_guard = EnvGuard::set(LOCAL_DATA_DIR_OVERRIDE_ENV, tmp.path().to_str().unwrap());
+
+    let manifest = sample_bootstrap_manifest();
+    let status = consent_status(&manifest).expect("consent_status must not error for missing file");
+    assert_eq!(
+        status,
+        ConsentStatus::Missing,
+        "status must be Missing when no consent file exists"
+    );
+}
+
+#[test]
+fn consent_status_fresh_after_writing_consent() {
+    let tmp = TempDir::new().unwrap();
+    let _dir_guard = EnvGuard::set(LOCAL_DATA_DIR_OVERRIDE_ENV, tmp.path().to_str().unwrap());
+
+    let manifest = sample_bootstrap_manifest();
+    write_consent_record(&manifest).expect("write_consent_record must succeed");
+
+    let status = consent_status(&manifest).expect("consent_status must succeed");
+    assert_eq!(
+        status,
+        ConsentStatus::Fresh,
+        "status must be Fresh immediately after writing consent"
+    );
+}
+
+#[test]
+fn consent_status_stale_on_version_mismatch() {
+    let tmp = TempDir::new().unwrap();
+    let _dir_guard = EnvGuard::set(LOCAL_DATA_DIR_OVERRIDE_ENV, tmp.path().to_str().unwrap());
+
+    // Write consent for version "2026-01-01".
+    let old_manifest = sample_bootstrap_manifest();
+    write_consent_record(&old_manifest).expect("write_consent_record must succeed");
+
+    // Check status against a manifest with a different version.
+    let new_manifest = ModelBootstrapManifest {
+        version: "2027-01-01".to_string(),
+        ..sample_bootstrap_manifest()
+    };
+    let status = consent_status(&new_manifest).expect("consent_status must succeed");
+    assert!(
+        matches!(status, ConsentStatus::Missing),
+        "status must be Missing for a different version (no consent file exists for that version)"
+    );
+}
+
+#[test]
+fn consent_status_stale_on_license_url_mismatch() {
+    let tmp = TempDir::new().unwrap();
+    let _dir_guard = EnvGuard::set(LOCAL_DATA_DIR_OVERRIDE_ENV, tmp.path().to_str().unwrap());
+
+    // Write consent for the original license_url.
+    let original = sample_bootstrap_manifest();
+    write_consent_record(&original).expect("write_consent_record must succeed");
+
+    // Build a manifest with same name/version but a different license_url.
+    let changed = ModelBootstrapManifest {
+        license_url: "https://example.com/new-license".to_string(),
+        ..sample_bootstrap_manifest()
+    };
+    let status = consent_status(&changed).expect("consent_status must succeed");
+    assert!(
+        matches!(status, ConsentStatus::Stale { .. }),
+        "status must be Stale when license_url changed; got {status:?}"
+    );
+    if let ConsentStatus::Stale { reason } = status {
+        assert!(
+            reason.contains("license_url"),
+            "stale reason must mention license_url; got: {reason}"
+        );
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn sample_bootstrap_manifest() -> ModelBootstrapManifest {
@@ -607,6 +806,7 @@ fn sample_bootstrap_manifest() -> ModelBootstrapManifest {
         sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f".to_string(),
         size_bytes: 77_704_715,
         license_url: "https://huggingface.co/openai/whisper-tiny/blob/main/LICENSE".to_string(),
+        license_text: "MIT License\n\nCopyright (c) 2022 OpenAI\n".to_string(),
         source_url: "https://example.com/model".to_string(),
     }
 }
@@ -674,4 +874,16 @@ impl Drop for EnvGuard {
         }
         // _lock is dropped after this, releasing the mutex.
     }
+}
+
+// ── OPUS-MT consent manifest ──────────────────────────────────────────────────
+
+#[test]
+fn opus_mt_ja_vi_consent_manifest_is_valid() {
+    let m = providers::local::opus_mt_ja_vi_consent_manifest();
+    m.validate()
+        .expect("OPUS-MT ja-vi consent manifest must be valid");
+    assert_eq!(m.name, "opus-mt-ja-vi");
+    assert!(!m.license_text.is_empty(), "license_text must be non-empty");
+    assert!(!m.license_url.is_empty(), "license_url must be non-empty");
 }

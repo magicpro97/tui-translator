@@ -64,6 +64,9 @@ use metrics::{
     spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
     NetworkMetrics, ProcessSnapshot, SttSource,
 };
+use tui::onboarding::{
+    LocalModelLicense, OnboardingBranch, OnboardingEvent, OnboardingOutcome, OnboardingWizardState,
+};
 use tui::{
     draw_session_summary, draw_ui_with_route, help_overlay_max_scroll, subtitle_inner_area,
     AppState, ConfigEditorMode, TtsRouteStatus, UserAction, AUDIO_LEVEL_SCALE,
@@ -1751,10 +1754,17 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
     {
         let lang_flag = Arc::clone(&state.lang_prompt_active);
         let config_editor_flag = Arc::clone(&state.config_editor_active);
+        let wizard_active_kb = Arc::clone(&state.wizard_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
             tokio::task::spawn_blocking(move || {
-                keyboard_task(key_tx, lang_flag, config_editor_flag, keyboard_shutdown)
+                keyboard_task(
+                    key_tx,
+                    lang_flag,
+                    config_editor_flag,
+                    wizard_active_kb,
+                    keyboard_shutdown,
+                )
             })
             .await
             .ok();
@@ -1911,13 +1921,21 @@ fn main() -> Result<()> {
     ) {
         storage::print_startup_summary(&sessions_root, &audio_root);
     }
+    let skip_interactive_startup = skip_onboarding();
     let startup_config_mode = startup_config_mode(
         load_state,
         has_explicit_config_override(),
-        skip_onboarding(),
+        skip_interactive_startup,
     );
     let onboarding_required = startup_config_mode == StartupConfigMode::OnboardingRequired;
     let config_recovery_required = startup_config_mode == StartupConfigMode::ConfigRecoveryRequired;
+    let pending_consent_manifests =
+        if !onboarding_required && !config_recovery_required && !skip_interactive_startup {
+            collect_pending_consent_manifests(&cfg)
+        } else {
+            Vec::new()
+        };
+    let license_review_required = !pending_consent_manifests.is_empty();
     let current_config = Arc::new(Mutex::new(cfg.clone()));
     let restart_required = Arc::new(AtomicBool::new(false));
 
@@ -1950,7 +1968,7 @@ fn main() -> Result<()> {
     state.set_tts_enabled(loaded_config.tts_enabled);
     state.set_audio_consent(loaded_config.audio_archive.consent_given);
     let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
-    if !onboarding_required && !config_recovery_required {
+    if !onboarding_required && !config_recovery_required && !license_review_required {
         let current_cfg = current_config
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -1958,15 +1976,13 @@ fn main() -> Result<()> {
         sync_playback_service_state(&playback_service, &current_cfg, current_cfg.tts_enabled);
     }
     if onboarding_required {
-        state.open_config_editor(ConfigEditorMode::Onboarding, &cfg, &cfg_path);
-        populate_config_editor_device_options(&state);
-        let _ = state.with_config_editor_mut(|editor| {
-            editor.set_status_message(" Fill required fields, then press Enter to save.");
-        });
+        let local_licenses = build_local_model_licenses();
+        let wizard = OnboardingWizardState::new(local_licenses);
+        state.open_wizard(wizard);
         overwrite_device_name(&state.device_name, "first-run setup required");
         tracing::info!(
             path = %cfg_path.display(),
-            "per-user config missing; opening first-run setup"
+            "per-user config missing; opening first-run wizard"
         );
     }
     if config_recovery_required {
@@ -1994,6 +2010,17 @@ fn main() -> Result<()> {
         tracing::warn!(
             path = %cfg_path.display(),
             "config invalid; opening settings repair mode"
+        );
+    }
+    if license_review_required {
+        let branch = branch_from_config(&loaded_config);
+        let licenses = local_model_licenses_from_manifests(&pending_consent_manifests);
+        let wizard = OnboardingWizardState::new_consent_review(licenses, branch);
+        state.open_wizard(wizard);
+        overwrite_device_name(&state.device_name, "model license review required");
+        tracing::info!(
+            pending = pending_consent_manifests.len(),
+            "local model consent missing or stale; opening license review"
         );
     }
 
@@ -2075,7 +2102,7 @@ fn main() -> Result<()> {
     let mut fanout_counters: Arc<audio::FanoutDropCounters> =
         Arc::new(audio::FanoutDropCounters::default());
 
-    if onboarding_required || config_recovery_required {
+    if onboarding_required || config_recovery_required || license_review_required {
         let orchestrator_join = None;
         return finish_main(
             rt,
@@ -2661,10 +2688,17 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     {
         let lang_flag = Arc::clone(&state.lang_prompt_active);
         let config_editor_flag = Arc::clone(&state.config_editor_active);
+        let wizard_active_kb = Arc::clone(&state.wizard_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
             tokio::task::spawn_blocking(move || {
-                keyboard_task(key_tx, lang_flag, config_editor_flag, keyboard_shutdown)
+                keyboard_task(
+                    key_tx,
+                    lang_flag,
+                    config_editor_flag,
+                    wizard_active_kb,
+                    keyboard_shutdown,
+                )
             })
             .await
             .ok();
@@ -2935,6 +2969,110 @@ fn startup_config_mode(
         config::LoadState::Invalid if !skip_onboarding => StartupConfigMode::ConfigRecoveryRequired,
         _ => StartupConfigMode::Normal,
     }
+}
+
+/// Build a list of LocalModelLicense for all bundled local models.
+fn build_local_model_licenses() -> Vec<LocalModelLicense> {
+    all_local_consent_manifests()
+        .into_iter()
+        .map(|manifest| LocalModelLicense {
+            display_name: manifest.name,
+            license_text: manifest.license_text,
+        })
+        .collect()
+}
+
+fn whisper_tiny_consent_manifest() -> Option<providers::local::ModelConsentManifest> {
+    use providers::local::{bootstrap::ModelBootstrapManifest, ModelId, ModelManifest};
+    ModelManifest::builtin()
+        .find(ModelId::Tiny)
+        .map(|spec| ModelBootstrapManifest::from_spec(spec, "2024-02-01"))
+        .map(|manifest| providers::local::ModelConsentManifest::from(&manifest))
+}
+
+fn all_local_consent_manifests() -> Vec<providers::local::ModelConsentManifest> {
+    let mut manifests = Vec::new();
+    if let Some(manifest) = whisper_tiny_consent_manifest() {
+        manifests.push(manifest);
+    }
+    manifests.push(providers::local::opus_mt_ja_vi_consent_manifest());
+    manifests
+}
+
+fn local_model_licenses_from_manifests(
+    manifests: &[providers::local::ModelConsentManifest],
+) -> Vec<LocalModelLicense> {
+    manifests
+        .iter()
+        .map(|manifest| LocalModelLicense {
+            display_name: manifest.name.clone(),
+            license_text: manifest.license_text.clone(),
+        })
+        .collect()
+}
+
+/// Collect local model consent manifests that need consent (missing or stale).
+fn collect_pending_consent_manifests(
+    cfg: &config::AppConfig,
+) -> Vec<providers::local::ModelConsentManifest> {
+    use providers::local::{model_consent_status, ConsentStatus};
+    let mut pending = Vec::new();
+
+    if cfg.stt_provider == "local" {
+        if let Some(manifest) = whisper_tiny_consent_manifest() {
+            match model_consent_status(&manifest) {
+                Ok(ConsentStatus::Fresh) => {}
+                Ok(ConsentStatus::Missing | ConsentStatus::Stale { .. }) | Err(_) => {
+                    pending.push(manifest);
+                }
+            }
+        }
+    }
+    if cfg.mt_provider == "local" {
+        let manifest = providers::local::opus_mt_ja_vi_consent_manifest();
+        match model_consent_status(&manifest) {
+            Ok(ConsentStatus::Fresh) => {}
+            Ok(ConsentStatus::Missing | ConsentStatus::Stale { .. }) | Err(_) => {
+                pending.push(manifest);
+            }
+        }
+    }
+    pending
+}
+
+/// Determine the onboarding branch corresponding to an existing config.
+#[allow(dead_code)]
+fn branch_from_config(cfg: &config::AppConfig) -> OnboardingBranch {
+    let local_stt = cfg.stt_provider == "local";
+    let local_mt = cfg.mt_provider == "local";
+    let has_key = cfg
+        .google_api_key
+        .as_deref()
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false);
+    let has_cloud_fallback = cfg.mt_cloud_fallback.is_some();
+
+    if local_stt && local_mt && (has_key || has_cloud_fallback) {
+        OnboardingBranch::LocalGoogleFallback
+    } else if !local_stt && !local_mt {
+        OnboardingBranch::GoogleCloud
+    } else {
+        OnboardingBranch::LocalOnly
+    }
+}
+
+fn write_model_consent_records(
+    manifests: &[providers::local::ModelConsentManifest],
+) -> anyhow::Result<()> {
+    for manifest in manifests {
+        providers::local::write_model_consent_record(manifest).with_context(|| {
+            format!(
+                "failed to write consent record for local model {} {}",
+                manifest.name, manifest.version
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn bootstrap_legacy_config_if_needed(target_path: &Path) -> Result<()> {
@@ -3587,7 +3725,41 @@ fn key_to_action(
     key: &KeyEvent,
     in_lang_prompt: bool,
     in_config_editor: bool,
+    in_wizard: bool,
 ) -> Option<UserAction> {
+    if in_wizard {
+        return match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::Quit)
+            }
+            KeyCode::Char('1') => Some(UserAction::WizardKey(OnboardingEvent::SelectBranch1)),
+            KeyCode::Char('2') => Some(UserAction::WizardKey(OnboardingEvent::SelectBranch2)),
+            KeyCode::Char('3') => Some(UserAction::WizardKey(OnboardingEvent::SelectBranch3)),
+            KeyCode::Up => Some(UserAction::WizardKey(OnboardingEvent::ArrowUp)),
+            KeyCode::Down => Some(UserAction::WizardKey(OnboardingEvent::ArrowDown)),
+            KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
+            KeyCode::Esc => Some(UserAction::WizardKey(OnboardingEvent::Escape)),
+            KeyCode::Backspace => Some(UserAction::WizardKey(OnboardingEvent::Backspace)),
+            KeyCode::Char('l')
+            | KeyCode::Char('L')
+            | KeyCode::Char('t')
+            | KeyCode::Char('T')
+            | KeyCode::Char('m')
+            | KeyCode::Char('M')
+            | KeyCode::Char('s')
+            | KeyCode::Char('S')
+            | KeyCode::Char('r')
+            | KeyCode::Char('R')
+            | KeyCode::Char('?')
+            | KeyCode::Char('q')
+            | KeyCode::Char('Q')
+            | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
+            }
+            _ => Some(UserAction::AnyKey),
+        };
+    }
     if in_config_editor {
         return match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -3689,6 +3861,7 @@ fn keyboard_task(
     key_tx: mpsc::Sender<UserAction>,
     lang_prompt_active: Arc<AtomicBool>,
     config_editor_active: Arc<AtomicBool>,
+    wizard_active: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
 ) {
     while !shutdown.load(Ordering::Relaxed) {
@@ -3705,7 +3878,10 @@ fn keyboard_task(
                 }
                 let in_lang_prompt = lang_prompt_active.load(Ordering::Relaxed);
                 let in_config_editor = config_editor_active.load(Ordering::Relaxed);
-                if let Some(action) = key_to_action(&key, in_lang_prompt, in_config_editor) {
+                let in_wizard = wizard_active.load(Ordering::Relaxed);
+                if let Some(action) =
+                    key_to_action(&key, in_lang_prompt, in_config_editor, in_wizard)
+                {
                     if key_tx.send(action).is_err() {
                         // Receiver dropped; app is shutting down.
                         break;
@@ -3719,6 +3895,173 @@ fn keyboard_task(
 }
 
 // ── Issue #64: action handler ─────────────────────────────────────────────────
+
+fn handle_wizard_outcome(
+    outcome: OnboardingOutcome,
+    state: &AppState,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    restart_required: &Arc<AtomicBool>,
+    playback_service: &SharedPlaybackService,
+) {
+    match outcome {
+        OnboardingOutcome::Cancelled => {
+            let config_missing = match cfg_path.try_exists() {
+                Ok(exists) => !exists,
+                Err(err) => {
+                    tracing::warn!(
+                        path = %cfg_path.display(),
+                        "failed to check config before cancelling wizard: {err:#}"
+                    );
+                    true
+                }
+            };
+            if config_missing {
+                state.open_wizard(OnboardingWizardState::new(build_local_model_licenses()));
+                *state
+                    .startup_notice_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) =
+                    Some("Setup is required before translation can start.".to_string());
+                tracing::info!(
+                    path = %cfg_path.display(),
+                    "first-run setup cancellation ignored because config is missing"
+                );
+                return;
+            }
+            state.close_wizard();
+            tracing::info!("onboarding wizard cancelled by user");
+        }
+        OnboardingOutcome::Done(patch) => {
+            let consent_only = state.wizard_consent_only.load(Ordering::Relaxed);
+            state.close_wizard();
+
+            if !consent_only
+                && patch.branch.requires_google_key()
+                && patch
+                    .google_api_key
+                    .as_deref()
+                    .map(str::trim)
+                    .unwrap_or("")
+                    .is_empty()
+            {
+                *state
+                    .startup_notice_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) =
+                    Some("Setup failed: Google API key is required for this branch.".to_string());
+                return;
+            }
+
+            let consent_manifests = if consent_only {
+                let cfg = current_config
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone();
+                collect_pending_consent_manifests(&cfg)
+            } else if patch.branch.uses_local_models() {
+                all_local_consent_manifests()
+            } else {
+                Vec::new()
+            };
+            if let Err(err) = write_model_consent_records(&consent_manifests) {
+                tracing::error!("failed to write local model consent records: {err:#}");
+                *state
+                    .startup_notice_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(format!(
+                    "Setup failed: could not write model consent: {err:#}"
+                ));
+                return;
+            }
+
+            if consent_only {
+                tracing::info!("consent review complete; existing config preserved");
+                return;
+            }
+
+            if let Err(e) = apply_wizard_patch_to_config(
+                patch,
+                cfg_path,
+                current_config,
+                restart_required,
+                playback_service,
+                state,
+            ) {
+                tracing::error!("failed to apply wizard config: {e:#}");
+                *state
+                    .startup_notice_msg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(format!("Setup failed: {e:#}"));
+            }
+        }
+    }
+}
+
+fn apply_wizard_patch_to_config(
+    patch: tui::onboarding::OnboardingConfigPatch,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    restart_required: &Arc<AtomicBool>,
+    playback_service: &SharedPlaybackService,
+    state: &AppState,
+) -> anyhow::Result<()> {
+    if patch.branch.requires_google_key()
+        && patch
+            .google_api_key
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+    {
+        anyhow::bail!("a Google API key is required for the selected branch but none was provided");
+    }
+
+    let mut cfg = config::AppConfig::default();
+
+    match patch.branch {
+        OnboardingBranch::LocalOnly => {
+            cfg.stt_provider = "local".to_string();
+            cfg.mt_provider = "local".to_string();
+            cfg.stt_fallback_policy = "none".to_string();
+            cfg.mt_cloud_fallback = None;
+            cfg.google_api_key = None;
+            cfg.tts_enabled = false;
+        }
+        OnboardingBranch::LocalGoogleFallback => {
+            cfg.stt_provider = "local".to_string();
+            cfg.mt_provider = "local".to_string();
+            cfg.stt_fallback_policy = "google-when-keyed".to_string();
+            cfg.mt_cloud_fallback = Some("google".to_string());
+            cfg.google_api_key = patch.google_api_key.clone();
+            cfg.tts_enabled = false;
+        }
+        OnboardingBranch::GoogleCloud => {
+            cfg.stt_provider = "google".to_string();
+            cfg.mt_provider = "google".to_string();
+            cfg.stt_fallback_policy = "none".to_string();
+            cfg.mt_cloud_fallback = None;
+            cfg.google_api_key = patch.google_api_key.clone();
+            cfg.tts_enabled = false;
+        }
+    }
+
+    config::apply_editor_defaults(cfg_path, &mut cfg)?;
+    config::write_config(cfg_path, &cfg)?;
+    apply_runtime_config(
+        current_config,
+        &state.target_language,
+        &state.source_language,
+        &state.capture_device_label,
+        &state.tts_enabled,
+        &state.audio_consent,
+        restart_required,
+        playback_service,
+        cfg,
+    );
+    tracing::info!(branch = ?patch.branch, "first-run wizard config applied");
+    Ok(())
+}
 
 /// Execute a [`UserAction`] against the shared application state.
 fn handle_action(
@@ -3851,7 +4194,19 @@ fn handle_action(
 
         // Escape — dismiss open overlay (issue #64)
         UserAction::DismissOverlay => {
-            if state.config_editor_active.load(Ordering::Relaxed) {
+            if state.wizard_active.load(Ordering::Relaxed) {
+                let outcome = state.with_wizard_mut(|wiz| wiz.handle(OnboardingEvent::Escape));
+                if let Some(Some(outcome)) = outcome {
+                    handle_wizard_outcome(
+                        outcome,
+                        state,
+                        cfg_path,
+                        current_config,
+                        restart_required,
+                        playback_service,
+                    );
+                }
+            } else if state.config_editor_active.load(Ordering::Relaxed) {
                 let onboarding = state
                     .with_config_editor_mut(|editor| {
                         if editor.mode == ConfigEditorMode::Onboarding {
@@ -3976,6 +4331,20 @@ fn handle_action(
         }
 
         UserAction::AnyKey => {}
+
+        UserAction::WizardKey(event) => {
+            let outcome = state.with_wizard_mut(|wiz| wiz.handle(event.clone()));
+            if let Some(Some(outcome)) = outcome {
+                handle_wizard_outcome(
+                    outcome,
+                    state,
+                    cfg_path,
+                    current_config,
+                    restart_required,
+                    playback_service,
+                );
+            }
+        }
 
         // R — signal config reload (issue #64)
         UserAction::ReloadConfig => match config::load(cfg_path) {
@@ -4547,7 +4916,7 @@ mod tests {
         let key = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
 
         assert_eq!(
-            key_to_action(&key, false, true),
+            key_to_action(&key, false, true, false),
             Some(UserAction::ConfigCycleCaptureDevice)
         );
     }
@@ -4921,7 +5290,10 @@ mod tests {
     fn unmapped_key_wakes_any_key_waits() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
 
-        assert_eq!(key_to_action(&key, false, false), Some(UserAction::AnyKey));
+        assert_eq!(
+            key_to_action(&key, false, false, false),
+            Some(UserAction::AnyKey)
+        );
     }
 
     #[test]
@@ -4930,7 +5302,7 @@ mod tests {
             let key = KeyEvent::new(key_code, KeyModifiers::NONE);
 
             assert_eq!(
-                key_to_action(&key, false, false),
+                key_to_action(&key, false, false, false),
                 Some(UserAction::OpenSettings)
             );
         }
@@ -4986,14 +5358,15 @@ mod tests {
     fn config_editor_keys_route_when_settings_are_open() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
         assert_eq!(
-            key_to_action(&key, false, true),
+            key_to_action(&key, false, true, false),
             Some(UserAction::ConfigChar('x'))
         );
         assert_eq!(
             key_to_action(
                 &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
                 false,
-                true
+                true,
+                false
             ),
             Some(UserAction::Quit)
         );
@@ -5001,7 +5374,8 @@ mod tests {
             key_to_action(
                 &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
                 false,
-                true
+                true,
+                false
             ),
             Some(UserAction::ConfigNextField)
         );
@@ -5009,7 +5383,8 @@ mod tests {
             key_to_action(
                 &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
                 false,
-                true
+                true,
+                false
             ),
             Some(UserAction::ConfigInput(InputRequest::GoToPrevChar))
         );
@@ -5017,7 +5392,8 @@ mod tests {
             key_to_action(
                 &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
                 false,
-                true
+                true,
+                false
             ),
             Some(UserAction::ConfigInput(InputRequest::DeleteNextChar))
         );

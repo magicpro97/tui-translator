@@ -134,6 +134,11 @@ pub struct ModelBootstrapManifest {
     pub size_bytes: u64,
     /// URL pointing to the license text shown before download.
     pub license_url: String,
+    /// Full license body text shown to the user before download.
+    ///
+    /// Required; parse fails if this field is absent from JSON.
+    /// Validation rejects empty/whitespace values and unsafe control characters.
+    pub license_text: String,
     /// Canonical HTTPS download URL for the model file.
     pub source_url: String,
 }
@@ -188,6 +193,7 @@ impl ModelBootstrapManifest {
                 "license_url must not be empty".to_string(),
             ));
         }
+        validate_license_text(&self.license_text)?;
         if self.source_url.trim().is_empty() {
             return Err(BootstrapError::InvalidManifest(
                 "source_url must not be empty".to_string(),
@@ -195,6 +201,107 @@ impl ModelBootstrapManifest {
         }
         Ok(())
     }
+
+    /// Construct a `ModelBootstrapManifest` from a built-in [`ModelSpec`] and
+    /// a version string.
+    ///
+    /// The `license_url` and `license_text` fields are taken directly from the
+    /// spec, so the resulting manifest is always consistent with the embedded
+    /// metadata.  The caller is responsible for supplying a meaningful
+    /// `version`; a date string such as `"2024-02-01"` is conventional.
+    ///
+    /// [`ModelSpec`]: super::ModelSpec
+    pub fn from_spec(spec: &super::ModelSpec, version: impl Into<String>) -> Self {
+        Self {
+            name: spec.id.display_name().to_string(),
+            version: version.into(),
+            sha256: spec.sha256.to_string(),
+            size_bytes: spec.size_bytes,
+            license_url: spec.license_url.to_string(),
+            license_text: spec.license_text.to_string(),
+            source_url: spec.download_url.to_string(),
+        }
+    }
+}
+
+/// Consent and license metadata for one local model.
+///
+/// Unlike [`ModelBootstrapManifest`], this type intentionally does not carry
+/// download-only fields such as SHA-256 or byte size.  It is the appropriate
+/// shape for multi-file local models whose consent record still uses the same
+/// `(model, version, license_url)` contract.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelConsentManifest {
+    /// Stable model name used in consent file naming and log messages.
+    pub name: String,
+    /// Monotonic version string; changing this triggers a new consent prompt.
+    pub version: String,
+    /// URL pointing to the license text shown before local model use.
+    pub license_url: String,
+    /// Full license body text shown to the user before local model use.
+    pub license_text: String,
+}
+
+impl ModelConsentManifest {
+    /// Validate that consent metadata is usable for a license prompt.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BootstrapError::InvalidManifest`] for empty identifiers or
+    /// unsafe license text.
+    pub fn validate(&self) -> Result<(), BootstrapError> {
+        if self.name.trim().is_empty() {
+            return Err(BootstrapError::InvalidManifest(
+                "name must not be empty".to_string(),
+            ));
+        }
+        if self.version.trim().is_empty() {
+            return Err(BootstrapError::InvalidManifest(
+                "version must not be empty".to_string(),
+            ));
+        }
+        if self.license_url.trim().is_empty() {
+            return Err(BootstrapError::InvalidManifest(
+                "license_url must not be empty".to_string(),
+            ));
+        }
+        validate_license_text(&self.license_text)
+    }
+}
+
+impl From<&ModelBootstrapManifest> for ModelConsentManifest {
+    fn from(manifest: &ModelBootstrapManifest) -> Self {
+        Self {
+            name: manifest.name.clone(),
+            version: manifest.version.clone(),
+            license_url: manifest.license_url.clone(),
+            license_text: manifest.license_text.clone(),
+        }
+    }
+}
+
+fn validate_license_text(text: &str) -> Result<(), BootstrapError> {
+    if text.trim().is_empty() {
+        return Err(BootstrapError::InvalidManifest(
+            "license_text must not be empty or whitespace".to_string(),
+        ));
+    }
+    for c in text.chars() {
+        let cp = c as u32;
+        // Reject ASCII control characters except horizontal tab, newline, carriage return.
+        if cp < 0x20 && c != '\t' && c != '\n' && c != '\r' {
+            return Err(BootstrapError::InvalidManifest(format!(
+                "license_text contains disallowed control character U+{cp:04X}"
+            )));
+        }
+        // Reject DEL.
+        if cp == 0x7F {
+            return Err(BootstrapError::InvalidManifest(
+                "license_text contains disallowed DEL character (U+007F)".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ── Consent record ────────────────────────────────────────────────────────────
@@ -319,6 +426,22 @@ pub fn offline_guard(model_name: &str) -> Result<(), BootstrapError> {
 /// Returns an error for I/O or serialisation failures.
 #[tracing::instrument(skip_all, fields(model = %manifest.name, version = %manifest.version))]
 pub fn write_consent_record(manifest: &ModelBootstrapManifest) -> Result<()> {
+    write_model_consent_record(&ModelConsentManifest::from(manifest))
+}
+
+/// Write a consent record for local model consent metadata.
+///
+/// Use this for models whose license consent is required but whose download
+/// metadata does not fit the single-file [`ModelBootstrapManifest`] shape.
+///
+/// # Errors
+///
+/// Returns an error for invalid metadata, I/O, or serialisation failures.
+#[tracing::instrument(skip_all, fields(model = %manifest.name, version = %manifest.version))]
+pub fn write_model_consent_record(manifest: &ModelConsentManifest) -> Result<()> {
+    manifest
+        .validate()
+        .context("invalid local model consent metadata")?;
     let dir = consent_dir().context("failed to resolve consent directory")?;
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("failed to create consent directory {}", dir.display()))?;
@@ -367,6 +490,106 @@ fn sanitize_for_filename(s: &str) -> String {
             }
         })
         .collect()
+}
+
+// ── Consent status ────────────────────────────────────────────────────────────
+
+/// Whether a user has already given consent for a specific model/version.
+///
+/// Returned by [`consent_status`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsentStatus {
+    /// A valid consent record exists and matches the current manifest version
+    /// and license URL.
+    Fresh,
+
+    /// No consent record exists for this model/version.
+    Missing,
+
+    /// A consent record exists but is outdated: either the model version or
+    /// the license URL has changed since consent was last recorded.
+    Stale {
+        /// Human-readable explanation of why the record is considered stale.
+        reason: String,
+    },
+}
+
+/// Check whether a valid consent record already exists for `manifest`.
+///
+/// Reads the consent file for the sanitized `name`/`version` pair and
+/// compares the stored `version` and `license_url` against the manifest.
+/// Returns:
+///
+/// * [`ConsentStatus::Fresh`] — file exists and both fields match.
+/// * [`ConsentStatus::Missing`] — file does not exist.
+/// * [`ConsentStatus::Stale`] — file exists but `version` or `license_url`
+///   differs.
+///
+/// # Errors
+///
+/// Returns [`BootstrapError::Io`] if the consent file exists but cannot be
+/// read or parsed.
+pub fn consent_status(manifest: &ModelBootstrapManifest) -> Result<ConsentStatus, BootstrapError> {
+    model_consent_status(&ModelConsentManifest::from(manifest))
+}
+
+/// Check whether a valid consent record already exists for `manifest`.
+///
+/// This is the consent-only counterpart to [`consent_status`] for local models
+/// that do not have single-file bootstrap metadata.
+///
+/// # Errors
+///
+/// Returns [`BootstrapError::Io`] if the consent file exists but cannot be read
+/// or parsed.
+pub fn model_consent_status(
+    manifest: &ModelConsentManifest,
+) -> Result<ConsentStatus, BootstrapError> {
+    let dir = consent_dir().map_err(|e| BootstrapError::Io {
+        path: PathBuf::from("<consent_dir>"),
+        source: std::io::Error::other(e.to_string()),
+    })?;
+
+    let file_name = format!(
+        "models-{}-{}.json",
+        sanitize_for_filename(&manifest.name),
+        sanitize_for_filename(&manifest.version)
+    );
+    let path = dir.join(&file_name);
+
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ConsentStatus::Missing);
+        }
+        Err(source) => {
+            return Err(BootstrapError::Io { path, source });
+        }
+    };
+
+    let record: ConsentRecord = serde_json::from_str(&raw).map_err(|e| BootstrapError::Io {
+        path: path.clone(),
+        source: std::io::Error::other(e.to_string()),
+    })?;
+
+    if record.version != manifest.version {
+        return Ok(ConsentStatus::Stale {
+            reason: format!(
+                "consent version {:?} does not match manifest version {:?}",
+                record.version, manifest.version
+            ),
+        });
+    }
+    if record.license_url != manifest.license_url {
+        return Ok(ConsentStatus::Stale {
+            reason: format!(
+                "consent license_url {:?} does not match manifest license_url {:?}",
+                record.license_url, manifest.license_url
+            ),
+        });
+    }
+
+    Ok(ConsentStatus::Fresh)
 }
 
 // ── Cache verification ────────────────────────────────────────────────────────
@@ -556,6 +779,7 @@ mod tests {
             "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
             "size_bytes": 77704715,
             "license_url": "https://huggingface.co/openai/whisper-tiny/blob/main/LICENSE",
+            "license_text": "MIT License\n\nCopyright (c) 2022 OpenAI\n",
             "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
         }"#
     }
@@ -570,28 +794,28 @@ mod tests {
 
     #[test]
     fn manifest_rejects_empty_name() {
-        let json = r#"{"name":"","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":1,"license_url":"https://x.com","source_url":"https://x.com"}"#;
+        let json = r#"{"name":"","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":1,"license_url":"https://x.com","license_text":"MIT License","source_url":"https://x.com"}"#;
         let err = ModelBootstrapManifest::from_json(json).unwrap_err();
         assert!(matches!(err, BootstrapError::InvalidManifest(_)));
     }
 
     #[test]
     fn manifest_rejects_bad_sha256() {
-        let json = r#"{"name":"m","version":"1","sha256":"deadbeef","size_bytes":1,"license_url":"https://x.com","source_url":"https://x.com"}"#;
+        let json = r#"{"name":"m","version":"1","sha256":"deadbeef","size_bytes":1,"license_url":"https://x.com","license_text":"MIT License","source_url":"https://x.com"}"#;
         let err = ModelBootstrapManifest::from_json(json).unwrap_err();
         assert!(matches!(err, BootstrapError::InvalidManifest(_)));
     }
 
     #[test]
     fn manifest_rejects_uppercase_sha256() {
-        let json = r#"{"name":"m","version":"1","sha256":"921E4CF8686FDD993DCD081A5DA5B6C365BFDE1162E72B08D75AC75289920B1F","size_bytes":1,"license_url":"https://x.com","source_url":"https://x.com"}"#;
+        let json = r#"{"name":"m","version":"1","sha256":"921E4CF8686FDD993DCD081A5DA5B6C365BFDE1162E72B08D75AC75289920B1F","size_bytes":1,"license_url":"https://x.com","license_text":"MIT License","source_url":"https://x.com"}"#;
         let err = ModelBootstrapManifest::from_json(json).unwrap_err();
         assert!(matches!(err, BootstrapError::InvalidManifest(_)));
     }
 
     #[test]
     fn manifest_rejects_zero_size() {
-        let json = r#"{"name":"m","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":0,"license_url":"https://x.com","source_url":"https://x.com"}"#;
+        let json = r#"{"name":"m","version":"1","sha256":"921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f","size_bytes":0,"license_url":"https://x.com","license_text":"MIT License","source_url":"https://x.com"}"#;
         let err = ModelBootstrapManifest::from_json(json).unwrap_err();
         assert!(matches!(err, BootstrapError::InvalidManifest(_)));
     }
@@ -781,6 +1005,7 @@ mod tests {
             sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f".to_string(),
             size_bytes: 77_704_715,
             license_url: "https://huggingface.co/openai/whisper-tiny/blob/main/LICENSE".to_string(),
+            license_text: "MIT License\n\nCopyright (c) 2022 OpenAI\n".to_string(),
             source_url:
                 "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
                     .to_string(),
@@ -816,6 +1041,7 @@ mod tests {
             sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".to_string(),
             size_bytes: 5,
             license_url: "https://example.com/license".to_string(),
+            license_text: "MIT License".to_string(),
             source_url: "https://example.com/model".to_string(),
         };
 

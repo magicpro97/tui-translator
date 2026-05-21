@@ -1,0 +1,232 @@
+//! Integration tests for the LF-05 onboarding wizard state machine and
+//! consent manifest functions.
+
+#[path = "../src/tui/onboarding.rs"]
+mod onboarding;
+
+#[path = "../src/providers/mod.rs"]
+mod providers;
+
+use onboarding::{
+    LocalModelLicense, OnboardingBranch, OnboardingEvent, OnboardingOutcome, OnboardingStep,
+    OnboardingWizardState,
+};
+use providers::local::bootstrap::{
+    model_consent_status, write_model_consent_record, ConsentStatus, LOCAL_DATA_DIR_OVERRIDE_ENV,
+};
+
+use tempfile::TempDir;
+
+// ── Wizard state machine tests ────────────────────────────────────────────────
+
+#[test]
+fn wizard_new_starts_at_branch_selection() {
+    let wizard = OnboardingWizardState::new(vec![]);
+    assert_eq!(wizard.step, OnboardingStep::BranchSelection);
+    assert_eq!(wizard.branch, OnboardingBranch::LocalOnly);
+    assert!(!wizard.consent_only);
+}
+
+#[test]
+fn wizard_local_only_no_models_produces_confirmation() {
+    let mut wizard = OnboardingWizardState::new(vec![]);
+    // Enter on BranchSelection → Confirmation (no local models)
+    let result = wizard.handle(OnboardingEvent::Enter);
+    assert!(result.is_none());
+    assert_eq!(wizard.step, OnboardingStep::Confirmation);
+    // Enter on Confirmation → Done
+    let result = wizard.handle(OnboardingEvent::Enter);
+    assert!(matches!(result, Some(OnboardingOutcome::Done(_))));
+}
+
+#[test]
+fn wizard_local_only_with_models_goes_through_license_review() {
+    let license = LocalModelLicense {
+        display_name: "Test Model".to_string(),
+        license_text: "MIT License text".to_string(),
+    };
+    let mut wizard = OnboardingWizardState::new(vec![license]);
+    // Enter → LicenseReview
+    wizard.handle(OnboardingEvent::Enter);
+    assert!(matches!(
+        wizard.step,
+        OnboardingStep::LicenseReview { model_index: 0 }
+    ));
+    // Enter accepts license → Confirmation
+    wizard.handle(OnboardingEvent::Enter);
+    assert_eq!(wizard.step, OnboardingStep::Confirmation);
+    // Enter → Done
+    let result = wizard.handle(OnboardingEvent::Enter);
+    assert!(
+        matches!(result, Some(OnboardingOutcome::Done(p)) if p.branch == OnboardingBranch::LocalOnly)
+    );
+}
+
+#[test]
+fn wizard_escape_at_branch_selection_cancels() {
+    let mut wizard = OnboardingWizardState::new(vec![]);
+    let result = wizard.handle(OnboardingEvent::Escape);
+    assert_eq!(result, Some(OnboardingOutcome::Cancelled));
+}
+
+#[test]
+fn wizard_google_cloud_skips_license_review() {
+    let license = LocalModelLicense {
+        display_name: "Whisper".to_string(),
+        license_text: "MIT text".to_string(),
+    };
+    let mut wizard = OnboardingWizardState::new(vec![license]);
+    // Select GoogleCloud
+    wizard.handle(OnboardingEvent::SelectBranch3);
+    assert_eq!(wizard.branch, OnboardingBranch::GoogleCloud);
+    // Enter → GoogleKeyEntry (skips LicenseReview)
+    wizard.handle(OnboardingEvent::Enter);
+    assert_eq!(wizard.step, OnboardingStep::GoogleKeyEntry);
+}
+
+#[test]
+fn wizard_google_cloud_key_entry_collects_key() {
+    let mut wizard = OnboardingWizardState::new(vec![]);
+    wizard.handle(OnboardingEvent::SelectBranch3);
+    wizard.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
+    wizard.handle(OnboardingEvent::Char('A'));
+    wizard.handle(OnboardingEvent::Char('I'));
+    wizard.handle(OnboardingEvent::Char('Z'));
+    assert_eq!(wizard.key_buffer, "AIZ");
+    // Backspace removes last char
+    wizard.handle(OnboardingEvent::Backspace);
+    assert_eq!(wizard.key_buffer, "AI");
+}
+
+// ── consent_only wizard ───────────────────────────────────────────────────────
+
+#[test]
+fn new_consent_review_sets_consent_only_true() {
+    let licenses = vec![LocalModelLicense {
+        display_name: "Model".to_string(),
+        license_text: "License text".to_string(),
+    }];
+    let wizard = OnboardingWizardState::new_consent_review(licenses, OnboardingBranch::LocalOnly);
+    assert!(wizard.consent_only);
+    assert!(matches!(
+        wizard.step,
+        OnboardingStep::LicenseReview { model_index: 0 }
+    ));
+}
+
+#[test]
+fn consent_only_wizard_emits_done_after_accepting_all_licenses() {
+    let licenses = vec![
+        LocalModelLicense {
+            display_name: "Whisper".to_string(),
+            license_text: "MIT text".to_string(),
+        },
+        LocalModelLicense {
+            display_name: "OPUS-MT".to_string(),
+            license_text: "Apache text".to_string(),
+        },
+    ];
+    let mut wizard =
+        OnboardingWizardState::new_consent_review(licenses, OnboardingBranch::LocalOnly);
+    // Accept first license
+    let r1 = wizard.handle(OnboardingEvent::Enter);
+    assert!(r1.is_none(), "should not be done after first license");
+    // Accept second license → Done (no key entry or confirmation)
+    let r2 = wizard.handle(OnboardingEvent::Enter);
+    assert!(
+        matches!(r2, Some(OnboardingOutcome::Done(p)) if p.branch == OnboardingBranch::LocalOnly && p.google_api_key.is_none()),
+        "should emit Done with no google_api_key"
+    );
+}
+
+#[test]
+fn consent_only_wizard_escape_cancels_at_first_model() {
+    let licenses = vec![LocalModelLicense {
+        display_name: "Model".to_string(),
+        license_text: "Text".to_string(),
+    }];
+    let mut wizard =
+        OnboardingWizardState::new_consent_review(licenses, OnboardingBranch::LocalOnly);
+    let result = wizard.handle(OnboardingEvent::Escape);
+    assert_eq!(result, Some(OnboardingOutcome::Cancelled));
+}
+
+// ── render_wizard_lines ───────────────────────────────────────────────────────
+
+#[test]
+fn render_wizard_lines_includes_license_text() {
+    let unique_text = "UNIQUE_LICENSE_SENTINEL_12345";
+    let wizard = OnboardingWizardState::new(vec![LocalModelLicense {
+        display_name: "Test Model".to_string(),
+        license_text: unique_text.to_string(),
+    }]);
+    // Move to LicenseReview
+    let mut w = wizard;
+    w.handle(OnboardingEvent::Enter);
+    let lines = onboarding::render_wizard_lines(&w);
+    let joined = lines.join("\n");
+    assert!(
+        joined.contains(unique_text),
+        "rendered lines must contain the license text"
+    );
+}
+
+#[test]
+fn render_wizard_lines_branch_selection_shows_all_branches() {
+    let wizard = OnboardingWizardState::new(vec![]);
+    let lines = onboarding::render_wizard_lines(&wizard);
+    let joined = lines.join("\n");
+    assert!(
+        joined.contains("Local-only"),
+        "should show LocalOnly branch"
+    );
+    assert!(
+        joined.contains("Google Cloud"),
+        "should show GoogleCloud branch"
+    );
+    assert!(
+        joined.contains("Local + Google"),
+        "should show LocalGoogleFallback branch"
+    );
+}
+
+// ── OPUS-MT manifest ──────────────────────────────────────────────────────────
+
+#[test]
+fn opus_mt_ja_vi_manifest_is_valid() {
+    let m = providers::local::opus_mt_ja_vi_consent_manifest();
+    m.validate().expect("OPUS-MT manifest must be valid");
+    assert_eq!(m.name, "opus-mt-ja-vi");
+    assert!(!m.license_text.is_empty());
+}
+
+#[test]
+fn local_model_consent_can_be_written_for_opus_mt() {
+    let _lock = providers::local::bootstrap::TEST_ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let dir = TempDir::new().unwrap();
+    std::env::set_var(LOCAL_DATA_DIR_OVERRIDE_ENV, dir.path());
+    let manifest = providers::local::opus_mt_ja_vi_consent_manifest();
+    let result = write_model_consent_record(&manifest);
+    std::env::remove_var(LOCAL_DATA_DIR_OVERRIDE_ENV);
+    result.expect("write_model_consent_record must succeed for opus-mt");
+}
+
+#[test]
+fn consent_status_returns_fresh_after_write() {
+    let _lock = providers::local::bootstrap::TEST_ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let dir = TempDir::new().unwrap();
+    std::env::set_var(LOCAL_DATA_DIR_OVERRIDE_ENV, dir.path());
+    let manifest = providers::local::opus_mt_ja_vi_consent_manifest();
+    let write_result = write_model_consent_record(&manifest);
+    let status = model_consent_status(&manifest);
+    std::env::remove_var(LOCAL_DATA_DIR_OVERRIDE_ENV);
+    write_result.expect("write must succeed");
+    assert!(
+        matches!(status, Ok(ConsentStatus::Fresh)),
+        "consent must be Fresh after writing"
+    );
+}

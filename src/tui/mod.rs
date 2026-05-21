@@ -8,6 +8,8 @@
 // dead-code lints until Phase 4 connects them.
 #![allow(dead_code)]
 
+pub mod onboarding;
+
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -158,6 +160,8 @@ pub enum UserAction {
     ScrollTop,
     /// End — jump to the newest subtitle and re-enable auto-follow.
     ScrollBottom,
+    /// A key event for the onboarding wizard overlay.
+    WizardKey(onboarding::OnboardingEvent),
     /// Any other key that should wake generic "press any key" waits.
     AnyKey,
 }
@@ -1515,6 +1519,13 @@ pub struct AppState {
     ///
     /// [`FallbackSttProvider`]: crate::pipeline::fallback::FallbackSttProvider
     pub stt_source: Arc<Mutex<SttSource>>,
+
+    /// Whether the onboarding wizard overlay is active.
+    pub wizard_active: Arc<AtomicBool>,
+    /// State for the LF-05 onboarding wizard.
+    pub wizard_state: Mutex<Option<onboarding::OnboardingWizardState>>,
+    /// Whether the wizard is in consent-review-only mode (existing config).
+    pub wizard_consent_only: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -1549,6 +1560,9 @@ impl AppState {
             pipeline_halted: Arc::new(AtomicBool::new(false)),
             audio_consent: Arc::new(AtomicBool::new(false)),
             stt_source: Arc::new(Mutex::new(SttSource::Local)),
+            wizard_active: Arc::new(AtomicBool::new(false)),
+            wizard_state: Mutex::new(None),
+            wizard_consent_only: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1740,6 +1754,43 @@ impl AppState {
         let mut guard = self.config_editor.lock().unwrap_or_else(|p| p.into_inner());
         let editor = guard.as_mut()?;
         Some(f(editor))
+    }
+
+    /// Open the onboarding wizard with the given initial state.
+    pub fn open_wizard(&self, state: onboarding::OnboardingWizardState) {
+        self.show_help.store(false, Ordering::Relaxed);
+        self.lang_prompt_active.store(false, Ordering::Relaxed);
+        *self.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        self.wizard_consent_only
+            .store(state.consent_only, Ordering::Relaxed);
+        *self.wizard_state.lock().unwrap_or_else(|p| p.into_inner()) = Some(state);
+        self.wizard_active.store(true, Ordering::Relaxed);
+    }
+
+    /// Close the onboarding wizard.
+    pub fn close_wizard(&self) {
+        self.wizard_active.store(false, Ordering::Relaxed);
+        *self.wizard_state.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// Run `f` with read-only access to the wizard state.
+    pub fn with_wizard<R>(
+        &self,
+        f: impl FnOnce(&onboarding::OnboardingWizardState) -> R,
+    ) -> Option<R> {
+        let guard = self.wizard_state.lock().unwrap_or_else(|p| p.into_inner());
+        let state = guard.as_ref()?;
+        Some(f(state))
+    }
+
+    /// Run `f` with mutable access to the wizard state.
+    pub fn with_wizard_mut<R>(
+        &self,
+        f: impl FnOnce(&mut onboarding::OnboardingWizardState) -> R,
+    ) -> Option<R> {
+        let mut guard = self.wizard_state.lock().unwrap_or_else(|p| p.into_inner());
+        let state = guard.as_mut()?;
+        Some(f(state))
     }
 }
 
@@ -2320,6 +2371,7 @@ pub fn draw_ui_with_route(
     let paused = state.paused.load(Ordering::Relaxed);
     let lang_active = state.lang_prompt_active.load(Ordering::Relaxed);
     let config_editor_active = state.config_editor_active.load(Ordering::Relaxed);
+    let wizard_active = state.wizard_active.load(Ordering::Relaxed);
     let source_language = state.source_language();
     let target_language = state.target_language();
     let stt = state.stt_state_snapshot();
@@ -2535,10 +2587,53 @@ pub fn draw_ui_with_route(
         }
     }
 
+    if wizard_active {
+        let _ = state.with_wizard(|wiz| render_wizard_overlay(frame, area, wiz));
+    }
+
     // ── Help overlay ─────────────────────────────────────────────────────────
     if show_help {
         render_help_overlay(frame, area, help_scroll);
     }
+}
+
+/// Render the LF-05 onboarding wizard as a full-area overlay.
+pub fn render_wizard_overlay(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    state: &onboarding::OnboardingWizardState,
+) {
+    let panel_w = 64u16.min(area.width);
+    let panel_h = area.height.min(32);
+    if panel_w == 0 || panel_h == 0 {
+        return;
+    }
+    let x = area.x + area.width.saturating_sub(panel_w) / 2;
+    let y = area.y + area.height.saturating_sub(panel_h) / 2;
+    let panel = Rect {
+        x,
+        y,
+        width: panel_w,
+        height: panel_h,
+    };
+
+    frame.render_widget(Clear, panel);
+
+    let lines: Vec<Line<'static>> = onboarding::render_wizard_lines(state)
+        .into_iter()
+        .map(Line::from)
+        .collect();
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(Color::White)),
+            )
+            .wrap(Wrap { trim: false }),
+        panel,
+    );
 }
 
 /// Render a centered help overlay listing all keyboard shortcuts.
@@ -4980,7 +5075,7 @@ mod tests {
 
     #[test]
     fn mask_api_key_long_returns_bullets_only() {
-        let key = "AIzaSyABCDEF123456789xyz";
+        let key = "not-a-real-api-key-for-mask-test";
         let result = mask_api_key(key);
         assert_eq!(result, "\u{2022}".repeat(8));
         assert!(
@@ -4988,7 +5083,7 @@ mod tests {
             "masked key must not contain the full original key; got: {result:?}"
         );
         assert!(
-            !result.contains("AIza") && !result.contains("6xyz"),
+            !result.contains("not-") && !result.contains("test"),
             "masked key must not expose prefix or suffix; got: {result:?}"
         );
     }
@@ -4998,7 +5093,7 @@ mod tests {
         use ratatui::{backend::TestBackend, Terminal};
         let backend = TestBackend::new(120, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let key = "AIzaSyABCDEF123456789xyz";
+        let key = "not-a-real-api-key-for-mask-test";
         let mut cfg = AppConfig::default();
         cfg.google_api_key = Some(key.to_string());
         let editor = ConfigEditorState::from_config(
@@ -5028,7 +5123,7 @@ mod tests {
             "rendered editor must not expose the full API key; got: {rendered:?}"
         );
         assert!(
-            !rendered.contains("AIza") && !rendered.contains("6xyz"),
+            !rendered.contains("not-") && !rendered.contains("test"),
             "rendered editor must not expose API key prefix or suffix; got: {rendered:?}"
         );
     }

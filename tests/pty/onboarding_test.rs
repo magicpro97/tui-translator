@@ -4,10 +4,10 @@ use tempfile::TempDir;
 
 // ── Onboarding layout helpers ─────────────────────────────────────────────────
 
-/// Spawn a PTY session that will trigger the first-run onboarding overlay.
+/// Spawn a PTY session that will trigger the first-run wizard overlay.
 ///
 /// Uses an isolated temporary directory as `USERPROFILE` so no pre-existing
-/// config is found and the binary opens the "First-Run Setup" overlay.
+/// config is found and the binary opens the "Setup Wizard" overlay.
 fn spawn_onboarding_session(cols: u16, rows: u16) -> (PtySession, TempDir) {
     let fake_home = TempDir::new().expect("temp home for onboarding layout test");
     let home_str = fake_home
@@ -27,43 +27,43 @@ fn spawn_onboarding_session(cols: u16, rows: u16) -> (PtySession, TempDir) {
     (session, fake_home)
 }
 
-/// Assert that the onboarding overlay is visible and structurally readable.
+/// Assert that the onboarding wizard overlay is visible and structurally readable.
 ///
 /// Checks that:
-/// 1. The "First-Run Setup" border title is present.
-/// 2. Key field labels visible at every supported size are rendered.
-/// 3. No obvious row overflow: the overlay title must not bleed into the
+/// 1. The "Setup Wizard" heading is present inside the panel.
+/// 2. The branch-selection list is rendered ("Local-only" is always the first
+///    option and must appear at every supported terminal size).
+/// 3. The confirm/navigation hint line is present.
+/// 4. No obvious row overflow: the wizard heading must not bleed into the
 ///    very last terminal row (the TUI background row).
-///
-/// Keyboard-hint assertions are size-dependent (the hint line may be clipped
-/// at small panel heights) and are performed in the individual test functions.
 fn check_onboarding_layout(session: &PtySession, cols: u16, rows: u16) {
-    // Title must be present (border title of the overlay panel).
+    // Heading line rendered as panel content (not a border title).
     assert!(
-        session.screen_contains("First-Run Setup"),
-        "onboarding panel title 'First-Run Setup' not found at {cols}×{rows}; rows:\n{}",
+        session.screen_contains("Setup Wizard"),
+        "wizard heading 'Setup Wizard' not found at {cols}×{rows}; rows:\n{}",
         session.all_rows().join("\n"),
     );
 
-    // Core field labels always visible (Source language is the first field,
-    // always active/highlighted on startup, and present at all sizes).
+    // Branch-selection list — "Local-only" is always the first option.
     assert!(
-        session.screen_contains("Source language"),
-        "'Source language' field label not found at {cols}×{rows}; rows:\n{}",
-        session.all_rows().join("\n"),
-    );
-    assert!(
-        session.screen_contains("Google API key"),
-        "'Google API key' field label not found at {cols}×{rows}; rows:\n{}",
+        session.screen_contains("Local-only"),
+        "'Local-only' branch option not found at {cols}×{rows}; rows:\n{}",
         session.all_rows().join("\n"),
     );
 
-    // The panel title must not appear in the very last row of the terminal
+    // Navigation hint line always present at the BranchSelection step.
+    assert!(
+        session.screen_contains("[Enter] Confirm"),
+        "'[Enter] Confirm' hint not found at {cols}×{rows}; rows:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    // The wizard heading must not appear in the very last row of the terminal
     // (that would indicate overflow / widget bleeding).
     let last_row = session.row_text(rows - 1);
     assert!(
-        !last_row.contains("First-Run Setup"),
-        "onboarding panel title leaked into last terminal row {}: {last_row:?}",
+        !last_row.contains("Setup Wizard"),
+        "wizard heading leaked into last terminal row {}: {last_row:?}",
         rows - 1,
     );
 }
@@ -82,14 +82,6 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
         .path()
         .to_str()
         .expect("temp home path must be valid UTF-8")
-        .to_string();
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("soak")
-        .join("soak_audio.wav");
-    let fixture_str = fixture
-        .to_str()
-        .expect("fixture path must be valid UTF-8")
         .to_string();
     let config_dir = fake_home.path().join("tui-config");
     let config_dir_str = config_dir
@@ -110,22 +102,36 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
         )
         .expect("spawn onboarding session");
         assert!(
-            session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
-            "first launch should show the onboarding overlay"
+            session.wait_for_text("Setup Wizard", STARTUP_TIMEOUT),
+            "first launch should show the setup wizard"
         );
 
-        let setup_input = format!(
-            "\t\tdemo-key\t\x08\x08\x08\x08\x08\x08file\t\t{fixture}\r",
-            fixture = fixture_str
+        // Select the GoogleCloud branch ('3'), advance to key entry, type an API
+        // key that avoids wizard-level hotkey conflicts, then confirm.
+        // '3' → SelectBranch3 (GoogleCloud); '\r' × 3 = advance × 3 steps.
+        session.send(b"3").expect("select google cloud branch");
+        std::thread::sleep(Duration::from_millis(150));
+        session.send(b"\r").expect("advance from branch selection");
+        assert!(
+            session.wait_for_text("Google API Key", STARTUP_TIMEOUT),
+            "after selecting GoogleCloud branch the key-entry step should appear"
         );
-        session
-            .send(setup_input.as_bytes())
-            .expect("save onboarding config");
+
+        // Type an API key without wizard hotkey collisions (no l/t/m/s/r/q/1/2/3).
+        session.send(b"abc-key-xyz").expect("type api key");
+        std::thread::sleep(Duration::from_millis(100));
+        session.send(b"\r").expect("advance from key entry");
+        assert!(
+            session.wait_for_text("Confirm Setup", STARTUP_TIMEOUT),
+            "after entering the API key the confirmation step should appear"
+        );
+
+        session.send(b"\r").expect("confirm wizard");
         std::thread::sleep(Duration::from_millis(600));
 
         assert!(
             config_path.exists(),
-            "saving onboarding must create a per-user config"
+            "completing the wizard must create a per-user config"
         );
         session.quit_cleanly().expect("quit first session");
         let exit = session.wait_exit(EXIT_TIMEOUT).expect("first session exit");
@@ -134,20 +140,20 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
 
     let written = std::fs::read_to_string(&config_path).expect("read saved config");
     assert!(
-        written.contains("\"google_api_key\": \"demo-key\""),
+        written.contains("\"google_api_key\": \"abc-key-xyz\""),
         "saved config should contain the typed API key; got:\n{written}"
     );
     assert!(
-        written.contains("\"audio_source\": \"file\""),
-        "saved config should switch relaunch proof to file audio; got:\n{written}"
+        written.contains("\"stt_provider\": \"google\""),
+        "saved config should set stt_provider to google for GoogleCloud branch; got:\n{written}"
     );
     assert!(
         written.contains("\"source_language\": \"ja-JP\""),
-        "saved config should keep the default source language"
+        "saved config should keep the default source language; got:\n{written}"
     );
     assert!(
         written.contains("\"target_language\": \"vi\""),
-        "saved config should keep the default target language"
+        "saved config should keep the default target language; got:\n{written}"
     );
 
     {
@@ -166,8 +172,8 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
             "relaunch should reach the normal UI"
         );
         assert!(
-            !session.screen_contains("First-Run Setup"),
-            "relaunch should use the saved per-user config instead of reopening onboarding"
+            !session.screen_contains("Setup Wizard"),
+            "relaunch should use the saved per-user config instead of reopening the wizard"
         );
         session.quit_cleanly().expect("quit relaunch session");
         let exit = session.wait_exit(EXIT_TIMEOUT).expect("relaunch exit");
@@ -339,32 +345,29 @@ fn invalid_startup_config_opens_repair_settings_instead_of_exiting() {
 
 // ── Onboarding layout tests (issue #165) ─────────────────────────────────────
 
-/// Standard 110×30 terminal — full panel (76×28, non-compact).
+/// Standard 110×30 terminal — full panel (76×28).
 ///
-/// Verifies the onboarding overlay is readable and all structural elements
-/// (border title, core field labels, keyboard hints) are present without
-/// overflow into the background rows.
-///
-/// The full panel (76×28, inner area 74×26) fits all content lines including
-/// the keyboard hint row, so extended hint text ("Tab/Down next") is assertable.
+/// Verifies the wizard overlay is readable and all structural elements
+/// (heading, branch list, navigation hint) are present without overflow
+/// into the background rows.
 #[test]
 fn onboarding_layout_standard_110x30() {
     let (mut session, _home) = spawn_onboarding_session(110, 30);
     assert!(
-        session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
-        "110×30: timed out waiting for onboarding overlay"
+        session.wait_for_text("Setup Wizard", STARTUP_TIMEOUT),
+        "110×30: timed out waiting for setup wizard"
     );
     check_onboarding_layout(&session, 110, 30);
 
-    // Full panel (76×28) is not compact: extended hint variant must be visible.
+    // Branch list must show all three options at this size.
     assert!(
-        session.screen_contains("Tab/Down next"),
-        "110×30: full panel should show extended key hints with 'Tab/Down next'; rows:\n{}",
+        session.screen_contains("Local + Google fallback"),
+        "110×30: branch list must show 'Local + Google fallback'; rows:\n{}",
         session.all_rows().join("\n"),
     );
     assert!(
-        session.screen_contains("Enter save"),
-        "110×30: full panel keyboard hint must contain 'Enter save'; rows:\n{}",
+        session.screen_contains("Google Cloud"),
+        "110×30: branch list must show 'Google Cloud'; rows:\n{}",
         session.all_rows().join("\n"),
     );
 
@@ -378,27 +381,22 @@ fn onboarding_layout_standard_110x30() {
     );
 }
 
-/// Minimum standard terminal (80×24) — panel 76×24, non-compact.
+/// Minimum standard terminal (80×24) — panel width 76, height 24.
 ///
-/// At 80 columns the panel width equals the compact threshold (76, not < 76)
-/// so non-compact rendering is used.  The panel height (24 rows, inner 22)
-/// is too small to fit every content line, but the critical structural elements
-/// — border title and field labels — are always in the first visible rows.
+/// Verifies the wizard renders without overflow at standard 80-column width.
 #[test]
 fn onboarding_layout_standard_80x24() {
     let (mut session, _home) = spawn_onboarding_session(80, 24);
     assert!(
-        session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
-        "80×24: timed out waiting for onboarding overlay"
+        session.wait_for_text("Setup Wizard", STARTUP_TIMEOUT),
+        "80×24: timed out waiting for setup wizard"
     );
     check_onboarding_layout(&session, 80, 24);
 
-    // At 80×24 the panel is non-compact (width == 76, height == 24 > 16).
-    // The intro blurb appears in non-compact mode and is always in the first
-    // visible content row, so we assert it as a compact/non-compact discriminator.
+    // Navigation hint must be present.
     assert!(
-        session.screen_contains("Save your initial config"),
-        "80×24: non-compact panel should show intro blurb; rows:\n{}",
+        session.screen_contains("[Esc] Cancel"),
+        "80×24: navigation hint must contain '[Esc] Cancel'; rows:\n{}",
         session.all_rows().join("\n"),
     );
 
@@ -409,41 +407,25 @@ fn onboarding_layout_standard_80x24() {
     assert_eq!(exit, 0, "onboarding_layout_standard_80x24: expected exit 0");
 }
 
-/// Constrained 60×22 terminal — panel 60×22, compact mode.
+/// Constrained 60×22 terminal — panel width 60, height 22.
 ///
-/// Panel width 60 < 76 triggers compact rendering: the intro blurb and extra
-/// blank lines are omitted, and the shorter key-hint line is used.  The panel
-/// inner area (58×20) is just large enough to fit all 20 compact content lines,
-/// so "Enter save" and "Tab/Shift+Tab" are assertable.
+/// Verifies the wizard renders without crashing or overflowing at a narrow
+/// terminal.  The wizard has no separate "compact mode" — it wraps text within
+/// the available width using the Paragraph widget.
 #[test]
 fn onboarding_layout_compact_60x22() {
     let (mut session, _home) = spawn_onboarding_session(60, 22);
     assert!(
-        session.wait_for_text("First-Run Setup", STARTUP_TIMEOUT),
-        "60×22: timed out waiting for onboarding overlay"
+        session.wait_for_text("Setup Wizard", STARTUP_TIMEOUT),
+        "60×22: timed out waiting for setup wizard"
     );
     check_onboarding_layout(&session, 60, 22);
 
-    // Compact mode uses the shorter hint variant ("Tab/Shift+Tab move …").
+    // The Esc hint must still be present (may wrap but text is preserved).
     assert!(
-        session.screen_contains("Tab/Shift+Tab"),
-        "60×22: compact panel should show short key hints with 'Tab/Shift+Tab'; rows:\n{}",
+        session.screen_contains("Esc"),
+        "60×22: navigation hint must contain 'Esc'; rows:\n{}",
         session.all_rows().join("\n"),
-    );
-    assert!(
-        session.screen_contains("Enter save"),
-        "60×22: compact panel keyboard hint must contain 'Enter save'; rows:\n{}",
-        session.all_rows().join("\n"),
-    );
-    // Full-panel hints must NOT appear in compact mode.
-    assert!(
-        !session.screen_contains("Tab/Down next"),
-        "60×22: compact panel must not show extended hint 'Tab/Down next'",
-    );
-    // Non-compact intro blurb must be absent in compact mode.
-    assert!(
-        !session.screen_contains("Save your initial config"),
-        "60×22: compact panel must not show the intro blurb",
     );
 
     quit_onboarding(&mut session);
