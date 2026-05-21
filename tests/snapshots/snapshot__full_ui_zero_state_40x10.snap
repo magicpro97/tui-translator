@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1502
 expression: rendered
 ---
 ┌──────────────────────────────────────┐
@@ -11,4 +12,4 @@ expression: rendered
 ┌──────────────────────────────────────┐
 │ I/L Lang:vi 0p                       │
 └──────────────────────────────────────┘
- ?  Spc  T  L  S  M  R  Q
+ ?  Spc  T  L  S  M  R  Tab  Q

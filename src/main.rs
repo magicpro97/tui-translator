@@ -1963,6 +1963,11 @@ fn main() -> Result<()> {
         .unwrap_or_else(|p| p.into_inner())
         .clone();
     state.set_target_language(loaded_config.target_language.clone());
+    // DM-04: remember slot-A MT provider so dual-pane titles can show it.
+    *state
+        .slot_a_provider_name
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = loaded_config.mt_provider.clone();
     // Initialise source_language from the loaded config so AppState and the
     // orchestrator start with the same value.
     overwrite_source_language(&state.source_language, &loaded_config.source_language);
@@ -2604,6 +2609,11 @@ fn main() -> Result<()> {
                                     ctx_b,
                                 )));
                                 tracing::info!("dual-slot mode: slot B orchestrator started");
+                                state.wire_slot_b(
+                                    Arc::clone(&slot_b_state.subtitle_pane),
+                                    slot_b_cfg.target_language.clone(),
+                                    slot_b_cfg.mt_provider.clone(),
+                                );
                             }
                             (Err(err), _) => {
                                 tracing::error!(
@@ -4020,6 +4030,10 @@ fn key_to_action(
         KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
         KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
         KeyCode::Char('?') => Some(UserAction::ToggleHelp),
+        // Tab — toggle A/B pane focus (DM-04, issue #380).
+        // Config editor handles its own Tab (ConfigNextField) in the branch
+        // above, so this only fires in normal mode.
+        KeyCode::Tab => Some(UserAction::TogglePaneFocus),
         // Scrolling
         KeyCode::Up => Some(UserAction::ScrollUp),
         KeyCode::Down => Some(UserAction::ScrollDown),
@@ -4509,6 +4523,11 @@ fn handle_action(
         }
 
         UserAction::AnyKey => {}
+
+        // Tab — DM-04 dual-pane focus toggle.
+        UserAction::TogglePaneFocus => {
+            state.toggle_pane_focus();
+        }
 
         UserAction::WizardKey(event) => {
             let outcome = state.with_wizard_mut(|wiz| wiz.handle(event.clone()));

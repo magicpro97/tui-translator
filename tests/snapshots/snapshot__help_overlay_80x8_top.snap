@@ -1,8 +1,9 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1662
 expression: "render_help(80, 8, 0)"
 ---
-            ┌ Help [0/8] — ↑↓ scroll · Esc close ──────────────────┐            
+            ┌ Help [0/9] — ↑↓ scroll · Esc close ──────────────────┐            
             │ Keyboard Shortcuts                                   │            
             │                                                      │            
             │  ↑ / ↓     Scroll subtitles/help                     │            
