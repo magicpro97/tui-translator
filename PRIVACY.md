@@ -39,13 +39,16 @@ file.
 | Data | Destination | When |
 |------|-------------|------|
 | Raw audio chunks (PCM) | Local Whisper STT (CPU only) | Continuously while listening — audio never leaves the device by default |
-| Recognised transcript text | Google Cloud Translation API | After each utterance (default `mt_provider = "google"`) |
+| Recognised transcript text | Google Cloud Translation API | After each utterance when `mt_provider = "google"` and `google_api_key` is configured |
 | Translated text | Google Text-to-Speech API | Only when `tts_enabled: true` |
 
 Audio never leaves your device for transcription when `stt_provider = "local"`
-(the default).  Transcript text is sent to Google Cloud Translation unless
-`mt_provider = "local"` is configured.  TUI Translator never sends audio or
-text to any third party other than the cloud providers you configure.
+(the default) and the subtitle pipeline is running.  Transcript text is sent to
+Google Cloud Translation only when `mt_provider = "google"` and
+`google_api_key` is configured; with no Google key and no local MT provider, the
+app starts in metrics-only mode and does not produce transcript text to send.
+TUI Translator never sends audio or text to any third party other than the cloud
+providers you configure.
 
 When `google_api_key` is set, it is stored in plain text in
 `%APPDATA%\tui-translator\config.json`.  It is never transmitted anywhere

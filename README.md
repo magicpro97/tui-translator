@@ -97,6 +97,8 @@ The packaged flow is documented in **[USAGE.md](USAGE.md)**.
 If you want to try the current build from source:
 
 1. Build the project from source (see [Building from source](#building-from-source)).
+   Use `--features local-stt` if you want the local-first STT path in a source
+   build.
 2. Run the generated executable:
 
    ```
@@ -105,10 +107,12 @@ If you want to try the current build from source:
 
 3. The terminal window opens showing the subtitle area, audio-level bar,
    and status strip. The current WASAPI device name appears in the audio bar.
-4. If `config.json` does not contain a valid Google API key, the app still
-   launches and renders the TUI shell. Local STT (`stt_provider: "local"`)
-   works without a key. Cloud translation (`mt_provider: "google"`) will
-   show a provider error until a key is supplied.
+4. Local STT (`stt_provider: "local"`) does not need a Google API key once the
+   executable includes the `local-stt` feature and the model is installed.
+   Because translation defaults to `mt_provider: "google"`, the full subtitle
+   pipeline still needs either a Google API key or `mt_provider: "local"` in a
+   local-MT build with the OPUS-MT bundle installed. Without either translation
+   provider, the app opens in metrics-only mode and shows no live subtitles.
 5. Press `q` or `Ctrl+C` to close cleanly and show the session summary.
 
 ### Keyboard controls
@@ -200,9 +204,11 @@ Never put your real API key in `config.example.json`.
 
 > **Local STT is the default.** TUI Translator uses CPU-local Whisper for
 > speech-to-text out of the box — no Google API key or internet connection is
-> needed for transcription.  Translation uses Google Cloud by default and
-> requires a Google API key.  Local machine translation is available when
-> `mt_provider = "local"` is configured with the OPUS-MT model installed.
+> needed for transcription in release builds that include the local-STT feature.
+> Translation uses Google Cloud by default and requires a Google API key for the
+> full subtitle pipeline.  Local machine translation is available when a
+> local-MT build is used and `mt_provider = "local"` is configured with the
+> OPUS-MT model installed.
 
 ### When local STT is especially useful
 

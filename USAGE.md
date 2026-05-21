@@ -47,10 +47,13 @@ It takes about ten minutes from start to finish.
 
 - A **Windows 10 or Windows 11** computer (64-bit).
 - **Zoom** installed and working normally on that computer.
-- *(Optional, for translation)* A **Google Cloud account** with a project that has a billing method attached.
-  Speech-to-text runs locally by default and does not require a Google account or API key.
-- *(Optional, for translation)* A **Google Cloud API key** for that project — needed for cloud translation
-  and TTS (see Step 3 below).
+- A **Google Cloud account** with a project that has a billing method attached,
+  unless you configure local machine translation. Speech-to-text runs locally by
+  default, but translation defaults to Google Cloud.
+- A **Google Cloud API key** for that project, unless `mt_provider = "local"` is
+  configured in a local-MT build with the OPUS-MT bundle installed. Without a
+  Google key or local MT, the app starts in metrics-only mode and shows no live
+  subtitles.
 
 ---
 
@@ -561,8 +564,9 @@ With this configuration, Zoom audio flows through the virtual cable and TUI Tran
 ## Local Speech-to-Text — Default Behaviour
 
 TUI Translator uses CPU-local Whisper for speech-to-text by default.
-No audio is sent to any cloud service for transcription, and no API key
-is needed for speech recognition.
+When the subtitle pipeline is running with `stt_provider = "local"`, no audio is
+sent to any cloud service for transcription, and no API key is needed for speech
+recognition.
 
 > **Translation still uses Google Cloud by default.**
 > Local speech-to-text (STT) is the default (`stt_provider = "local"`).
@@ -570,8 +574,8 @@ is needed for speech recognition.
 > Google API key and an internet connection for subtitle output.  To run
 > translation fully offline, set `mt_provider = "local"` and install the
 > OPUS-MT ONNX bundle.  Without a Google API key and without local MT
-> configured, the application captures audio and runs STT but shows a
-> provider error instead of translated subtitles.
+> configured, the application starts in metrics-only mode and shows no live
+> subtitles.
 
 ---
 
