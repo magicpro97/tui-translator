@@ -188,6 +188,9 @@ struct FinishMainArgs<'a> {
     current_config: &'a Arc<Mutex<config::AppConfig>>,
     playback_service: &'a SharedPlaybackService,
     orchestrator_join: Option<tokio::task::JoinHandle<()>>,
+    // DM-03 (issue #379): slot B join handle; `None` in single-slot mode or
+    // when slot B failed to initialise.
+    orchestrator_join_b: Option<tokio::task::JoinHandle<()>>,
     orchestrator_shutdown: Arc<AtomicBool>,
     // ── Observability (issues #79–#83) ─────────────────────────────────────
     /// Watch receiver for per-second process snapshots (issue #79).
@@ -522,8 +525,13 @@ fn has_google_api_key(google_api_key: Option<&str>) -> bool {
         .is_some_and(|key| !key.is_empty())
 }
 
-fn stt_local_unavailable_is_fatal(cfg: &config::AppConfig) -> bool {
-    match (cfg.stt_provider.as_str(), cfg.stt_fallback_policy.as_str()) {
+/// Returns `true` when a permanent local-unavailable error must halt the
+/// pipeline for the given `stt_provider` string from a slot config.
+///
+/// Extracted so both the flat-config path and the per-slot dual-mode path can
+/// share the same policy logic (DM-03, issue #379).
+fn stt_local_unavailable_is_fatal_for_slot(stt_provider: &str, cfg: &config::AppConfig) -> bool {
+    match (stt_provider, cfg.stt_fallback_policy.as_str()) {
         ("google", "local") => true,
         ("local", "none") => true,
         ("local", "google-when-keyed") => !has_google_api_key(cfg.google_api_key.as_deref()),
@@ -531,14 +539,18 @@ fn stt_local_unavailable_is_fatal(cfg: &config::AppConfig) -> bool {
     }
 }
 
-fn build_runtime_stt_provider(
+/// Build the runtime STT provider for a single slot, using `stt_provider` from
+/// the slot config and shared settings (`stt_fallback_policy`, `stt_phrase_hints`,
+/// `google_api_key`) from the top-level `AppConfig` (DM-03, issue #379).
+fn build_slot_stt_provider(
+    stt_provider: &str,
     cfg: &config::AppConfig,
     google_api_key: Option<&str>,
     status_msg: std::sync::Arc<std::sync::Mutex<Option<String>>>,
     local_provider_active: Arc<AtomicBool>,
     stt_source: Arc<Mutex<SttSource>>,
 ) -> std::result::Result<RuntimeSttProvider, providers::ProviderError> {
-    match cfg.stt_provider.as_str() {
+    match stt_provider {
         "google" => {
             let key = google_api_key.ok_or_else(|| {
                 providers::ProviderError::InvalidInput(
@@ -548,17 +560,11 @@ fn build_runtime_stt_provider(
             let google = providers::google::stt::GoogleSttProvider::new(key)?
                 .with_phrase_hints(cfg.stt_phrase_hints.clone());
 
-            // Issue #214: if the fallback policy is "local", wrap Google in a
-            // FallbackSttProvider so it automatically switches to local Whisper
-            // on the first AuthError.
             let policy =
                 pipeline::fallback::SttFallbackPolicy::from_config(&cfg.stt_fallback_policy)
                     .unwrap_or(pipeline::fallback::SttFallbackPolicy::None);
 
             if policy == pipeline::fallback::SttFallbackPolicy::Local {
-                // Attempt to pre-build the local provider.  Failures here are
-                // not fatal at startup: the error is stored so it surfaces
-                // with an actionable message when the fallback is first needed.
                 let (fallback, fallback_err) = match providers::local::LocalWhisperSttProvider::new(
                     providers::local::ModelId::Tiny,
                 ) {
@@ -588,7 +594,6 @@ fn build_runtime_stt_provider(
         }
         #[cfg(feature = "local-stt")]
         "local" => {
-            // Issue #371 / LF-03: local-primary with optional Google fallback.
             let policy =
                 pipeline::fallback::SttFallbackPolicy::from_config(&cfg.stt_fallback_policy)
                     .unwrap_or(pipeline::fallback::SttFallbackPolicy::None);
@@ -633,9 +638,6 @@ fn build_runtime_stt_provider(
                         ))
                     }
                     Err(e) => {
-                        // Local init failed at startup → use stub primary so
-                        // Google activates on the first transcribe call (Opus
-                        // decision #2, issue #371).
                         tracing::warn!(
                             "local STT unavailable at startup; will use Google fallback \
                              immediately (google-when-keyed, issue #371): {e}"
@@ -654,7 +656,6 @@ fn build_runtime_stt_provider(
                     }
                 }
             } else {
-                // policy=none or any other value: simple local-only provider.
                 providers::local::LocalWhisperSttProvider::new(providers::local::ModelId::Tiny).map(
                     |p| {
                         local_provider_active.store(true, Ordering::Relaxed);
@@ -673,12 +674,14 @@ fn build_runtime_stt_provider(
     }
 }
 
-fn build_runtime_mt_provider(
-    cfg: &config::AppConfig,
+/// Build the runtime MT provider for a single slot using `mt_provider` from the
+/// slot config and the shared `google_api_key` (DM-03, issue #379).
+fn build_slot_mt_provider(
+    mt_provider: &str,
     google_api_key: Option<&str>,
     cost_reporter: Arc<dyn providers::CostReporter>,
 ) -> std::result::Result<RuntimeMtProvider, providers::ProviderError> {
-    match cfg.mt_provider.as_str() {
+    match mt_provider {
         "google" => {
             let key = google_api_key.ok_or_else(|| {
                 providers::ProviderError::InvalidInput(
@@ -2065,6 +2068,8 @@ fn main() -> Result<()> {
     let orchestrator_shutdown = Arc::new(AtomicBool::new(false));
     // Handle returned by the orchestrator task; `None` when no API key is set.
     let orchestrator_join: Option<tokio::task::JoinHandle<()>>;
+    // DM-03 (issue #379): slot B join handle; `None` in single-slot mode.
+    let mut orchestrator_join_b: Option<tokio::task::JoinHandle<()>> = None;
     // Issue #393: storage metrics handles — populated from recorder/archive when
     // the orchestrator starts; default (all-zero) for early-exit paths.
     let mut storage = StorageMetricsHandles::default();
@@ -2113,6 +2118,7 @@ fn main() -> Result<()> {
                 current_config: &current_config,
                 playback_service: &playback_service,
                 orchestrator_join,
+                orchestrator_join_b: None,
                 orchestrator_shutdown,
                 process_rx,
                 e2e_latency,
@@ -2180,9 +2186,9 @@ fn main() -> Result<()> {
 
             // DM-02 (issue #378): insert fanout node after capture.
             // Slot A → primary consumer (orchestrator / metrics-only task).
-            // Slot B has no consumer in DM-02. Close it immediately so the
-            // fanout task takes the Closed branch instead of filling the queue
-            // and reporting false drops.
+            // DM-03 (issue #379): in dual-slot mode keep slot B for the second
+            // orchestrator; drop it immediately in single-slot mode so the
+            // fanout task takes the Closed branch and reports no false drops.
             let audio::CaptureStream {
                 info: capture_info,
                 receiver: capture_rx,
@@ -2194,7 +2200,14 @@ fn main() -> Result<()> {
                 audio::start_fanout(capture_rx)
             };
             fanout_counters = Arc::clone(&fanout_handle.counters);
-            drop(fanout_handle.slot_b);
+            let slot_mode = cfg_snapshot.slot_mode();
+            let slot_a_cfg = cfg_snapshot.slot_a();
+            let slot_b_receiver = if slot_mode == config::SlotMode::Dual {
+                Some(fanout_handle.slot_b)
+            } else {
+                drop(fanout_handle.slot_b);
+                None
+            };
             let stream = audio::CaptureStream {
                 info: capture_info,
                 receiver: fanout_handle.slot_a,
@@ -2220,8 +2233,9 @@ fn main() -> Result<()> {
                 spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                 orchestrator_join = None;
             } else if cfg_snapshot.google_api_key.is_none()
-                && cfg_snapshot.stt_provider == "google"
-                && cfg_snapshot.mt_provider == "google"
+                && slot_a_cfg.stt_provider == "google"
+                && slot_a_cfg.mt_provider == "google"
+                && !cfg_snapshot.tts_enabled
             {
                 // Preserve the no-key startup path: users can still verify
                 // audio capture and settings before adding a Google key.
@@ -2242,16 +2256,20 @@ fn main() -> Result<()> {
                 // CPU gate.  Starts true only for configured local STT; may be
                 // updated by the fallback provider at runtime.
                 let provider_is_local =
-                    Arc::new(AtomicBool::new(cfg_snapshot.stt_provider == "local"));
+                    Arc::new(AtomicBool::new(slot_a_cfg.stt_provider == "local"));
 
                 // local_unavailable_is_fatal: when true, a local-unavailable
                 // error should halt the pipeline (no fallback available).
                 // With google-when-keyed and a key, the FallbackSttProvider handles the
                 // switch. Without a key, no cloud fallback is wired, so a permanent local
                 // setup error must halt instead of spinning on every audio window.
-                let local_unavailable_is_fatal = stt_local_unavailable_is_fatal(&cfg_snapshot);
+                let local_unavailable_is_fatal = stt_local_unavailable_is_fatal_for_slot(
+                    &slot_a_cfg.stt_provider,
+                    &cfg_snapshot,
+                );
 
-                let stt_provider = match build_runtime_stt_provider(
+                let stt_provider = match build_slot_stt_provider(
+                    &slot_a_cfg.stt_provider,
                     &cfg_snapshot,
                     google_api_key,
                     Arc::clone(&state.pipeline_error_msg),
@@ -2280,6 +2298,7 @@ fn main() -> Result<()> {
                                 current_config: &current_config,
                                 playback_service: &playback_service,
                                 orchestrator_join,
+                                orchestrator_join_b: None,
                                 orchestrator_shutdown,
                                 process_rx: process_rx.clone(),
                                 e2e_latency: Arc::clone(&e2e_latency),
@@ -2300,8 +2319,8 @@ fn main() -> Result<()> {
                 // Issue #71–#76 and #217: wire the configured MT provider.
                 // Google reports billable character usage; local OPUS-MT ignores
                 // the reporter but shares the same runtime trait.
-                let mt_provider = match build_runtime_mt_provider(
-                    &cfg_snapshot,
+                let mt_provider = match build_slot_mt_provider(
+                    &slot_a_cfg.mt_provider,
                     google_api_key,
                     Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
                 ) {
@@ -2326,6 +2345,7 @@ fn main() -> Result<()> {
                                 current_config: &current_config,
                                 playback_service: &playback_service,
                                 orchestrator_join,
+                                orchestrator_join_b: None,
                                 orchestrator_shutdown,
                                 process_rx: process_rx.clone(),
                                 e2e_latency: Arc::clone(&e2e_latency),
@@ -2362,6 +2382,7 @@ fn main() -> Result<()> {
                                 current_config: &current_config,
                                 playback_service: &playback_service,
                                 orchestrator_join,
+                                orchestrator_join_b: None,
                                 orchestrator_shutdown,
                                 process_rx: process_rx.clone(),
                                 e2e_latency: Arc::clone(&e2e_latency),
@@ -2395,6 +2416,7 @@ fn main() -> Result<()> {
                 storage.recorder_path = session_recorder.path();
 
                 let ctx = pipeline::OrchestratorContext {
+                    slot_id: pipeline::SlotId::A,
                     audio_level: Arc::clone(&state.audio_level),
                     stt_state: Arc::clone(&state.stt_state),
                     subtitle_pane: Arc::clone(&state.subtitle_pane),
@@ -2409,9 +2431,13 @@ fn main() -> Result<()> {
                     paused: Arc::clone(&state.paused),
                     tts_enabled: Arc::clone(&state.tts_enabled),
                     source_language,
-                    target_language: Arc::clone(&state.target_language),
-                    stt_provider_name: cfg_snapshot.stt_provider.clone(),
-                    mt_provider_name: cfg_snapshot.mt_provider.clone(),
+                    target_language: if slot_mode == config::SlotMode::Dual {
+                        Arc::new(std::sync::Mutex::new(slot_a_cfg.target_language.clone()))
+                    } else {
+                        Arc::clone(&state.target_language)
+                    },
+                    stt_provider_name: slot_a_cfg.stt_provider.clone(),
+                    mt_provider_name: slot_a_cfg.mt_provider.clone(),
                     playback: Arc::clone(&playback_service),
                     shutdown: Arc::clone(&orchestrator_shutdown),
                     e2e_latency: Arc::clone(&e2e_latency),
@@ -2457,6 +2483,143 @@ fn main() -> Result<()> {
                     tts_provider,
                     ctx,
                 )));
+
+                // DM-03 (issue #379): in dual-slot mode, build an independent
+                // provider set and orchestrator for slot B.  Shared fields
+                // (audio_level, paused, shutdown, cost_counter, aggregate
+                // metrics/gates) come from the same Arcs used by slot A.
+                // Per-slot fields (stt_state, subtitle_pane, session_metrics,
+                // pipeline_error_msg, auth_error_banner, pipeline_halted,
+                // stt_source) get their own fresh Arcs.
+                if slot_mode == config::SlotMode::Dual {
+                    if let Some(slot_b_rx) = slot_b_receiver {
+                        let slot_b_cfg = cfg_snapshot
+                            .slot_b()
+                            .expect("slot_b() is Some when slot_mode is Dual");
+                        let google_api_key_b = cfg_snapshot.google_api_key.as_deref();
+                        let provider_is_local_b =
+                            Arc::new(AtomicBool::new(slot_b_cfg.stt_provider == "local"));
+                        let local_unavailable_is_fatal_b = stt_local_unavailable_is_fatal_for_slot(
+                            &slot_b_cfg.stt_provider,
+                            &cfg_snapshot,
+                        );
+                        let slot_b_state =
+                            pipeline::SlotOrchestratorState::new(pipeline::SlotId::B);
+
+                        let stt_b = build_slot_stt_provider(
+                            &slot_b_cfg.stt_provider,
+                            &cfg_snapshot,
+                            google_api_key_b,
+                            Arc::clone(&slot_b_state.pipeline_error_msg),
+                            Arc::clone(&provider_is_local_b),
+                            Arc::clone(&slot_b_state.stt_source),
+                        );
+                        let mt_b = build_slot_mt_provider(
+                            &slot_b_cfg.mt_provider,
+                            google_api_key_b,
+                            Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
+                        );
+
+                        match (stt_b, mt_b) {
+                            (Ok(stt_b), Ok(mt_b)) => {
+                                *slot_b_state
+                                    .stt_source
+                                    .lock()
+                                    .unwrap_or_else(|p| p.into_inner()) =
+                                    stt_b.initial_stt_source();
+                                provider_is_local_b
+                                    .store(stt_b.initial_provider_is_local(), Ordering::Relaxed);
+                                *slot_b_state
+                                    .stt_state
+                                    .lock()
+                                    .unwrap_or_else(|p| p.into_inner()) =
+                                    metrics::SttState::Listening;
+                                let ctx_b = pipeline::OrchestratorContext {
+                                    slot_id: pipeline::SlotId::B,
+                                    audio_level: Arc::clone(&state.audio_level),
+                                    stt_state: Arc::clone(&slot_b_state.stt_state),
+                                    subtitle_pane: Arc::clone(&slot_b_state.subtitle_pane),
+                                    session_metrics: Arc::clone(&slot_b_state.session_metrics),
+                                    cost_counter: Arc::clone(&state.cost_counter),
+                                    pipeline_error_msg: Arc::clone(
+                                        &slot_b_state.pipeline_error_msg,
+                                    ),
+                                    auth_error_banner: Arc::clone(&slot_b_state.auth_error_banner),
+                                    pipeline_halted: Arc::clone(&slot_b_state.pipeline_halted),
+                                    provider_circuits: Arc::new(std::sync::Mutex::new(
+                                        pipeline::ProviderCircuitBreakers::default(),
+                                    )),
+                                    paused: Arc::clone(&state.paused),
+                                    tts_enabled: Arc::clone(&state.tts_enabled),
+                                    source_language: Arc::clone(&state.source_language),
+                                    target_language: Arc::new(std::sync::Mutex::new(
+                                        slot_b_cfg.target_language.clone(),
+                                    )),
+                                    stt_provider_name: slot_b_cfg.stt_provider.clone(),
+                                    mt_provider_name: slot_b_cfg.mt_provider.clone(),
+                                    playback: Arc::clone(&playback_service),
+                                    shutdown: Arc::clone(&orchestrator_shutdown),
+                                    e2e_latency: Arc::clone(&e2e_latency),
+                                    network_metrics: Arc::clone(&network_metrics),
+                                    loss_metrics: Arc::clone(&loss_metrics),
+                                    cpu_gate: Arc::clone(&cpu_gate),
+                                    provider_is_local: provider_is_local_b,
+                                    local_unavailable_is_fatal: local_unavailable_is_fatal_b,
+                                    vad_config: if cfg_snapshot.vad.enabled {
+                                        Some(audio::VadConfig {
+                                            threshold: cfg_snapshot.vad.threshold,
+                                            min_speech_ms: cfg_snapshot.vad.min_speech_ms,
+                                            speech_pad_ms: cfg_snapshot.vad.speech_pad_ms,
+                                            min_silence_ms: cfg_snapshot.vad.min_silence_ms,
+                                            pre_roll_ms: cfg_snapshot.vad.pre_roll_ms,
+                                        })
+                                    } else {
+                                        None
+                                    },
+                                    pipeline_max_window_ms: cfg_snapshot.pipeline.max_window_ms,
+                                    pipeline_early_flush_on_vad_end: cfg_snapshot
+                                        .pipeline
+                                        .early_flush_on_vad_end,
+                                    pipeline_idle_flush_ms: cfg_snapshot.pipeline.idle_flush_ms,
+                                    pipeline_idle_min_ms: cfg_snapshot.pipeline.idle_min_ms,
+                                    stabilizer: Arc::new(std::sync::Mutex::new(
+                                        pipeline::segmentation::SegmentStabilizer::new(),
+                                    )),
+                                    sentence_aggregator: Arc::new(std::sync::Mutex::new(
+                                        pipeline::sentence_aggregator::SentenceAggregator::with_max_age(
+                                            std::time::Duration::from_millis(
+                                                cfg_snapshot.pipeline.sentence_max_age_ms,
+                                            ),
+                                        ),
+                                    )),
+                                    // Session recording for slot B is disabled in DM-03;
+                                    // DM-05 will wire per-slot recorders.
+                                    session_recorder: session::SessionRecorder::disabled(),
+                                };
+                                orchestrator_join_b = Some(rt.spawn(pipeline::run_orchestrator(
+                                    slot_b_rx,
+                                    stt_b,
+                                    mt_b,
+                                    RuntimeTtsProvider::Disabled(DisabledTtsProvider),
+                                    ctx_b,
+                                )));
+                                tracing::info!("dual-slot mode: slot B orchestrator started");
+                            }
+                            (Err(err), _) => {
+                                tracing::error!(
+                                    "dual-slot mode: failed to build slot B STT provider, \
+                                     slot B will not run: {err}"
+                                );
+                            }
+                            (_, Err(err)) => {
+                                tracing::error!(
+                                    "dual-slot mode: failed to build slot B MT provider, \
+                                     slot B will not run: {err}"
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
         Err(err) => {
@@ -2487,6 +2650,7 @@ fn main() -> Result<()> {
             current_config: &current_config,
             playback_service: &playback_service,
             orchestrator_join,
+            orchestrator_join_b,
             orchestrator_shutdown,
             process_rx,
             e2e_latency,
@@ -2544,6 +2708,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         current_config,
         playback_service,
         orchestrator_join,
+        orchestrator_join_b,
         orchestrator_shutdown,
         process_rx,
         e2e_latency,
@@ -2718,11 +2883,21 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     // Signal the orchestrator to stop processing new chunks.
     orchestrator_shutdown.store(true, Ordering::Relaxed);
     // Wait up to 2 seconds for any in-progress STT/MT/TTS call to finish.
-    if let Some(join_handle) = orchestrator_join {
-        rt.block_on(async {
-            let _ = tokio::time::timeout(Duration::from_secs(2), join_handle).await;
-        });
-    }
+    // DM-03: both slot A and slot B orchestrators are drained concurrently.
+    rt.block_on(async {
+        let timeout = Duration::from_secs(2);
+        let join_a = async {
+            if let Some(join_a) = orchestrator_join {
+                let _ = tokio::time::timeout(timeout, join_a).await;
+            }
+        };
+        let join_b = async {
+            if let Some(join_b) = orchestrator_join_b {
+                let _ = tokio::time::timeout(timeout, join_b).await;
+            }
+        };
+        tokio::join!(join_a, join_b);
+    });
 
     // Cancel remaining background tasks without waiting for them to finish.
     rt.shutdown_background();
@@ -3358,7 +3533,8 @@ fn build_config_from_editor(
 
 fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
     let mut unsupported = Vec::new();
-    match cfg.stt_provider.as_str() {
+    let slot_a_cfg = cfg.slot_a();
+    match slot_a_cfg.stt_provider.as_str() {
         "google" => {}
         #[cfg(feature = "local-stt")]
         "local" => {}
@@ -3366,9 +3542,9 @@ fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
         "local" => {
             unsupported.push("stt_provider=\"local\" (requires a local-stt build)".to_string())
         }
-        _ => unsupported.push(format!("stt_provider={:?}", cfg.stt_provider)),
+        _ => unsupported.push(format!("stt_provider={:?}", slot_a_cfg.stt_provider)),
     }
-    match cfg.mt_provider.as_str() {
+    match slot_a_cfg.mt_provider.as_str() {
         "google" => {}
         #[cfg(feature = "local-mt")]
         "local" => {}
@@ -3376,7 +3552,7 @@ fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
         "local" => {
             unsupported.push("mt_provider=\"local\" (requires a local-mt build)".to_string())
         }
-        _ => unsupported.push(format!("mt_provider={:?}", cfg.mt_provider)),
+        _ => unsupported.push(format!("mt_provider={:?}", slot_a_cfg.mt_provider)),
     }
 
     if unsupported.is_empty() {
@@ -3393,15 +3569,17 @@ fn missing_google_api_key_error(cfg: &config::AppConfig) -> Option<String> {
     if cfg.google_api_key.is_some() {
         return None;
     }
-    if cfg.stt_provider == "google" && cfg.mt_provider == "google" && !cfg.tts_enabled {
+    let slot_a_cfg = cfg.slot_a();
+    if slot_a_cfg.stt_provider == "google" && slot_a_cfg.mt_provider == "google" && !cfg.tts_enabled
+    {
         return None;
     }
 
     let mut requires_key = Vec::new();
-    if cfg.stt_provider == "google" {
+    if slot_a_cfg.stt_provider == "google" {
         requires_key.push("Google STT");
     }
-    if cfg.mt_provider == "google" {
+    if slot_a_cfg.mt_provider == "google" {
         requires_key.push("Google Translation");
     }
     if cfg.tts_enabled {
@@ -3416,10 +3594,10 @@ fn missing_google_api_key_error(cfg: &config::AppConfig) -> Option<String> {
         };
         let mut actions = vec!["add google_api_key".to_string()];
         let mut local_switches = Vec::new();
-        if cfg.stt_provider == "google" {
+        if slot_a_cfg.stt_provider == "google" {
             local_switches.push("stt_provider");
         }
-        if cfg.mt_provider == "google" {
+        if slot_a_cfg.mt_provider == "google" {
             local_switches.push("mt_provider");
         }
         if !local_switches.is_empty() {
@@ -4563,19 +4741,19 @@ mod tests {
         cfg.stt_fallback_policy = "google-when-keyed".to_string();
         cfg.google_api_key = None;
         assert!(
-            stt_local_unavailable_is_fatal(&cfg),
+            stt_local_unavailable_is_fatal_for_slot("local", &cfg),
             "google-when-keyed without a key has no fallback and must halt on permanent local errors"
         );
 
         cfg.google_api_key = Some("demo-key".to_string());
         assert!(
-            !stt_local_unavailable_is_fatal(&cfg),
+            !stt_local_unavailable_is_fatal_for_slot("local", &cfg),
             "google-when-keyed with a key is handled by FallbackSttProvider"
         );
 
         cfg.stt_fallback_policy = "none".to_string();
         assert!(
-            stt_local_unavailable_is_fatal(&cfg),
+            stt_local_unavailable_is_fatal_for_slot("local", &cfg),
             "local-only policy must halt on permanent local errors"
         );
     }
@@ -5560,6 +5738,54 @@ mod tests {
         cfg.google_api_key = Some("demo-key".to_string());
 
         assert!(missing_google_api_key_error(&cfg).is_none());
+    }
+
+    #[test]
+    fn missing_google_api_key_error_uses_dual_slot_a_not_flat_fields() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "google".to_string();
+        cfg.mt_provider = "google".to_string();
+        cfg.slots = Some(config::DualSlotConfig {
+            slot_a: config::SlotConfig {
+                stt_provider: "local".to_string(),
+                mt_provider: "local".to_string(),
+                target_language: "vi".to_string(),
+            },
+            slot_b: config::SlotConfig {
+                stt_provider: "google".to_string(),
+                mt_provider: "google".to_string(),
+                target_language: "en".to_string(),
+            },
+        });
+
+        assert!(
+            missing_google_api_key_error(&cfg).is_none(),
+            "slot A is fully local, so flat Google fields and slot B must not block startup"
+        );
+    }
+
+    #[test]
+    fn missing_google_api_key_error_reports_dual_slot_a_requirements() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "local".to_string();
+        cfg.slots = Some(config::DualSlotConfig {
+            slot_a: config::SlotConfig {
+                stt_provider: "local".to_string(),
+                mt_provider: "google".to_string(),
+                target_language: "vi".to_string(),
+            },
+            slot_b: config::SlotConfig {
+                stt_provider: "local".to_string(),
+                mt_provider: "local".to_string(),
+                target_language: "en".to_string(),
+            },
+        });
+
+        let msg = missing_google_api_key_error(&cfg)
+            .expect("slot A Google Translation should require google_api_key");
+        assert!(msg.contains("Google Translation"));
+        assert!(msg.contains("switch mt_provider to \"local\""));
     }
 
     #[cfg(not(feature = "local-stt"))]
@@ -7009,6 +7235,116 @@ mod tests {
         assert!(
             !target.exists(),
             "bootstrap must not create the target when there is no legacy config"
+        );
+    }
+
+    // ── DM-03: Per-slot orchestrator and provider state (issue #379) ─────────
+
+    #[test]
+    fn slot_id_defaults_to_slot_a() {
+        assert_eq!(
+            pipeline::SlotId::default(),
+            pipeline::SlotId::A,
+            "SlotId::default() must return A so single-slot mode is zero-cost"
+        );
+        assert_eq!(pipeline::SlotId::A.label(), "A");
+        assert_eq!(pipeline::SlotId::B.label(), "B");
+    }
+
+    #[test]
+    fn slot_provider_config_uses_slot_specific_stt() {
+        let mut cfg = config::AppConfig::default();
+        cfg.stt_fallback_policy = "none".to_string();
+        cfg.google_api_key = None;
+
+        // "google" provider with "none" fallback — fatal for local, irrelevant
+        // for google-keyed, but the function returns false for this combination.
+        assert!(
+            !stt_local_unavailable_is_fatal_for_slot("google", &cfg),
+            "google provider with 'none' fallback is not fatal for local unavailability"
+        );
+
+        // "local" provider with "none" fallback is always fatal.
+        assert!(
+            stt_local_unavailable_is_fatal_for_slot("local", &cfg),
+            "local provider with 'none' fallback must be fatal when local is unavailable"
+        );
+
+        // "local" with "google-when-keyed" and no key — fatal.
+        cfg.stt_fallback_policy = "google-when-keyed".to_string();
+        assert!(
+            stt_local_unavailable_is_fatal_for_slot("local", &cfg),
+            "local provider with 'google-when-keyed' fallback but no key must be fatal"
+        );
+
+        // "local" with "google-when-keyed" and a key — not fatal.
+        cfg.google_api_key = Some("some-key".to_string());
+        assert!(
+            !stt_local_unavailable_is_fatal_for_slot("local", &cfg),
+            "local provider with 'google-when-keyed' and a key must NOT be fatal"
+        );
+    }
+
+    #[test]
+    fn single_mode_creates_one_active_slot() {
+        let slot = pipeline::SlotOrchestratorState::new(pipeline::SlotId::A);
+        assert_eq!(slot.slot_id, pipeline::SlotId::A);
+        // Default state: Idle STT, no errors, not halted.
+        assert_eq!(*slot.stt_state.lock().unwrap(), metrics::SttState::Idle);
+        assert!(!slot
+            .pipeline_halted
+            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(slot.pipeline_error_msg.lock().unwrap().is_none());
+        assert!(slot.auth_error_banner.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn dual_mode_exposes_two_independent_slot_states() {
+        let slot_a = pipeline::SlotOrchestratorState::new(pipeline::SlotId::A);
+        let slot_b = pipeline::SlotOrchestratorState::new(pipeline::SlotId::B);
+
+        assert_ne!(slot_a.slot_id, slot_b.slot_id);
+        // Both start idle, not halted.
+        assert!(!slot_a
+            .pipeline_halted
+            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!slot_b
+            .pipeline_halted
+            .load(std::sync::atomic::Ordering::Relaxed));
+
+        // The Arc pointers are distinct — mutations to slot_a do not touch slot_b.
+        assert!(!Arc::ptr_eq(
+            &slot_a.pipeline_halted,
+            &slot_b.pipeline_halted
+        ));
+        assert!(!Arc::ptr_eq(
+            &slot_a.session_metrics,
+            &slot_b.session_metrics
+        ));
+        assert!(!Arc::ptr_eq(&slot_a.subtitle_pane, &slot_b.subtitle_pane));
+    }
+
+    #[test]
+    fn slot_halted_does_not_affect_other_slot() {
+        let slot_a = pipeline::SlotOrchestratorState::new(pipeline::SlotId::A);
+        let slot_b = pipeline::SlotOrchestratorState::new(pipeline::SlotId::B);
+
+        // Halt slot A.
+        slot_a
+            .pipeline_halted
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        *slot_a.auth_error_banner.lock().unwrap() = Some("auth failed".to_string());
+
+        // Slot B must remain unaffected.
+        assert!(
+            !slot_b
+                .pipeline_halted
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "halting slot A must not halt slot B"
+        );
+        assert!(
+            slot_b.auth_error_banner.lock().unwrap().is_none(),
+            "auth banner set on slot A must not appear on slot B"
         );
     }
 }

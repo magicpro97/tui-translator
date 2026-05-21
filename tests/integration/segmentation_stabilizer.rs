@@ -89,6 +89,7 @@ impl crate::providers::TtsProvider for OkTts {
 fn make_context() -> OrchestratorContext {
     let shutdown = Arc::new(AtomicBool::new(false));
     OrchestratorContext {
+        slot_id: crate::pipeline::SlotId::A,
         audio_level: Arc::new(AtomicU32::new(0)),
         stt_state: Arc::new(Mutex::new(SttState::Idle)),
         subtitle_pane: Arc::new(Mutex::new(crate::tui::SubtitlePane::new())),
