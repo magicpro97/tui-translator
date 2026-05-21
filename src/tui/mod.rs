@@ -77,7 +77,7 @@ const MIN_USABLE_COLS: u16 = 20;
 ///
 /// Below this threshold only the focused pane is rendered full-width with
 /// an A/B indicator in the block title.
-pub const DUAL_PANE_MIN_WIDTH: u16 = 120;
+const DUAL_PANE_MIN_WIDTH: u16 = 120;
 
 /// Minimum terminal height (rows) for the full UI to render meaningfully.
 ///
@@ -903,7 +903,7 @@ impl SubtitlePane {
     ///
     /// Used by the dual-pane renderer to supply a labelled block while
     /// sharing all scroll / partial / cache logic with the single-pane path.
-    pub fn render_in_rect(&self, area: Rect, buf: &mut Buffer, block: Block<'_>) {
+    fn render_in_rect(&self, area: Rect, buf: &mut Buffer, block: Block<'_>) {
         let inner = block.inner(area);
         block.render(area, buf);
         if inner.width < 2 || inner.height < 1 {
@@ -1564,7 +1564,7 @@ pub struct AppState {
     /// Target language code for slot B shown in the per-pane title.
     pub slot_b_target_language: Mutex<String>,
     /// MT provider name for slot A shown in the per-pane title (dual mode only).
-    pub slot_a_provider_name: Mutex<String>,
+    pub slot_a_provider_name: Arc<Mutex<String>>,
     /// Index of the focused pane: `0` = A, `1` = B.
     ///
     /// Only relevant when slot B is wired; toggled by
@@ -1610,7 +1610,7 @@ impl AppState {
             slot_b_subtitle_pane: Mutex::new(None),
             slot_b_provider_name: Mutex::new(String::new()),
             slot_b_target_language: Mutex::new(String::new()),
-            slot_a_provider_name: Mutex::new(String::new()),
+            slot_a_provider_name: Arc::new(Mutex::new(String::new())),
             focused_pane: AtomicU8::new(0),
         }
     }
@@ -2615,7 +2615,7 @@ pub fn draw_ui_with_route(
 
         if let Some(ref b_arc) = slot_b_arc {
             // Dual-slot mode — choose layout based on terminal width.
-            let slot_a_target = state.target_language();
+            let slot_a_target = target_language.clone();
             let slot_a_provider = state
                 .slot_a_provider_name
                 .lock()
@@ -2843,7 +2843,7 @@ pub fn render_wizard_overlay(
 /// know the current terminal height.
 pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset: u16) {
     // ── Dimensions ────────────────────────────────────────────────────────────
-    // Prefer the ideal 56×16 panel; shrink to fit the terminal but keep at
+    // Prefer the ideal 56x17 panel; shrink to fit the terminal but keep at
     // least 4 rows (2 border + 2 visible content lines) so something useful
     // is always shown.
     let panel_w = HELP_OVERLAY_IDEAL_W.min(area.width);
