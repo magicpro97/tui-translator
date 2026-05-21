@@ -15,6 +15,9 @@
 
 #![allow(dead_code)]
 
+/// HC-03: session recorder supervisor stub (classification is in crate::config::recorder_supervisor).
+pub mod supervisor;
+
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     collections::VecDeque,
@@ -29,7 +32,7 @@ use thiserror::Error;
 use tokio::{
     fs::{self, File, OpenOptions},
     io::AsyncWriteExt,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
     task::JoinHandle,
 };
 
@@ -37,6 +40,25 @@ use tokio::{
 pub const SESSION_LOG_SCHEMA_VERSION: u16 = 1;
 
 const RECORDER_QUEUE_CAPACITY: usize = 64;
+
+/// Internal writer message — either a JSONL record or a lifecycle command.
+enum WriterMessage {
+    /// A normal record to append to the JSONL file.
+    Record(SessionLogRecord),
+    /// Seal the current JSONL file and open a new one at `new_session_dir`.
+    ///
+    /// The writer task flushes the current file, creates `new_session_dir` if
+    /// needed, opens `new_session_dir/00001.jsonl`, writes `new_header` as the
+    /// first record, and sends the new path on `done_tx`.
+    SealAndReopen {
+        /// Directory for the new session's JSONL segments.
+        new_session_dir: PathBuf,
+        /// Session header to write as the first record of the new file.
+        new_header: SessionHeader,
+        /// Notified with `Ok(new_path)` on success or `Err(msg)` on failure.
+        done_tx: oneshot::Sender<Result<PathBuf, String>>,
+    },
+}
 
 /// A single line in a persisted session JSONL file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -251,11 +273,15 @@ impl SessionRecorderConfig {
 /// `try_send` into a bounded channel. Disk I/O runs on a Tokio task and writes
 /// each line through the Tokio file handle; this is not an fsync durability
 /// guarantee.
+///
+/// HC-03: [`seal_and_reopen`](Self::seal_and_reopen) flushes the current JSONL
+/// file and opens a new one at a different path without consuming `self` — safe
+/// to call while `OrchestratorContext` owns the recorder by value.
 pub struct SessionRecorder {
     session_id: Option<String>,
     session_dir: Option<PathBuf>,
     active_path: Arc<Mutex<Option<PathBuf>>>,
-    sender: Option<mpsc::Sender<SessionLogRecord>>,
+    sender: Option<mpsc::Sender<WriterMessage>>,
     writer: Option<JoinHandle<()>>,
     last_error: Arc<Mutex<Option<String>>>,
     /// Monotonically non-decreasing count of bytes successfully handed to the
@@ -413,7 +439,9 @@ impl SessionRecorder {
         }
 
         let segment_id = segment.segment_id;
-        match sender.try_send(SessionLogRecord::TranscriptSegment(segment)) {
+        match sender.try_send(WriterMessage::Record(SessionLogRecord::TranscriptSegment(
+            segment,
+        ))) {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(_)) => {
                 Err(SessionRecorderError::QueueFull { segment_id })
@@ -431,6 +459,63 @@ impl SessionRecorder {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone()
+    }
+
+    /// Seal the current JSONL segment and open a new one at `new_session_dir`.
+    ///
+    /// The writer task:
+    /// 1. Flushes the active segment file (making it parseable through the last
+    ///    line written).
+    /// 2. Creates `new_session_dir` if it does not exist.
+    /// 3. Opens `new_session_dir/00001.jsonl` (fails with `WriterStopped` when
+    ///    that file already exists).
+    /// 4. Writes `new_header` as the first JSONL line of the new file.
+    /// 5. Returns the new file path on `Ok`.
+    ///
+    /// The recorder continues to accept [`record_segment`](Self::record_segment)
+    /// calls; records queued *before* this call land in the old file, records
+    /// queued *after* land in the new file.
+    ///
+    /// Does nothing and returns `Err(WriterStopped)` when the recorder is
+    /// disabled.
+    ///
+    /// # HC-03 note
+    ///
+    /// This method does not consume `self`, so it is safe to call while
+    /// `OrchestratorContext` owns the recorder by value.
+    pub async fn seal_and_reopen(
+        &mut self,
+        new_session_dir: PathBuf,
+        new_header: SessionHeader,
+    ) -> Result<PathBuf, SessionRecorderError> {
+        let Some(sender) = &self.sender else {
+            return Err(SessionRecorderError::WriterStopped(
+                "recorder is disabled".to_string(),
+            ));
+        };
+        let (done_tx, done_rx) = oneshot::channel();
+        sender
+            .send(WriterMessage::SealAndReopen {
+                new_session_dir: new_session_dir.clone(),
+                new_header,
+                done_tx,
+            })
+            .await
+            .map_err(|_| {
+                SessionRecorderError::WriterStopped("writer channel closed".to_string())
+            })?;
+        match done_rx.await {
+            Ok(Ok(new_path)) => {
+                // Update the recorder's session_dir so path() / session_dir()
+                // reflect the new location.
+                self.session_dir = Some(new_session_dir);
+                Ok(new_path)
+            }
+            Ok(Err(msg)) => Err(SessionRecorderError::WriterStopped(msg)),
+            Err(_) => Err(SessionRecorderError::WriterStopped(
+                "writer did not confirm seal".to_string(),
+            )),
+        }
     }
 
     /// Drop the sender and wait for the writer task to flush all queued records.
@@ -473,14 +558,10 @@ struct WriterRuntime {
     slot_suffix: Option<String>,
 }
 
-async fn run_writer(
-    mut file: File,
-    mut rx: mpsc::Receiver<SessionLogRecord>,
-    writer: WriterRuntime,
-) {
+async fn run_writer(mut file: File, mut rx: mpsc::Receiver<WriterMessage>, writer: WriterRuntime) {
     let WriterRuntime {
         last_error,
-        session_dir,
+        mut session_dir,
         active_path,
         initial_segment_bytes,
         per_session_bytes_cap,
@@ -497,7 +578,74 @@ async fn run_writer(
             session_dir.join(segment_file_name(current_segment, slot_suffix.as_deref()))
         });
 
-    while let Some(record) = rx.recv().await {
+    while let Some(msg) = rx.recv().await {
+        let record = match msg {
+            WriterMessage::Record(r) => r,
+            WriterMessage::SealAndReopen {
+                new_session_dir,
+                new_header,
+                done_tx,
+            } => {
+                // Flush the current file so it is fully parseable.
+                if let Err(err) = file.flush().await {
+                    let m = format!("seal: flush failed for {}: {err}", current_path.display());
+                    tracing::warn!("{m}");
+                    let _ = done_tx.send(Err(m));
+                    continue;
+                }
+                // Create new session directory.
+                if let Err(err) = fs::create_dir_all(&new_session_dir).await {
+                    let m = format!(
+                        "seal: cannot create session dir {}: {err}",
+                        new_session_dir.display()
+                    );
+                    tracing::warn!("{m}");
+                    let _ = done_tx.send(Err(m));
+                    continue;
+                }
+                let new_path = new_session_dir.join(segment_file_name(1));
+                match OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&new_path)
+                    .await
+                {
+                    Ok(mut new_file) => {
+                        let header_record = SessionLogRecord::SessionHeader(new_header);
+                        match write_record_line(&mut new_file, &header_record).await {
+                            Ok(header_bytes) => {
+                                file = new_file;
+                                session_dir = new_session_dir;
+                                current_segment = 1;
+                                current_segment_bytes = header_bytes as u64;
+                                current_path = new_path.clone();
+                                *active_path.lock().unwrap_or_else(|p| p.into_inner()) =
+                                    Some(new_path.clone());
+                                tracing::info!(
+                                    path = %new_path.display(),
+                                    "recorder sealed and reopened at new path"
+                                );
+                                let _ = done_tx.send(Ok(new_path));
+                            }
+                            Err(err) => {
+                                let m = format!(
+                                    "seal: write header failed for {}: {err}",
+                                    new_path.display()
+                                );
+                                tracing::warn!("{m}");
+                                let _ = done_tx.send(Err(m));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        let m = format!("seal: cannot open new file {}: {err}", new_path.display());
+                        tracing::warn!("{m}");
+                        let _ = done_tx.send(Err(m));
+                    }
+                }
+                continue;
+            }
+        };
         // Pre-serialise to know the line length so we can rotate before writing.
         let line = match serialise_record_line(&record) {
             Ok(line) => line,

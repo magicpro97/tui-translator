@@ -66,6 +66,12 @@ pub use fanout::{
     start_fanout, FanoutDropCounters, FanoutHandle, FANOUT_SLOT_CAPACITY, SLOT_A, SLOT_B,
 };
 
+/// HC-03 capture stream supervisor (lifecycle + gap metrics).
+/// Config-change classification lives in `crate::config::capture_supervisor`.
+pub mod supervisor;
+#[allow(unused_imports)]
+pub use supervisor::{CaptureMetrics, CaptureStreamSupervisor};
+
 // Virtual audio device enumeration and classification — VMIC-A1 (issue #313)
 pub mod virtual_device;
 #[allow(unused_imports)]

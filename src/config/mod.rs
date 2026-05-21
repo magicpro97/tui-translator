@@ -21,8 +21,15 @@ use std::sync::{
 use std::time::Duration;
 use tokio::sync::watch;
 
+pub mod capture_supervisor;
 mod paths;
 pub mod provider_supervisor;
+pub mod recorder_supervisor;
+
+#[allow(unused_imports)]
+pub use capture_supervisor::{classify_capture_change, CaptureChangeOutcome};
+#[allow(unused_imports)]
+pub use recorder_supervisor::{classify_recorder_change, RecorderChangeOutcome};
 
 #[allow(dead_code)]
 pub const CONFIG_DIR_OVERRIDE_ENV: &str = paths::CONFIG_DIR_OVERRIDE_ENV;
