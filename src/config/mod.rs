@@ -1612,6 +1612,12 @@ pub enum WatchApplyNotification {
         /// Human-readable error description.
         reason: String,
     },
+    /// Config applied; an application restart is required for the change to
+    /// take full effect.
+    NeedsRestart {
+        /// Short description of which change requires the restart.
+        reason: String,
+    },
 }
 
 /// Callback type for watcher apply notifications.
@@ -1757,6 +1763,9 @@ fn handle_watch_event(
                     tracing::warn!(
                         "⚠ Provider rebuild pending — application restart required. {reason}"
                     );
+                    if let Some(n) = notifier {
+                        n(WatchApplyNotification::NeedsRestart { reason });
+                    }
                 }
                 provider_supervisor::SupervisorOutcome::Unchanged => {
                     // No provider change; fall through to the generic
