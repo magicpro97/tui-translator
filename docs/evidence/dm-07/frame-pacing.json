@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-05-21T21:11:39Z",
+  "issue": "#383 DM-07",
+  "target_fps": 60,
+  "warmup_frames": 60,
+  "measured_frames": 360,
+  "runs": [
+    {
+      "mode": "baseline (legacy 50ms)",
+      "p50_ms": 50,
+      "p95_ms": 51,
+      "p99_ms": 51,
+      "mean_ms": 50.16,
+      "dropped": 360,
+      "drop_rate_pct": 100.00,
+      "gate_ms": null,
+      "passed": null,
+      "process_cpu_ms": 0,
+      "process_cpu_pct": 0.0000,
+      "capture_probe_p95_ms": 11,
+      "capture_probe_samples": 1771,
+      "wall_s": 18.116
+    },
+    {
+      "mode": "branch-single",
+      "p50_ms": 17,
+      "p95_ms": 17,
+      "p99_ms": 19,
+      "mean_ms": 17.03,
+      "dropped": 0,
+      "drop_rate_pct": 0.00,
+      "gate_ms": 20,
+      "passed": true,
+      "process_cpu_ms": 0,
+      "process_cpu_pct": 0.0000,
+      "capture_probe_p95_ms": 11,
+      "capture_probe_samples": 591,
+      "wall_s": 6.116
+    },
+    {
+      "mode": "branch-dual",
+      "p50_ms": 17,
+      "p95_ms": 17,
+      "p99_ms": 20,
+      "mean_ms": 17.10,
+      "dropped": 2,
+      "drop_rate_pct": 0.56,
+      "gate_ms": 25,
+      "passed": true,
+      "process_cpu_ms": 0,
+      "process_cpu_pct": 0.0000,
+      "capture_probe_p95_ms": 11,
+      "capture_probe_samples": 592,
+      "wall_s": 6.137
+    }
+  ]
+}

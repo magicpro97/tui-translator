@@ -37,6 +37,10 @@ name = "vbcable_ci_probe"
 path = "src/bin/vbcable_ci_probe.rs"
 
 [[bin]]
+name = "frame_pacing_bench"
+path = "src/bin/frame_pacing_bench.rs"
+
+[[bin]]
 name = "eval_session"
 path = "src/bin/eval_session.rs"
 
@@ -120,7 +124,7 @@ wasapi = "0.14"
 # Audio playback — TTS output via system default audio device (Windows only)
 rodio = "0.17"
 # Windows thread-scheduling API (SetThreadPriority) for inference priority hints (#232)
-windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Media"] }
 
 [dev-dependencies]
 # Snapshot testing for the TUI layouts

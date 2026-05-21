@@ -8,6 +8,7 @@
 // dead-code lints until Phase 4 connects them.
 #![allow(dead_code)]
 
+pub mod frame_pacer;
 pub mod onboarding;
 
 use std::{
