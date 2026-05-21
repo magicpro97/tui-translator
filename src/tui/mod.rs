@@ -1267,9 +1267,14 @@ fn subtitle_block_for_pane(
     label: &str,
     provider: &str,
     target: &str,
+    status: &str,
     focused: bool,
 ) -> Block<'static> {
-    let title = format!(" [{label}] {provider} \u{2192} {target} ");
+    let title = if status.is_empty() {
+        format!(" [{label}] {provider} \u{2192} {target} ")
+    } else {
+        format!(" [{label}] {provider} \u{2192} {target} | {status} ")
+    };
     Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -1579,6 +1584,10 @@ pub struct AppState {
     /// Same as `slot_a_tts_status_label` for slot B.  Stays `"ok"` in
     /// single-slot mode because the copier is only spawned in dual mode.
     pub slot_b_tts_status_label: Arc<Mutex<String>>,
+    /// Slot A pipeline/auth error summary shown in the pane title in dual mode.
+    pub slot_a_error_status_label: Arc<Mutex<String>>,
+    /// Slot B pipeline/auth error summary shown in the pane title in dual mode.
+    pub slot_b_error_status_label: Arc<Mutex<String>>,
 }
 
 impl AppState {
@@ -1623,6 +1632,8 @@ impl AppState {
             focused_pane: AtomicU8::new(0),
             slot_a_tts_status_label: Arc::new(Mutex::new("ok".to_string())),
             slot_b_tts_status_label: Arc::new(Mutex::new("ok".to_string())),
+            slot_a_error_status_label: Arc::new(Mutex::new(String::new())),
+            slot_b_error_status_label: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -2674,6 +2685,16 @@ pub fn draw_ui_with_route(
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .clone();
+            let slot_a_status = state
+                .slot_a_error_status_label
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            let slot_b_status = state
+                .slot_b_error_status_label
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
 
             if chunks[2].width >= DUAL_PANE_MIN_WIDTH {
                 // Wide: side-by-side A | B split.
@@ -2688,6 +2709,7 @@ pub fn draw_ui_with_route(
                         "A",
                         &slot_a_provider,
                         &slot_a_target,
+                        &slot_a_status,
                         focused == 0,
                     );
                     let inner_a = block_a.inner(pane_chunks[0]);
@@ -2705,6 +2727,7 @@ pub fn draw_ui_with_route(
                         "B",
                         &slot_b_provider,
                         &slot_b_target,
+                        &slot_b_status,
                         focused == 1,
                     );
                     let inner_b = block_b.inner(pane_chunks[1]);
@@ -2714,12 +2737,13 @@ pub fn draw_ui_with_route(
                 }
             } else {
                 // Narrow: show only the focused pane with an A/B indicator.
-                let (active_arc, indicator, provider, tgt) = if focused == 0 {
+                let (active_arc, indicator, provider, tgt, status) = if focused == 0 {
                     (
                         &state.subtitle_pane,
                         "[A] \u{25C0}  B",
                         slot_a_provider.as_str(),
                         slot_a_target.as_str(),
+                        slot_a_status.as_str(),
                     )
                 } else {
                     (
@@ -2727,9 +2751,14 @@ pub fn draw_ui_with_route(
                         "A  \u{25B6} [B]",
                         slot_b_provider.as_str(),
                         slot_b_target.as_str(),
+                        slot_b_status.as_str(),
                     )
                 };
-                let title = format!(" {indicator} | {provider} \u{2192} {tgt} ");
+                let title = if status.is_empty() {
+                    format!(" {indicator} | {provider} \u{2192} {tgt} ")
+                } else {
+                    format!(" {indicator} | {provider} \u{2192} {tgt} | {status} ")
+                };
                 let block = Block::default()
                     .title(title)
                     .borders(Borders::ALL)
@@ -6128,6 +6157,45 @@ mod tests {
         assert!(
             rendered.contains("[B]"),
             "wide dual-pane: pane B label should be visible"
+        );
+    }
+
+    #[test]
+    fn dual_pane_wide_renders_per_slot_error_status() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(160, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = AppState::new();
+        let b_pane = Arc::new(Mutex::new(SubtitlePane::new()));
+
+        *state.slot_a_provider_name.lock().unwrap() = "google".to_string();
+        state.wire_slot_b(
+            Arc::clone(&b_pane),
+            "en-US".to_string(),
+            "local".to_string(),
+        );
+        *state.slot_a_error_status_label.lock().unwrap() = "auth: bad key".to_string();
+        *state.slot_b_error_status_label.lock().unwrap() = "error: timeout".to_string();
+
+        terminal
+            .draw(|frame| draw_ui(frame, &state, 0.0, false, 0.0))
+            .unwrap();
+
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+
+        assert!(
+            rendered.contains("auth: bad key"),
+            "wide dual-pane: slot A error status should be visible"
+        );
+        assert!(
+            rendered.contains("error: timeout"),
+            "wide dual-pane: slot B error status should be visible"
         );
     }
 
