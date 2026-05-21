@@ -564,6 +564,24 @@ pub struct AppConfig {
     #[serde(default = "default_mt_provider")]
     pub mt_provider: String,
 
+    /// Cloud provider to use when the local MT backend cannot serve a
+    /// language pair (LF-04, issue #372).
+    ///
+    /// Absent by default (`None`).  Set to `"google"` to allow the pipeline
+    /// to fall back to Google Translation for pairs that have no local model.
+    ///
+    /// **Key presence alone is not consent to send data to the network.**
+    /// This field must be explicitly configured.  Without it, an unsupported
+    /// pair returns a visible "unsupported pair" error rather than silently
+    /// attempting any cloud call.
+    ///
+    /// Accepted values when present: `"google"`.  Any other value is
+    /// rejected by [`AppConfig::validate`].
+    ///
+    /// Changing this value requires restarting the application.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mt_cloud_fallback: Option<String>,
+
     /// Fallback policy when the primary STT provider encounters a permanent
     /// authentication error.  Accepted values:
     /// - `"none"` *(default)* — no fallback; authentication errors halt the
@@ -732,6 +750,7 @@ impl Default for AppConfig {
             capture_device: None,
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
+            mt_cloud_fallback: None,
             stt_fallback_policy: default_stt_fallback_policy(),
             audio_source: default_audio_source(),
             audio_file_path: None,
@@ -764,6 +783,7 @@ impl std::fmt::Debug for AppConfig {
             .field("capture_device", &self.capture_device)
             .field("stt_provider", &self.stt_provider)
             .field("mt_provider", &self.mt_provider)
+            .field("mt_cloud_fallback", &self.mt_cloud_fallback)
             .field("stt_fallback_policy", &self.stt_fallback_policy)
             .field("audio_source", &self.audio_source)
             .field("audio_file_path", &self.audio_file_path)
@@ -967,6 +987,24 @@ impl AppConfig {
                 bail!("`mt_provider` must be \"google\" or \"local\", got {other:?}");
             }
         }
+        // ── mt_cloud_fallback validation (LF-04, issue #372) ──────────────
+        if let Some(fallback) = &self.mt_cloud_fallback {
+            match fallback.as_str() {
+                "google" => {
+                    if self.google_api_key.is_none() {
+                        bail!(
+                            "`mt_cloud_fallback = \"google\"` requires `google_api_key`; \
+                             key presence alone is not consent, but explicit fallback also needs a usable key"
+                        );
+                    }
+                }
+                other => {
+                    bail!(
+                        "`mt_cloud_fallback` accepts only \"google\" when present, got {other:?}"
+                    );
+                }
+            }
+        }
         if self.cpu_budget_pct < 0.0 {
             bail!(
                 "`cpu_budget_pct` must be >= 0.0 (0.0 disables throttling), got {}",
@@ -1075,6 +1113,7 @@ impl AppConfig {
     /// | `audio_file_path` | **restart (conditional)** | File source is opened once at pipeline start; restart is required only when either side uses `audio_source = "file"`. |
     /// | `stt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_provider` | **restart** | Provider trait object must be reconstructed. |
+    /// | `mt_cloud_fallback` | **restart** | Cloud-fallback consent changes route resolution and provider construction. |
     /// | `stt_fallback_policy` | **restart** | Fallback chain is wired at pipeline initialisation. |
     /// | `cpu_budget_pct` | **restart** | Budget guard is initialised at pipeline start. |
     /// | `vad` | **restart** | VAD filter is wired at pipeline construction. |
@@ -1101,6 +1140,7 @@ impl AppConfig {
                 && (self.audio_source == "file" || next.audio_source == "file"))
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
+            || self.mt_cloud_fallback != next.mt_cloud_fallback
             || (self.cpu_budget_pct - next.cpu_budget_pct).abs() > f32::EPSILON
             || self.stt_fallback_policy != next.stt_fallback_policy
             || self.vad != next.vad
