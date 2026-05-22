@@ -693,8 +693,16 @@ fn matrix_cases() -> Vec<CaseSpec> {
             RESTART,
             || {
                 changed_with_old(
-                    |cfg| cfg.slots = Some(dual_slots_with_targets("local", "google", "vi", "en")),
-                    |cfg| cfg.slots = Some(dual_slots_with_targets("local", "google", "fr", "de")),
+                    |cfg| {
+                        cfg.slots = Some(shared_provider_dual_slots_with_targets(
+                            "local", "google", "vi", "en",
+                        ))
+                    },
+                    |cfg| {
+                        cfg.slots = Some(shared_provider_dual_slots_with_targets(
+                            "local", "google", "fr", "de",
+                        ))
+                    },
                 )
             },
         ),
@@ -801,7 +809,7 @@ fn dual_slots(
     }
 }
 
-fn dual_slots_with_targets(
+fn shared_provider_dual_slots_with_targets(
     slot_a_stt_provider: &str,
     slot_a_mt_provider: &str,
     slot_a_target_language: &str,

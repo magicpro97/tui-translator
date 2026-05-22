@@ -1,7 +1,7 @@
 # HC-06 specialist review sign-off
 
 Issue: #391
-Worktree: `C:\Users\linhnt102\tui-translator-hc-06`
+Worktree: PR branch checkout
 Branch: `feat/hc-06-hot-config-regression-gate`
 
 ## Reviewer
