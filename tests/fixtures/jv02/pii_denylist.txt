@@ -1,0 +1,4 @@
+# JV-02 / R11 PII deny-list.
+# One literal token per line, comments start with '#', empty lines ignored.
+# Populated by humans as real names / org names are spotted in candidate corpus rows.
+# Keep this file empty unless adding a real take-down term.

@@ -3,3 +3,7 @@
 # The soak fixture (tests/soak/soak_audio.wav) is committed directly at
 # ≈ 938 KiB — no Git LFS is required at this size.
 *.wav binary
+
+# JV-02 corpus fixtures are hash-checked and must keep LF line endings on Windows.
+tests/fixtures/jv02/*.jsonl text eol=lf
+tests/fixtures/jv02/*.json text eol=lf
