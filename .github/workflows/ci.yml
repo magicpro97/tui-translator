@@ -444,13 +444,50 @@ jobs:
           python3 -m json.tool "$report" > /dev/null && echo "PASS: $report is valid JSON"
           cat "$report"
 
+  # ── Hot-config matrix (Issue #391 / HC-06) ──────────────────────────────────
+  # Parametrized integration tests covering every classified hot-config field.
+  # Emits a JSON matrix report consumed by the verification gate.
+  hot-config-matrix:
+    name: Hot-config matrix (issue #391)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-hot-config-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run hot-config matrix
+        run: cargo test --test hot_config -- --nocapture
+      - name: Validate HC-06 matrix evidence
+        shell: pwsh
+        run: |
+          $path = "verification-evidence\hot-config\HC-06-hot-config-matrix-report.json"
+          if (-not (Test-Path $path)) { throw "HC-06 matrix report not found at $path" }
+          $r = Get-Content $path -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1) { throw "unexpected schema_version: $($r.schema_version)" }
+          if ($r.issue -ne "#391") { throw "unexpected issue: $($r.issue)" }
+          if ($r.status -ne "pass") { throw "matrix did not pass" }
+          if (-not $r.cases -or $r.cases.Count -lt 1) { throw "matrix cases missing" }
+          Write-Host ($r | ConvertTo-Json -Depth 8)
+      - name: Upload HC-06 matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hc-06-hot-config-matrix-report
+          path: verification-evidence\hot-config\HC-06-hot-config-matrix-report.json
+
   # VMIC-B5 production readiness checkpoint
   # Aggregates VMIC-B evidence, builds the release executable, labels the app
   # artifact as unsigned/no-driver-bundled, and captures release smoke output.
   vmic-production-readiness:
     name: VMIC-B5 production readiness
     runs-on: windows-latest
-    needs: [vmic-production-sink, vmic-mvp-readiness, packaging, soak-test, soak-runner]
+    needs: [vmic-production-sink, vmic-mvp-readiness, packaging, soak-test, soak-runner, hot-config-matrix]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

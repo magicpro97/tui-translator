@@ -35,6 +35,7 @@ lcov.info
 # Soak runner reports - generated at runtime; not committed
 verification-evidence/*.json
 verification-evidence/*.txt
+verification-evidence/hot-config/*.json
 
 # Release artifacts
 *.exe
