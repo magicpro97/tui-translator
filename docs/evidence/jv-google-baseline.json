@@ -1,0 +1,81 @@
+{
+  "schema_version": "jv-04-v2",
+  "wbs_key": "JV-04",
+  "issue": 412,
+  "title": "Live Google Translation baseline 10-round benchmark with spend cap",
+  "executed_at": "2026-05-22",
+  "status": "blocked",
+  "skipped": true,
+  "dependency_state": {
+    "jv_02_issue": 410,
+    "jv_02_state": "closed",
+    "jv_03_issue": 411,
+    "jv_03_state": "closed",
+    "jv_03_merge_commit": "e5a0df8311d64b280a9ce1160283443ab24d3159"
+  },
+  "preflight": {
+    "config_exists_in_worktree": false,
+    "google_api_key_present": false,
+    "google_api_key_value_recorded": false,
+    "synthetic_seed_available": true,
+    "synthetic_seed_rows": 20,
+    "synthetic_seed_sha256": "275cf3c52d4d5d2db1ac6d77419ef65db5ab3098d0e187236bd8f41e95bd8f78",
+    "full_300_row_corpus_available": false,
+    "mt_bench_lf04_v2_validator_available": true,
+    "mt_bench_live_google_mode_available": false,
+    "network_call_attempted": false
+  },
+  "blockers": [
+    {
+      "id": "BLK-01",
+      "severity": "hard",
+      "component": "approved-300-row-ja-vi-corpus",
+      "description": "JV-02 intentionally committed only a 20-row synthetic seed fixture. The approved 300-row corpus is assembled by tooling at evaluation time from FLORES-200, ALT, Tatoeba, and the seed, but that downloader/composer output is not present in this worktree. The seed is valid for scorer/validator smoke only and is not the benchmark corpus.",
+      "non_secret_evidence": "python tests\\fixtures\\jv02\\verify_synthetic_seed.py => OK rows=20 sha256=275cf3c52d4d5d2db1ac6d77419ef65db5ab3098d0e187236bd8f41e95bd8f78"
+    },
+    {
+      "id": "BLK-02",
+      "severity": "hard",
+      "component": "mt-bench-live-google-mode",
+      "description": "The merged JV-03 harness validates LF-04-v2 artifacts and performs cost preflight, but --with-google still bails before any network request. A live Google baseline cannot be produced until the billable request path, corpus loader, quality scorer, and per-round writer are implemented.",
+      "non_secret_evidence": "cargo run --bin mt_bench -- --with-google --google-api-key <synthetic-non-secret> --sample-limit 20 --rounds 10 --cost-cap 3.00 => cost preflight $0.2400, then Error: --with-google is not yet implemented"
+    },
+    {
+      "id": "BLK-03",
+      "severity": "hard",
+      "component": "cost-cap-preflight",
+      "description": "The current conservative mt_bench estimator uses 60 characters per sample. A full 300-row, 10-round run projects to $3.60, which exceeds the requested $3.00 cap before any billable request. JV-04 needs either actual corpus character-count preflight or an explicitly raised cap before live execution.",
+      "non_secret_evidence": "300 samples * 10 rounds * 60 chars * $0.00002/char = $3.60 > $3.00"
+    }
+  ],
+  "cost_cap": {
+    "cap_usd": 3.0,
+    "synthetic_seed_projected_billable_characters": 12000,
+    "synthetic_seed_projected_google_mt_cost_usd": 0.24,
+    "full_corpus_conservative_projected_billable_characters": 180000,
+    "full_corpus_conservative_projected_google_mt_cost_usd": 3.6,
+    "actual_billable_characters": 0,
+    "actual_google_mt_cost_usd": 0.0,
+    "actual_call_count": 0,
+    "abort_reason": "Blocked before any Google network request."
+  },
+  "aggregate": {
+    "rounds_requested": 10,
+    "rounds_completed": 0,
+    "sample_count": 0,
+    "error_rate": null,
+    "latency_ms": {
+      "p50": null,
+      "p95": null,
+      "p99": null
+    },
+    "quality": {
+      "chrf_pp": null,
+      "bleu": null
+    }
+  },
+  "privacy": {
+    "artifact_policy": "No source text, target text, Google API key, request URL, or response body is recorded in this blocked artifact.",
+    "redaction_scan_required_before_close": true
+  }
+}
