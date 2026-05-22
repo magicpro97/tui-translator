@@ -37,7 +37,7 @@ deterministic constraints instead of folklore.
 | R | **RAM** | Peak RSS delta when model is resident | JV-03 `mt_bench` |
 | S | **Model size on disk** | Disk budget for installer + cache | Upstream file listing |
 | W | **Windows CPU runtime** | Can it run int8 on Win10/11 without dGPU | CTranslate2 / ONNX / `ort` |
-| RT | **Rust runtime** | Embeddable from Rust without Python/Docker/HTTP server | `ort`, `ctranslate2` bindings, `rten`, `mistralrs` |
+| RT | **Rust runtime** | Embeddable from Rust without Python/Docker/HTTP server | `ort`, pure-Rust tokenization, `rten`, `mistralrs`; CTranslate2 is external/DLL-only until a maintained Rust crate exists |
 | P | **Privacy** | Anything leaves the machine at inference time? | Architecture review |
 | U | **Update cadence** | Frequency / stability of upstream model releases | Upstream repo activity |
 | D | **Distribution risk** | What can go wrong if we ship it (license, weights pull-down, third-party CDN, hostile fine-tunes) | Upstream policy + Hugging Face hub status |
@@ -59,9 +59,9 @@ Anything that requires our own measurement is marked **TBD-JV-03** and lives in 
 | Q | ⚠️ | Model card reports **BLEU 20.3 / chrF 0.380** on Tatoeba ja-vi test set. "Gist clear, grammar errors expected." Meeting-domain quality = **TBD-JV-03**. Source: [model card](https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi). |
 | T | — | No measured CPU int8 latency in repo. **TBD-JV-03**. |
 | R | — | Model card lists ~297 MB fp32 PyTorch. int8 footprint **TBD-JV-03**; OPUS-MT MarianMT models typically <300 MB int8. |
-| S | ✅ (estimated) | ~75–150 MB int8 expected (encoder+decoder+SPM). **Confirm in JV-03.** |
+| S | ⚠️ (non-primary estimate) | ~75–150 MB int8 expected (encoder+decoder+SPM), but this is **not evidence**. JV-03 must record the measured artifact size before any default decision. |
 | W | ✅ | Runs on Windows CPU via ONNX Runtime (`ort` crate) or CTranslate2 DLL; no admin rights. |
-| RT | ✅ | `ort` v2 Rust crate published; SentencePiece tokenizer needs `sentencepiece` FFI **or** Marian vocab JSON path. |
+| RT | ✅ | `ort` v2 Rust crate published; the repo's local-MT path uses pure-Rust `sentencepiece-rs` plus Marian `vocab.json` token-id mapping, so no Python tokenizer is required. |
 | P | ✅ | Fully local; no network at inference. |
 | U | ⚠️ | OPUS-MT models published 2020-2021; **no active retraining cadence** for ja-vi. Upstream is research project, not productised. |
 | D | ⚠️ | Hugging Face hosted; mirror-or-cache recommended (JV-08). License is permissive. |
@@ -77,8 +77,8 @@ Anything that requires our own measurement is marked **TBD-JV-03** and lives in 
 | L | ✅ | MIT (Meta / fairseq). Bundling and commercial use allowed. Source: [model card](https://huggingface.co/facebook/m2m100_418M), [fairseq LICENSE](https://github.com/facebookresearch/fairseq/blob/main/LICENSE). |
 | Q | — | M2M100 paper reports averaged BLEU across many pairs; **no model-card-asserted ja→vi BLEU**. Meeting-domain quality = **TBD-JV-03**. M2M100 is known to underperform OPUS-MT on individual high-resource bilingual pairs but covers ja-vi directly without pivot. Source: [Fan et al. 2020, M2M-100 paper](https://arxiv.org/abs/2010.11125). |
 | T | — | **TBD-JV-03.** 418M params → autoregressive decoding will be noticeably slower than OPUS-MT (~75M). |
-| R | — | int8 file ≈ ~800 MB (community-reported; treat as estimate, not primary). Peak RSS **TBD-JV-03**. |
-| S | ⚠️ | int8 ≈ 700–900 MB on disk (~2× OPUS-MT) — fits the existing <1 GB MT budget but tightens 8 GB-laptop headroom (`docs/10-offline-model-selection.md` §5.1). |
+| R | — | int8 file size and peak RSS are **TBD-JV-03**. Any ~800 MB figure is a non-primary estimate and must not gate release. |
+| S | ⚠️ (non-primary estimate) | Expected to be much larger than OPUS-MT and close to the existing <1 GB MT budget; JV-03 must record the measured artifact size before any gate uses it. |
 | W | ✅ | Convertible to CTranslate2 int8; runs on Windows CPU. |
 | RT | ⚠️ | No first-class Rust crate for CTranslate2 yet; `ort` ONNX path is viable but requires custom export + KV-cache wiring. Tokenizer = SentencePiece. |
 | P | ✅ | Fully local. |
@@ -98,8 +98,8 @@ has not been demonstrated to beat OPUS-MT in primary sources.
 | L | ❌ for bundling / commercial | **CC-BY-NC 4.0** — non-commercial only. Bundling in a distributable build is high-risk; user-side install for personal use is permitted by the license. Source: [model card](https://huggingface.co/facebook/nllb-200-distilled-600M). |
 | Q | ⚠️ | NLLB paper claims state-of-the-art on many low-resource pairs vs M2M100; **no model-card-asserted ja→vi BLEU**. Meeting-domain quality = **TBD-JV-03**. Source: [NLLB Team 2022](https://arxiv.org/abs/2207.04672). |
 | T | — | **TBD-JV-03.** 600M params; expected slower than OPUS-MT, faster than M2M100-1.2B. |
-| R | — | int8 file ≈ ~1.1 GB (community estimate, not primary). Peak RSS **TBD-JV-03**. |
-| S | ⚠️ | ~1.1 GB int8 (estimated) — exceeds the <1 GB MT budget for single-model load on 8 GB systems. |
+| R | — | int8 file size and peak RSS are **TBD-JV-03**. Any ~1.1 GB figure is a non-primary estimate and must not gate release. |
+| S | ⚠️ (non-primary estimate) | Expected to exceed the <1 GB MT budget for single-model load on 8 GB systems; JV-03 must measure before release gates use this claim. |
 | W | ✅ | Convertible to CTranslate2 int8; runs on Windows CPU. |
 | RT | ⚠️ | Same Rust integration story as M2M100 (no first-class crate; ONNX via `ort` requires manual KV-cache wiring). |
 | P | ✅ | Fully local at inference. |
@@ -119,8 +119,8 @@ JV-03 may bench NLLB for *quality comparison* even if JV-08 will not ship it.
 | L | ✅ | MIT. Source: [model card](https://huggingface.co/facebook/mbart-large-50-many-to-many-mmt). |
 | Q | ⚠️ | Both `ja_XX` and `vi_VN` are in the 50-language set. Original mBART-50 paper reports many-to-many BLEU averages, **no ja→vi specific BLEU on model card**. Generally outperformed by NLLB-200 / M2M100 on low-resource pairs in subsequent literature. |
 | T | — | **TBD.** 610M params; comparable to NLLB-distilled-600M. |
-| R | — | fp32 ~2.4 GB; int8 ≈ ~700 MB-1 GB **TBD**. |
-| S | ⚠️ | Similar to NLLB. |
+| R | — | fp32 / int8 size and peak RSS are **TBD** for this project; do not use community estimates as release evidence. |
+| S | ⚠️ (non-primary estimate) | Expected to be in the NLLB/M2M100 size class; measure before any release decision. |
 | W | ✅ | CTranslate2 conversion supported. |
 | RT | ⚠️ | Same caveats as NLLB / M2M100. |
 | P | ✅ | Local. |
@@ -202,19 +202,34 @@ JV-03 **must** measure, per route, on at least two representative no-dGPU Window
 1. `Helsinki-NLP/opus-mt-ja-vi` (int8) — primary baseline.
 2. `facebook/m2m100_418M` (int8) — challenger.
 3. `facebook/nllb-200-distilled-600M` (int8) — **for quality reference only**; flag the
-   CC-BY-NC license in the artifact `notes` field so JV-05 cannot accidentally promote it.
+   CC-BY-NC license in the LF-04-v2 artifact fields below so JV-05 cannot accidentally
+   promote it.
 
 Per-route metrics required (already specified in `docs/10-local-mt-backend-decision.md` §6):
 `realtime_factor`, `p95_latency_ms`, `peak_rss_mb`, `bleu_or_chrf_vs_reference`, `quality_score_vs_google_baseline`.
 
-The benchmark artifact (`docs/evidence/lf-04-benchmark.json` or successor) **must record
-the model license string verbatim** so the JV-05 gate can refuse default-flip on NC models.
+The benchmark artifact successor must be `schema_version = "lf-04-v2"` and record license
+metadata per candidate under:
+
+- `candidates[].model.license_spdx` — normalized SPDX-style token used by gates, e.g.
+  `Apache-2.0`, `MIT`, `BSD-3-Clause`, or `CC-BY-NC-4.0`.
+- `candidates[].model.license_name` — upstream human-readable license string, e.g.
+  `Apache 2.0` or `CC BY-NC 4.0`.
+- `candidates[].model.license_source_url` — primary model-card or repo license URL.
+- `candidates[].model.license_policy` — `bundlable`, `download_only`,
+  `research_only`, or `blocked`.
+- `candidates[].notes[]` — non-gating annotations such as `quality-reference-only`.
+
+JV-03 must keep the existing `docs/evidence/lf-04-benchmark.json` path compatible if it
+upgrades that file in place; otherwise it must write a successor path and a validator that
+rejects v2 artifacts missing the fields above.
 
 ### JV-05 — default-provider flip gate
 
 JV-05 **must reject** a flip to `mt_provider = "local"` if:
 
-- The selected model's license is not in the allow-list `{Apache-2.0, MIT, BSD-3-Clause}`, OR
+- The selected model's `license_spdx` is not in the allow-list
+  `{Apache-2.0, MIT, BSD-3-Clause}`, OR
 - `realtime_factor > 0.50` or `p95_latency_ms > 750` on any advertised route, OR
 - `quality_score_vs_google_baseline < 1.0` and no explicit "opt-in only, do not flip default"
   override is recorded in the ADR.
