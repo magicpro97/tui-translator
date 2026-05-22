@@ -34,13 +34,13 @@ hard spike blocker, not treated as a pass.
 ## Command evidence
 
 ```powershell
-Set-Location C:\Users\linhnt102\tui-translator-jv-10
+Set-Location <repo-root>
 $env:RUSTUP_TOOLCHAIN='1.90.0-x86_64-pc-windows-gnu'
-$env:LIBCLANG_PATH='C:\Users\linhnt102\AppData\Roaming\Python\Python312\site-packages\clang\native'
+$env:LIBCLANG_PATH='<path-to-clang-native>'
 $env:CMAKE_GENERATOR='Ninja'
-$env:TEMP='D:\copilot-temp'
-$env:TMP='D:\copilot-temp'
-$env:PATH='C:\w64devkit\bin;C:\msys64\mingw64\bin;' + $env:PATH
+$env:TEMP='<scratch-temp>'
+$env:TMP='<scratch-temp>'
+$env:PATH='<mingw-or-w64devkit-bin>;' + $env:PATH
 
 cargo check --quiet
 # PASS
@@ -78,7 +78,7 @@ Get-ChildItem $env:USERPROFILE\.tui-translator\models\mt -Recurse -ErrorAction S
 After a pinned local OPUS-MT with-past bundle and ONNX Runtime DLL are available:
 
 ```powershell
-Set-Location C:\Users\linhnt102\tui-translator-jv-10
+Set-Location <repo-root>
 $env:TUI_TRANSLATOR_ONNXRUNTIME_DLL='C:\path\to\onnxruntime.dll'
 cargo run --features local-mt --bin mt_bench -- --local-candidate --output docs\evidence\jv-10-runtime-spike.json
 cargo run --bin mt_bench -- --validate-artifact docs\evidence\jv-10-runtime-spike.json
