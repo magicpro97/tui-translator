@@ -3672,11 +3672,20 @@ fn apply_runtime_config(
     playback_service: &SharedPlaybackService,
     next_cfg: config::AppConfig,
 ) {
-    let (capture_change, requires_restart) = {
+    let (
+        capture_change,
+        requires_restart,
+        previous_capture_device,
+        previous_audio_source,
+        previous_audio_file_path,
+    ) = {
         let current = current_config.lock().unwrap_or_else(|p| p.into_inner());
         (
             config::classify_capture_change(&current, &next_cfg),
             current.requires_restart_ignoring_capture(&next_cfg),
+            current.capture_device.clone(),
+            current.audio_source.clone(),
+            current.audio_file_path.clone(),
         )
     };
 
@@ -3687,7 +3696,7 @@ fn apply_runtime_config(
             tracing::warn!(reason = %reason, "capture config change rejected");
             capture_apply_failed = true;
         }
-        config::CaptureChangeOutcome::NeedsCaptureRestart { reason, .. } if !requires_restart => {
+        config::CaptureChangeOutcome::NeedsCaptureHotSwap { reason, .. } if !requires_restart => {
             match apply_capture_hot_swap(&next_cfg, reason) {
                 CaptureHotSwapApply::Applied => {}
                 CaptureHotSwapApply::RestartRequired => {
@@ -3701,9 +3710,16 @@ fn apply_runtime_config(
         _ => {}
     }
 
+    let mut effective_cfg = next_cfg.clone();
+    if capture_apply_failed {
+        effective_cfg.capture_device = previous_capture_device;
+        effective_cfg.audio_source = previous_audio_source;
+        effective_cfg.audio_file_path = previous_audio_file_path;
+    }
+
     {
         let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
-        *current = next_cfg.clone();
+        *current = effective_cfg.clone();
     }
 
     if requires_restart {
@@ -3715,14 +3731,15 @@ fn apply_runtime_config(
 
     overwrite_target_language(target_language, &next_cfg.target_language);
     overwrite_source_language(source_language, &next_cfg.source_language);
-    overwrite_capture_device_label(capture_device_label, &next_cfg.capture_device);
+    overwrite_capture_device_label(capture_device_label, &effective_cfg.capture_device);
     *slot_a_provider_name
         .lock()
-        .unwrap_or_else(|p| p.into_inner()) = next_cfg.slot_a().mt_provider.clone();
+        .unwrap_or_else(|p| p.into_inner()) = effective_cfg.slot_a().mt_provider.clone();
     // Sync the backend first; only set the UI flag to match what actually succeeded.
-    let service_ok = sync_playback_service_state(playback_service, &next_cfg, next_cfg.tts_enabled);
-    tts_enabled.store(next_cfg.tts_enabled && service_ok, Ordering::Relaxed);
-    audio_consent.store(next_cfg.audio_archive.consent_given, Ordering::Relaxed);
+    let service_ok =
+        sync_playback_service_state(playback_service, &effective_cfg, effective_cfg.tts_enabled);
+    tts_enabled.store(effective_cfg.tts_enabled && service_ok, Ordering::Relaxed);
+    audio_consent.store(effective_cfg.audio_archive.consent_given, Ordering::Relaxed);
 }
 
 enum CaptureHotSwapApply {
@@ -3828,13 +3845,14 @@ fn clear_capture_hot_swap_status() {
             .pipeline_error_msg
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        if slot
-            .as_deref()
-            .is_some_and(|message| message.starts_with("Capture change failed"))
-        {
+        if slot.as_deref().is_some_and(is_capture_hot_swap_status) {
             *slot = None;
         }
     }
+}
+
+fn is_capture_hot_swap_status(message: &str) -> bool {
+    message.starts_with("Capture change failed") || message.starts_with("Capture config rejected")
 }
 
 fn normalize_optional_field(value: &str) -> Option<String> {
@@ -6493,7 +6511,32 @@ mod tests {
         );
 
         assert_eq!(state.target_language(), "en");
-        assert_eq!(current_config.lock().unwrap().target_language, "en");
+        let effective = current_config.lock().unwrap().clone();
+        assert_eq!(effective.target_language, "en");
+        assert_eq!(
+            effective.audio_source,
+            config::AppConfig::default().audio_source,
+            "rejected capture fields must not become the effective runtime config"
+        );
+        assert_eq!(
+            effective.audio_file_path,
+            config::AppConfig::default().audio_file_path,
+            "rejected capture fields must keep the old effective source path"
+        );
+    }
+
+    #[test]
+    fn capture_hot_swap_status_predicate_matches_only_capture_statuses() {
+        assert!(is_capture_hot_swap_status(
+            "Capture change failed; still using previous audio stream: missing.wav"
+        ));
+        assert!(is_capture_hot_swap_status(
+            "Capture config rejected: audio_file_path is required"
+        ));
+        assert!(
+            !is_capture_hot_swap_status("Translation error: retry budget exhausted"),
+            "successful capture hot-swap must not clear unrelated pipeline errors"
+        );
     }
 
     #[test]

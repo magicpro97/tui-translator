@@ -284,12 +284,7 @@ async fn run_router(
 
         match action {
             RouterAction::Chunk(chunk) => {
-                forward_chunk(
-                    &mut router.archive,
-                    &router.downstream_tx,
-                    &router.metrics,
-                    chunk,
-                );
+                forward_chunk(&mut router.archive, &router.downstream_tx, chunk);
             }
 
             RouterAction::SwapCmd(req) => {
@@ -350,12 +345,7 @@ async fn run_router(
                 // stopping.  This is a graceful-shutdown path, not a hot-swap.
                 if let Some(mut remaining) = current.take() {
                     while let Some(chunk) = remaining.recv().await {
-                        forward_chunk(
-                            &mut router.archive,
-                            &router.downstream_tx,
-                            &router.metrics,
-                            chunk,
-                        );
+                        forward_chunk(&mut router.archive, &router.downstream_tx, chunk);
                         if router.downstream_tx.is_closed() {
                             break;
                         }
@@ -411,14 +401,14 @@ async fn poll_action(
 /// Write `chunk` to the archive writer (if active), then `try_send` to the
 /// orchestrator's downstream channel.
 ///
-/// Drops that cannot fit are counted in `metrics.dropped_during_swap`.
+/// During normal forwarding, downstream backpressure is intentionally not
+/// counted as a swap drop; [`drain_old`] records swap-boundary drops explicitly.
 /// The archive always receives the chunk **before** the orchestrator
 /// (`forward_chunk` enforces this ordering invariant).
 #[inline]
 fn forward_chunk(
     archive: &mut Option<AudioArchiveWriter>,
     downstream_tx: &mpsc::Sender<AudioChunk>,
-    metrics: &RouterMetrics,
     chunk: AudioChunk,
 ) {
     // Archive first — preserves ordering invariant.
@@ -430,9 +420,7 @@ fn forward_chunk(
     }
 
     // Non-blocking send — never stall the router task.
-    if downstream_tx.try_send(chunk).is_err() {
-        metrics.record_swap_drops(1);
-    }
+    let _ = downstream_tx.try_send(chunk);
 }
 
 // ── Drain helper ──────────────────────────────────────────────────────────────
@@ -465,7 +453,10 @@ async fn drain_old(
                     metrics.record_swap_drops(1);
                 }
             }
-            Err(_) => break, // empty or closed
+            Err(mpsc::error::TryRecvError::Empty) => {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => break,
         }
     }
     // Drop old_rx here — capture stream is released.
@@ -718,6 +709,40 @@ mod tests {
             .expect("router downstream open after failed swap");
         assert_eq!(after_failure.samples.first().copied(), Some(7));
         assert_eq!(handle.metrics().swap_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn hc_03b_steady_state_backpressure_is_not_swap_drop() {
+        let stream = make_stream((0..100).map(|n| chunk(n as i16)).collect());
+        let (handle, _rx) = start_router(stream, 0.001, None);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(
+            handle.metrics().dropped_during_swap(),
+            0,
+            "steady-state downstream backpressure is not a hot-swap drain drop"
+        );
+    }
+
+    #[tokio::test]
+    async fn hc_03b_drain_waits_for_late_old_stream_chunks() {
+        let (old_tx, old_rx) = mpsc::channel(1);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let _ = old_tx.send(chunk(9)).await;
+        });
+        let (downstream_tx, mut downstream_rx) = mpsc::channel(4);
+        let metrics = RouterMetrics::new();
+        let mut archive = None;
+
+        drain_old(old_rx, &mut archive, &downstream_tx, &metrics).await;
+
+        let drained = downstream_rx
+            .try_recv()
+            .expect("drain should wait for a late chunk before deadline");
+        assert_eq!(drained.samples.first().copied(), Some(9));
+        assert_eq!(metrics.dropped_during_swap(), 0);
     }
 
     #[test]

@@ -21,8 +21,8 @@ use super::AppConfig;
 pub enum CaptureChangeOutcome {
     /// No capture-relevant fields changed; hot-reload can proceed unchanged.
     Unchanged,
-    /// The capture device or audio source changed and the capture stream must be swapped.
-    NeedsCaptureRestart {
+    /// The capture device or audio source changed and the capture stream must be hot-swapped.
+    NeedsCaptureHotSwap {
         /// Human-readable description of what changed.  Safe to surface in UI.
         reason: String,
         /// The new capture device name, if explicitly configured.
@@ -87,7 +87,7 @@ pub fn classify_capture_change(old: &AppConfig, new: &AppConfig) -> CaptureChang
         "capture config changed ({}); capture hot-swap required",
         parts.join(", ")
     );
-    CaptureChangeOutcome::NeedsCaptureRestart {
+    CaptureChangeOutcome::NeedsCaptureHotSwap {
         reason,
         new_device: new.capture_device.clone(),
     }
@@ -110,24 +110,24 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_when_capture_device_changes() {
+    fn needs_hot_swap_when_capture_device_changes() {
         let old = base_config();
         let mut new = base_config();
         new.capture_device = Some("Speakers (Realtek)".to_string());
         assert!(matches!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart { .. }
+            CaptureChangeOutcome::NeedsCaptureHotSwap { .. }
         ));
     }
 
     #[test]
-    fn needs_restart_carries_new_device_name() {
+    fn needs_hot_swap_carries_new_device_name() {
         let old = base_config();
         let mut new = base_config();
         new.capture_device = Some("HDMI Output".to_string());
         assert_eq!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart {
+            CaptureChangeOutcome::NeedsCaptureHotSwap {
                 reason: "capture config changed (capture_device); capture hot-swap required"
                     .to_string(),
                 new_device: Some("HDMI Output".to_string()),
@@ -136,13 +136,13 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_when_device_cleared_to_default() {
+    fn needs_hot_swap_when_device_cleared_to_default() {
         let mut old = base_config();
         old.capture_device = Some("HDMI Output".to_string());
         let new = base_config();
         assert!(matches!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart {
+            CaptureChangeOutcome::NeedsCaptureHotSwap {
                 new_device: None,
                 ..
             }
@@ -150,31 +150,31 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_when_audio_source_changes_to_file() {
+    fn needs_hot_swap_when_audio_source_changes_to_file() {
         let old = base_config();
         let mut new = base_config();
         new.audio_source = "file".to_string();
         new.audio_file_path = Some("tests/soak/soak_audio.wav".to_string());
         assert!(matches!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart { .. }
+            CaptureChangeOutcome::NeedsCaptureHotSwap { .. }
         ));
     }
 
     #[test]
-    fn needs_restart_includes_both_changed_fields() {
+    fn needs_hot_swap_includes_both_changed_fields() {
         let old = base_config();
         let mut new = base_config();
         new.capture_device = Some("My Device".to_string());
         new.audio_source = "file".to_string();
         new.audio_file_path = Some("fixture.wav".to_string());
-        if let CaptureChangeOutcome::NeedsCaptureRestart { reason, .. } =
+        if let CaptureChangeOutcome::NeedsCaptureHotSwap { reason, .. } =
             classify_capture_change(&old, &new)
         {
             assert!(reason.contains("capture_device"));
             assert!(reason.contains("audio_source"));
         } else {
-            panic!("expected NeedsCaptureRestart");
+            panic!("expected NeedsCaptureHotSwap");
         }
     }
 
