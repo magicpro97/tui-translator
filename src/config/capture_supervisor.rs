@@ -1,18 +1,16 @@
 //! HC-03: Capture stream change classifier.
 //!
 //! Classifies `capture_device` / `audio_source` config changes and returns a
-//! typed outcome so the caller can decide whether a capture restart is needed.
+//! typed outcome so the caller can route valid capture changes to
+//! `CaptureRouter` hot-swap without restarting the application.
 //!
 //! The actual `CaptureStreamSupervisor` (lifecycle + gap metrics) lives in
 //! `crate::audio::supervisor` to keep audio types out of this module.
 //!
-//! # BLOCKED / SPLIT_REQUIRED — orchestrator wiring
-//!
-//! Full hot-swap of the running orchestrator's audio receiver is **not
-//! implemented**.  `run_orchestrator(mut audio_rx: mpsc::Receiver<AudioChunk>, …)`
-//! owns the receiver by value.  Wiring the live swap requires either a
-//! `watch::Sender<mpsc::Receiver<AudioChunk>>` in `OrchestratorContext` or a
-//! full orchestrator restart — both exceed HC-03 scope.
+//! The live runtime keeps the orchestrator receiver stable by placing
+//! `crate::audio::router::CaptureRouter` before fanout.  This module remains
+//! config-only: it validates and describes capture changes without depending on
+//! audio types.
 
 #![allow(dead_code)]
 
@@ -23,8 +21,8 @@ use super::AppConfig;
 pub enum CaptureChangeOutcome {
     /// No capture-relevant fields changed; hot-reload can proceed unchanged.
     Unchanged,
-    /// The capture device or audio source changed and a capture restart is required.
-    NeedsCaptureRestart {
+    /// The capture device or audio source changed and the capture stream must be hot-swapped.
+    NeedsCaptureHotSwap {
         /// Human-readable description of what changed.  Safe to surface in UI.
         reason: String,
         /// The new capture device name, if explicitly configured.
@@ -86,10 +84,10 @@ pub fn classify_capture_change(old: &AppConfig, new: &AppConfig) -> CaptureChang
         parts.push("audio_file_path");
     }
     let reason = format!(
-        "capture config changed ({}); capture restart required",
+        "capture config changed ({}); capture hot-swap required",
         parts.join(", ")
     );
-    CaptureChangeOutcome::NeedsCaptureRestart {
+    CaptureChangeOutcome::NeedsCaptureHotSwap {
         reason,
         new_device: new.capture_device.clone(),
     }
@@ -112,25 +110,25 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_when_capture_device_changes() {
+    fn needs_hot_swap_when_capture_device_changes() {
         let old = base_config();
         let mut new = base_config();
         new.capture_device = Some("Speakers (Realtek)".to_string());
         assert!(matches!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart { .. }
+            CaptureChangeOutcome::NeedsCaptureHotSwap { .. }
         ));
     }
 
     #[test]
-    fn needs_restart_carries_new_device_name() {
+    fn needs_hot_swap_carries_new_device_name() {
         let old = base_config();
         let mut new = base_config();
         new.capture_device = Some("HDMI Output".to_string());
         assert_eq!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart {
-                reason: "capture config changed (capture_device); capture restart required"
+            CaptureChangeOutcome::NeedsCaptureHotSwap {
+                reason: "capture config changed (capture_device); capture hot-swap required"
                     .to_string(),
                 new_device: Some("HDMI Output".to_string()),
             }
@@ -138,13 +136,13 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_when_device_cleared_to_default() {
+    fn needs_hot_swap_when_device_cleared_to_default() {
         let mut old = base_config();
         old.capture_device = Some("HDMI Output".to_string());
         let new = base_config();
         assert!(matches!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart {
+            CaptureChangeOutcome::NeedsCaptureHotSwap {
                 new_device: None,
                 ..
             }
@@ -152,31 +150,31 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_when_audio_source_changes_to_file() {
+    fn needs_hot_swap_when_audio_source_changes_to_file() {
         let old = base_config();
         let mut new = base_config();
         new.audio_source = "file".to_string();
         new.audio_file_path = Some("tests/soak/soak_audio.wav".to_string());
         assert!(matches!(
             classify_capture_change(&old, &new),
-            CaptureChangeOutcome::NeedsCaptureRestart { .. }
+            CaptureChangeOutcome::NeedsCaptureHotSwap { .. }
         ));
     }
 
     #[test]
-    fn needs_restart_includes_both_changed_fields() {
+    fn needs_hot_swap_includes_both_changed_fields() {
         let old = base_config();
         let mut new = base_config();
         new.capture_device = Some("My Device".to_string());
         new.audio_source = "file".to_string();
         new.audio_file_path = Some("fixture.wav".to_string());
-        if let CaptureChangeOutcome::NeedsCaptureRestart { reason, .. } =
+        if let CaptureChangeOutcome::NeedsCaptureHotSwap { reason, .. } =
             classify_capture_change(&old, &new)
         {
             assert!(reason.contains("capture_device"));
             assert!(reason.contains("audio_source"));
         } else {
-            panic!("expected NeedsCaptureRestart");
+            panic!("expected NeedsCaptureHotSwap");
         }
     }
 
