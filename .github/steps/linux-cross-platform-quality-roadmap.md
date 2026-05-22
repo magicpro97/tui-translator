@@ -171,8 +171,8 @@
 | VERIFY | Opus WBS review returns CLEAN or findings addressed | done |
 | ISSUE-CREATE | `gh issue create` returns all issue URLs | done |
 | PROJECT-LINK | Project 2 item list contains all created issues | done |
-| COMMIT | Planning ledger committed | pending |
-| LOOP-EVAL | Goal criteria met with evidence | pending |
+| COMMIT | Planning ledger committed | done |
+| LOOP-EVAL | Goal criteria met with evidence | done |
 
 ## Final Opus WBS review
 
