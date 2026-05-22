@@ -1,0 +1,86 @@
+{
+  "schema_version": "lf-04-v2",
+  "hardware_id": "windows-host-unmeasured",
+  "status": "pending",
+  "skipped": true,
+  "skipped_reason": "Live JV-10 runtime smoke is blocked because this host has no TUI_TRANSLATOR_ONNXRUNTIME_DLL and no installed local MT model cache. This artifact records the runtime decision surface only.",
+  "host": {
+    "cpu": "pending",
+    "ram_gb": null,
+    "os": "Windows_NT"
+  },
+  "corpus": {
+    "name": "jv-10-runtime-spike",
+    "sentence_count": 0,
+    "language_pairs": [
+      "ja-vi"
+    ]
+  },
+  "candidates": [
+    {
+      "provider": "local-mt-ort-greedy-current",
+      "kind": "local_model",
+      "rounds": 0,
+      "aggregate": {
+        "mean_quality": null,
+        "p95_latency_ms": null,
+        "sample_count": 0
+      },
+      "model": {
+        "license_spdx": "Apache-2.0",
+        "license_name": "Apache License 2.0",
+        "license_source_url": "https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi",
+        "license_policy": "bundlable"
+      },
+      "notes": [
+        "Current repo path compiles behind local-mt but uses full-sequence greedy decode without KV-cache.",
+        "No live translation smoke was run because ONNX Runtime DLL and model cache are absent."
+      ]
+    },
+    {
+      "provider": "local-mt-ort-kv-cache-target",
+      "kind": "local_model",
+      "rounds": 0,
+      "aggregate": {
+        "mean_quality": null,
+        "p95_latency_ms": null,
+        "sample_count": 0
+      },
+      "model": {
+        "license_spdx": "Apache-2.0",
+        "license_name": "Apache License 2.0",
+        "license_source_url": "https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi",
+        "license_policy": "bundlable"
+      },
+      "notes": [
+        "Recommended JV-11 target after adding decoder_with_past_model.onnx and tensor-name discovery.",
+        "Requires p95 latency, RTF, RSS, CPU, and error-rate evidence before default eligibility."
+      ]
+    },
+    {
+      "provider": "local-mt-ctranslate2-fallback",
+      "kind": "local_model",
+      "rounds": 0,
+      "aggregate": {
+        "mean_quality": null,
+        "p95_latency_ms": null,
+        "sample_count": 0
+      },
+      "model": {
+        "license_spdx": "Apache-2.0",
+        "license_name": "Apache License 2.0",
+        "license_source_url": "https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi",
+        "license_policy": "bundlable"
+      },
+      "notes": [
+        "CTranslate2 is viable as a conditional fallback but adds new Windows DLL and license packaging obligations.",
+        "Do not add CT2 to production unless ORT KV-cache misses performance or packaging gates."
+      ]
+    }
+  ],
+  "comparison": {
+    "verdict": "insufficient-data",
+    "notes": "No runtime benchmark executed. ORT KV-cache is selected as the next implementation path because ORT is already the repo runtime surface; CT2 remains a fallback pending separate Windows packaging smoke."
+  },
+  "results": []
+}
