@@ -6,3 +6,4 @@
 
 # JV-02 corpus fixtures are hash-checked and must keep LF line endings on Windows.
 tests/fixtures/jv02/*.jsonl text eol=lf
+tests/fixtures/jv02/*.json text eol=lf

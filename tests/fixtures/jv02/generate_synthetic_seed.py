@@ -171,10 +171,10 @@ def main() -> None:
         ),
     }
     out_manifest = HERE / "synthetic_seed_manifest.json"
-    out_manifest.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    manifest_blob = (
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    out_manifest.write_bytes(manifest_blob)
     print(f"wrote {out_jsonl} ({len(blob)} bytes, sha256={sha})")
     print(f"wrote {out_manifest}")
 

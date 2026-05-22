@@ -74,9 +74,9 @@ def main() -> int:
 
     raw = JSONL.read_bytes()
 
-    # Line endings: \r\n forbidden (V6).
-    if b"\r\n" in raw:
-        fail("V6: \\r\\n line endings detected", errors)
+    # Line endings: any carriage return is forbidden (V6).
+    if b"\r" in raw:
+        fail("V6: carriage return byte detected", errors)
 
     # Trailing single newline, no double-trailing newline (V6).
     if not raw.endswith(b"\n"):
@@ -84,14 +84,22 @@ def main() -> int:
     if raw.endswith(b"\n\n"):
         fail("V6: extra trailing newline", errors)
 
-    # NFC normalisation (V6).
-    text = raw.decode("utf-8")
-    if unicodedata.normalize("NFC", text) != text:
+    # UTF-8 + NFC normalisation (V6).
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        fail(f"V6: invalid UTF-8: {e}", errors)
+        text = ""
+    if text and unicodedata.normalize("NFC", text) != text:
         fail("V6: file is not NFC-normalised", errors)
 
     rows = []
     for ln, line in enumerate(raw.splitlines(), start=1):
-        s = line.decode("utf-8")
+        try:
+            s = line.decode("utf-8")
+        except UnicodeDecodeError as e:
+            fail(f"line {ln}: invalid UTF-8: {e}", errors)
+            continue
         try:
             row = json.loads(s)
         except json.JSONDecodeError as e:
