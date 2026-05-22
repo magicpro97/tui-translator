@@ -1596,6 +1596,37 @@ fn replace_config_file(tmp_path: &Path, target_path: &Path, parent: &Path) -> Re
     Ok(())
 }
 
+/// Outcome of a config hot-apply attempt, emitted by the file watcher.
+///
+/// Converted to [`crate::tui::ConfigApplyStatus`] in `main.rs` for display.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum WatchApplyNotification {
+    /// New config was invalid or rejected by a supervisor; old config kept.
+    Rejected {
+        /// Human-readable rejection reason.
+        reason: String,
+    },
+    /// Config file could not be parsed; old config kept.
+    ParseError {
+        /// Human-readable error description.
+        reason: String,
+    },
+    /// Config applied; an application restart is required for the change to
+    /// take full effect.
+    NeedsRestart {
+        /// Short description of which change requires the restart.
+        reason: String,
+    },
+}
+
+/// Callback type for watcher apply notifications.
+///
+/// Passed as `Option<WatchApplyNotifier>` to [`start_watcher`]; the main
+/// event loop captures the AppState Arcs it needs into the closure.
+pub type WatchApplyNotifier =
+    std::sync::Arc<dyn Fn(WatchApplyNotification) + Send + Sync + 'static>;
+
 /// Start a background thread that watches `path` for file-system changes.
 ///
 /// When `config.json` is created or modified:
@@ -1612,13 +1643,14 @@ pub fn start_watcher(
     path: &Path,
     initial: AppConfig,
     restart_required: Arc<AtomicBool>,
+    notifier: Option<WatchApplyNotifier>,
 ) -> Result<watch::Receiver<AppConfig>> {
     let (tx, rx) = watch::channel(initial);
     let config_path = path.to_path_buf();
 
     std::thread::Builder::new()
         .name("config-watcher".to_string())
-        .spawn(move || run_watcher_loop(config_path, restart_required, tx))
+        .spawn(move || run_watcher_loop(config_path, restart_required, tx, notifier))
         .context("failed to spawn config-watcher thread")?;
 
     Ok(rx)
@@ -1628,6 +1660,7 @@ fn run_watcher_loop(
     config_path: PathBuf,
     restart_required: Arc<AtomicBool>,
     tx: watch::Sender<AppConfig>,
+    notifier: Option<WatchApplyNotifier>,
 ) {
     let (event_tx, event_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
     let mut watcher = match recommended_watcher(move |res| {
@@ -1664,7 +1697,9 @@ fn run_watcher_loop(
     loop {
         match event_rx.recv_timeout(Duration::from_millis(250)) {
             Ok(event_result) => match event_result {
-                Ok(event) => handle_watch_event(event, &config_path, &restart_required, &tx),
+                Ok(event) => {
+                    handle_watch_event(event, &config_path, &restart_required, &tx, &notifier)
+                }
                 Err(e) => tracing::warn!("config watcher: file-system event error: {e}"),
             },
             Err(RecvTimeoutError::Timeout) => {}
@@ -1685,6 +1720,7 @@ fn handle_watch_event(
     config_path: &PathBuf,
     restart_required: &Arc<AtomicBool>,
     tx: &watch::Sender<AppConfig>,
+    notifier: &Option<WatchApplyNotifier>,
 ) {
     let affects_config = event.paths.iter().any(|p| p == config_path);
     let is_write = matches!(
@@ -1715,7 +1751,9 @@ fn handle_watch_event(
                         "⚠ Provider config change rejected — keeping previous config. \
                          Reason: {reason}"
                     );
-                    // Rollback: do not send the new config on the channel.
+                    if let Some(n) = notifier {
+                        n(WatchApplyNotification::Rejected { reason });
+                    }
                     return;
                 }
                 provider_supervisor::SupervisorOutcome::NeedsOrchestratorRestart { reason } => {
@@ -1725,6 +1763,9 @@ fn handle_watch_event(
                     tracing::warn!(
                         "⚠ Provider rebuild pending — application restart required. {reason}"
                     );
+                    if let Some(n) = notifier {
+                        n(WatchApplyNotification::NeedsRestart { reason });
+                    }
                 }
                 provider_supervisor::SupervisorOutcome::Unchanged => {
                     // No provider change; fall through to the generic
@@ -1751,6 +1792,11 @@ fn handle_watch_event(
         }
         Err(e) => {
             tracing::warn!("config hot-reload failed, keeping last known-good config: {e:#}");
+            if let Some(n) = notifier {
+                n(WatchApplyNotification::ParseError {
+                    reason: format!("{e:#}"),
+                });
+            }
         }
     }
 }
@@ -2809,8 +2855,9 @@ mod tests {
         )
         .unwrap();
 
-        let initial = load(&path).unwrap();
-        let rx = start_watcher(&path, initial, Arc::new(AtomicBool::new(false))).unwrap();
+        let initial = load(&path).expect("test config should load");
+        let rx = start_watcher(&path, initial, Arc::new(AtomicBool::new(false)), None)
+            .expect("test watcher should start");
 
         // Allow the watcher thread to register the watch before we write.
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -2842,7 +2889,13 @@ mod tests {
         write_config(&path, &initial).unwrap();
 
         let restart_required = Arc::new(AtomicBool::new(false));
-        let rx = start_watcher(&path, load(&path).unwrap(), restart_required.clone()).unwrap();
+        let rx = start_watcher(
+            &path,
+            load(&path).expect("test config should load"),
+            restart_required.clone(),
+            None,
+        )
+        .expect("test watcher should start");
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -2877,8 +2930,9 @@ mod tests {
         )
         .unwrap();
 
-        let initial = load(&path).unwrap();
-        let rx = start_watcher(&path, initial, Arc::new(AtomicBool::new(false))).unwrap();
+        let initial = load(&path).expect("test config should load");
+        let rx = start_watcher(&path, initial, Arc::new(AtomicBool::new(false)), None)
+            .expect("test watcher should start");
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -2905,8 +2959,9 @@ mod tests {
         .unwrap();
 
         let restart_required = Arc::new(AtomicBool::new(false));
-        let initial = load(&path).unwrap();
-        let _rx = start_watcher(&path, initial, restart_required.clone()).unwrap();
+        let initial = load(&path).expect("test config should load");
+        let _rx = start_watcher(&path, initial, restart_required.clone(), None)
+            .expect("test watcher should start");
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
@@ -2947,13 +3002,13 @@ mod tests {
             attrs: Default::default(),
         };
 
-        handle_watch_event(event.clone(), &path, &restart_required, &tx);
-        rx.changed().await.unwrap();
+        handle_watch_event(event.clone(), &path, &restart_required, &tx, &None);
+        rx.changed().await.expect("config changed");
         assert_eq!(rx.borrow().target_language, "en");
         let _ = rx.borrow_and_update();
-        assert!(!rx.has_changed().unwrap());
+        assert!(!rx.has_changed().expect("has_changed check"));
 
-        handle_watch_event(event, &path, &restart_required, &tx);
+        handle_watch_event(event, &path, &restart_required, &tx, &None);
         assert!(
             !rx.has_changed().unwrap(),
             "duplicate file-system events for the same config should be ignored"
@@ -3817,7 +3872,7 @@ mod tests {
         };
         write_config(&path, &next).expect("write valid provider change");
 
-        handle_watch_event(event, &path, &restart_required, &tx);
+        handle_watch_event(event, &path, &restart_required, &tx, &None);
 
         // New config must have been broadcast.
         rx.changed().await.expect("config changed signal");
@@ -3860,7 +3915,7 @@ mod tests {
         .expect("write bad provider config");
 
         let changed_before = rx.has_changed().unwrap_or(false);
-        handle_watch_event(event, &path, &restart_required, &tx);
+        handle_watch_event(event, &path, &restart_required, &tx, &None);
 
         // The watch channel must NOT have changed (rollback).
         assert!(
@@ -3903,7 +3958,7 @@ mod tests {
         };
         write_config(&path, &next).expect("write hot-only change");
 
-        handle_watch_event(event, &path, &restart_required, &tx);
+        handle_watch_event(event, &path, &restart_required, &tx, &None);
 
         // Hot change must be broadcast.
         rx.changed().await.expect("config hot-reload signal");
@@ -3940,7 +3995,7 @@ mod tests {
         };
         write_config(&path, &next).expect("write capture-only change");
 
-        handle_watch_event(event, &path, &restart_required, &tx);
+        handle_watch_event(event, &path, &restart_required, &tx, &None);
 
         rx.changed().await.expect("config hot-reload signal");
         assert_eq!(

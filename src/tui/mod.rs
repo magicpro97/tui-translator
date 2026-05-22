@@ -37,6 +37,99 @@ pub use crate::metrics::{
     format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttSource, SttState,
 };
 
+/// Auto-dismiss timeout (seconds) for transient `Ok` and `RolledBack` statuses.
+pub const CONFIG_APPLY_AUTO_DISMISS_SECS: u64 = 5;
+
+/// Result of a config hot-apply attempt, shown as a status banner.
+///
+/// `Ok` and `RolledBack` are transient and auto-dismiss after
+/// [`CONFIG_APPLY_AUTO_DISMISS_SECS`] seconds.  `RestartRequired` is
+/// persistent and must remain visible until the application is restarted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigApplyStatus {
+    /// Config applied cleanly without any restart needed.
+    Ok {
+        /// Short description of what changed.
+        reason: String,
+    },
+    /// New config was rejected; previous config is still active.
+    RolledBack {
+        /// Reason the change was rejected.
+        reason: String,
+    },
+    /// Config accepted but some fields require an application restart.
+    RestartRequired {
+        /// Which fields (or subsystem) require the restart.
+        reason: String,
+    },
+}
+
+impl ConfigApplyStatus {
+    /// `true` when the status must never auto-dismiss.
+    pub fn is_persistent(&self) -> bool {
+        matches!(self, Self::RestartRequired { .. })
+    }
+
+    /// Short human-readable label for the status.
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Ok { .. } => "ok",
+            Self::RolledBack { .. } => "rolled back",
+            Self::RestartRequired { .. } => "restart required",
+        }
+    }
+
+    /// The reason/detail string.
+    pub fn reason(&self) -> &str {
+        match self {
+            Self::Ok { reason }
+            | Self::RolledBack { reason }
+            | Self::RestartRequired { reason } => reason,
+        }
+    }
+
+    /// Return a copy of `self` with the reason capped to [`REASON_MAX_LEN`].
+    ///
+    /// Reasons that exceed the limit are truncated with an ellipsis (`…`).
+    pub fn with_truncated_reason(self) -> Self {
+        match self {
+            Self::Ok { reason } => Self::Ok {
+                reason: truncate_reason(&reason),
+            },
+            Self::RolledBack { reason } => Self::RolledBack {
+                reason: truncate_reason(&reason),
+            },
+            Self::RestartRequired { reason } => Self::RestartRequired {
+                reason: truncate_reason(&reason),
+            },
+        }
+    }
+}
+
+/// Maximum number of Unicode scalar values stored in a [`ConfigApplyStatus`] reason.
+///
+/// Reasons longer than this are truncated with an ellipsis (`…`) to prevent
+/// pathologically long error messages or accidental credential material from
+/// reaching the TUI or log lines.
+pub const REASON_MAX_LEN: usize = 120;
+
+/// Truncate `s` to at most [`REASON_MAX_LEN`] Unicode scalar values.
+///
+/// If truncation occurs an ellipsis (`…`) is appended.  The returned string
+/// is always valid UTF-8 regardless of the input length.
+pub fn truncate_reason(s: &str) -> String {
+    let mut result = String::new();
+    for (idx, ch) in s.chars().enumerate() {
+        if idx >= REASON_MAX_LEN {
+            result.pop();
+            result.push('\u{2026}');
+            return result;
+        }
+        result.push(ch);
+    }
+    result
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /// Shared scale factor for encoding audio level into an atomic integer.
@@ -1589,6 +1682,16 @@ pub struct AppState {
     pub slot_a_error_status_label: Arc<Mutex<String>>,
     /// Slot B pipeline/auth error summary shown in the pane title in dual mode.
     pub slot_b_error_status_label: Arc<Mutex<String>>,
+
+    // ── HC-05 (issue #390) — config apply status banner ──────────────────────
+    /// Last config apply result with its monotonic timestamp.
+    ///
+    /// `Ok` and `RolledBack` variants auto-dismiss after
+    /// [`CONFIG_APPLY_AUTO_DISMISS_SECS`] seconds.  `RestartRequired` is
+    /// persistent.  `None` until the first apply event.
+    pub config_apply_status: Arc<Mutex<Option<(ConfigApplyStatus, std::time::Instant)>>>,
+    /// Total number of config apply attempts since the session started.
+    pub config_apply_count: Arc<AtomicU32>,
 }
 
 impl AppState {
@@ -1635,6 +1738,8 @@ impl AppState {
             slot_b_tts_status_label: Arc::new(Mutex::new("ok".to_string())),
             slot_a_error_status_label: Arc::new(Mutex::new(String::new())),
             slot_b_error_status_label: Arc::new(Mutex::new(String::new())),
+            config_apply_status: Arc::new(Mutex::new(None)),
+            config_apply_count: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -1913,11 +2018,80 @@ impl AppState {
         let state = guard.as_mut()?;
         Some(f(state))
     }
+
+    /// Record a config apply result.
+    ///
+    /// Increments the apply counter and stores the status with the current
+    /// monotonic timestamp so auto-dismiss can be applied on read.
+    ///
+    /// A persistent [`ConfigApplyStatus::RestartRequired`] can only be replaced
+    /// by another `RestartRequired`; transient statuses (`Ok`, `RolledBack`)
+    /// cannot demote it.
+    pub fn record_config_apply(&self, status: ConfigApplyStatus) {
+        self.config_apply_count.fetch_add(1, Ordering::Relaxed);
+        let status = status.with_truncated_reason();
+        let mut guard = self
+            .config_apply_status
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let should_update = !matches!(guard.as_ref(),
+            Some((existing, _)) if existing.is_persistent() && !status.is_persistent());
+        if should_update {
+            *guard = Some((status, std::time::Instant::now()));
+        }
+    }
+
+    /// Return the current config apply status, respecting auto-dismiss rules.
+    ///
+    /// Returns `None` when no apply has occurred, or when a transient status
+    /// (`Ok`/`RolledBack`) is older than [`CONFIG_APPLY_AUTO_DISMISS_SECS`].
+    /// `RestartRequired` is always returned until the app restarts.
+    pub fn config_apply_snapshot(&self) -> Option<ConfigApplyStatus> {
+        let guard = self
+            .config_apply_status
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        guard.as_ref().and_then(|(status, ts)| {
+            if status.is_persistent() || ts.elapsed().as_secs() < CONFIG_APPLY_AUTO_DISMISS_SECS {
+                Some(status.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Total number of config apply attempts in this session.
+    pub fn config_apply_count_value(&self) -> u32 {
+        self.config_apply_count.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Record a config apply result directly into the Arc fields.
+///
+/// This free function allows the watcher task and notifier closures to
+/// record results without needing access to the full [`AppState`].
+///
+/// A persistent [`ConfigApplyStatus::RestartRequired`] can only be replaced
+/// by another `RestartRequired`; transient statuses (`Ok`, `RolledBack`)
+/// cannot demote it.
+pub fn record_config_apply_to(
+    status_arc: &Arc<Mutex<Option<(ConfigApplyStatus, std::time::Instant)>>>,
+    count_arc: &Arc<AtomicU32>,
+    status: ConfigApplyStatus,
+) {
+    count_arc.fetch_add(1, Ordering::Relaxed);
+    let status = status.with_truncated_reason();
+    let mut guard = status_arc.lock().unwrap_or_else(|p| p.into_inner());
+    let should_update = !matches!(guard.as_ref(),
+        Some((existing, _)) if existing.is_persistent() && !status.is_persistent());
+    if should_update {
+        *guard = Some((status, std::time::Instant::now()));
     }
 }
 
@@ -2060,6 +2234,11 @@ pub struct StatusMetricsStrip<'a> {
     /// Formatted TTS health label for slot B.  `None` in single-slot mode;
     /// when `Some`, the expanded metrics strip shows both slot labels.
     pub slot_b_tts_status: Option<String>,
+    // ── HC-05 (issue #390) — config apply status ──────────────────────────────
+    /// Last config apply result; `None` when absent or auto-dismissed.
+    pub config_apply_status: Option<ConfigApplyStatus>,
+    /// Total apply attempts in this session (for the expanded metrics row).
+    pub config_apply_count: u32,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -2215,6 +2394,18 @@ impl StatusMetricsStrip<'_> {
             ));
         }
 
+        if let Some(ref status) = self.config_apply_status {
+            let (label_color, modifier) = match status {
+                ConfigApplyStatus::Ok { .. } => (Color::Green, Modifier::empty()),
+                ConfigApplyStatus::RolledBack { .. } => (Color::Yellow, Modifier::BOLD),
+                ConfigApplyStatus::RestartRequired { .. } => (Color::Yellow, Modifier::BOLD),
+            };
+            spans.push(Span::styled(
+                format!(" \u{2502} \u{24d8} config: {}", status.label()),
+                Style::default().fg(label_color).add_modifier(modifier),
+            ));
+        }
+
         Paragraph::new(Line::from(spans))
             .alignment(Alignment::Left)
             .block(Block::default().borders(Borders::ALL))
@@ -2305,10 +2496,30 @@ impl StatusMetricsStrip<'_> {
                 Line::from(spans)
             },
             metrics_line,
-            Line::from(vec![
-                Span::raw(format!("Elapsed: {}", self.elapsed)),
-                restart_span,
-            ]),
+            {
+                let mut elapsed_spans = vec![
+                    Span::raw(format!("Elapsed: {}", self.elapsed)),
+                    restart_span,
+                ];
+                if self.config_apply_count > 0 || self.config_apply_status.is_some() {
+                    let config_str = match &self.config_apply_status {
+                        Some(status) => format!(
+                            "   Config: {} applies \u{2502} last: {}: {}",
+                            self.config_apply_count,
+                            status.label(),
+                            status.reason(),
+                        ),
+                        None => format!("   Config: {} applies", self.config_apply_count),
+                    };
+                    let style = match &self.config_apply_status {
+                        Some(ConfigApplyStatus::Ok { .. }) => Style::default().fg(Color::Green),
+                        Some(_) => Style::default().fg(Color::Yellow),
+                        None => Style::default().fg(Color::DarkGray),
+                    };
+                    elapsed_spans.push(Span::styled(config_str, style));
+                }
+                Line::from(elapsed_spans)
+            },
         ];
 
         // Issue #79 / #80 / #81 / #83 — extended runtime metrics line.
@@ -2842,6 +3053,9 @@ pub fn draw_ui_with_route(
                 None
             }
         },
+        // HC-05 (issue #390): config apply status and count.
+        config_apply_status: state.config_apply_snapshot(),
+        config_apply_count: state.config_apply_count_value(),
     };
     frame.render_widget(&strip, chunks[3]);
 
@@ -4174,6 +4388,8 @@ mod tests {
                     // DM-06 (issue #382): single-slot default; no slot-B status.
                     slot_a_tts_status: "ok".to_string(),
                     slot_b_tts_status: None,
+                    config_apply_status: None,
+                    config_apply_count: 0,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -4338,6 +4554,8 @@ mod tests {
                     stt_source: SttSource::Local,
                     slot_a_tts_status: "ok".to_string(),
                     slot_b_tts_status: Some("degraded: auth timeout".to_string()),
+                    config_apply_status: None,
+                    config_apply_count: 0,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -4417,6 +4635,8 @@ mod tests {
                     stt_source: SttSource::Local,
                     slot_a_tts_status: "ok".to_string(),
                     slot_b_tts_status: None,
+                    config_apply_status: None,
+                    config_apply_count: 0,
                 };
                 frame.render_widget(&strip, frame.area());
             })
@@ -5925,6 +6145,8 @@ mod tests {
             stt_source: SttSource::Local,
             slot_a_tts_status: "ok".to_string(),
             slot_b_tts_status: None,
+            config_apply_status: None,
+            config_apply_count: 0,
         };
         let backend = TestBackend::new(120, 9);
         let mut terminal = Terminal::new(backend).expect("TestBackend terminal init must not fail");
@@ -6312,6 +6534,128 @@ mod tests {
         assert!(
             rendered.contains("Tab"),
             "help overlay should document the Tab shortcut"
+        );
+    }
+
+    // ── HC-05: RestartRequired persistence ───────────────────────────────────
+
+    #[test]
+    fn record_config_apply_restart_required_not_demoted_by_ok() {
+        let state = AppState::new();
+        state.record_config_apply(ConfigApplyStatus::RestartRequired {
+            reason: "stt_provider changed".to_string(),
+        });
+        // A subsequent Ok must not overwrite the persistent RestartRequired.
+        state.record_config_apply(ConfigApplyStatus::Ok {
+            reason: "settings hot-reloaded".to_string(),
+        });
+        let snapshot = state.config_apply_snapshot();
+        assert!(
+            matches!(snapshot, Some(ConfigApplyStatus::RestartRequired { .. })),
+            "RestartRequired must survive a subsequent Ok; got: {snapshot:?}"
+        );
+        assert_eq!(
+            snapshot.unwrap().reason(),
+            "stt_provider changed",
+            "RestartRequired reason must be preserved"
+        );
+        assert_eq!(
+            state.config_apply_count_value(),
+            2,
+            "apply counter must increment for every call"
+        );
+    }
+
+    #[test]
+    fn record_config_apply_restart_required_not_demoted_by_rolled_back() {
+        let state = AppState::new();
+        state.record_config_apply(ConfigApplyStatus::RestartRequired {
+            reason: "capture_device changed".to_string(),
+        });
+        state.record_config_apply(ConfigApplyStatus::RolledBack {
+            reason: "invalid value".to_string(),
+        });
+        let snapshot = state.config_apply_snapshot();
+        assert!(
+            matches!(snapshot, Some(ConfigApplyStatus::RestartRequired { .. })),
+            "RestartRequired must survive a subsequent RolledBack; got: {snapshot:?}"
+        );
+        assert_eq!(state.config_apply_count_value(), 2);
+    }
+
+    #[test]
+    fn record_config_apply_restart_required_updatable_by_restart_required() {
+        let state = AppState::new();
+        state.record_config_apply(ConfigApplyStatus::RestartRequired {
+            reason: "first restart reason".to_string(),
+        });
+        state.record_config_apply(ConfigApplyStatus::RestartRequired {
+            reason: "second restart reason".to_string(),
+        });
+        let snapshot = state.config_apply_snapshot();
+        assert_eq!(
+            snapshot.unwrap().reason(),
+            "second restart reason",
+            "RestartRequired reason must update when replaced by another RestartRequired"
+        );
+    }
+
+    #[test]
+    fn record_config_apply_to_restart_required_not_demoted() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let status_arc: Arc<Mutex<Option<(ConfigApplyStatus, std::time::Instant)>>> =
+            Arc::new(Mutex::new(None));
+        let count_arc: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
+        record_config_apply_to(
+            &status_arc,
+            &count_arc,
+            ConfigApplyStatus::RestartRequired {
+                reason: "watcher reason".to_string(),
+            },
+        );
+        record_config_apply_to(
+            &status_arc,
+            &count_arc,
+            ConfigApplyStatus::Ok {
+                reason: "settings hot-reloaded".to_string(),
+            },
+        );
+        let guard = status_arc.lock().unwrap();
+        let (status, _) = guard.as_ref().unwrap();
+        assert!(
+            matches!(status, ConfigApplyStatus::RestartRequired { .. }),
+            "record_config_apply_to must not demote RestartRequired; got: {status:?}"
+        );
+        assert_eq!(count_arc.load(Ordering::Relaxed), 2);
+    }
+
+    // ── HC-05: reason truncation ──────────────────────────────────────────────
+
+    #[test]
+    fn truncate_reason_short_string_is_unchanged() {
+        let s = "short reason";
+        assert_eq!(truncate_reason(s), s);
+    }
+
+    #[test]
+    fn truncate_reason_long_string_gets_ellipsis() {
+        let long: String = "x".repeat(200);
+        let result = truncate_reason(&long);
+        assert!(
+            result.ends_with('\u{2026}'),
+            "truncated reason must end with ellipsis"
+        );
+        // 119 'x' chars + 1 ellipsis scalar
+        assert_eq!(result.chars().count(), REASON_MAX_LEN);
+    }
+
+    #[test]
+    fn truncate_reason_at_exact_max_len_is_unchanged() {
+        let s: String = "y".repeat(REASON_MAX_LEN);
+        assert_eq!(
+            truncate_reason(&s),
+            s,
+            "string at exactly max len must not be truncated"
         );
     }
 }
