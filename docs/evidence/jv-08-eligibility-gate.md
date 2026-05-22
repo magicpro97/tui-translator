@@ -20,7 +20,7 @@ not authorize a default flip.
 ## Evidence inventory
 
 | WBS | Evidence | State | Impact |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | JV-01 | `docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md` | Research record | OPUS-MT is primary candidate; NLLB is research-only due CC-BY-NC |
 | JV-02 | `docs/evidence/ja-vi-benchmark-corpus-plan.md` and `tests/fixtures/jv02/` | Seed only | 20-row seed is not the full 300-row benchmark corpus |
 | JV-03 | `docs/evidence/lf-04-benchmark.json` | `pending`, `skipped=true` | Harness/schema exists; no candidate rounds |
@@ -37,7 +37,7 @@ default eligibility gate.
 ## Gate results
 
 | Gate | Threshold | Result |
-|---|---|---|
+| --- | --- | --- |
 | G1 quality ratio | local chrF++ >= 0.90 * Google and >= 45.0 | blocked-no-evidence |
 | G2 quality CI | bootstrap lower bound >= -3 chrF versus Google | blocked-no-evidence |
 | G3 latency | p95 <= 700 ms | blocked-no-evidence |

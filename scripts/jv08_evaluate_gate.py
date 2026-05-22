@@ -101,6 +101,8 @@ def validate_inputs(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
         wbs = item.get("wbs")
         if not isinstance(wbs, str) or not wbs:
             raise GateError("inputs[].wbs is required")
+        if wbs in by_wbs:
+            raise GateError(f"{wbs}: duplicate inputs[].wbs")
         by_wbs[wbs] = item
 
         path_value = item.get("path")
@@ -149,6 +151,8 @@ def validate_evidence_refs(refs: list[Any], gate_id: str) -> None:
         resolved = normalized_rel_path(path_part, ALLOWED_EVIDENCE_PREFIXES)
         if not resolved.exists():
             raise GateError(f"{gate_id}: evidence_ref does not exist: {ref}")
+        if not resolved.is_file():
+            raise GateError(f"{gate_id}: evidence_ref must be a file: {ref}")
 
 
 def validate_gates(artifact: dict[str, Any]) -> None:

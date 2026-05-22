@@ -222,14 +222,14 @@
   ],
   "reviews": {
     "nfr": {
-      "status": "pending",
-      "reviewer": null,
-      "verdict_ref": null
+      "status": "completed",
+      "reviewer": "nfr-verification-gate (claude-opus-4.6)",
+      "verdict_ref": "https://github.com/magicpro97/tui-translator/pull/448"
     },
     "security": {
-      "status": "pending",
-      "reviewer": null,
-      "verdict_ref": null
+      "status": "completed",
+      "reviewer": "tui-security-auditor (claude-opus-4.6)",
+      "verdict_ref": "https://github.com/magicpro97/tui-translator/pull/448"
     }
   },
   "gap_issues": [

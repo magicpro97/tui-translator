@@ -40,7 +40,7 @@ quality confidence for a local default is not established yet.
 ## Input evidence
 
 | WBS | Input | Finding |
-|---|---|---|
+| --- | --- | --- |
 | JV-01 | `docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md` | OPUS-MT is the primary permissive candidate; NLLB is research-only due CC-BY-NC |
 | JV-02 | `docs/evidence/ja-vi-benchmark-corpus-plan.md` | Only the 20-row synthetic seed is committed; the full 300-row corpus is not materialized |
 | JV-03 | `docs/evidence/lf-04-benchmark.json` | LF-04-v2 artifact is `pending`; candidates are empty |
@@ -53,7 +53,7 @@ quality confidence for a local default is not established yet.
 ## Default eligibility gates
 
 | Gate | Required threshold | Current result |
-|---|---|---|
+| --- | --- | --- |
 | Quality ratio | local chrF++ >= 0.90 * Google and >= 45.0 | blocked-no-evidence |
 | Quality uncertainty | bootstrap lower bound >= -3 chrF versus Google | blocked-no-evidence |
 | Latency | p95 <= 700 ms | blocked-no-evidence |
@@ -69,7 +69,7 @@ model quality, latency, or release readiness.
 ## Rejected alternatives
 
 | Alternative | Rejection reason |
-|---|---|
+| --- | --- |
 | Flip to OPUS-MT now | No committed OPUS-MT benchmark, no live runtime smoke, no p95/RTF/RSS/quality evidence |
 | Flip to M2M100 now | No committed benchmark and no production runtime path |
 | Flip to NLLB now | No committed benchmark and JV-01 records CC-BY-NC as non-default for bundled/commercial distribution |
@@ -78,7 +78,7 @@ model quality, latency, or release readiness.
 ## Follow-up routing
 
 | Work | Next issue |
-|---|---|
+| --- | --- |
 | Materialize the 300-row corpus and live Google baseline | JV-04 follow-up |
 | Pin model bundle manifest, checksums, license, and consent | JV-09 |
 | Implement ORT KV-cache local MT provider path | JV-11 |
