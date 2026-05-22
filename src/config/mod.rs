@@ -3995,7 +3995,7 @@ mod tests {
         };
         write_config(&path, &next).expect("write capture-only change");
 
-        handle_watch_event(event, &path, &restart_required, &tx);
+        handle_watch_event(event, &path, &restart_required, &tx, &None);
 
         rx.changed().await.expect("config hot-reload signal");
         assert_eq!(
