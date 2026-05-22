@@ -1,0 +1,31 @@
+{
+  "categories": [
+    "disfluent",
+    "honorific",
+    "long",
+    "medium",
+    "named-entity",
+    "short",
+    "technical"
+  ],
+  "corpus_sha256": "275cf3c52d4d5d2db1ac6d77419ef65db5ab3098d0e187236bd8f41e95bd8f78",
+  "fixture_kind": "synthetic-seed",
+  "generated_at": "2026-05-21T00:00:00Z",
+  "notes": "This is the JV-02 synthetic seed fixture, not the full 300-row benchmark corpus.  See docs/evidence/ja-vi-benchmark-corpus-plan.md.",
+  "rng_seed": 20260521,
+  "round_count": 10,
+  "round_order_seed": 20260521,
+  "row_count": 20,
+  "schema_version": "jv02-corpus-v1",
+  "sources": [
+    {
+      "attribution": "tui-translator JV-02 synthetic seed (CC0-1.0, no PII)",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "name": "synthetic",
+      "rows": 20,
+      "sha256": "275cf3c52d4d5d2db1ac6d77419ef65db5ab3098d0e187236bd8f41e95bd8f78",
+      "version": "v1"
+    }
+  ]
+}
