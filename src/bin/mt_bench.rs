@@ -105,6 +105,7 @@ pub fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<CliArgs
     let mut with_google = false;
     let mut google_api_key: Option<String> = None;
     let mut validate_path: Option<PathBuf> = None;
+    let mut mode_flag: Option<&'static str> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -112,18 +113,22 @@ pub fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<CliArgs
                 result.output = PathBuf::from(require_value(&mut args, "--output")?);
             }
             "--dry-run" => {
+                claim_mode_flag(&mut mode_flag, "--dry-run")?;
                 result.mode = RunMode::DryRun;
             }
             "--local-candidate" => {
+                claim_mode_flag(&mut mode_flag, "--local-candidate")?;
                 result.mode = RunMode::LocalCandidate;
             }
             "--with-google" => {
+                claim_mode_flag(&mut mode_flag, "--with-google")?;
                 with_google = true;
             }
             "--google-api-key" => {
                 google_api_key = Some(require_value(&mut args, "--google-api-key")?);
             }
             "--validate-artifact" => {
+                claim_mode_flag(&mut mode_flag, "--validate-artifact")?;
                 validate_path = Some(PathBuf::from(require_value(
                     &mut args,
                     "--validate-artifact",
@@ -165,7 +170,11 @@ pub fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<CliArgs
                 } else {
                     other
                 };
-                bail!("unknown argument: {safe}; try --help for usage");
+                bail!(
+                    "unknown argument: {safe}; usage: mt_bench [--output <file.json>] \
+                     [--dry-run | --local-candidate | --with-google --google-api-key <key> | \
+                     --validate-artifact <file.json>]"
+                );
             }
         }
     }
@@ -201,6 +210,14 @@ pub fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<CliArgs
     }
 
     Ok(result)
+}
+
+fn claim_mode_flag(selected: &mut Option<&'static str>, flag: &'static str) -> Result<()> {
+    if let Some(existing) = selected {
+        bail!("mode flags are mutually exclusive: {existing} cannot be combined with {flag}");
+    }
+    *selected = Some(flag);
+    Ok(())
 }
 
 /// Returns `true` if `key` is empty or looks like a placeholder, not a real credential.
@@ -835,14 +852,33 @@ pub fn artifact_to_markdown(artifact: &BenchmarkArtifact) -> String {
     md
 }
 
-/// Generate NDJSON per-sentence sidecar: one JSON object per result entry.
-pub fn artifact_to_ndjson(artifact: &BenchmarkArtifact) -> String {
-    artifact
-        .results
-        .iter()
-        .map(|r| serde_json::to_string(r).expect("PairResult serializes"))
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Generate NDJSON sidecar: one JSON object per language-pair result entry.
+pub fn artifact_to_ndjson(artifact: &BenchmarkArtifact) -> Result<String> {
+    let mut lines = Vec::with_capacity(artifact.results.len());
+    for result in &artifact.results {
+        ensure_pair_result_finite(result)?;
+        lines.push(
+            serde_json::to_string(result)
+                .context("failed to serialise benchmark result entry as NDJSON")?,
+        );
+    }
+    Ok(lines.join("\n"))
+}
+
+fn ensure_pair_result_finite(result: &PairResult) -> Result<()> {
+    for (name, value) in [
+        ("realtime_factor", result.realtime_factor),
+        ("p95_latency_ms", result.p95_latency_ms),
+        ("quality_score", result.quality_score),
+    ] {
+        if value.is_some_and(|v| !v.is_finite()) {
+            bail!(
+                "cannot serialise NDJSON for pair '{}': {name} must be finite",
+                result.pair
+            );
+        }
+    }
+    Ok(())
 }
 
 // ── Pending fixture ───────────────────────────────────────────────────────────
@@ -1049,9 +1085,9 @@ fn main() -> Result<()> {
         .with_context(|| format!("failed to write markdown summary {}", md_path.display()))?;
     println!("wrote markdown summary: {}", md_path.display());
 
-    // Write NDJSON per-sentence sidecar.
+    // Write NDJSON sidecar: one record per language-pair result.
     let ndjson_path = args.output.with_extension("ndjson");
-    let ndjson = artifact_to_ndjson(&artifact);
+    let ndjson = artifact_to_ndjson(&artifact)?;
     if contains_secrets(&ndjson) {
         bail!(
             "NDJSON sidecar contains API keys or bearer tokens; \
@@ -1128,6 +1164,21 @@ mod tests {
     fn dry_run_flag_sets_dry_run_mode() {
         let args = parse_args_from(["--dry-run".to_string()]).expect("--dry-run should parse");
         assert_eq!(args.mode, RunMode::DryRun);
+    }
+
+    #[test]
+    fn mode_flags_are_mutually_exclusive() {
+        let err = parse_args_from([
+            "--dry-run".to_string(),
+            "--with-google".to_string(),
+            "--google-api-key".to_string(),
+            "not-a-placeholder-real-looking-key-xyzzy".to_string(),
+        ])
+        .expect_err("dry-run and with-google should not combine");
+        assert!(
+            err.to_string().contains("mutually exclusive"),
+            "error should mention mutually exclusive mode flags: {err:#}"
+        );
     }
 
     #[test]
@@ -1700,11 +1751,23 @@ mod tests {
     #[test]
     fn artifact_to_ndjson_has_one_line_per_result() {
         let fixture = pending_fixture();
-        let ndjson = artifact_to_ndjson(&fixture);
+        let ndjson = artifact_to_ndjson(&fixture).expect("pending fixture serializes to NDJSON");
         assert_eq!(
             ndjson.lines().count(),
             fixture.results.len(),
             "NDJSON should have one line per result"
+        );
+    }
+
+    #[test]
+    fn artifact_to_ndjson_rejects_non_finite_metrics() {
+        let mut fixture = pending_fixture();
+        fixture.results[0].realtime_factor = Some(f64::NAN);
+        let err = artifact_to_ndjson(&fixture)
+            .expect_err("non-finite JSON numbers should return an error");
+        assert!(
+            err.to_string().contains("NDJSON"),
+            "error should mention NDJSON serialization: {err:#}"
         );
     }
 
@@ -1768,8 +1831,8 @@ mod tests {
         .expect_err("--validate-artifact + --with-google should be rejected");
         let msg = err.to_string();
         assert!(
-            msg.contains("incompatible"),
-            "error should mention incompatibility, got: {msg}"
+            msg.contains("mutually exclusive") || msg.contains("incompatible"),
+            "error should mention mutually exclusive mode flags or incompatibility, got: {msg}"
         );
     }
 
@@ -1933,7 +1996,7 @@ mod tests {
         if let Some(r) = fixture.results.first_mut() {
             r.skipped_reason = Some(format!("reason with key {synthetic_key}"));
         }
-        let ndjson = artifact_to_ndjson(&fixture);
+        let ndjson = artifact_to_ndjson(&fixture).expect("fixture serializes to NDJSON");
         assert!(
             contains_secrets(&ndjson),
             "contains_secrets must detect a key embedded in NDJSON sidecar"
