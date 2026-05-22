@@ -220,6 +220,15 @@ metadata per candidate under:
   `research_only`, or `blocked`.
 - `candidates[].notes[]` — non-gating annotations such as `quality-reference-only`.
 
+#### Candidate kinds
+
+JV-03 distinguishes candidate kinds with `candidates[].kind`: `local_model` candidates must carry
+the model license metadata above and are subject to the JV-05 SPDX allow-list gate; `cloud_service`
+candidates, such as a `--with-google` baseline, must omit the `model` block because cloud services
+have no redistributable model-weight SPDX license.  Cloud-service terms can be recorded in
+`notes[]`.  `license_policy` remains the closed four-value enum above; cloud baselines are modeled
+by `kind`, not by adding another policy value.
+
 JV-03 must keep the existing `docs/evidence/lf-04-benchmark.json` path compatible if it
 upgrades that file in place; otherwise it must write a successor path and a validator that
 rejects v2 artifacts missing the fields above.

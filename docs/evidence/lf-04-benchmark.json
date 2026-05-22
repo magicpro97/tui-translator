@@ -1,9 +1,27 @@
 {
-  "schema_version": "lf-04-v1",
+  "schema_version": "lf-04-v2",
   "hardware_id": "pending",
   "status": "pending",
   "skipped": true,
   "skipped_reason": "No benchmark runs have been executed yet.  The local OPUS-MT models (opus-mt-ja-vi, opus-mt-ja-en, opus-mt-en-vi) have not been downloaded and verified on representative hardware.  Real measurements must be collected and this file updated before the default mt_provider can be considered for a switch from 'google' to 'local'.  See docs/10-local-mt-backend-decision.md §8.5 (LF-04 addendum) for the required pass criteria.",
+  "host": {
+    "cpu": "pending",
+    "os": "pending"
+  },
+  "corpus": {
+    "name": "pending",
+    "sentence_count": 0,
+    "language_pairs": [
+      "ja-vi",
+      "ja-en",
+      "en-vi"
+    ]
+  },
+  "candidates": [],
+  "comparison": {
+    "verdict": "insufficient-data",
+    "notes": "No candidate rounds have been executed; default mt_provider remains 'google'."
+  },
   "results": [
     {
       "pair": "ja-vi",
