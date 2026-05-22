@@ -1,0 +1,1 @@
+{"status":"blocked","reason":"full_300_row_corpus_missing;mt_bench_with_google_not_implemented;cost_cap_below_conservative_full_corpus_estimate","rounds_completed":0,"google_call_count":0,"actual_spend_usd":0.0,"note":"No per-round source or target text was produced because JV-04 stopped before any Google request."}
