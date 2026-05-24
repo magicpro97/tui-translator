@@ -302,10 +302,10 @@ mod tests {
         // observability only — it guarded against runaway sleeps, not a tight
         // scheduling SLA. Shared GitHub-hosted CI runners (notably macOS-14
         // Apple-silicon) routinely exhibit >100 ms scheduling jitter under
-        // contention even on a single sleep call (see PR #512 / issue #513
-        // and PRE-A2: the prior 6× budget tripped at ~107 ms), so we no
-        // longer assert an upper bound here and only emit a diagnostic if
-        // the elapsed time looks suspicious.
+        // contention even on a single sleep call (see PR #512 / issue #513,
+        // where the prior 6× FRAME_BUDGET upper bound tripped at ~107 ms on
+        // the macOS-14 shared runner), so we no longer assert an upper bound
+        // here and only emit a diagnostic if the elapsed time looks suspicious.
         assert!(
             interval_us >= FRAME_BUDGET_US,
             "end_frame recorded {interval_us}us before the frame budget elapsed"
