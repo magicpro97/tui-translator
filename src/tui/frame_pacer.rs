@@ -297,15 +297,20 @@ mod tests {
         let wall_start = Instant::now();
         let interval_us = p.end_frame();
         let wall_elapsed = wall_start.elapsed();
-        // Allow up to 3× the budget for OS scheduling jitter in tests.
+        // The real contract is the lower bound: `end_frame` must sleep at least
+        // FRAME_BUDGET. The wall-clock upper bound below is observability only —
+        // it guards against runaway sleeps, not a tight scheduling SLA. Shared
+        // CI runners (notably GitHub-hosted macOS-14 Apple-silicon) routinely
+        // see >50 ms scheduling jitter under contention, so we allow up to 6×
+        // the budget here. See PR #512 / issue #513.
         assert!(
             interval_us >= FRAME_BUDGET_US,
             "end_frame recorded {interval_us}us before the frame budget elapsed"
         );
         assert!(
-            wall_elapsed < FRAME_BUDGET * 3,
+            wall_elapsed < FRAME_BUDGET * 6,
             "end_frame took {wall_elapsed:?}, expected < {:?}",
-            FRAME_BUDGET * 3
+            FRAME_BUDGET * 6
         );
     }
 
