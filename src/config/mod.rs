@@ -1738,9 +1738,11 @@ fn handle_watch_event(
     //   * Linux: notify normally returns the same path that was passed to
     //     `watch()`, but a few setups (symlinked $TMPDIR, bind mounts)
     //     trigger the same canonicalization mismatch.
-    //   * Atomic replace (`write_config` → rename) can briefly report the
-    //     event under the temporary file's path before rename completes;
-    //     filtering by the final file name keeps that flow working too.
+    //   * Atomic replace (`write_config` → rename): the rename's destination
+    //     event is reported under the final config file name, which still
+    //     matches `target_name` regardless of canonicalization. Events for
+    //     the intermediate temp file (suffixed `.<pid>.<n>.tmp`) intentionally
+    //     do NOT match here and are ignored, which is the desired behaviour.
     //
     // Comparing the file-name component is unambiguous here because the
     // watch is non-recursive on the parent directory and the production
@@ -3064,8 +3066,12 @@ mod tests {
         };
 
         handle_watch_event(event, &configured_path, &restart_required, &tx, &None);
-        rx.changed()
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx.changed())
             .await
+            .expect(
+                "handle_watch_event must publish a config update within 5s for a canonicalized \
+                 event path; a timeout here indicates a regression in the file-name match path",
+            )
             .expect("hot-reload must fire even when the event path is canonicalized");
         assert_eq!(rx.borrow().target_language, "en");
     }
