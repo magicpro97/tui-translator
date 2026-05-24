@@ -1722,7 +1722,34 @@ fn handle_watch_event(
     tx: &watch::Sender<AppConfig>,
     notifier: &Option<WatchApplyNotifier>,
 ) {
-    let affects_config = event.paths.iter().any(|p| p == config_path);
+    // Match the event paths to the watched config file.
+    //
+    // We compare by file name in addition to full-path equality because the
+    // watcher is registered `NonRecursive` on the parent directory, so only
+    // events within that single directory arrive here, and several platforms
+    // canonicalize the reported event path in ways that defeat strict
+    // equality with `config_path`:
+    //
+    //   * macOS / FSEvents: tempdirs created by `tempfile::tempdir()` live
+    //     under `/var/folders/…`, but `/var` is a symlink to `/private/var`.
+    //     FSEvents reports events with the resolved `/private/var/…` path
+    //     while `config_path` retains the original `/var/…` prefix, so
+    //     `p == config_path` is always false and the watcher never fires.
+    //   * Linux: notify normally returns the same path that was passed to
+    //     `watch()`, but a few setups (symlinked $TMPDIR, bind mounts)
+    //     trigger the same canonicalization mismatch.
+    //   * Atomic replace (`write_config` → rename) can briefly report the
+    //     event under the temporary file's path before rename completes;
+    //     filtering by the final file name keeps that flow working too.
+    //
+    // Comparing the file-name component is unambiguous here because the
+    // watch is non-recursive on the parent directory and the production
+    // contract is "one config file per directory".
+    let target_name = config_path.file_name();
+    let affects_config = event
+        .paths
+        .iter()
+        .any(|p| p == config_path || (target_name.is_some() && p.file_name() == target_name));
     let is_write = matches!(
         event.kind,
         notify::EventKind::Modify(_) | notify::EventKind::Create(_)
@@ -3002,15 +3029,56 @@ mod tests {
         );
     }
 
+    /// macOS FSEvents regression: on macOS the FSEvents backend reports event paths
+    /// with the canonical `/private/var/…` prefix while the watcher was
+    /// configured with the `/var/…` symlinked path, so a strict full-path
+    /// equality check silently drops every event. `handle_watch_event` must
+    /// still match such events by file name (the watch is non-recursive on
+    /// the parent directory, so name-equality is unambiguous).
+    #[tokio::test]
+    async fn handle_watch_event_matches_canonicalized_event_path() {
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        let configured_path = dir.path().join("config.json");
+        std::fs::write(
+            &configured_path,
+            r#"{"source_language":"ja-JP","target_language":"en"}"#,
+        )
+        .expect("test config should be written");
+
+        // Simulate macOS canonicalization: same file_name, different prefix.
+        let canonical_like = std::path::PathBuf::from("/definitely/not/the/same/prefix").join(
+            configured_path
+                .file_name()
+                .expect("configured_path must have a file name"),
+        );
+        assert_ne!(canonical_like, configured_path);
+
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = watch::channel(AppConfig::default());
+        let event = notify::Event {
+            kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![canonical_like],
+            attrs: Default::default(),
+        };
+
+        handle_watch_event(event, &configured_path, &restart_required, &tx, &None);
+        rx.changed()
+            .await
+            .expect("hot-reload must fire even when the event path is canonicalized");
+        assert_eq!(rx.borrow().target_language, "en");
+    }
+
     #[tokio::test]
     async fn duplicate_watch_events_do_not_rebroadcast_identical_config() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir should be created");
         let path = dir.path().join("config.json");
         std::fs::write(
             &path,
             r#"{"source_language":"ja-JP","target_language":"en"}"#,
         )
-        .unwrap();
+        .expect("test config should be written");
 
         let restart_required = Arc::new(AtomicBool::new(false));
         let (tx, mut rx) = watch::channel(AppConfig::default());
@@ -3030,7 +3098,7 @@ mod tests {
 
         handle_watch_event(event, &path, &restart_required, &tx, &None);
         assert!(
-            !rx.has_changed().unwrap(),
+            !rx.has_changed().expect("has_changed check"),
             "duplicate file-system events for the same config should be ignored"
         );
     }
