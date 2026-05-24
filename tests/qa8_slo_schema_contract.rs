@@ -346,6 +346,70 @@ fn generated_at_declares_date_time_format() {
 }
 
 #[test]
+fn threshold_accepts_integer_without_oneof_ambiguity() {
+    // Regression: PR #512 review found that declaring threshold with
+    // `oneOf: [{type: number}, {type: integer}, ...]` is invalid under
+    // Draft-07 because any integer JSON literal matches BOTH `number` and
+    // `integer`, so `oneOf` (exactly-one) rejects every integer threshold.
+    // The fix replaces the union with a bare multi-type schema, which has
+    // no exactly-one constraint. This test guards against the regression.
+    let s = schema();
+    let threshold = s
+        .pointer("/definitions/gate/properties/threshold")
+        .expect("gate.threshold must exist");
+
+    // 1. Must NOT use `oneOf` (the ambiguous construct).
+    assert!(
+        threshold.get("oneOf").is_none(),
+        "gate.threshold must not declare `oneOf` — under Draft-07 integers \
+         match both `number` and `integer`, so a oneOf union of those types \
+         rejects every integer threshold. Use a multi-type `type` array \
+         instead."
+    );
+
+    // 2. Must NOT redundantly enumerate both `number` and `integer` anywhere
+    //    in the threshold schema (whether via `type` array or nested
+    //    `anyOf`/`allOf`). That redundancy is the bug; `number` already
+    //    permits integer JSON literals under Draft-07 §6.1.1.
+    fn contains_both_number_and_integer(v: &Value) -> bool {
+        match v {
+            Value::Object(map) => {
+                if let Some(Value::Array(types)) = map.get("type") {
+                    let strs: Vec<&str> = types.iter().filter_map(Value::as_str).collect();
+                    if strs.contains(&"number") && strs.contains(&"integer") {
+                        return true;
+                    }
+                }
+                map.values().any(contains_both_number_and_integer)
+            }
+            Value::Array(arr) => arr.iter().any(contains_both_number_and_integer),
+            _ => false,
+        }
+    }
+    assert!(
+        !contains_both_number_and_integer(threshold),
+        "gate.threshold must not list both `number` and `integer` — `number` \
+         already covers integer JSON literals under Draft-07. Listing both \
+         (in `type`, `oneOf`, `anyOf`, etc.) re-introduces the PR #512 bug."
+    );
+
+    // 3. Must structurally permit numeric thresholds (including integers).
+    //    Under Draft-07, `{type: "number"}` and `{type: ["number", ...]}`
+    //    both accept integer literals.
+    let permits_number = match threshold.get("type") {
+        Some(Value::String(s)) => s == "number",
+        Some(Value::Array(arr)) => arr.iter().any(|v| v.as_str() == Some("number")),
+        _ => false,
+    };
+    assert!(
+        permits_number,
+        "gate.threshold must structurally permit numeric values (including \
+         integers like 0, 1, 30) via `type: \"number\"` or a `type` array \
+         containing `\"number\"`; got: {threshold}"
+    );
+}
+
+#[test]
 fn no_unknown_top_level_keywords() {
     let s = schema();
     let allowed: &[&str] = &[

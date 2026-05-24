@@ -120,13 +120,9 @@
         },
         "comparator": { "$ref": "#/definitions/comparator" },
         "threshold": {
-          "description": "The threshold value the observed metric is compared against.",
-          "oneOf": [
-            { "type": "number" },
-            { "type": "integer" },
-            { "type": "boolean" },
-            { "type": "string", "minLength": 1 }
-          ]
+          "description": "The threshold value the observed metric is compared against. Accepts a number (integers are valid JSON Schema numbers under Draft-07), a boolean, or a non-empty string. A bare union of types is used instead of `oneOf` to avoid the Draft-07 ambiguity where an integer literal matches both `{type:number}` and `{type:integer}`, which would cause `oneOf` to reject integer thresholds.",
+          "type": ["number", "boolean", "string"],
+          "minLength": 1
         },
         "unit": {
           "type": "string",
