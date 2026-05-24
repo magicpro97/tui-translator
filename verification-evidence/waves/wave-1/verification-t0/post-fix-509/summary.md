@@ -11,19 +11,25 @@
 
 **Command:**
 ```
-Get-Command actionlint -ErrorAction SilentlyContinue
-actionlint .github\workflows\issue-hygiene.yml
+& "$env:USERPROFILE\.copilot\bin\actionlint.exe" .github\workflows\issue-hygiene.yml
+echo EXIT=$LASTEXITCODE
 ```
 
-**Result:** `actionlint` binary is **NOT available** on PATH on this Windows
-host, and no binary is shipped under
-`verification-evidence\waves\wave-1\evidence-509\`. Per instructions, repo
-dependencies were not installed. Existing evidence
-(`evidence-509\actionlint-green.log` empty body + `actionlint-version.txt`
-showing 1.7.7 windows/amd64, EXIT=0) is the prior author-side proof; this
-verifier could not independently re-run actionlint.
+**Result:** On the original verifier pass `actionlint` was not on PATH and
+the previously-shipped `evidence-509\actionlint-green.log` actually
+contained an actionlint expression error (`context "secrets" is not
+allowed here` at the prior `if: ${{ secrets.PROJECT_TOKEN != '' }}` line)
+left over from an interim draft of the workflow.  That draft expression
+has since been replaced by a `SECRET_VALUE` env-indirection step in jobs
+`sync-project-priority` and `weekly-audit`, and the vestigial
+`workflow_dispatch.inputs.dry_run` input (with no reader) was removed.
+Both `evidence-509\actionlint-green.log` and
+`evidence-509\actionlint-version.txt` were then regenerated against
+current HEAD using `actionlint 1.7.1 (windows/amd64)` from
+`%USERPROFILE%\.copilot\bin\actionlint.exe`; the log is now genuinely
+empty with `EXIT=0`.
 
-**Status:** N/A (tool unavailable here) — reliance on prior evidence noted.
+**Status:** ✅ PASS — verified against current HEAD with actionlint 1.7.1.
 
 ---
 
@@ -124,7 +130,7 @@ workflow file + evidence directory as allowed.
 
 | Gate | Result |
 |------|--------|
-| 1. actionlint local re-run | N/A (binary not on PATH; relying on shipped evidence) |
+| 1. actionlint local re-run | ✅ PASS — empty log, exit 0, actionlint 1.7.1 |
 | 2. YAML parse (PyYAML)     | ✅ PASS, exit 0 |
 | 3. dry-check.js (Node)     | ✅ PASS 4/4, exit 0 |
 | 4. Sync mutation gated to P0 only | ✅ PASS |
@@ -141,5 +147,5 @@ matches the claimed evidence. No remediation required.
 - OS: Windows_NT
 - Node: v22.20.0
 - Python: 3.12 (PyYAML available)
-- actionlint: not installed locally
-- HEAD commit: `aca1d92`
+- actionlint: available locally at `%USERPROFILE%\.copilot\bin\actionlint.exe` (1.7.1, windows/amd64)
+- HEAD commit: `aca1d92` (original verifier pass); evidence regenerated under PR #512 head `819416e` after the workflow contract was finalised.

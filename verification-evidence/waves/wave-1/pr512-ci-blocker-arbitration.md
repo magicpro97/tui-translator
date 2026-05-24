@@ -374,3 +374,63 @@ Execute in order. Arbiter performs none of these.
 
 *End of arbitration. No code, workflow, Cargo, or allow-list file is
 modified by this document. Confidence 1.0.*
+
+
+---
+
+## 9. Post-rebase addendum (PR #512 head 819416e)
+
+The original arbitration (Sections 1–8 above) committed to Option A —
+two prerequisite hotfix tentacles landing on main before PR #512 could
+rebase green. The realised prerequisite sequence on main ended up
+larger than the two-PR plan because additional pre-existing flakiness
+was uncovered during the prereq mini-wave, but the spirit of Option A
+was preserved. Concretely:
+
+| Order | PR | Scope | Why it had to land before PR #512 rebase |
+|------:|----|-------|-------------------------------------------|
+| 1 | [#515](https://github.com/magicpro97/tui-translator/pull/515) | UX-01 src/tui/frame_pacer.rs | Stabilises the frame-pacer driver that the macOS-14 stability test depends on (root cause of one of the two CI-blocker failures diagnosed in pr512-ci-diagnosis.md). |
+| 2 | [#516](https://github.com/magicpro97/tui-translator/pull/516) | MSRV / Cargo.lock format alignment | Lands the MSRV (Rust 1.86) build fix; without it the required MSRV (Rust 1.86) build gate is structurally unreachable on the PR #512 head. |
+| 3 | [#517](https://github.com/magicpro97/tui-translator/pull/517) | Timing / scheduler hardening | Removes a pre-existing race surfaced by the rebased PR #512 matrix; an additional prereq beyond the original two-PR plan. |
+| 4 | [#518](https://github.com/magicpro97/tui-translator/pull/518) | Pre-A3 macOS-14 hot-reload config watcher canonicalised paths | Removes the last pre-existing macOS-14 hot-reload flake the rebased PR #512 was inheriting. |
+
+After all four merged to main, PR #512 was rebased to head
+819416eb75238c276c5179aa3607250850272b1c and CI run
+[ctions/runs/26360760221](https://github.com/magicpro97/tui-translator/actions/runs/26360760221)
+was triggered automatically by the rebase push.
+
+### Currently-verified facts on head 819416e
+
+The following required contexts are **green** on the rebased head (URLs
+recorded in erification-evidence/ci/CI-01-matrix-run-url.json →
+post_rebase_verified_jobs):
+
+- MSRV (Rust 1.86) build ✅
+- Cross-platform build (macos-14, default) ✅
+- Feature matrix (macos-14, audio-integration) ✅
+- Feature matrix (macos-14, production-audio) ✅
+- Cross-platform build (windows-latest, default) ✅
+- Feature matrix (windows-latest, audio-integration) ✅
+- Feature matrix (windows-latest, production-audio) ✅
+- Format check (rustfmt), Lint (clippy), Build and test,
+  PTY tests (Windows ConPTY), Packaging verification (MSVC static exe),
+  Integration tests (fixtures + pipeline boundary),
+  Soak fixture validation (issue #109),
+  Hot-config matrix (issue #391), Linux build smoke test,
+  Contract tests (mock-only), Soak runner dry-run (issue #110),
+  VMIC-A6 virtual-cable integration,
+  VMIC-B4 production sink round-trip, VMIC-A8 MVP readiness ✅
+
+### Still in-progress at addendum time
+
+- Cross-platform build (macos-13, default) — queued.
+- Feature matrix (macos-13, audio-integration) — queued.
+- Feature matrix (macos-13, production-audio) — queued.
+- VMIC-B5 production readiness — in_progress.
+
+This addendum **does not** claim final readiness: the orchestrator owns
+flipping erification-evidence/ci/CI-01-matrix-run-url.json →
+status from in_progress_post_rebase to pass once the macOS-13
+permutations and VMIC-B5 readiness complete with conclusion=success,
+and only then is PR #512 mergeable under the §4 branch-protection
+ruling above.

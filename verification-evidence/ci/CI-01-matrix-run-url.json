@@ -3,7 +3,28 @@
   "issue": "#461",
   "tentacle": "w1-t0-461-ci-matrix",
   "evidence_kind": "workflow_dry_run",
-  "status": "blocked_pending_orchestrator_dispatch",
+  "status": "in_progress_post_rebase",
+  "head_sha": "819416eb75238c276c5179aa3607250850272b1c",
+  "branch": "wave-1/t0-batch",
+  "pr": "https://github.com/magicpro97/tui-translator/pull/512",
+  "prereq_merge_sequence": [
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/515",
+      "fix": "UX-01 frame_pacer landing on main so macOS-14 stability test stops flaking PR #512 CI"
+    },
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/516",
+      "fix": "MSRV alignment (Rust 1.86 / Cargo.lock format) so the MSRV gate is reachable from PR #512"
+    },
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/517",
+      "fix": "Timing / scheduler hardening prerequisite for the rebased PR #512 CI run"
+    },
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/518",
+      "fix": "Pre-A3 macOS-14 hot-reload config-watcher canonicalised paths"
+    }
+  ],
   "actionlint": {
     "tool": "actionlint",
     "version": "1.7.1",
@@ -18,23 +39,63 @@
   },
   "workflow_dispatch_run": {
     "workflow_file": ".github/workflows/ci.yml",
-    "ref": null,
-    "run_id": null,
-    "run_url": null,
+    "ref": "wave-1/t0-batch",
+    "run_id": "26360760221",
+    "run_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221",
     "triggered_at": null,
-    "triggered_by": null,
-    "conclusion": null
+    "triggered_by": "pull_request push on PR #512",
+    "conclusion": "in_progress",
+    "notes": "PR #512 CI was triggered automatically by the post-rebase push of head 819416e onto wave-1/t0-batch. The earlier `gh workflow run` workflow_dispatch trigger from a sub-agent was never available (sub-agents are forbidden from `git push`); the rebased PR-triggered run is the equivalent evidence and supersedes the placeholder."
   },
-  "blocker": {
-    "reason": "Tentacle is forbidden from running `git commit` / `git push`; the CI workflow's new `workflow_dispatch:` trigger and new matrix jobs only become available on the default branch (or any pushed branch) once the orchestrator merges this PR. From the local working tree, `gh workflow run ci.yml` against `main` would dispatch the OLD workflow definition without the new matrix jobs, so it is not a valid dry-run for the new gates.",
-    "exact_command_blocked": "gh workflow run ci.yml --repo magicpro97/tui-translator --ref <branch-with-this-change>",
-    "unblocks_on": "Orchestrator pushes the tentacle branch (or merges the PR) so the updated ci.yml exists on a ref that `workflow_dispatch` can target.",
-    "owner_after_unblock": "orchestrator (per Wave-1 final-dispatch-authorization §1 / §3 — workflow_dry_run evidence)"
-  },
+  "post_rebase_verified_jobs": [
+    {
+      "name": "MSRV (Rust 1.86) build",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627511",
+      "note": "Confirms PR #516 fix landed; the MSRV gate is reachable and green on the rebased PR #512 head."
+    },
+    {
+      "name": "Cross-platform build (macos-14, default)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627479",
+      "note": "macOS-14 build is green post-rebase (#515 + #518 fixes)."
+    },
+    {
+      "name": "Feature matrix (macos-14, audio-integration)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627517"
+    },
+    {
+      "name": "Feature matrix (macos-14, production-audio)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627510"
+    },
+    {
+      "name": "Format check (rustfmt)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627516"
+    },
+    {
+      "name": "Lint (clippy)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627471"
+    },
+    {
+      "name": "Packaging verification (MSVC static exe)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627481"
+    }
+  ],
+  "still_pending_or_queued_at_evidence_time": [
+    "Feature matrix (macos-13, audio-integration)",
+    "Feature matrix (macos-13, production-audio)",
+    "Cross-platform build (macos-13, default)",
+    "VMIC-B5 production readiness (in_progress)"
+  ],
   "next_steps": [
-    "Orchestrator pushes the tentacle branch w1-t0-461-ci-matrix.",
-    "Orchestrator (or reviewer) runs: `gh workflow run ci.yml --repo magicpro97/tui-translator --ref w1-t0-461-ci-matrix` and then `gh run list --workflow=ci.yml --branch=w1-t0-461-ci-matrix --limit=1 --json databaseId,url,conclusion`.",
-    "Record `run_id`, `run_url`, `triggered_at`, `triggered_by`, and final `conclusion` in this file (status flips to `pass` once at least one successful run URL is present)."
+    "Orchestrator (not this sub-agent) watches the in_progress macOS-13 matrix permutations and the VMIC-B5 readiness job on run https://github.com/magicpro97/tui-translator/actions/runs/26360760221 .",
+    "When every required context in `CI-01-required-checks.md` §2.1–§2.3 reaches `conclusion=success`, the orchestrator flips `status` here to `pass` and adds the final `triggered_at` / `triggered_by` fields.",
+    "Until then `status=in_progress_post_rebase` is the truthful state and MUST NOT be claimed as green readiness."
   ],
   "checks_referenced_in": "verification-evidence/ci/CI-01-required-checks.md"
 }

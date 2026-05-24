@@ -3,8 +3,30 @@
 > Issue: [#461 — CI-01 CI matrix expansion for Windows/macOS/features and required gates](https://github.com/magicpro97/tui-translator/issues/461)
 > Tentacle: `w1-t0-461-ci-matrix`
 > Wave: 1 · Tier A · T0 · evidence mode `workflow_dry_run`
-> Status: **DRAFT** — pending the workflow_dispatch run URL captured in
-> [`CI-01-matrix-run-url.json`](./CI-01-matrix-run-url.json).
+> Status: **IN-PROGRESS POST-REBASE** — PR #512 head `819416e` was rebased
+> onto `main` after prerequisite PRs **#515 (UX-01 frame_pacer)**,
+> **#516 (MSRV / Cargo.lock format alignment)**, **#517 (timing /
+> scheduler hardening)**, and **#518 (pre-A3 macOS-14 hot-reload config
+> watcher with canonicalised paths)** merged. The actual CI evidence is
+> now the PR-triggered run
+> [`actions/runs/26360760221`](https://github.com/magicpro97/tui-translator/actions/runs/26360760221),
+> not a sub-agent `workflow_dispatch` (sub-agents are forbidden from
+> `git push`, so the original dispatch plan in
+> [`CI-01-matrix-run-url.json`](./CI-01-matrix-run-url.json) is
+> superseded by that run). Post-rebase the previously-blocking gates are
+> green:
+>
+> - `MSRV (Rust 1.86) build` — ✅ success ([job 77595627511](https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627511))
+> - `Cross-platform build (macos-14, default)` — ✅ success ([job 77595627479](https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627479))
+> - `Feature matrix (macos-14, audio-integration)` — ✅ success ([job 77595627517](https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627517))
+> - `Feature matrix (macos-14, production-audio)` — ✅ success ([job 77595627510](https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627510))
+>
+> Still queued / in-progress at the time this addendum was written:
+> the `macos-13` matrix permutations, `Cross-platform build (macos-13,
+> default)`, and `VMIC-B5 production readiness`. Final all-green
+> readiness for PR #512 is owned by the orchestrator after those
+> remaining checks complete; **do not** read this document as a claim
+> that branch protection has cleared on the rebased head.
 
 ## 1. Purpose
 

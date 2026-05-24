@@ -129,7 +129,12 @@ will set it where appropriate in future iterations.
 
 ## Snapshot file
 
-- Output: `verification-evidence/board-snapshot-20260524.json` (135,929 B)
+- Output: `verification-evidence/board-snapshot-20260524.json` (135,929 B,
+  SHA256 `893A3C52AB12BFE563EDD968CA417061818E651BBE6DA294CE043FFE588BBF92`).
+  Kept trackable via an explicit `!verification-evidence/board-snapshot-20260524.json`
+  exception in `.gitignore` so downstream w0-r6 wave-plan generation is
+  reproducible from a fresh PR checkout (the generic
+  `verification-evidence/*.json` ignore rule would otherwise strip it).
 - Schema fields per row: `number, title, labels, url, family, human_gate,`
   `confidence, acceptance, files_touched_hint, needs_human_clarification`
 - Counts: `todo_open=82, ai_actionable=72, human_gated_subset=10`

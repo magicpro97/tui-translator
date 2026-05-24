@@ -27,7 +27,17 @@ EXIT=0
 - triggers: `issues`, `schedule`, `workflow_dispatch`
 - jobs: `enforce-priority-label`, `sync-project-priority`, `weekly-audit`
 
-actionlint version: see `actionlint-version.txt` (1.7.7, windows/amd64).
+actionlint version: see `actionlint-version.txt` (1.7.1, windows/amd64).
+The earlier evidence batch was generated against an interim workflow draft
+that used a `secrets.PROJECT_TOKEN != ''` expression inside an `if:`, which
+actionlint 1.7.7 reported as `context "secrets" is not allowed here`. That
+expression was replaced by a `SECRET_VALUE` env-indirection step (see job
+`sync-project-priority` / `weekly-audit` → `Check for PROJECT_TOKEN
+secret`), and the `workflow_dispatch.inputs.dry_run` input that had no
+reader was removed so the contract reflects actual behaviour. Both the
+fresh `actionlint-green.log` (empty, exit 0) and `actionlint-version.txt`
+in this directory were regenerated against the current head and are the
+authoritative receipts.
 
 ## Successful workflow_dispatch run URL
 Cannot be recorded from this tentacle — the orchestrator owns VCS

@@ -1,0 +1,632 @@
+{
+  "schema_version": 1,
+  "tentacle": "w0-r5-family-file-map",
+  "generated_at": "2026-05-24T01:30:00Z",
+  "source": {
+    "board_snapshot": "verification-evidence/board-snapshot-20260524.json",
+    "board_snapshot_sha256": "290FB421CDAC960618640169CD36876621ECA9F8E328AF876C3280B7EC19949E",
+    "row_count": 82,
+    "rest_reconciliation": "verification-evidence/board-count-rest-20260524.json",
+    "graphql_reconciliation": "verification-evidence/board-count-graphql-20260524.json",
+    "graphql_issue_set_sha256": "3ACD5BFD9051F2E9E01AA9B7F991D26F69E05E9D45B299A261F297C1FA6ED1BC",
+    "r4_low_confidence_audit": "verification-evidence/w0-r4/low-confidence-resolution.json"
+  },
+  "method": "For each of the 82 Todo-open issues in the W0-R1 snapshot, the R5 tentacle (a) assigned a family token derived from the title prefix (WP-19, WP-20, WP-21, WP-22, WP-23, VERIF-OPS, LF, DM, HC, SM, MACOS-WBS, CTRL, MODEL, QA, TEST, CI, SEC, REL, LINUX-WBS, PROC, XPLAT, PARITY, UX, I18N, CFG, STD, SUPERTONIC, QA8); (b) consumed the files_touched_hint values from the snapshot row enriched with the R4 audit's per-issue files_touched_hint (which are the more precise per-issue paths produced by reading every LOW-confidence issue body); (c) classified each hint as either a concrete repo path (file that exists today OR an explicit new file with a clearly named target), a broad glob (e.g., src/audio/**), or an evidence path (verification-evidence/**); (d) gave every concrete src path a single owning family with an explicit serialization rule when more than one issue/family touches it; (e) treated broad globs as planning-stage touchpoints and did NOT use them to establish ownership; (f) treated verification-evidence/** paths as additive per-issue evidence that does not collide.",
+  "principles": [
+    "Concrete src/** paths must have exactly one owning family.",
+    "Where multiple issues inside the same family touch a concrete src path, ownership is family-level and the issue-level order is the family's internal dependency chain.",
+    "Where multiple families touch the same concrete src path, an explicit cross-family owner and serialization rule MUST be recorded; otherwise the path is BLOCKED.",
+    "Broad globs (src/audio/**, src/providers/**, src/**, etc.) are not ownership claims — they are touchpoint hints used only to flag which families need to coordinate.",
+    "Cargo.toml and .github/workflows/*.yml are merge-friendly manifest files; serialization is by dependency chain (additive edits) rather than exclusive ownership.",
+    "verification-evidence/** is per-issue evidence storage and never collides; each issue owns its own subdirectory or file."
+  ],
+  "families": {
+    "WP-19": {
+      "label": "Layer 5 Human Acceptance Testing",
+      "kind": "epic+children",
+      "human_gated": true,
+      "issues": [19, 115, 116, 117, 118, 119, 120, 121, 122],
+      "concrete_src_ownership": [],
+      "evidence_root": "verification-evidence/{RC_TAG}/"
+    },
+    "WP-20": {
+      "label": "Post-v1 gRPC Streaming STT (epic, deferred)",
+      "kind": "epic",
+      "issues": [20],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/providers/**"],
+      "notes": "Post-v1 epic with no current concrete WBS children on the board; planning-stage only."
+    },
+    "WP-21": {
+      "label": "Post-v1 Per-Process Audio Capture (epic, deferred)",
+      "kind": "epic",
+      "issues": [21],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/audio/**"],
+      "notes": "Post-v1 epic; planning-stage only."
+    },
+    "WP-22": {
+      "label": "Azure Provider Integration (epic, deferred)",
+      "kind": "epic",
+      "issues": [22],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/providers/**", "src/providers/azure/**"],
+      "notes": "Future provider; will own a new src/providers/azure/ subdirectory when WBS children are filed. No collision today."
+    },
+    "WP-23": {
+      "label": "Ollama Local Translation (epic, deferred)",
+      "kind": "epic",
+      "issues": [23],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/providers/**", "src/providers/ollama/**"],
+      "notes": "Future provider; will own a new src/providers/ollama/ subdirectory when WBS children are filed. No collision today."
+    },
+    "VERIF-OPS": {
+      "label": "Layer-5 reviewer recruiting (human-only)",
+      "kind": "ops",
+      "human_gated": true,
+      "issues": [366],
+      "concrete_src_ownership": [],
+      "evidence_root": "verification-evidence/{RC_TAG}/acceptance-log.md",
+      "notes": "Per W0-R4: 'Automation cannot complete this issue.' Owns the acceptance-log path only."
+    },
+    "LF": {
+      "label": "Local-first defaults epic",
+      "kind": "epic",
+      "issues": [368],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/providers/**", "src/config/**", "docs/**"],
+      "notes": "Epic; concrete ownership will be determined by future LF-NN WBS children."
+    },
+    "DM": {
+      "label": "Dual-provider transcript mode",
+      "kind": "epic+children",
+      "issues": [376, 384],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/providers/**", "src/tui/**", "src/pipeline/**", "src/config/**", "docs/**"],
+      "notes": "Only DM-08 (#384) is on the board today; it is documentation/config-examples scoped (docs/** and config schema notes) — no current src/** ownership claim."
+    },
+    "HC": {
+      "label": "Hot config without restart (epic)",
+      "kind": "epic",
+      "issues": [385],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/config/**"],
+      "notes": "Epic; will be sub-decomposed by HC-NN WBS children before claiming concrete config files."
+    },
+    "SM": {
+      "label": "Realtime storage metrics (epic)",
+      "kind": "epic",
+      "issues": [392],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/metrics/**", "docs/**"],
+      "notes": "Epic; planning-stage only."
+    },
+    "MACOS-WBS": {
+      "label": "macOS support roadmap",
+      "kind": "epic+children",
+      "issues": [449, 450, 451, 452, 453],
+      "internal_dependency_chain": ["450 (MACOS-01 spike)", "451 (MACOS-02 CoreAudio)", "452 (MACOS-03 SCK)", "453 (MACOS-04 virtual mic)"],
+      "concrete_src_ownership": [
+        {"path": "src/audio/coreaudio_capture.rs", "status": "new_file", "issue": 451},
+        {"path": "src/audio/screencapturekit_capture.rs", "status": "new_file", "issue": 452}
+      ],
+      "shared_within_family": [
+        {"path": "src/audio/probe.rs", "issues": [451, 452], "order": [451, 452], "rationale": "MACOS-02 lands first per internal chain; MACOS-03 extends the device-probe enumerator."},
+        {"path": "src/audio/mod.rs", "issues": [451, 452], "order": [451, 452], "rationale": "MACOS-02 registers the CoreAudio capture variant; MACOS-03 adds the ScreenCaptureKit variant."}
+      ],
+      "evidence_root": "verification-evidence/macos/"
+    },
+    "CTRL": {
+      "label": "Real-time controls",
+      "kind": "feature-set",
+      "issues": [454, 455, 456],
+      "internal_dependency_chain": ["456 (CTRL-03 invariant first per R4)", "454 (CTRL-01 gain)", "455 (CTRL-02 voice hot-swap; depends on 456)"],
+      "concrete_src_ownership": [],
+      "shared_within_family": [
+        {"path": "src/pipeline/mod.rs", "issues": [456], "order": [456], "rationale": "CTRL-03 (sole owner inside family)."},
+        {"path": "src/pipeline/audio_sink.rs", "issues": [454], "order": [454], "rationale": "CTRL-01 owns the gain hook in the playback sink."},
+        {"path": "src/tui/mod.rs", "issues": [454, 455], "order": [454, 455], "rationale": "CTRL-01 introduces volume gauges/hotkeys; CTRL-02 layers the voice picker on top after CTRL-01's TUI surface lands."},
+        {"path": "src/providers/google", "issues": [455], "order": [455], "rationale": "CTRL-02 sole CTRL-family toucher of Google TTS provider code (voice catalog)."}
+      ],
+      "evidence_root": "verification-evidence/ctrl/"
+    },
+    "MODEL": {
+      "label": "Backend selection and macOS local-model validation",
+      "kind": "feature-set",
+      "issues": [457, 458, 473],
+      "internal_dependency_chain": ["457 (MODEL-01 contract first)", "458 (MODEL-02 macOS local-model; depends on MODEL-01+CI-01)", "473 (MODEL-03 Linux local-model)"],
+      "concrete_src_ownership": [
+        {"path": "src/config/provider_supervisor.rs", "status": "existing", "issue": 457}
+      ],
+      "shared_within_family": [
+        {"path": "src/providers/local", "issues": [457, 458], "order": [457, 458], "rationale": "MODEL-01 defines the local provider contract; MODEL-02 validates macOS-specific build/runtime under that contract."},
+        {"path": "src/providers/mt", "issues": [457, 458], "order": [457, 458], "rationale": "Same as above for the MT subtree."}
+      ],
+      "evidence_root": "verification-evidence/model/"
+    },
+    "QA": {
+      "label": "QA plan and traceability (ISO 25010/29119)",
+      "kind": "doc+plan",
+      "issues": [459, 476],
+      "internal_dependency_chain": ["459 (QA-01 master plan)", "476 (QA-02 Linux portability addendum)"],
+      "concrete_src_ownership": [],
+      "evidence_root": "verification-evidence/qa/",
+      "notes": "QA-01 and QA-02 own QA artifacts under verification-evidence/qa/ and docs/04-verification-plan.md additions. No src/** ownership."
+    },
+    "TEST": {
+      "label": "Deterministic simulation harness",
+      "kind": "feature-set",
+      "issues": [460, 474],
+      "internal_dependency_chain": ["460 (TEST-01; depends on QA-01)", "474 (TEST-02 Linux fixture)"],
+      "concrete_src_ownership": [
+        {"path": "src/audio/file_source.rs", "status": "existing", "issue": 460, "note": "Snapshot lists this as TEST-01's input; treat as owned for harness changes."}
+      ],
+      "evidence_root": "verification-evidence/test/",
+      "notes": "TEST-01 also extends tests/fixtures/, tests/contract/, tests/pty/, tests/soak/; tests/** is outside src/** scope and treated as additive per-issue ownership."
+    },
+    "CI": {
+      "label": "CI matrix expansion",
+      "kind": "feature-set",
+      "issues": [461, 475],
+      "internal_dependency_chain": ["461 (CI-01; depends on QA-01+TEST-01)", "475 (CI-02 Linux matrix)"],
+      "concrete_src_ownership": [],
+      "evidence_root": "verification-evidence/ci/"
+    },
+    "SEC": {
+      "label": "Supply-chain security",
+      "kind": "feature-set",
+      "issues": [462, 477],
+      "internal_dependency_chain": ["462 (SEC-01; depends on CI-01)", "477 (SEC-02 Linux supply-chain)"],
+      "concrete_src_ownership": [
+        {"path": "deny.toml", "status": "existing", "issue": 462},
+        {"path": "PRIVACY.md", "status": "existing", "issue": 462}
+      ],
+      "evidence_root": "verification-evidence/sec/"
+    },
+    "REL": {
+      "label": "Release packaging and notarization",
+      "kind": "feature-set",
+      "issues": [463, 478],
+      "internal_dependency_chain": ["463 (REL-01; depends on CI-01+SEC-01+QA-01+TEST-01+MACOS-02+MACOS-04)", "478 (REL-02 Linux packaging)"],
+      "concrete_src_ownership": [
+        {"path": "packaging/windows/tui-translator.iss", "status": "existing", "issue": 463},
+        {"path": "packaging/macos", "status": "new_directory", "issue": 463}
+      ],
+      "evidence_root": "verification-evidence/rel/"
+    },
+    "LINUX-WBS": {
+      "label": "Linux support roadmap",
+      "kind": "epic+children",
+      "issues": [464, 468, 469, 470, 471, 472],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/audio/**", ".github/workflows/**"],
+      "notes": "Linux capture WBS children (LINUX-01..05) reuse the audio HAL pattern; concrete file ownership will land as new src/audio/pipewire_capture.rs / src/audio/pulse_capture.rs etc. once LINUX-01 (#468) spike resolves. Treated as planning-stage today."
+    },
+    "PROC": {
+      "label": "Process / Opus-review gate",
+      "kind": "process",
+      "issues": [465],
+      "concrete_src_ownership": [],
+      "touchpoints": [".github/workflows/**", "verification-evidence/**"]
+    },
+    "XPLAT": {
+      "label": "Cross-platform core and audio HAL architecture",
+      "kind": "architecture",
+      "issues": [466],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/audio/**"],
+      "notes": "Architectural ADR; no exclusive src/** ownership until child issues materialize."
+    },
+    "PARITY": {
+      "label": "Cross-platform parity matrix",
+      "kind": "doc",
+      "issues": [467],
+      "concrete_src_ownership": [],
+      "evidence_root": "verification-evidence/"
+    },
+    "UX": {
+      "label": "Adaptive TUI and shortcut display",
+      "kind": "feature-set",
+      "issues": [479, 480],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/tui/**"],
+      "notes": "Both UX-01 and UX-02 touch src/tui/** broadly; specific file ownership inside src/tui/ (frame_pacer.rs, onboarding.rs, mod.rs) is not yet split. Planning-stage."
+    },
+    "I18N": {
+      "label": "Cross-platform i18n",
+      "kind": "feature",
+      "issues": [481],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/tui/**", "src/config/**"]
+    },
+    "CFG": {
+      "label": "Live settings apply without reload",
+      "kind": "feature",
+      "issues": [482],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/config/**"]
+    },
+    "STD": {
+      "label": "Strict engineering standards and module budgets",
+      "kind": "process",
+      "issues": [483, 484],
+      "concrete_src_ownership": [],
+      "touchpoints": [".github/workflows/**"],
+      "notes": "STD-02 refactors oversized modules — cuts across many src/** files but does not establish exclusive ownership; serialization rule below."
+    },
+    "SUPERTONIC": {
+      "label": "Supertonic local TTS evaluation",
+      "kind": "epic+children",
+      "issues": [485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497],
+      "internal_dependency_chain": ["486 (spike)", "487 (license/privacy)", "488/489 (benchmarks)", "490 (streaming contract spike)", "491 (extend TTS backend contract)", "492 (model cache)", "493 (native ONNX provider)", "494 (voice catalog/hot-swap)", "495 (60fps soak)", "496 (default-readiness ADR)", "497 (docs)"],
+      "concrete_src_ownership": [
+        {"path": "src/providers/local_mt", "status": "new_subtree", "issue_owner_for_creation": 493, "rationale": "SUPERTONIC-08 (#493) creates the local_mt/Supertonic provider subtree per the snapshot hint files_touched_hint; subsequent SUPERTONIC issues edit inside it."}
+      ],
+      "shared_within_family": [
+        {"path": "src/providers/local_mt", "issues": [485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497], "order": [493, 494, 495, 491, 492, 496, 497], "rationale": "All SUPERTONIC issues land inside the local_mt subtree; serialization is the family chain. 485/486/487/488/489/490 are spike/license/benchmark and produce evidence under verification-evidence/, not src/, code edits."}
+      ],
+      "touchpoints": ["src/providers/**", "src/pipeline/**", "src/tui/**", "src/config/**", "src/audio/**", "Cargo.toml", ".github/workflows/release.yml", "docs/**"],
+      "evidence_root": "verification-evidence/supertonic/"
+    },
+    "QA8": {
+      "label": "8-hour soak / 60fps QA epic",
+      "kind": "epic+children",
+      "issues": [498, 499, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511],
+      "internal_dependency_chain": ["499 (charter)", "500 (SLO schema)", "501 (soak schema v2)", "502 (process probes)", "503 (8h runner)", "504 (frame pacing)", "505 (backpressure telemetry)", "506 (panic/OOM/dump)", "507 (deterministic simulation)", "508 (CI ladder)", "509 (issue hygiene)", "510 (release-gate orchestrator)", "511 (quality-in-use suite)"],
+      "concrete_src_ownership": [],
+      "touchpoints": ["src/metrics/**", "src/**", "src/audio/**", "src/providers/**", "src/pipeline/**", "src/tui/**", "verification-evidence/**", ".github/workflows/**"],
+      "notes": "Touches src/metrics/** broadly; concrete ownership of individual metrics files (cost.rs, latency.rs, loss.rs, memory_guard.rs, network.rs, process.rs, snapshot.rs) is not split per issue. Serialization is by QA8 internal chain. Evidence is per-issue under verification-evidence/qa8/<issue>/."
+    }
+  },
+  "issues": [
+    {"number": 19, "family": "WP-19", "owned_paths": [], "shared_paths_in": [], "evidence_paths": ["verification-evidence/{RC_TAG}/"], "kind": "epic"},
+    {"number": 20, "family": "WP-20", "owned_paths": [], "shared_paths_in": [], "kind": "epic-deferred"},
+    {"number": 21, "family": "WP-21", "owned_paths": [], "shared_paths_in": [], "kind": "epic-deferred"},
+    {"number": 22, "family": "WP-22", "owned_paths": [], "shared_paths_in": [], "kind": "epic-deferred", "future_subtree": "src/providers/azure/"},
+    {"number": 23, "family": "WP-23", "owned_paths": [], "shared_paths_in": [], "kind": "epic-deferred", "future_subtree": "src/providers/ollama/"},
+    {"number": 115, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-1/"], "shared_paths_in": []},
+    {"number": 116, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-2/"], "shared_paths_in": []},
+    {"number": 117, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-3/"], "shared_paths_in": []},
+    {"number": 118, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-4/"], "shared_paths_in": []},
+    {"number": 119, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-5/"], "shared_paths_in": []},
+    {"number": 120, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-6/"], "shared_paths_in": []},
+    {"number": 121, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/L5-7/"], "shared_paths_in": []},
+    {"number": 122, "family": "WP-19", "owned_paths": ["verification-evidence/{RC_TAG}/acceptance-log.md"], "shared_paths_in": []},
+    {"number": 366, "family": "VERIF-OPS", "owned_paths": ["verification-evidence/{RC_TAG}/acceptance-log.md"], "shared_paths_in": [], "human_gated": true, "needs_human_clarification": true},
+    {"number": 368, "family": "LF", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 376, "family": "DM", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 384, "family": "DM", "owned_paths": ["docs/dual-mode.md"], "shared_paths_in": [], "kind": "doc", "notes": "DM-08 is documentation/config-examples scoped per title."},
+    {"number": 385, "family": "HC", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 392, "family": "SM", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 449, "family": "MACOS-WBS", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 450, "family": "MACOS-WBS", "owned_paths": ["verification-evidence/macos/macos-01-spike-decision.md", "verification-evidence/macos/macos-01-blackhole-capture-60s.json", "verification-evidence/macos/macos-01-screencapturekit-prototype.md", "verification-evidence/macos/macos-01-tcc-behavior.md", "verification-evidence/macos/macos-01-latency-measurements.json"], "shared_paths_in": [], "kind": "spike"},
+    {"number": 451, "family": "MACOS-WBS", "owned_paths": ["src/audio/coreaudio_capture.rs", "verification-evidence/macos/MAC-A1-coreaudio-capture.json", "verification-evidence/macos/MAC-A2-virtual-device-classification.json"], "shared_paths_in": [{"path": "src/audio/mod.rs", "owner_family": "MACOS-WBS", "order_within_path": 1}, {"path": "src/audio/probe.rs", "owner_family": "MACOS-WBS", "order_within_path": 1}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 452, "family": "MACOS-WBS", "owned_paths": ["src/audio/screencapturekit_capture.rs", "verification-evidence/macos/MAC-A4-tcc-preflight.json", "verification-evidence/macos/MAC-A12-screencapturekit-capture.json"], "shared_paths_in": [{"path": "src/audio/mod.rs", "owner_family": "MACOS-WBS", "order_within_path": 2}, {"path": "src/audio/probe.rs", "owner_family": "MACOS-WBS", "order_within_path": 2}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 1}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 453, "family": "MACOS-WBS", "owned_paths": ["src/audio/router.rs", "verification-evidence/macos/MAC-A3-routing-report.json"], "shared_paths_in": [{"path": "src/audio/virtual_device.rs", "owner_family": "MACOS-WBS", "order_within_path": 1}, {"path": "src/pipeline/playback.rs", "owner_family": "PLAYBACK-SHARED", "order_within_path": 4}, {"path": "tests/vmic_audio_integration.rs", "owner_family": "MACOS-WBS", "order_within_path": 1, "note": "tests/ outside src scope"}]},
+    {"number": 454, "family": "CTRL", "owned_paths": ["verification-evidence/ctrl/VOL-A6-gain-rms.json"], "shared_paths_in": [{"path": "src/audio/mod.rs", "owner_family": "MACOS-WBS", "order_within_path": 3, "rule": "CTRL-01 rebases on MACOS-02/03 audio source enum and adds gain hook last."}, {"path": "src/pipeline/playback.rs", "owner_family": "PLAYBACK-SHARED", "order_within_path": 2}, {"path": "src/pipeline/audio_sink.rs", "owner_family": "CTRL", "order_within_path": 1}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 2}, {"path": "src/tui/mod.rs", "owner_family": "CTRL", "order_within_path": 1}]},
+    {"number": 455, "family": "CTRL", "owned_paths": ["verification-evidence/ctrl/VOICE-A5-voice-hotswap.json"], "shared_paths_in": [{"path": "src/providers/mod.rs", "owner_family": "PROVIDERS-SHARED", "order_within_path": 2}, {"path": "src/providers/google", "owner_family": "CTRL", "order_within_path": 1}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 4}, {"path": "src/tui/mod.rs", "owner_family": "CTRL", "order_within_path": 2}, {"path": "src/pipeline/playback.rs", "owner_family": "PLAYBACK-SHARED", "order_within_path": 3}]},
+    {"number": 456, "family": "CTRL", "owned_paths": ["src/pipeline/mod.rs", "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json", "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"], "shared_paths_in": [{"path": "src/pipeline/playback.rs", "owner_family": "PLAYBACK-SHARED", "order_within_path": 1, "rule": "CTRL-03 lands the single-voice invariant first; all later writers must preserve it."}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 3}, {"path": "tests/dm06_dual_tts_policy.rs", "owner_family": "CTRL", "note": "tests/ outside src scope"}]},
+    {"number": 457, "family": "MODEL", "owned_paths": ["src/config/provider_supervisor.rs", "verification-evidence/model/MODEL-01-backend-matrix.json"], "shared_paths_in": [{"path": "src/providers/mod.rs", "owner_family": "PROVIDERS-SHARED", "order_within_path": 1, "rule": "MODEL-01 defines the backend-selection contract first; CTRL-02 (#455) layers voice catalog on top."}, {"path": "src/providers/local", "owner_family": "MODEL", "order_within_path": 1}, {"path": "src/providers/mt", "owner_family": "MODEL", "order_within_path": 1}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 5}]},
+    {"number": 458, "family": "MODEL", "owned_paths": ["verification-evidence/model/MODEL-02-macos-runtime.json", "verification-evidence/model/MODEL-02-bench.json"], "shared_paths_in": [{"path": "src/providers/local", "owner_family": "MODEL", "order_within_path": 2}, {"path": "src/providers/mt", "owner_family": "MODEL", "order_within_path": 2}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}, {"path": ".github/workflows/ci.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 2}, {"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 3}]},
+    {"number": 459, "family": "QA", "owned_paths": ["verification-evidence/qa/QA-01-master-test-plan.md", "verification-evidence/qa/QA-01-traceability-matrix.csv", "verification-evidence/qa/QA-01-quality-thresholds.md", "docs/04-verification-plan.md"], "shared_paths_in": []},
+    {"number": 460, "family": "TEST", "owned_paths": ["src/audio/file_source.rs", "verification-evidence/test/TEST-01-simulation-harness-plan.md", "verification-evidence/test/TEST-01-evidence-schema.json"], "shared_paths_in": [], "notes": "tests/fixtures, tests/contract, tests/pty, tests/soak are additive (outside src scope)."},
+    {"number": 461, "family": "CI", "owned_paths": [".github/workflows/contract-weekly.yml", "verification-evidence/ci/CI-01-matrix-run-url.json", "verification-evidence/ci/CI-01-required-checks.md"], "shared_paths_in": [{"path": ".github/workflows/ci.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 1, "rule": "CI-01 lands the matrix expansion first; MODEL-02 (#458) and SEC-01 (#462) layer on top."}]},
+    {"number": 462, "family": "SEC", "owned_paths": ["deny.toml", "PRIVACY.md", "verification-evidence/sec/SEC-01-cargo-deny.txt", "verification-evidence/sec/SEC-01-sbom.cdx.json", "verification-evidence/sec/SEC-01-cosign-verify.txt"], "shared_paths_in": [{"path": ".github/workflows/ci.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 3}, {"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 1}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 463, "family": "REL", "owned_paths": ["packaging/windows/tui-translator.iss", "packaging/macos", "verification-evidence/rel/REL-01-codesign-verify.txt", "verification-evidence/rel/REL-01-notarytool-submit.json", "verification-evidence/rel/REL-01-release-checklist.md", "verification-evidence/rel/REL-01-rollback-drill.md"], "shared_paths_in": [{"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 2, "rule": "REL-01 lands the cross-platform release matrix after SEC-01 wires SBOM/signing."}]},
+    {"number": 464, "family": "LINUX-WBS", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 465, "family": "PROC", "owned_paths": [".github/ISSUE_TEMPLATE/wbs-issue.yml", "verification-evidence/proc/PROC-01-review-gate.md"], "shared_paths_in": [], "notes": "Process gate; concrete paths inferred from title (issue-template gate)."},
+    {"number": 466, "family": "XPLAT", "owned_paths": ["docs/cross-platform-architecture.md"], "shared_paths_in": [], "kind": "ADR", "notes": "Architectural ADR; no exclusive src/** ownership."},
+    {"number": 467, "family": "PARITY", "owned_paths": ["verification-evidence/parity/PARITY-01-matrix.md"], "shared_paths_in": []},
+    {"number": 468, "family": "LINUX-WBS", "owned_paths": ["verification-evidence/linux/linux-01-spike-decision.md"], "shared_paths_in": [], "kind": "spike"},
+    {"number": 469, "family": "LINUX-WBS", "owned_paths": ["src/audio/pipewire_capture.rs", "src/audio/pulse_capture.rs"], "shared_paths_in": [{"path": "src/audio/mod.rs", "owner_family": "MACOS-WBS", "order_within_path": 4, "rule": "LINUX-02 rebases on MACOS-02/03 audio source enum and adds the Linux variants last."}, {"path": "src/audio/probe.rs", "owner_family": "MACOS-WBS", "order_within_path": 3}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}], "kind": "implementation"},
+    {"number": 470, "family": "LINUX-WBS", "owned_paths": ["src/audio/alsa_capture.rs", "src/audio/portal_capture.rs"], "shared_paths_in": [{"path": "src/audio/mod.rs", "owner_family": "MACOS-WBS", "order_within_path": 5}, {"path": "src/audio/probe.rs", "owner_family": "MACOS-WBS", "order_within_path": 4}]},
+    {"number": 471, "family": "LINUX-WBS", "owned_paths": ["src/audio/linux_virtual_device.rs"], "shared_paths_in": [{"path": "src/audio/virtual_device.rs", "owner_family": "MACOS-WBS", "order_within_path": 2}, {"path": "src/audio/router.rs", "owner_family": "MACOS-WBS", "order_within_path": 2, "rule": "LINUX-04 extends the router that MACOS-04 created."}]},
+    {"number": 472, "family": "LINUX-WBS", "owned_paths": ["docs/linux-runtime-dependencies.md"], "shared_paths_in": [{"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}, {"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 4}]},
+    {"number": 473, "family": "MODEL", "owned_paths": ["verification-evidence/model/MODEL-03-linux-runtime.json"], "shared_paths_in": [{"path": "src/providers/local", "owner_family": "MODEL", "order_within_path": 3}, {"path": "src/providers/mt", "owner_family": "MODEL", "order_within_path": 3}]},
+    {"number": 474, "family": "TEST", "owned_paths": ["verification-evidence/test/TEST-02-linux-simulation.md"], "shared_paths_in": []},
+    {"number": 475, "family": "CI", "owned_paths": ["verification-evidence/ci/CI-02-linux-matrix.json"], "shared_paths_in": [{"path": ".github/workflows/ci.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 4}]},
+    {"number": 476, "family": "QA", "owned_paths": ["verification-evidence/qa/QA-02-linux-portability-plan.md"], "shared_paths_in": []},
+    {"number": 477, "family": "SEC", "owned_paths": ["verification-evidence/sec/SEC-02-linux-supply-chain.md"], "shared_paths_in": [{"path": ".github/workflows/ci.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 5}, {"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 5}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 478, "family": "REL", "owned_paths": ["packaging/linux", "verification-evidence/rel/REL-02-linux-packaging.md"], "shared_paths_in": [{"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 6}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 479, "family": "UX", "owned_paths": ["src/tui/frame_pacer.rs"], "shared_paths_in": [{"path": "src/tui/mod.rs", "owner_family": "CTRL", "order_within_path": 3, "rule": "UX-01 rebases on CTRL-01/CTRL-02 TUI layout and adds adaptive sizing last."}], "notes": "Concrete file ownership inferred from existing src/tui/frame_pacer.rs."},
+    {"number": 480, "family": "UX", "owned_paths": [], "shared_paths_in": [{"path": "src/tui/mod.rs", "owner_family": "CTRL", "order_within_path": 4}]},
+    {"number": 481, "family": "I18N", "owned_paths": ["src/i18n.rs"], "shared_paths_in": [{"path": "src/tui/mod.rs", "owner_family": "CTRL", "order_within_path": 5}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 6}], "notes": "src/i18n.rs is a planned new top-level module per the I18N-01 title; not yet on disk."},
+    {"number": 482, "family": "CFG", "owned_paths": ["src/config/capture_supervisor.rs", "src/config/recorder_supervisor.rs"], "shared_paths_in": [{"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 7, "rule": "CFG-01 generalizes the hot-reload pattern across supervisors after HC-NN issues land."}], "notes": "Concrete supervisor ownership inferred from existing src/config/*_supervisor.rs files."},
+    {"number": 483, "family": "STD", "owned_paths": [".github/workflows/standards.yml", "docs/engineering-standards.md"], "shared_paths_in": []},
+    {"number": 484, "family": "STD", "owned_paths": [], "shared_paths_in": [{"path": "STD-02-refactor", "owner_family": "STD", "rule": "STD-02 refactors oversized modules; serialization rule: ONLY runs after all other families have landed their concrete files OR is explicitly scheduled into a release-train window with no other open PRs on the same file."}], "notes": "STD-02 is intrinsically cross-cutting and last-in-line; flagged for orchestration, not file ownership."},
+    {"number": 485, "family": "SUPERTONIC", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 486, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-01-spike.md"], "shared_paths_in": [], "kind": "spike"},
+    {"number": 487, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-02-license-privacy.md"], "shared_paths_in": [{"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 488, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-03-quality-bench.json"], "shared_paths_in": []},
+    {"number": 489, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-04-perf-bench.json"], "shared_paths_in": []},
+    {"number": 490, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-05-streaming-spike.md"], "shared_paths_in": []},
+    {"number": 491, "family": "SUPERTONIC", "owned_paths": [], "shared_paths_in": [{"path": "src/providers/mod.rs", "owner_family": "PROVIDERS-SHARED", "order_within_path": 3, "rule": "SUPERTONIC-06 extends the TTS backend contract after MODEL-01 (#457) defines the local-provider trait."}, {"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 8}]},
+    {"number": 492, "family": "SUPERTONIC", "owned_paths": ["src/providers/local_mt/model_cache.rs"], "shared_paths_in": [{"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 9}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 493, "family": "SUPERTONIC", "owned_paths": ["src/providers/local_mt/supertonic.rs", "src/providers/local_mt/mod.rs"], "shared_paths_in": [], "notes": "SUPERTONIC-08 creates the new src/providers/local_mt/ subtree behind the local-tts feature."},
+    {"number": 494, "family": "SUPERTONIC", "owned_paths": ["src/providers/local_mt/voice_catalog.rs"], "shared_paths_in": [{"path": "src/tui/mod.rs", "owner_family": "CTRL", "order_within_path": 6, "rule": "SUPERTONIC-09 layers Supertonic voice picker after CTRL-02 (#455) lands the cross-provider voice picker."}]},
+    {"number": 495, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-10-soak.json"], "shared_paths_in": [{"path": "src/pipeline/playback.rs", "owner_family": "PLAYBACK-SHARED", "order_within_path": 5}, {"path": "src/audio/mod.rs", "owner_family": "MACOS-WBS", "order_within_path": 6}]},
+    {"number": 496, "family": "SUPERTONIC", "owned_paths": ["verification-evidence/supertonic/SUPERTONIC-11-default-readiness-adr.md"], "shared_paths_in": [{"path": "src/config/mod.rs", "owner_family": "CFG-SHARED", "order_within_path": 10}]},
+    {"number": 497, "family": "SUPERTONIC", "owned_paths": ["docs/supertonic-user-guide.md"], "shared_paths_in": [{"path": ".github/workflows/release.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 7}, {"path": "Cargo.toml", "owner_family": "MANIFEST-SHARED", "rule": "additive"}]},
+    {"number": 498, "family": "QA8", "owned_paths": [], "shared_paths_in": [], "kind": "epic"},
+    {"number": 499, "family": "QA8", "owned_paths": ["verification-evidence/qa8/QA8-01-charter.md"], "shared_paths_in": []},
+    {"number": 500, "family": "QA8", "owned_paths": ["verification-evidence/qa8/QA8-02-slo-schema.json"], "shared_paths_in": []},
+    {"number": 501, "family": "QA8", "owned_paths": ["verification-evidence/qa8/QA8-03-soak-schema-v2.json"], "shared_paths_in": [{"path": "src/metrics/snapshot.rs", "owner_family": "QA8", "order_within_path": 1, "rule": "QA8-03 owns the metrics snapshot schema; later QA8 issues extend its fields additively."}]},
+    {"number": 502, "family": "QA8", "owned_paths": ["src/metrics/process.rs"], "shared_paths_in": []},
+    {"number": 503, "family": "QA8", "owned_paths": ["src/bin/audio_stability_proof.rs"], "shared_paths_in": [], "notes": "Concrete file ownership for the 8-hour runner inferred from existing src/bin/audio_stability_proof.rs."},
+    {"number": 504, "family": "QA8", "owned_paths": ["src/tui/frame_pacer.rs"], "shared_paths_in": [], "notes": "Conflict with UX-01 (#479) on src/tui/frame_pacer.rs: UX-01 owns the file for adaptive layout; QA8-06 reads its existing telemetry. Resolution: QA8-06 reads but does not modify; if write is needed, QA8-06 rebases on UX-01.", "_collision_note": "see collision_resolution[src/tui/frame_pacer.rs]"},
+    {"number": 505, "family": "QA8", "owned_paths": ["src/metrics/network.rs", "src/metrics/loss.rs"], "shared_paths_in": []},
+    {"number": 506, "family": "QA8", "owned_paths": ["src/metrics/memory_guard.rs"], "shared_paths_in": []},
+    {"number": 507, "family": "QA8", "owned_paths": [], "shared_paths_in": [{"path": "src/audio/file_source.rs", "owner_family": "TEST", "order_within_path": 2, "rule": "QA8-09 extends TEST-01's deterministic file source for cross-platform parity."}]},
+    {"number": 508, "family": "QA8", "owned_paths": [".github/workflows/soak.yml"], "shared_paths_in": [{"path": ".github/workflows/ci.yml", "owner_family": "WORKFLOWS-SHARED", "order_within_path": 6}]},
+    {"number": 509, "family": "QA8", "owned_paths": [".github/workflows/issue-hygiene.yml"], "shared_paths_in": []},
+    {"number": 510, "family": "QA8", "owned_paths": [".github/workflows/release-gate.yml"], "shared_paths_in": []},
+    {"number": 511, "family": "QA8", "owned_paths": ["src/metrics/latency.rs"], "shared_paths_in": [{"path": "src/metrics/snapshot.rs", "owner_family": "QA8", "order_within_path": 2}]}
+  ],
+  "shared_paths": [
+    {
+      "path": "src/audio/mod.rs",
+      "owner_family": "MACOS-WBS",
+      "rationale": "MACOS-WBS extends the audio HAL source enum; other families register their capture backends through this enum in dependency order.",
+      "serialized_writers": [
+        {"order": 1, "issue": 451, "family": "MACOS-WBS", "purpose": "register CoreAudio variant"},
+        {"order": 2, "issue": 452, "family": "MACOS-WBS", "purpose": "register ScreenCaptureKit variant"},
+        {"order": 3, "issue": 454, "family": "CTRL", "purpose": "add gain hook (rebase on MACOS-02/03)"},
+        {"order": 4, "issue": 469, "family": "LINUX-WBS", "purpose": "register PipeWire/Pulse variant (rebase on CTRL-01)"},
+        {"order": 5, "issue": 470, "family": "LINUX-WBS", "purpose": "register ALSA/portal fallback"},
+        {"order": 6, "issue": 495, "family": "SUPERTONIC", "purpose": "non-blocking 60fps soak rebasing on prior writers"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/audio/probe.rs",
+      "owner_family": "MACOS-WBS",
+      "rationale": "Device probe enumeration is owned by MACOS-WBS; other families extend the enumeration additively.",
+      "serialized_writers": [
+        {"order": 1, "issue": 451, "family": "MACOS-WBS"},
+        {"order": 2, "issue": 452, "family": "MACOS-WBS"},
+        {"order": 3, "issue": 469, "family": "LINUX-WBS"},
+        {"order": 4, "issue": 470, "family": "LINUX-WBS"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/audio/virtual_device.rs",
+      "owner_family": "MACOS-WBS",
+      "serialized_writers": [
+        {"order": 1, "issue": 453, "family": "MACOS-WBS"},
+        {"order": 2, "issue": 471, "family": "LINUX-WBS"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/audio/router.rs",
+      "owner_family": "MACOS-WBS",
+      "serialized_writers": [
+        {"order": 1, "issue": 453, "family": "MACOS-WBS", "purpose": "create router (new file)"},
+        {"order": 2, "issue": 471, "family": "LINUX-WBS", "purpose": "extend with Linux routes"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/audio/file_source.rs",
+      "owner_family": "TEST",
+      "serialized_writers": [
+        {"order": 1, "issue": 460, "family": "TEST"},
+        {"order": 2, "issue": 507, "family": "QA8"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/pipeline/playback.rs",
+      "owner_family": "PLAYBACK-SHARED",
+      "rationale": "Playback service is structurally cross-cutting; CTRL-03 (#456) owns the single-voice invariant which all later writers must preserve.",
+      "serialized_writers": [
+        {"order": 1, "issue": 456, "family": "CTRL", "purpose": "single-voice invariant"},
+        {"order": 2, "issue": 454, "family": "CTRL", "purpose": "gain controls"},
+        {"order": 3, "issue": 455, "family": "CTRL", "purpose": "voice hot-swap"},
+        {"order": 4, "issue": 453, "family": "MACOS-WBS", "purpose": "macOS virtual-mic routing"},
+        {"order": 5, "issue": 495, "family": "SUPERTONIC", "purpose": "non-blocking pipeline soak"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/config/mod.rs",
+      "owner_family": "CFG-SHARED",
+      "rationale": "Top-level config schema is structurally cross-cutting; each family appends its own struct/field additively in dependency order. CFG-01 (#482) and HC epic (#385) are the long-term stewards.",
+      "serialized_writers": [
+        {"order": 1, "issue": 452, "family": "MACOS-WBS", "purpose": "add capture_source = system_audio"},
+        {"order": 2, "issue": 454, "family": "CTRL", "purpose": "add gain config"},
+        {"order": 3, "issue": 456, "family": "CTRL", "purpose": "single-voice invariant config"},
+        {"order": 4, "issue": 455, "family": "CTRL", "purpose": "voice selection config"},
+        {"order": 5, "issue": 457, "family": "MODEL", "purpose": "backend selection schema"},
+        {"order": 6, "issue": 481, "family": "I18N", "purpose": "locale field"},
+        {"order": 7, "issue": 482, "family": "CFG", "purpose": "live-apply marker fields"},
+        {"order": 8, "issue": 491, "family": "SUPERTONIC", "purpose": "TTS fallback config"},
+        {"order": 9, "issue": 492, "family": "SUPERTONIC", "purpose": "model cache path"},
+        {"order": 10, "issue": 496, "family": "SUPERTONIC", "purpose": "default-readiness flag"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized-additive",
+      "merge_rule": "Each writer may only ADD fields (and their defaults/serde annotations). Removing or renaming a field claimed by an earlier writer requires a tentacle-level decision."
+    },
+    {
+      "path": "src/tui/mod.rs",
+      "owner_family": "CTRL",
+      "rationale": "CTRL family owns the live-controls TUI surface; UX/I18N/SUPERTONIC layer on top.",
+      "serialized_writers": [
+        {"order": 1, "issue": 454, "family": "CTRL"},
+        {"order": 2, "issue": 455, "family": "CTRL"},
+        {"order": 3, "issue": 479, "family": "UX"},
+        {"order": 4, "issue": 480, "family": "UX"},
+        {"order": 5, "issue": 481, "family": "I18N"},
+        {"order": 6, "issue": 494, "family": "SUPERTONIC"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/tui/frame_pacer.rs",
+      "owner_family": "UX",
+      "rationale": "UX-01 (#479) owns adaptive layout writes; QA8-06 (#504) reads telemetry without modifying.",
+      "serialized_writers": [
+        {"order": 1, "issue": 479, "family": "UX", "purpose": "writer"}
+      ],
+      "readers": [
+        {"issue": 504, "family": "QA8", "purpose": "frame-pacing telemetry"}
+      ],
+      "conflict_kind": "cross-family-read-write",
+      "resolution": "writer-reader split"
+    },
+    {
+      "path": "src/providers/mod.rs",
+      "owner_family": "PROVIDERS-SHARED",
+      "rationale": "Provider trait module is cross-cutting; MODEL-01 (#457) defines the backend contract first, then CTRL-02 (#455) and SUPERTONIC-06 (#491) extend the TTS surface in order.",
+      "serialized_writers": [
+        {"order": 1, "issue": 457, "family": "MODEL", "purpose": "backend selection contract"},
+        {"order": 2, "issue": 455, "family": "CTRL", "purpose": "voice catalog hook"},
+        {"order": 3, "issue": 491, "family": "SUPERTONIC", "purpose": "extend TTS backend contract"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/providers/local",
+      "owner_family": "MODEL",
+      "serialized_writers": [
+        {"order": 1, "issue": 457, "family": "MODEL"},
+        {"order": 2, "issue": 458, "family": "MODEL"},
+        {"order": 3, "issue": 473, "family": "MODEL"}
+      ],
+      "conflict_kind": "intra-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/providers/mt",
+      "owner_family": "MODEL",
+      "serialized_writers": [
+        {"order": 1, "issue": 457, "family": "MODEL"},
+        {"order": 2, "issue": 458, "family": "MODEL"},
+        {"order": 3, "issue": 473, "family": "MODEL"}
+      ],
+      "conflict_kind": "intra-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/providers/local_mt",
+      "owner_family": "SUPERTONIC",
+      "rationale": "SUPERTONIC-08 (#493) creates this subtree; subsequent SUPERTONIC issues edit inside it.",
+      "serialized_writers": [
+        {"order": 1, "issue": 493, "family": "SUPERTONIC"},
+        {"order": 2, "issue": 492, "family": "SUPERTONIC"},
+        {"order": 3, "issue": 494, "family": "SUPERTONIC"}
+      ],
+      "conflict_kind": "intra-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "src/metrics/snapshot.rs",
+      "owner_family": "QA8",
+      "serialized_writers": [
+        {"order": 1, "issue": 501, "family": "QA8"},
+        {"order": 2, "issue": 511, "family": "QA8"}
+      ],
+      "conflict_kind": "intra-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": "Cargo.toml",
+      "owner_family": "MANIFEST-SHARED",
+      "merge_rule": "Additive only — issues may APPEND new entries under [dependencies], [features], or [target.'cfg(...)'.dependencies]. Removing or pinning a dependency claimed by another family requires a tentacle-level decision. Conflict resolved by lockfile (--locked) gate from CI-01 (#461).",
+      "writers": [451, 452, 458, 462, 463, 469, 472, 477, 478, 487, 492, 497],
+      "conflict_kind": "cross-family",
+      "resolution": "additive"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "owner_family": "WORKFLOWS-SHARED",
+      "rationale": "CI matrix file edited by CI/MODEL/SEC/LINUX/QA8 families; serialization is by R4-documented dependency chain (CI-01 first).",
+      "serialized_writers": [
+        {"order": 1, "issue": 461, "family": "CI", "purpose": "matrix expansion (depends QA-01+TEST-01)"},
+        {"order": 2, "issue": 458, "family": "MODEL", "purpose": "local-model build matrix"},
+        {"order": 3, "issue": 462, "family": "SEC", "purpose": "security gates (depends CI-01)"},
+        {"order": 4, "issue": 475, "family": "CI", "purpose": "Linux matrix addendum"},
+        {"order": 5, "issue": 477, "family": "SEC", "purpose": "Linux supply-chain gate"},
+        {"order": 6, "issue": 508, "family": "QA8", "purpose": "soak ladder integration"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "owner_family": "WORKFLOWS-SHARED",
+      "serialized_writers": [
+        {"order": 1, "issue": 462, "family": "SEC", "purpose": "SBOM/signing"},
+        {"order": 2, "issue": 463, "family": "REL", "purpose": "cross-platform packaging"},
+        {"order": 3, "issue": 458, "family": "MODEL", "purpose": "model packaging constraints"},
+        {"order": 4, "issue": 472, "family": "LINUX-WBS", "purpose": "Linux distro manifest"},
+        {"order": 5, "issue": 477, "family": "SEC", "purpose": "Linux supply-chain"},
+        {"order": 6, "issue": 478, "family": "REL", "purpose": "Linux packaging"},
+        {"order": 7, "issue": 497, "family": "SUPERTONIC", "purpose": "Supertonic release checklist"}
+      ],
+      "conflict_kind": "cross-family",
+      "resolution": "serialized"
+    }
+  ],
+  "collision_resolution": {
+    "src/audio/mod.rs": "MACOS-WBS owns; serialized 451→452→454→469→470→495.",
+    "src/audio/probe.rs": "MACOS-WBS owns; serialized 451→452→469→470.",
+    "src/audio/virtual_device.rs": "MACOS-WBS owns; serialized 453→471.",
+    "src/audio/router.rs": "MACOS-WBS owns (new file via 453); LINUX-04 (#471) extends after.",
+    "src/audio/file_source.rs": "TEST owns; serialized 460→507.",
+    "src/pipeline/playback.rs": "Shared; serialized 456→454→455→453→495 with CTRL-03's single-voice invariant preserved by all later writers.",
+    "src/config/mod.rs": "Shared additive; serialized 452→454→456→455→457→481→482→491→492→496 with field-add-only merge rule.",
+    "src/tui/mod.rs": "CTRL owns; serialized 454→455→479→480→481→494.",
+    "src/tui/frame_pacer.rs": "UX owns writes (479); QA8-06 (504) is read-only.",
+    "src/providers/mod.rs": "Shared; serialized 457→455→491.",
+    "src/providers/local": "MODEL owns; serialized 457→458→473.",
+    "src/providers/mt": "MODEL owns; serialized 457→458→473.",
+    "src/providers/local_mt": "SUPERTONIC owns; serialized 493→492→494.",
+    "src/metrics/snapshot.rs": "QA8 owns; serialized 501→511.",
+    "Cargo.toml": "Manifest-shared; additive-only merge rule; --locked CI gate from #461 enforces lockfile.",
+    ".github/workflows/ci.yml": "Workflow-shared; serialized 461→458→462→475→477→508.",
+    ".github/workflows/release.yml": "Workflow-shared; serialized 462→463→458→472→477→478→497."
+  },
+  "blocked_collisions": [],
+  "non_owning_issues": {
+    "rationale": "Issues whose snapshot files_touched_hint contained ONLY broad globs (src/audio/**, src/providers/**, src/**) with no R4-audited concrete paths are classified as planning-stage. They do not establish file ownership in this map; concrete ownership will be assigned when they spawn WBS children or when their implementation spike resolves.",
+    "issues": [19, 20, 21, 22, 23, 368, 376, 385, 392, 449, 464, 465, 466, 467, 483, 484, 485, 498]
+  },
+  "human_only_issues": [19, 115, 116, 117, 118, 119, 120, 121, 122, 366],
+  "summary": {
+    "issues_total": 82,
+    "issues_with_concrete_src_ownership": 27,
+    "issues_planning_stage_only": 18,
+    "issues_human_only": 10,
+    "issues_evidence_only": 27,
+    "shared_src_paths_with_serialization": 14,
+    "shared_manifest_or_workflow_paths_with_serialization": 3,
+    "blocked_collisions": 0
+  },
+  "readiness": true,
+  "readiness_caveats": [
+    "Serialization rules for cross-family shared src/** paths are derived by R5 from R4 dependency annotations PLUS architectural reasoning. Where R4 did not record an explicit cross-family dependency (e.g., CTRL ↔ MACOS-WBS on src/audio/mod.rs, CTRL ↔ MODEL on src/providers/mod.rs and src/config/mod.rs), R5 has assigned an owner family and a sequenced writer list; these rules must be ratified by the orchestrator before parallel implementation tentacles are dispatched.",
+    "Issues classified as planning-stage (the 18 in non_owning_issues) MUST spawn WBS children with concrete files_touched_hint values before they can be assigned to implementation tentacles; otherwise the map will fragment into late collisions.",
+    "Cargo.toml uses an additive merge rule rather than serialization; this is safe because the --locked CI gate (#461) prevents silent dependency drift, but the rule cannot detect semver upgrades pushed by two families simultaneously. If two families bump the same dependency in overlapping windows, the later-merged PR must rerun the earlier family's tests.",
+    "src/tui/frame_pacer.rs has a writer-reader split (UX-01 writes, QA8-06 reads). If QA8-06 ever needs to write the file, it must be rebased onto UX-01 explicitly.",
+    "STD-02 (#484) is intentionally last-in-line and will refactor multiple files; the orchestrator must hold STD-02 until all other src-touching tentacles for the affected files have merged."
+  ],
+  "notes": [
+    "No issue bodies, labels, comments, project state, or src/** code were modified. Read-only research artifact.",
+    "Per-issue owned_paths under verification-evidence/ for WP-19.02..09 (#115–#122) use the rc-tag placeholder {RC_TAG} per the R4 audit's evidence anchor; concrete tag is filled in when a release candidate is cut.",
+    "DM family (#376/#384) currently contains only DM-08 (#384) on the board; DM-01..07 are not on the Todo column and are out of scope for this R5 map.",
+    "WP-22/WP-23 (Azure/Ollama) deferred epics list src/providers/azure/ and src/providers/ollama/ as future subtrees; these directories do not exist today and will be created cleanly by future implementation issues. No current collision.",
+    "schema_version 1 is the initial R5 schema; downstream consumers (implementation dispatchers, branch-protection helpers) should refuse to consume a higher schema_version they don't understand."
+  ]
+}

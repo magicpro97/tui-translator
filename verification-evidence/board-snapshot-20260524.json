@@ -1,0 +1,3730 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-05-24T00:00:00Z",
+  "source": {
+    "fetched_via": "GitHub GraphQL API (PowerShell Invoke-RestMethod fallback)",
+    "project": "magicpro97/projects/2",
+    "project_title": "tui-translator roadmap",
+    "raw_files": [
+      "verification-evidence/board-snapshot-raw/project2-fieldvalues-page1-20260524.json",
+      "verification-evidence/board-snapshot-raw/project2-fieldvalues-page2-20260524.json",
+      "verification-evidence/board-snapshot-raw/project2-fieldvalues-page3-20260524.json",
+      "verification-evidence/board-snapshot-raw/project2-fieldvalues-page4-20260524.json",
+      "verification-evidence/board-snapshot-raw/project2-items-20260524.json",
+      "verification-evidence/board-snapshot-raw/project2-page1-20260524.json",
+      "verification-evidence/board-snapshot-raw/jv-not-on-board-20260524.json"
+    ]
+  },
+  "counts": {
+    "human_gated_subset": 10,
+    "todo_closed_excluded": 1,
+    "total_project_items": 329,
+    "ai_actionable": 72,
+    "todo_open": 82
+  },
+  "notes": [
+    "Issue #95 (CLOSED but still in Todo column on board) excluded from snapshot; recommend project-cleanup to move to Done.",
+    "Human gate set = WP-19 acceptance-testing epic (#19) + its 9 atomic Layer-5 review/scheduling sub-issues (#115-#122, #366).",
+    "acceptance/files_touched_hint/confidence are heuristic defaults derived from labels and title prefixes; refine per-issue during iteration.",
+    "needs_human_clarification=true when title was truncated (ending in ellipsis) or under 25 chars; human should expand acceptance from issue body.",
+    "W0-R4 (2026-05-24): LOW-confidence rows reconciled against fetched issue bodies; see verification-evidence/w0-r4/low-confidence-resolution.json. 14/15 LOW rows promoted to MEDIUM; #366 retained as LOW + needs_human_clarification=true (recruiting/scheduling task)."
+  ],
+  "human_gated": [
+    {
+      "number": 19,
+      "title": "[EPIC] WP-19 — Human Acceptance Testing on Real Hardware (Verification Layer 5)",
+      "labels": [
+        "help wanted",
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/19",
+      "family": "WP-19",
+      "human_gate": true,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #19 (https://github.com/magicpro97/tui-translator/issues/19).",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 115,
+      "title": "[P2] WP-19.02 — Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/115",
+      "family": "WP-19.02",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #115; evidence linked in issue; manual review optional. Title: Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": true
+    },
+    {
+      "number": 116,
+      "title": "[P2] WP-19.03 — Run L5-1 subtitle accuracy review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/116",
+      "family": "WP-19.03",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #116; evidence linked in issue; manual review optional. Title: Run L5-1 subtitle accuracy review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 117,
+      "title": "[P2] WP-19.04 — Run L5-2 bilingual translation review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/117",
+      "family": "WP-19.04",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #117; evidence linked in issue; manual review optional. Title: Run L5-2 bilingual translation review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 118,
+      "title": "[P2] WP-19.05 — Validate L5-3 translated audio toggle",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/118",
+      "family": "WP-19.05",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #118; evidence linked in issue; manual review optional. Title: Validate L5-3 translated audio toggle",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 119,
+      "title": "[P2] WP-19.06 — Verify L5-4 terminal compatibility matrix",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/119",
+      "family": "WP-19.06",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #119; evidence linked in issue; manual review optional. Title: Verify L5-4 terminal compatibility matrix",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 120,
+      "title": "[P2] WP-19.07 — Run L5-5 non-developer onboarding review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/120",
+      "family": "WP-19.07",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #120; evidence linked in issue; manual review optional. Title: Run L5-5 non-developer onboarding review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 121,
+      "title": "[P2] WP-19.08 — Run L5-6 live meeting readability review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/121",
+      "family": "WP-19.08",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #121; evidence linked in issue; manual review optional. Title: Run L5-6 live meeting readability review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 122,
+      "title": "[P2] WP-19.09 — Sign and date the acceptance log",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/122",
+      "family": "WP-19.09",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #122; evidence linked in issue; manual review optional. Title: Sign and date the acceptance log",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 366,
+      "title": "verification: recruit and schedule named Layer 5 human reviewers",
+      "labels": [
+        "type: testing",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic",
+        "area:verification"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/366",
+      "family": "unknown",
+      "human_gate": true,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #366; evidence linked in issue; manual review optional. Title: verification: recruit and schedule named Layer 5 human reviewers",
+      "files_touched_hint": "src/**",
+      "needs_human_clarification": false
+    }
+  ],
+  "ai_actionable": [
+    {
+      "number": 20,
+      "title": "[EPIC] WP-20 — Post-v1 Validation — gRPC Streaming STT",
+      "labels": [
+        "help wanted",
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "needs: human-reviewer",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/20",
+      "family": "WP-20",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #20 (https://github.com/magicpro97/tui-translator/issues/20).",
+      "files_touched_hint": [
+        "src/providers/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 21,
+      "title": "[EPIC] WP-21 — Post-v1 Validation — Per-Process Audio Capture (Zoom-Only Loopback)",
+      "labels": [
+        "help wanted",
+        "type: research",
+        "area: audio",
+        "phase: post-v1",
+        "needs: human-reviewer",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/21",
+      "family": "WP-21",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #21 (https://github.com/magicpro97/tui-translator/issues/21).",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 22,
+      "title": "[EPIC] WP-22 — Post-v1 Feature — Azure Provider Integration",
+      "labels": [
+        "help wanted",
+        "type: feature",
+        "area: providers",
+        "provider: azure",
+        "phase: post-v1",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/22",
+      "family": "WP-22",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #22 (https://github.com/magicpro97/tui-translator/issues/22).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/azure/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 23,
+      "title": "[EPIC] WP-23 — Post-v1 Feature — Ollama Local Translation Post-Processing",
+      "labels": [
+        "help wanted",
+        "type: feature",
+        "area: providers",
+        "provider: ollama",
+        "phase: post-v1",
+        "needs: human-reviewer",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/23",
+      "family": "WP-23",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #23 (https://github.com/magicpro97/tui-translator/issues/23).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/ollama/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 368,
+      "title": "[EPIC] LF â€” Local-first defaults, storage, and offline provider readiness",
+      "labels": [
+        "area: providers",
+        "area: config",
+        "priority:P0",
+        "level: epic",
+        "area: privacy",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/368",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #368 (https://github.com/magicpro97/tui-translator/issues/368).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 376,
+      "title": "[EPIC] DM â€” Dual-provider transcript mode with side-by-side A/B panes",
+      "labels": [
+        "area: providers",
+        "area: tui",
+        "priority:P1",
+        "level: epic",
+        "area: session",
+        "area: pipeline",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/376",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #376 (https://github.com/magicpro97/tui-translator/issues/376).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/tui/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 384,
+      "title": "DM-08 â€” Dual-mode docs and config examples",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "priority:P2",
+        "level: atomic",
+        "area: docs"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/384",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #384; evidence linked in issue; manual review optional. Title: DM-08 â€” Dual-mode docs and config examples",
+      "files_touched_hint": [
+        "src/config/**",
+        "docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 385,
+      "title": "[EPIC] HC â€” Hot config without restart",
+      "labels": [
+        "area: config",
+        "area: reliability",
+        "priority:P1",
+        "level: epic",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/385",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #385 (https://github.com/magicpro97/tui-translator/issues/385).",
+      "files_touched_hint": [
+        "src/config/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 392,
+      "title": "[EPIC] SM â€” Realtime storage metrics for transcripts and audio archive",
+      "labels": [
+        "area: metrics",
+        "priority:P2",
+        "level: epic",
+        "area: session",
+        "area: privacy",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/392",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #392 (https://github.com/magicpro97/tui-translator/issues/392).",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 449,
+      "title": "[EPIC] MACOS-WBS — macOS support, live controls, models, virtual mic, QA, CI/CD, and release roadmap",
+      "labels": [
+        "area: audio",
+        "area: providers",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: epic",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/449",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #449 (https://github.com/magicpro97/tui-translator/issues/449).",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/providers/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 450,
+      "title": "MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+      "labels": [
+        "type: research",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/450",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #450; evidence linked in issue; manual review optional. Title: MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+      "files_touched_hint": [
+        "src/audio/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 451,
+      "title": "MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/451",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #451; evidence linked in issue; manual review optional. Title: MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP",
+      "files_touched_hint": [
+        "src/audio/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 452,
+      "title": "MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P1",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/452",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #452; evidence linked in issue; manual review optional. Title: MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight",
+      "files_touched_hint": [
+        "src/audio/**",
+        "verification-evidence/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 453,
+      "title": "MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P1",
+        "area: docs",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/453",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #453; evidence linked in issue; manual review optional. Title: MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers",
+      "files_touched_hint": [
+        "src/audio/**",
+        "docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 454,
+      "title": "CTRL-01 — Real-time input/output volume and gain controls",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "area: tui",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/454",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #454; evidence linked in issue; manual review optional. Title: CTRL-01 — Real-time input/output volume and gain controls",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/tui/**",
+        "src/config/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 455,
+      "title": "CTRL-02 — Real-time TTS voice catalog and hot-swap",
+      "labels": [
+        "type: feature",
+        "area: providers",
+        "area: tui",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/455",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #455; evidence linked in issue; manual review optional. Title: CTRL-02 — Real-time TTS voice catalog and hot-swap",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/tui/**",
+        "src/config/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 456,
+      "title": "CTRL-03 — Single active voice invariant across single and dual modes",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "area: pipeline"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/456",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #456; evidence linked in issue; manual review optional. Title: CTRL-03 — Single active voice invariant across single and dual modes",
+      "files_touched_hint": [
+        "src/config/**",
+        "verification-evidence/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 457,
+      "title": "MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS",
+      "labels": [
+        "type: architecture",
+        "area: providers",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/457",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #457; evidence linked in issue; manual review optional. Title: MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 458,
+      "title": "MODEL-02 — macOS local model runtime validation and packaging constraints",
+      "labels": [
+        "type: testing",
+        "area: providers",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P1",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/458",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #458; evidence linked in issue; manual review optional. Title: MODEL-02 — macOS local model runtime validation and packaging constraints",
+      "files_touched_hint": [
+        "src/providers/**",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 459,
+      "title": "QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/459",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #459; evidence linked in issue; manual review optional. Title: QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 460,
+      "title": "TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/460",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #460; evidence linked in issue; manual review optional. Title: TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 461,
+      "title": "CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/461",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #461; evidence linked in issue; manual review optional. Title: CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 462,
+      "title": "SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/462",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #462; evidence linked in issue; manual review optional. Title: SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 463,
+      "title": "REL-01 — Cross-platform release packaging, notarization, and GA promotion plan",
+      "labels": [
+        "type: release",
+        "area: infra",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/463",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "LOW",
+      "acceptance": "Implementation matches issue body acceptance criteria for #463; evidence linked in issue; manual review optional. Title: REL-01 — Cross-platform release packaging, notarization, and GA promotion plan",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        ".github/workflows/release.yml, Cargo.toml"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 464,
+      "title": "[EPIC] LINUX-WBS — Linux and cross-platform parity roadmap epic",
+      "labels": [
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: epic",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/464",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #464 (https://github.com/magicpro97/tui-translator/issues/464).",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 465,
+      "title": "PROC-01 — Opus review, confidence, and WBS issue-template gate",
+      "labels": [
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "type: automation"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/465",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #465; evidence linked in issue; manual review optional. Title: PROC-01 — Opus review, confidence, and WBS issue-template gate",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 466,
+      "title": "XPLAT-01 — Cross-platform core and audio HAL architecture",
+      "labels": [
+        "type: architecture",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/466",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #466; evidence linked in issue; manual review optional. Title: XPLAT-01 — Cross-platform core and audio HAL architecture",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 467,
+      "title": "PARITY-01 — Cross-platform feature parity matrix and release policy",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/467",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #467; evidence linked in issue; manual review optional. Title: PARITY-01 — Cross-platform feature parity matrix and release policy",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 468,
+      "title": "LINUX-01 — Spike: Linux capture backend decision",
+      "labels": [
+        "type: research",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/468",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #468; evidence linked in issue; manual review optional. Title: LINUX-01 — Spike: Linux capture backend decision",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 469,
+      "title": "LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/469",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #469; evidence linked in issue; manual review optional. Title: LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 470,
+      "title": "LINUX-03 — ALSA-only and portal fallback strategy",
+      "labels": [
+        "type: research",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/470",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #470; evidence linked in issue; manual review optional. Title: LINUX-03 — ALSA-only and portal fallback strategy",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 471,
+      "title": "LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/471",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #471; evidence linked in issue; manual review optional. Title: LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 472,
+      "title": "LINUX-05 — Linux distro dependency manifest and runtime preflight",
+      "labels": [
+        "type: feature",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/472",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #472; evidence linked in issue; manual review optional. Title: LINUX-05 — Linux distro dependency manifest and runtime preflight",
+      "files_touched_hint": [
+        ".github/workflows/release.yml, Cargo.toml"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 473,
+      "title": "MODEL-03 — Linux local model runtime validation",
+      "labels": [
+        "type: testing",
+        "area: providers",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/473",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #473; evidence linked in issue; manual review optional. Title: MODEL-03 — Linux local model runtime validation",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 474,
+      "title": "TEST-02 — Linux deterministic audio simulation fixture",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/474",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #474; evidence linked in issue; manual review optional. Title: TEST-02 — Linux deterministic audio simulation fixture",
+      "files_touched_hint": [
+        "src/audio/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 475,
+      "title": "CI-02 — Linux CI matrix and quality gates",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/475",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #475; evidence linked in issue; manual review optional. Title: CI-02 — Linux CI matrix and quality gates",
+      "files_touched_hint": [
+        ".github/workflows/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 476,
+      "title": "QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/476",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #476; evidence linked in issue; manual review optional. Title: QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 477,
+      "title": "SEC-02 — Linux and cross-platform supply-chain security",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/477",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #477; evidence linked in issue; manual review optional. Title: SEC-02 — Linux and cross-platform supply-chain security",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 478,
+      "title": "REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz",
+      "labels": [
+        "type: release",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/478",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #478; evidence linked in issue; manual review optional. Title: REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz",
+      "files_touched_hint": [
+        ".github/workflows/release.yml, Cargo.toml"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 479,
+      "title": "UX-01 — Adaptive TUI layout",
+      "labels": [
+        "type: feature",
+        "area: tui",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/479",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #479; evidence linked in issue; manual review optional. Title: UX-01 — Adaptive TUI layout",
+      "files_touched_hint": [
+        "src/tui/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 480,
+      "title": "UX-02 — OS-aware shortcut display",
+      "labels": [
+        "type: feature",
+        "area: tui",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/480",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #480; evidence linked in issue; manual review optional. Title: UX-02 — OS-aware shortcut display",
+      "files_touched_hint": [
+        "src/tui/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 481,
+      "title": "I18N-01 — Cross-platform i18n architecture and live locale switching",
+      "labels": [
+        "type: feature",
+        "area: tui",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/481",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #481; evidence linked in issue; manual review optional. Title: I18N-01 — Cross-platform i18n architecture and live locale switching",
+      "files_touched_hint": [
+        "src/tui/**",
+        "src/config/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 482,
+      "title": "CFG-01 — Live settings apply without reload where safe",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/482",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #482; evidence linked in issue; manual review optional. Title: CFG-01 — Live settings apply without reload where safe",
+      "files_touched_hint": [
+        "src/config/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 483,
+      "title": "STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/483",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #483; evidence linked in issue; manual review optional. Title: STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+      "files_touched_hint": [
+        ".github/workflows/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 484,
+      "title": "STD-02 — Refactor existing oversized modules to meet budgets",
+      "labels": [
+        "type: architecture",
+        "area: infra",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/484",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #484; evidence linked in issue; manual review optional. Title: STD-02 — Refactor existing oversized modules to meet budgets",
+      "files_touched_hint": [
+        ".github/workflows/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 485,
+      "title": "SUPERTONIC-WBS: Supertonic local TTS evaluation and default-readiness epic",
+      "labels": [
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "level: epic",
+        "provider: local",
+        "area: performance",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/485",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #485 (https://github.com/magicpro97/tui-translator/issues/485).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 486,
+      "title": "SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+      "labels": [
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/486",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #486; evidence linked in issue; manual review optional. Title: SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 487,
+      "title": "SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+      "labels": [
+        "type: research",
+        "area: packaging",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/487",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #487; evidence linked in issue; manual review optional. Title: SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+      "files_touched_hint": [
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 488,
+      "title": "SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+      "labels": [
+        "type: testing",
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/488",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #488; evidence linked in issue; manual review optional. Title: SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 489,
+      "title": "SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+      "labels": [
+        "type: testing",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/489",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #489; evidence linked in issue; manual review optional. Title: SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 490,
+      "title": "SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+      "labels": [
+        "type: architecture",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: pipeline"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/490",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #490; evidence linked in issue; manual review optional. Title: SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 491,
+      "title": "SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+      "labels": [
+        "type: architecture",
+        "area: providers",
+        "area: config",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/491",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #491; evidence linked in issue; manual review optional. Title: SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/providers/local_mt/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 492,
+      "title": "SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "area: reliability",
+        "area: packaging",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/492",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #492; evidence linked in issue; manual review optional. Title: SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+      "files_touched_hint": [
+        "src/config/**",
+        "src/**",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 493,
+      "title": "SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+      "labels": [
+        "type: feature",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/493",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #493; evidence linked in issue; manual review optional. Title: SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 494,
+      "title": "SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+      "labels": [
+        "type: feature",
+        "area: providers",
+        "area: tui",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/494",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #494; evidence linked in issue; manual review optional. Title: SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/tui/**",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 495,
+      "title": "SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+      "labels": [
+        "type: testing",
+        "area: tui",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance",
+        "area: pipeline",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/495",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #495; evidence linked in issue; manual review optional. Title: SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+      "files_touched_hint": [
+        "src/tui/**",
+        "src/providers/local_mt/**",
+        "src/**",
+        "src/pipeline/**",
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 496,
+      "title": "SUPERTONIC-11: Default-readiness ADR and gated default flip",
+      "labels": [
+        "type: architecture",
+        "type: release",
+        "area: providers",
+        "area: config",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/496",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #496; evidence linked in issue; manual review optional. Title: SUPERTONIC-11: Default-readiness ADR and gated default flip",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 497,
+      "title": "SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+      "labels": [
+        "documentation",
+        "type: release",
+        "area: packaging",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: docs"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/497",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #497; evidence linked in issue; manual review optional. Title: SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+      "files_touched_hint": [
+        "docs/**, README.md",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**",
+        "docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 498,
+      "title": "[EPIC] QA8-WBS - 8-hour cross-platform stability and 60fps QA epic",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: epic",
+        "area: performance",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/498",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #498 (https://github.com/magicpro97/tui-translator/issues/498).",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 499,
+      "title": "QA8-01 - QA charter, standards mapping, and risk register",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/499",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #499; evidence linked in issue; manual review optional. Title: QA8-01 - QA charter, standards mapping, and risk register",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 500,
+      "title": "QA8-02 - Machine-readable SLO schema and gate checker",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/500",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #500; evidence linked in issue; manual review optional. Title: QA8-02 - Machine-readable SLO schema and gate checker",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 501,
+      "title": "QA8-03 - Soak evidence schema v2 and telemetry export contract",
+      "labels": [
+        "type: testing",
+        "area: metrics",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/501",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #501; evidence linked in issue; manual review optional. Title: QA8-03 - Soak evidence schema v2 and telemetry export contract",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 502,
+      "title": "QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+      "labels": [
+        "type: feature",
+        "area: metrics",
+        "area: reliability",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/502",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #502; evidence linked in issue; manual review optional. Title: QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 503,
+      "title": "QA8-05 - 8-hour soak runner v2 with fault injection",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/503",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #503; evidence linked in issue; manual review optional. Title: QA8-05 - 8-hour soak runner v2 with fault injection",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 504,
+      "title": "QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+      "labels": [
+        "type: testing",
+        "area: tui",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/504",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #504; evidence linked in issue; manual review optional. Title: QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+      "files_touched_hint": [
+        "src/tui/**",
+        "verification-evidence/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 505,
+      "title": "QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: providers",
+        "area: reliability",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: pipeline",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/505",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #505; evidence linked in issue; manual review optional. Title: QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/providers/**",
+        "src/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 506,
+      "title": "QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+      "labels": [
+        "type: feature",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/506",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #506; evidence linked in issue; manual review optional. Title: QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 507,
+      "title": "QA8-09 - Deterministic cross-platform simulation and fixture parity",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/507",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #507; evidence linked in issue; manual review optional. Title: QA8-09 - Deterministic cross-platform simulation and fixture parity",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 508,
+      "title": "QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/508",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #508; evidence linked in issue; manual review optional. Title: QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 509,
+      "title": "QA8-11 - Project priority and issue hygiene enforcement",
+      "labels": [
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "type: automation"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/509",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #509; evidence linked in issue; manual review optional. Title: QA8-11 - Project priority and issue hygiene enforcement",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 510,
+      "title": "QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+      "labels": [
+        "type: testing",
+        "type: release",
+        "area: infra",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/510",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #510; evidence linked in issue; manual review optional. Title: QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 511,
+      "title": "QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+      "labels": [
+        "type: testing",
+        "area: metrics",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/511",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #511; evidence linked in issue; manual review optional. Title: QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "verification-evidence/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    }
+  ],
+  "rows": [
+    {
+      "number": 19,
+      "title": "[EPIC] WP-19 — Human Acceptance Testing on Real Hardware (Verification Layer 5)",
+      "labels": [
+        "help wanted",
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/19",
+      "family": "WP-19",
+      "human_gate": true,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #19 (https://github.com/magicpro97/tui-translator/issues/19).",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 20,
+      "title": "[EPIC] WP-20 — Post-v1 Validation — gRPC Streaming STT",
+      "labels": [
+        "help wanted",
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "needs: human-reviewer",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/20",
+      "family": "WP-20",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #20 (https://github.com/magicpro97/tui-translator/issues/20).",
+      "files_touched_hint": [
+        "src/providers/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 21,
+      "title": "[EPIC] WP-21 — Post-v1 Validation — Per-Process Audio Capture (Zoom-Only Loopback)",
+      "labels": [
+        "help wanted",
+        "type: research",
+        "area: audio",
+        "phase: post-v1",
+        "needs: human-reviewer",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/21",
+      "family": "WP-21",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #21 (https://github.com/magicpro97/tui-translator/issues/21).",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 22,
+      "title": "[EPIC] WP-22 — Post-v1 Feature — Azure Provider Integration",
+      "labels": [
+        "help wanted",
+        "type: feature",
+        "area: providers",
+        "provider: azure",
+        "phase: post-v1",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/22",
+      "family": "WP-22",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #22 (https://github.com/magicpro97/tui-translator/issues/22).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/azure/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 23,
+      "title": "[EPIC] WP-23 — Post-v1 Feature — Ollama Local Translation Post-Processing",
+      "labels": [
+        "help wanted",
+        "type: feature",
+        "area: providers",
+        "provider: ollama",
+        "phase: post-v1",
+        "needs: human-reviewer",
+        "priority:P4",
+        "level: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/23",
+      "family": "WP-23",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #23 (https://github.com/magicpro97/tui-translator/issues/23).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/ollama/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 115,
+      "title": "[P2] WP-19.02 — Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/115",
+      "family": "WP-19.02",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #115; evidence linked in issue; manual review optional. Title: Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": true
+    },
+    {
+      "number": 116,
+      "title": "[P2] WP-19.03 — Run L5-1 subtitle accuracy review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/116",
+      "family": "WP-19.03",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #116; evidence linked in issue; manual review optional. Title: Run L5-1 subtitle accuracy review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 117,
+      "title": "[P2] WP-19.04 — Run L5-2 bilingual translation review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/117",
+      "family": "WP-19.04",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #117; evidence linked in issue; manual review optional. Title: Run L5-2 bilingual translation review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 118,
+      "title": "[P2] WP-19.05 — Validate L5-3 translated audio toggle",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/118",
+      "family": "WP-19.05",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #118; evidence linked in issue; manual review optional. Title: Validate L5-3 translated audio toggle",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 119,
+      "title": "[P2] WP-19.06 — Verify L5-4 terminal compatibility matrix",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/119",
+      "family": "WP-19.06",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #119; evidence linked in issue; manual review optional. Title: Verify L5-4 terminal compatibility matrix",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 120,
+      "title": "[P2] WP-19.07 — Run L5-5 non-developer onboarding review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/120",
+      "family": "WP-19.07",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #120; evidence linked in issue; manual review optional. Title: Run L5-5 non-developer onboarding review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 121,
+      "title": "[P2] WP-19.08 — Run L5-6 live meeting readability review",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/121",
+      "family": "WP-19.08",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #121; evidence linked in issue; manual review optional. Title: Run L5-6 live meeting readability review",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 122,
+      "title": "[P2] WP-19.09 — Sign and date the acceptance log",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/122",
+      "family": "WP-19.09",
+      "human_gate": true,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #122; evidence linked in issue; manual review optional. Title: Sign and date the acceptance log",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 366,
+      "title": "verification: recruit and schedule named Layer 5 human reviewers",
+      "labels": [
+        "type: testing",
+        "needs: human-reviewer",
+        "priority:P2",
+        "level: atomic",
+        "area:verification"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/366",
+      "family": "unknown",
+      "human_gate": true,
+      "confidence": "LOW",
+      "acceptance": "Operational/recruiting issue. Acceptance from issue body: (1) identify at least two named reviewers, (2) confirm one is fluent in Japanese AND Vietnamese for L5-2, (3) confirm one is a non-developer for L5-5/L5-6, (4) schedule the real-hardware Zoom session(s), (5) link the resulting acceptance log path verification-evidence/{RC_TAG}/acceptance-log.md. The issue body itself states 'Automation cannot complete this issue.' Unblocks human-only Layer 5 issues #115-#122 and epic #19.",
+      "files_touched_hint": [
+        "verification-evidence/{RC_TAG}/acceptance-log.md"
+      ],
+      "needs_human_clarification": true,
+      "human_clarification_reason": "Issue body explicitly states 'Automation cannot complete this issue.' All five acceptance items require human identity, scheduling, and live-meeting outputs that an AI agent cannot satisfy. Needs a human operator to assign reviewers and produce the acceptance-log."
+    },
+    {
+      "number": 368,
+      "title": "[EPIC] LF â€” Local-first defaults, storage, and offline provider readiness",
+      "labels": [
+        "area: providers",
+        "area: config",
+        "priority:P0",
+        "level: epic",
+        "area: privacy",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/368",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #368 (https://github.com/magicpro97/tui-translator/issues/368).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 376,
+      "title": "[EPIC] DM â€” Dual-provider transcript mode with side-by-side A/B panes",
+      "labels": [
+        "area: providers",
+        "area: tui",
+        "priority:P1",
+        "level: epic",
+        "area: session",
+        "area: pipeline",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/376",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #376 (https://github.com/magicpro97/tui-translator/issues/376).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/tui/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 384,
+      "title": "DM-08 â€” Dual-mode docs and config examples",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "priority:P2",
+        "level: atomic",
+        "area: docs"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/384",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #384; evidence linked in issue; manual review optional. Title: DM-08 â€” Dual-mode docs and config examples",
+      "files_touched_hint": [
+        "src/config/**",
+        "docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 385,
+      "title": "[EPIC] HC â€” Hot config without restart",
+      "labels": [
+        "area: config",
+        "area: reliability",
+        "priority:P1",
+        "level: epic",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/385",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #385 (https://github.com/magicpro97/tui-translator/issues/385).",
+      "files_touched_hint": [
+        "src/config/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 392,
+      "title": "[EPIC] SM â€” Realtime storage metrics for transcripts and audio archive",
+      "labels": [
+        "area: metrics",
+        "priority:P2",
+        "level: epic",
+        "area: session",
+        "area: privacy",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/392",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #392 (https://github.com/magicpro97/tui-translator/issues/392).",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 449,
+      "title": "[EPIC] MACOS-WBS — macOS support, live controls, models, virtual mic, QA, CI/CD, and release roadmap",
+      "labels": [
+        "area: audio",
+        "area: providers",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: epic",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/449",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #449 (https://github.com/magicpro97/tui-translator/issues/449).",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/providers/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 450,
+      "title": "MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+      "labels": [
+        "type: research",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/450",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Spike/decision issue. Acceptance from issue body: (1) confidence reaches 1.0 for starting MACOS-02; (2) confidence reaches 1.0 or a follow-up blocker is recorded for MACOS-03; (3) Soundflower and bundled-driver paths are explicitly rejected; (4) TCC remediation path is documented; (5) Opus review confirms the decision record is sufficient. Test outputs: (a) CoreAudio/cpal hello-capture emitting 16 kHz mono i16; (b) 60s BlackHole 2ch capture with sample-continuity measurement; (c) ScreenCaptureKit audio-only prototype or Obj-C/Swift trampoline; (d) permission-denied/TCC behavior from terminal launch; (e) first-sample and steady-state latency on at least one Apple Silicon host. Output is a decision record in issue comments + implementation prerequisites for MACOS-02 and MACOS-03; no production capture code shipped here. Out of scope: shipping production macOS capture code.",
+      "files_touched_hint": [
+        "verification-evidence/macos/macos-01-spike-decision.md",
+        "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+        "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+        "verification-evidence/macos/macos-01-tcc-behavior.md",
+        "verification-evidence/macos/macos-01-latency-measurements.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 451,
+      "title": "MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/451",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) MAC-A1 CoreAudio capture evidence exists; (2) MAC-A2 virtual-device classification evidence exists or is linked; (3) no Windows WASAPI behavior regresses; (4) Opus review clean. Test cases: 60s BlackHole capture with sample-continuity >= 0.98 at 16 kHz mono i16; missing capture device surfaces plain-English error; disconnect/reconnect does not crash and is logged with recoverable state; `cargo test` passes on macos-13 and macos-14. Outputs: cfg(target_os = \"macos\") capture module preserving AudioChunk format; macOS device listing; BlackHole/named-device capture route; evidence under verification-evidence/macos/. Out of scope: ScreenCaptureKit (MACOS-03), bundling drivers. Depends on MACOS-01.",
+      "files_touched_hint": [
+        "src/audio/mod.rs",
+        "src/audio/coreaudio_capture.rs",
+        "src/audio/probe.rs",
+        "Cargo.toml",
+        "tests/integration",
+        "verification-evidence/macos/MAC-A1-coreaudio-capture.json",
+        "verification-evidence/macos/MAC-A2-virtual-device-classification.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 452,
+      "title": "MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P1",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/452",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) MAC-A4 TCC preflight evidence exists; (2) MAC-A12 ScreenCaptureKit capture evidence exists; (3) i18n/localization explicitly out of scope; (4) Opus review clean. Test cases: permission denied exits with code 2 + remediation steps printed; 5-minute ScreenCaptureKit capture continuity >= 0.95; no silent failure when Screen Recording not approved; macOS 14 and macOS 15 behavior recorded. Outputs: capture_source = \"system_audio\" path; permission preflight check; plain-English remediation message; ScreenCaptureKit capture evidence. Depends on MACOS-01, MACOS-02.",
+      "files_touched_hint": [
+        "src/audio/mod.rs",
+        "src/audio/screencapturekit_capture.rs",
+        "src/audio/probe.rs",
+        "src/config/mod.rs",
+        "Cargo.toml",
+        "verification-evidence/macos/MAC-A4-tcc-preflight.json",
+        "verification-evidence/macos/MAC-A12-screencapturekit-capture.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 453,
+      "title": "MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P1",
+        "area: docs",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/453",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) MAC-A2 and MAC-A3 evidence exist; (2) no driver binary is bundled or redistributed; (3) Windows VB-CABLE classification still passes; (4) Opus review clean. Test cases: classify `BlackHole 2ch`, `Loopback Audio`, `VB-Cable` Mac names; tts_routing = \"virtual_mic\" resolves to expected route; tts_routing = \"both\" routes to speakers and virtual mic without duplicate decode; when BlackHole is installed a smoke test writes non-silent PCM to it. Outputs: macOS virtual-device patterns + enumeration/probe; route selection for virtual_mic and both; no-driver-bundling policy in issue evidence. Depends on MACOS-02.",
+      "files_touched_hint": [
+        "src/audio/virtual_device.rs",
+        "src/pipeline/playback.rs",
+        "src/audio/router.rs",
+        "tests/vmic_audio_integration.rs",
+        "verification-evidence/macos/MAC-A2-virtual-device-classification.json",
+        "verification-evidence/macos/MAC-A3-routing-report.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 454,
+      "title": "CTRL-01 — Real-time input/output volume and gain controls",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "area: tui",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/454",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) VOL-A6 evidence exists; (2) runtime controls work without restart; (3) no silent fallback on invalid config; (4) Opus review clean. Test cases: gain values clamp at min/max; 0.5 gain produces RMS ≈ 0.5x input RMS within ±2%; hotkey change effective ≤ 50 ms; gain transitions use short ramp/smoothing (no zipper noise); max gain does not clip above target limiter policy. Outputs: input/output gain settings; TUI gauges + hotkeys; watch-channel-based live updates; RMS evidence artifacts. Out of scope: OS-level mixer synchronization (unless separate spike approves).",
+      "files_touched_hint": [
+        "src/audio/mod.rs",
+        "src/pipeline/playback.rs",
+        "src/pipeline/audio_sink.rs",
+        "src/config/mod.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOL-A6-gain-rms.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 455,
+      "title": "CTRL-02 — Real-time TTS voice catalog and hot-swap",
+      "labels": [
+        "type: feature",
+        "area: providers",
+        "area: tui",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/455",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) VOICE-A5 evidence exists; (2) voice selection is provider-aware; (3) no concurrent second voice is introduced; (4) Opus review clean. Test cases: mocked Google TTS request contains selected voice name; voice swap affects next synthesis call; p95 voice-swap-to-first-audio ≤ 500 ms for next utterance; invalid voice surfaces visible user error; in-flight utterance finishes (not cut) unless policy changes. Outputs: VoiceSelection model; provider voice catalog/listing; TUI voice picker; hot-swap state update path. Depends on CTRL-03. Out of scope: streaming TTS interruption/crossfade.",
+      "files_touched_hint": [
+        "src/providers/mod.rs",
+        "src/providers/google",
+        "src/config/mod.rs",
+        "src/tui/mod.rs",
+        "src/pipeline/playback.rs",
+        "verification-evidence/ctrl/VOICE-A5-voice-hotswap.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 456,
+      "title": "CTRL-03 — Single active voice invariant across single and dual modes",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "area: pipeline"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/456",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) VOICE-A8 and VOICE-A9 evidence exist; (2) no existing DM-06 policy regresses; (3) Opus review clean. Test cases: property/state tests prove concurrently playing TTS streams ≤ 1; dual mode with primary slot A suppresses slot B audio; dual mode with primary slot B suppresses slot A audio; second playback service/mixer creation returns explicit error or is structurally impossible; voice swap mid-utterance preserves invariant and applies on next utterance. Outputs: single TTS playback owner or mixer; primary-slot policy for dual mode; invariant tests; explicit error/guard for attempted second playback owner. Out of scope: simultaneous bilingual spoken output (forbidden by roadmap).",
+      "files_touched_hint": [
+        "src/pipeline/playback.rs",
+        "src/pipeline/mod.rs",
+        "src/config/mod.rs",
+        "tests/dm06_dual_tts_policy.rs",
+        "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json",
+        "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 457,
+      "title": "MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS",
+      "labels": [
+        "type: architecture",
+        "area: providers",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/457",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) provider contract tests pass; (2) privacy/security review finds no silent cloud fallback; (3) Opus review clean. Test cases: all supported local/remote combinations parse and validate; unsupported local pair errors unless explicit cloud fallback configured; no network call occurs without explicit consent/config; when fallback is explicitly enabled a user-visible log line or metric records the fallback for privacy audit. Outputs: backend matrix for STT/MT/TTS; config schema decision; fallback and consent contract; contract tests. Out of scope: implementing every remote provider (contract + minimal tests only).",
+      "files_touched_hint": [
+        "src/providers/mod.rs",
+        "src/providers/local",
+        "src/providers/mt",
+        "src/config/mod.rs",
+        "src/config/provider_supervisor.rs",
+        "tests/contract",
+        "tests/contract.rs",
+        "tests/mt_routing.rs",
+        "verification-evidence/model/MODEL-01-backend-matrix.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 458,
+      "title": "MODEL-02 — macOS local model runtime validation and packaging constraints",
+      "labels": [
+        "type: testing",
+        "area: providers",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P1",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/458",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) benchmark/evidence artifact exists; (2) packaging plan excludes large model binaries unless explicitly approved; (3) Opus review clean. Test cases: local-stt builds on macos-13/14; local-mt builds on macos-13/14; CPU fallback runs without GPU/Metal; model cache uses `~/Library/Application Support/tui-translator/models` or documented ProjectDirs equivalent; RSS/CPU thresholds recorded against baseline. Outputs: macOS build/runtime validation report; model cache path validation; Metal/CoreML decision or deferral; packaging constraints for models and native libraries. Depends on MODEL-01, CI-01.",
+      "files_touched_hint": [
+        "src/providers/local",
+        "src/providers/mt",
+        "Cargo.toml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "tests/local_model_bootstrap.rs",
+        "verification-evidence/model/MODEL-02-macos-runtime.json",
+        "verification-evidence/model/MODEL-02-bench.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 459,
+      "title": "QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/459",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) QA plan covers functional suitability, reliability, performance efficiency, compatibility, security, maintainability, portability, and interaction capability (ISO/IEC 25010); (2) traceability matrix complete for P0 scope; (3) Opus review confirms standards alignment. Test cases: every P0 requirement maps to ≥ 1 test or evidence item; every WBS implementation issue references ≥ 1 test ID; CI/doc lint fails for missing referenced test IDs once tooling exists; Opus QA review validates standards mapping. Outputs: Master Test Plan deliverable; traceability matrix; Test-ID naming convention; quality threshold table. Out of scope: purchasing copyrighted standards text (use compliant summaries).",
+      "files_touched_hint": [
+        "verification-evidence/qa/QA-01-master-test-plan.md",
+        "verification-evidence/qa/QA-01-traceability-matrix.csv",
+        "verification-evidence/qa/QA-01-quality-thresholds.md",
+        "docs/04-verification-plan.md"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 460,
+      "title": "TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/460",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) simulation evidence artifacts generated in a stable schema; (2) L1-L4 can run without a live meeting except explicitly marked hardware tests; (3) Opus review clean. Test cases: audio fixture replayer drives pipeline headlessly; provider mock returns 429/503/slow responses with retry/status verification; PTY resize/cleanup tests pass; virtual mic memory PCM roundtrip validates RMS/drop/latency gates; soak file-source mode emits schema-versioned JSON. Outputs: simulation harness plan; fixture replayer tasks; fake provider/network chaos tasks; virtual mic memory-tier tests; evidence schema. Depends on QA-01. Out of scope: replacing L5 human acceptance.",
+      "files_touched_hint": [
+        "tests/fixtures",
+        "tests/contract",
+        "tests/pty",
+        "tests/soak",
+        "tests/vmic_audio_integration.rs",
+        "tests/vmic_b4_production_sink.rs",
+        "src/audio/file_source.rs",
+        "src/bin/run_soak (if present)",
+        "verification-evidence/test/TEST-01-simulation-harness-plan.md",
+        "verification-evidence/test/TEST-01-evidence-schema.json"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 461,
+      "title": "CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/461",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) CI run URL shows required contexts green; (2) branch protection can use the new required checks; (3) no existing Windows gate is weakened; (4) Opus review clean. Test cases: tampering Cargo.lock causes --locked jobs to fail; required feature combinations compile on macOS and Windows; beta toolchain failure is allowed-fail only where documented; VMIC hardware-dependent jobs remain skip-safe with explicit evidence. Outputs: Windows + macos-13 + macos-14 CI matrix; MSRV/stable/beta policy; feature matrix; required status check list. Depends on QA-01, TEST-01. Out of scope: signing/notarization, SBOM (SEC-01/REL-01).",
+      "files_touched_hint": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/contract-weekly.yml",
+        "verification-evidence/ci/CI-01-matrix-run-url.json",
+        "verification-evidence/ci/CI-01-required-checks.md"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 462,
+      "title": "SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/462",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) security gate required before release; (2) no secrets or private paths leak into CI artifacts/logs; (3) SBOM and provenance generated for release assets; (4) tui-security-auditor or Opus security review clean. Test cases: fake secret fixture blocks PR without exposing real credentials; cargo deny failure blocks PR; SBOM validates and is attached to release artifacts; cosign verify succeeds for untampered artifacts and fails after byte tamper; logs/telemetry do not expose Google API keys, sensitive BlackHole device names, or user home paths. Outputs: cargo-deny/audit gate; secret scanning gate; SAST/SARIF plan; CycloneDX/SPDX SBOM; SLSA provenance; cosign/signing policy. Depends on CI-01. Out of scope: procurement of code-signing certificates (REL-01).",
+      "files_touched_hint": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "deny.toml",
+        "Cargo.toml",
+        "PRIVACY.md",
+        "verification-evidence/sec/SEC-01-cargo-deny.txt",
+        "verification-evidence/sec/SEC-01-sbom.cdx.json",
+        "verification-evidence/sec/SEC-01-cosign-verify.txt"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 463,
+      "title": "REL-01 — Cross-platform release packaging, notarization, and GA promotion plan",
+      "labels": [
+        "type: release",
+        "area: infra",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/463",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Acceptance from issue body: (1) release checklist includes all CI, security, QA, soak, human acceptance, and Opus review gates; (2) artifacts are signed/notarized where applicable; (3) GA promotion is blocked until all gates pass; (4) Opus review clean. Test cases: lipo -info or equivalent confirms universal/target architecture policy; codesign --verify passes; notarytool submit --wait returns accepted; stapler and spctl verification pass; Gatekeeper first-launch UX validated on a clean VM; rollback drill proves users can return to previous release. Outputs: v2 alpha/beta/GA release plan; macOS packaging workflow; notarization and stapling verification; rollback plan; release-readiness checklist. Depends on CI-01, SEC-01, QA-01, TEST-01, MACOS-02, MACOS-04. Out of scope: Mac App Store distribution, Homebrew tap.",
+      "files_touched_hint": [
+        ".github/workflows/release.yml",
+        "packaging/windows/tui-translator.iss",
+        "packaging/macos (new)",
+        "verification-evidence/rel/REL-01-codesign-verify.txt",
+        "verification-evidence/rel/REL-01-notarytool-submit.json",
+        "verification-evidence/rel/REL-01-release-checklist.md",
+        "verification-evidence/rel/REL-01-rollback-drill.md"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 464,
+      "title": "[EPIC] LINUX-WBS — Linux and cross-platform parity roadmap epic",
+      "labels": [
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: epic",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/464",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #464 (https://github.com/magicpro97/tui-translator/issues/464).",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 465,
+      "title": "PROC-01 — Opus review, confidence, and WBS issue-template gate",
+      "labels": [
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "type: automation"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/465",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #465; evidence linked in issue; manual review optional. Title: PROC-01 — Opus review, confidence, and WBS issue-template gate",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 466,
+      "title": "XPLAT-01 — Cross-platform core and audio HAL architecture",
+      "labels": [
+        "type: architecture",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/466",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #466; evidence linked in issue; manual review optional. Title: XPLAT-01 — Cross-platform core and audio HAL architecture",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 467,
+      "title": "PARITY-01 — Cross-platform feature parity matrix and release policy",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/467",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #467; evidence linked in issue; manual review optional. Title: PARITY-01 — Cross-platform feature parity matrix and release policy",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 468,
+      "title": "LINUX-01 — Spike: Linux capture backend decision",
+      "labels": [
+        "type: research",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/468",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #468; evidence linked in issue; manual review optional. Title: LINUX-01 — Spike: Linux capture backend decision",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 469,
+      "title": "LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/469",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #469; evidence linked in issue; manual review optional. Title: LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 470,
+      "title": "LINUX-03 — ALSA-only and portal fallback strategy",
+      "labels": [
+        "type: research",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P2",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/470",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #470; evidence linked in issue; manual review optional. Title: LINUX-03 — ALSA-only and portal fallback strategy",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 471,
+      "title": "LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback",
+      "labels": [
+        "type: feature",
+        "area: audio",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/471",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #471; evidence linked in issue; manual review optional. Title: LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback",
+      "files_touched_hint": [
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 472,
+      "title": "LINUX-05 — Linux distro dependency manifest and runtime preflight",
+      "labels": [
+        "type: feature",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/472",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #472; evidence linked in issue; manual review optional. Title: LINUX-05 — Linux distro dependency manifest and runtime preflight",
+      "files_touched_hint": [
+        ".github/workflows/release.yml, Cargo.toml"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 473,
+      "title": "MODEL-03 — Linux local model runtime validation",
+      "labels": [
+        "type: testing",
+        "area: providers",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/473",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #473; evidence linked in issue; manual review optional. Title: MODEL-03 — Linux local model runtime validation",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 474,
+      "title": "TEST-02 — Linux deterministic audio simulation fixture",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/474",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #474; evidence linked in issue; manual review optional. Title: TEST-02 — Linux deterministic audio simulation fixture",
+      "files_touched_hint": [
+        "src/audio/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 475,
+      "title": "CI-02 — Linux CI matrix and quality gates",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/475",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #475; evidence linked in issue; manual review optional. Title: CI-02 — Linux CI matrix and quality gates",
+      "files_touched_hint": [
+        ".github/workflows/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 476,
+      "title": "QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+      "labels": [
+        "type: testing",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/476",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #476; evidence linked in issue; manual review optional. Title: QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+      "files_touched_hint": [
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 477,
+      "title": "SEC-02 — Linux and cross-platform supply-chain security",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/477",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #477; evidence linked in issue; manual review optional. Title: SEC-02 — Linux and cross-platform supply-chain security",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 478,
+      "title": "REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz",
+      "labels": [
+        "type: release",
+        "area: packaging",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/478",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #478; evidence linked in issue; manual review optional. Title: REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz",
+      "files_touched_hint": [
+        ".github/workflows/release.yml, Cargo.toml"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 479,
+      "title": "UX-01 — Adaptive TUI layout",
+      "labels": [
+        "type: feature",
+        "area: tui",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/479",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #479; evidence linked in issue; manual review optional. Title: UX-01 — Adaptive TUI layout",
+      "files_touched_hint": [
+        "src/tui/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 480,
+      "title": "UX-02 — OS-aware shortcut display",
+      "labels": [
+        "type: feature",
+        "area: tui",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/480",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #480; evidence linked in issue; manual review optional. Title: UX-02 — OS-aware shortcut display",
+      "files_touched_hint": [
+        "src/tui/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 481,
+      "title": "I18N-01 — Cross-platform i18n architecture and live locale switching",
+      "labels": [
+        "type: feature",
+        "area: tui",
+        "area: config",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/481",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #481; evidence linked in issue; manual review optional. Title: I18N-01 — Cross-platform i18n architecture and live locale switching",
+      "files_touched_hint": [
+        "src/tui/**",
+        "src/config/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 482,
+      "title": "CFG-01 — Live settings apply without reload where safe",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/482",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #482; evidence linked in issue; manual review optional. Title: CFG-01 — Live settings apply without reload where safe",
+      "files_touched_hint": [
+        "src/config/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 483,
+      "title": "STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/483",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #483; evidence linked in issue; manual review optional. Title: STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+      "files_touched_hint": [
+        ".github/workflows/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 484,
+      "title": "STD-02 — Refactor existing oversized modules to meet budgets",
+      "labels": [
+        "type: architecture",
+        "area: infra",
+        "phase: post-v1",
+        "priority:P1",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/484",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #484; evidence linked in issue; manual review optional. Title: STD-02 — Refactor existing oversized modules to meet budgets",
+      "files_touched_hint": [
+        ".github/workflows/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 485,
+      "title": "SUPERTONIC-WBS: Supertonic local TTS evaluation and default-readiness epic",
+      "labels": [
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "level: epic",
+        "provider: local",
+        "area: performance",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/485",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #485 (https://github.com/magicpro97/tui-translator/issues/485).",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 486,
+      "title": "SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+      "labels": [
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/486",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #486; evidence linked in issue; manual review optional. Title: SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 487,
+      "title": "SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+      "labels": [
+        "type: research",
+        "area: packaging",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/487",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #487; evidence linked in issue; manual review optional. Title: SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+      "files_touched_hint": [
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 488,
+      "title": "SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+      "labels": [
+        "type: testing",
+        "type: research",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/488",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #488; evidence linked in issue; manual review optional. Title: SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 489,
+      "title": "SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+      "labels": [
+        "type: testing",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/489",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #489; evidence linked in issue; manual review optional. Title: SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 490,
+      "title": "SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+      "labels": [
+        "type: architecture",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: pipeline"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/490",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #490; evidence linked in issue; manual review optional. Title: SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 491,
+      "title": "SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+      "labels": [
+        "type: architecture",
+        "area: providers",
+        "area: config",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/491",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #491; evidence linked in issue; manual review optional. Title: SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/providers/local_mt/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 492,
+      "title": "SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+      "labels": [
+        "type: feature",
+        "area: config",
+        "area: reliability",
+        "area: packaging",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/492",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #492; evidence linked in issue; manual review optional. Title: SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+      "files_touched_hint": [
+        "src/config/**",
+        "src/**",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 493,
+      "title": "SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+      "labels": [
+        "type: feature",
+        "area: providers",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/493",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #493; evidence linked in issue; manual review optional. Title: SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/providers/local_mt/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 494,
+      "title": "SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+      "labels": [
+        "type: feature",
+        "area: providers",
+        "area: tui",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/494",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #494; evidence linked in issue; manual review optional. Title: SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/tui/**",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 495,
+      "title": "SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+      "labels": [
+        "type: testing",
+        "area: tui",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: performance",
+        "area: pipeline",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/495",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #495; evidence linked in issue; manual review optional. Title: SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+      "files_touched_hint": [
+        "src/tui/**",
+        "src/providers/local_mt/**",
+        "src/**",
+        "src/pipeline/**",
+        "src/audio/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 496,
+      "title": "SUPERTONIC-11: Default-readiness ADR and gated default flip",
+      "labels": [
+        "type: architecture",
+        "type: release",
+        "area: providers",
+        "area: config",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/496",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #496; evidence linked in issue; manual review optional. Title: SUPERTONIC-11: Default-readiness ADR and gated default flip",
+      "files_touched_hint": [
+        "src/providers/**",
+        "src/config/**",
+        "src/providers/local_mt/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 497,
+      "title": "SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+      "labels": [
+        "documentation",
+        "type: release",
+        "area: packaging",
+        "phase: post-v1",
+        "level: atomic",
+        "provider: local",
+        "area: docs"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/497",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #497; evidence linked in issue; manual review optional. Title: SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+      "files_touched_hint": [
+        "docs/**, README.md",
+        ".github/workflows/release.yml, Cargo.toml",
+        "src/providers/local_mt/**",
+        "docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 498,
+      "title": "[EPIC] QA8-WBS - 8-hour cross-platform stability and 60fps QA epic",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: epic",
+        "area: performance",
+        "type: epic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/498",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "MEDIUM",
+      "acceptance": "Epic tracker: all child issues moved to Done; acceptance recorded per child; verify summary in issue #498 (https://github.com/magicpro97/tui-translator/issues/498).",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 499,
+      "title": "QA8-01 - QA charter, standards mapping, and risk register",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/499",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #499; evidence linked in issue; manual review optional. Title: QA8-01 - QA charter, standards mapping, and risk register",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 500,
+      "title": "QA8-02 - Machine-readable SLO schema and gate checker",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/500",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #500; evidence linked in issue; manual review optional. Title: QA8-02 - Machine-readable SLO schema and gate checker",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 501,
+      "title": "QA8-03 - Soak evidence schema v2 and telemetry export contract",
+      "labels": [
+        "type: testing",
+        "area: metrics",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/501",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #501; evidence linked in issue; manual review optional. Title: QA8-03 - Soak evidence schema v2 and telemetry export contract",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 502,
+      "title": "QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+      "labels": [
+        "type: feature",
+        "area: metrics",
+        "area: reliability",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/502",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #502; evidence linked in issue; manual review optional. Title: QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 503,
+      "title": "QA8-05 - 8-hour soak runner v2 with fault injection",
+      "labels": [
+        "type: testing",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/503",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #503; evidence linked in issue; manual review optional. Title: QA8-05 - 8-hour soak runner v2 with fault injection",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 504,
+      "title": "QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+      "labels": [
+        "type: testing",
+        "area: tui",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/504",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #504; evidence linked in issue; manual review optional. Title: QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+      "files_touched_hint": [
+        "src/tui/**",
+        "verification-evidence/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 505,
+      "title": "QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: providers",
+        "area: reliability",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: pipeline",
+        "area: virtual-mic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/505",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #505; evidence linked in issue; manual review optional. Title: QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/providers/**",
+        "src/**",
+        "src/pipeline/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 506,
+      "title": "QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+      "labels": [
+        "type: feature",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: privacy"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/506",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #506; evidence linked in issue; manual review optional. Title: QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+      "files_touched_hint": [
+        "src/**",
+        "verification-evidence/**",
+        "src/**, docs/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 507,
+      "title": "QA8-09 - Deterministic cross-platform simulation and fixture parity",
+      "labels": [
+        "type: testing",
+        "area: audio",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/507",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #507; evidence linked in issue; manual review optional. Title: QA8-09 - Deterministic cross-platform simulation and fixture parity",
+      "files_touched_hint": [
+        "src/audio/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 508,
+      "title": "QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+      "labels": [
+        "type: ci",
+        "area: infra",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/508",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #508; evidence linked in issue; manual review optional. Title: QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 509,
+      "title": "QA8-11 - Project priority and issue hygiene enforcement",
+      "labels": [
+        "area: infra",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "type: automation"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/509",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #509; evidence linked in issue; manual review optional. Title: QA8-11 - Project priority and issue hygiene enforcement",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 510,
+      "title": "QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+      "labels": [
+        "type: testing",
+        "type: release",
+        "area: infra",
+        "area: reliability",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/510",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #510; evidence linked in issue; manual review optional. Title: QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+      "files_touched_hint": [
+        ".github/workflows/**",
+        "src/**",
+        "verification-evidence/**"
+      ],
+      "needs_human_clarification": false
+    },
+    {
+      "number": 511,
+      "title": "QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+      "labels": [
+        "type: testing",
+        "area: metrics",
+        "area: verification",
+        "phase: post-v1",
+        "priority:P0",
+        "level: atomic",
+        "area: performance"
+      ],
+      "url": "https://github.com/magicpro97/tui-translator/issues/511",
+      "family": "unknown",
+      "human_gate": false,
+      "confidence": "HIGH",
+      "acceptance": "Implementation matches issue body acceptance criteria for #511; evidence linked in issue; manual review optional. Title: QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+      "files_touched_hint": [
+        "src/metrics/**",
+        "verification-evidence/**",
+        "src/**"
+      ],
+      "needs_human_clarification": false
+    }
+  ]
+}

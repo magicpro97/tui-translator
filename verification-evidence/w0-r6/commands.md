@@ -6,13 +6,22 @@ issue comments were modified.
 ## Inputs consumed
 
 - `verification-evidence/board-snapshot-20260524.json`
-  SHA256: `290FB421CDAC960618640169CD36876621ECA9F8E328AF876C3280B7EC19949E`
+  SHA256: `893A3C52AB12BFE563EDD968CA417061818E651BBE6DA294CE043FFE588BBF92`
 - `verification-evidence/family-file-map.json`
-  SHA256: `4E961DC0282E9E0810505020BDAC45F7B7BF57492AB4D67B7F089A7B0FA9182B`
+  SHA256: `B36CC3F3FCD63F2E002A266911AF78998B9F8D03B152FD233D62291BB3E7E611`
 - `verification-evidence/w0-r4/low-confidence-resolution.json`
-  SHA256: `DD6FB581A55FC9A2DE4349EB38276706B80A5F0553C28CC00BD121F32933BEF7`
+  SHA256: `1F959788667C48A2FC8EBAEC1C979251A1C0AA8F3133B884A871681A11DAAFF7`
 - `verification-evidence/w0-r5/commands.md`
   SHA256: `5E367CF4BF074D17F2CE6BEA655DF0AE63AFAE007B621AC97C12992FAA3D215D`
+
+> Both `board-snapshot-20260524.json` and `family-file-map.json` are kept
+> trackable via explicit `!`-exceptions in `.gitignore` so the wave-plan
+> driver below is reproducible from a fresh PR checkout (the generic
+> `verification-evidence/*.json` ignore rule would otherwise strip them).
+> The `family-file-map.json` hash above corresponds to the version where
+> the placeholder syntax for the release-candidate tag was migrated from
+> `<rc-tag>` (invalid on Windows paths) to `{RC_TAG}`; see PR #512 review
+> remediation for the rationale.
 
 ## R5 readiness caveats — disposition
 

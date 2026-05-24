@@ -28,8 +28,8 @@
       },
       "after": {
         "confidence": "LOW",
-        "acceptance": "Operational/recruiting issue. Acceptance from issue body: (1) identify at least two named reviewers, (2) confirm one is fluent in Japanese AND Vietnamese for L5-2, (3) confirm one is a non-developer for L5-5/L5-6, (4) schedule the real-hardware Zoom session(s), (5) link the resulting acceptance log path verification-evidence/<rc-tag>/acceptance-log.md. The issue body itself states 'Automation cannot complete this issue.' Unblocks human-only Layer 5 issues #115-#122 and epic #19.",
-        "files_touched_hint": ["verification-evidence/<rc-tag>/acceptance-log.md"],
+        "acceptance": "Operational/recruiting issue. Acceptance from issue body: (1) identify at least two named reviewers, (2) confirm one is fluent in Japanese AND Vietnamese for L5-2, (3) confirm one is a non-developer for L5-5/L5-6, (4) schedule the real-hardware Zoom session(s), (5) link the resulting acceptance log path verification-evidence/{RC_TAG}/acceptance-log.md. The issue body itself states 'Automation cannot complete this issue.' Unblocks human-only Layer 5 issues #115-#122 and epic #19.",
+        "files_touched_hint": ["verification-evidence/{RC_TAG}/acceptance-log.md"],
         "needs_human_clarification": true,
         "human_clarification_reason": "Issue body explicitly states 'Automation cannot complete this issue.' All five acceptance items require human identity, scheduling, and live-meeting outputs that an AI agent cannot satisfy. Needs a human operator to assign reviewers and produce the acceptance-log."
       },
@@ -40,7 +40,7 @@
           "Confirm one reviewer is fluent enough in Japanese and Vietnamese for L5-2.",
           "Confirm one reviewer is a non-developer for L5-5/L5-6.",
           "Schedule the real-hardware Zoom session(s).",
-          "Link the resulting acceptance log path (`verification-evidence/<rc-tag>/acceptance-log.md`).",
+          "Link the resulting acceptance log path (`verification-evidence/{RC_TAG}/acceptance-log.md`).",
           "Automation cannot complete this issue. It exists to unblock human-only Layer 5 issues #115-#122 and epic #19."
         ]
       }
@@ -435,7 +435,7 @@
   "remaining_human_clarification_blockers": [
     {
       "number": 366,
-      "blocker": "Operational/recruiting task — requires human to identify and confirm at least two named reviewers (one bilingual JA/VI, one non-developer), schedule live Zoom session(s) on real hardware, and produce verification-evidence/<rc-tag>/acceptance-log.md. The issue body itself states automation cannot complete it.",
+      "blocker": "Operational/recruiting task — requires human to identify and confirm at least two named reviewers (one bilingual JA/VI, one non-developer), schedule live Zoom session(s) on real hardware, and produce verification-evidence/{RC_TAG}/acceptance-log.md. The issue body itself states automation cannot complete it.",
       "unblocks": ["#115", "#116", "#117", "#118", "#119", "#120", "#121", "#122", "#19 (epic)"]
     }
   ],

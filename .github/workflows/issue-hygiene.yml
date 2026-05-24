@@ -50,12 +50,12 @@ on:
   schedule:
     - cron: "0 3 * * 1" # Mondays at 03:00 UTC — weekly drift audit
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "If true, audit/report only — no label or project writes."
-        required: false
-        default: "true"
-        type: string
+    # No inputs: workflow_dispatch only triggers the read-only weekly-audit
+    # job (see job-level `if:` on `weekly-audit`).  An earlier `dry_run`
+    # input was removed because workflow_dispatch never reaches the
+    # mutating job `sync-project-priority` (which is gated on
+    # `github.event_name == 'issues'`), so the input had no effect on
+    # any label or project write and was misleading.
 
 # Top-level permissions are intentionally minimal.  Individual jobs widen
 # permissions only as needed.  Project v2 GraphQL writes require a PAT and
