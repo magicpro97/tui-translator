@@ -1,0 +1,287 @@
+PRE-B Strategy 1 dry-run log
+============================
+
+Worktree: C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo
+Branch:   fix/preb-msrv-repair (from origin/main @ aca1d92)
+Toolchain: 1.86.0-x86_64-pc-windows-gnu (rustc 1.86.0, cargo 1.86.0)
+
+=== Step 1: baseline -- cargo +1.86.0 build --locked (Cargo.lock UNCHANGED) ===
+error: rustc 1.86.0 is not supported by the following packages:
+  darling@0.23.0 requires rustc 1.88.0
+  darling_core@0.23.0 requires rustc 1.88.0
+  darling_macro@0.23.0 requires rustc 1.88.0
+  instability@0.3.12 requires rustc 1.88
+  instability@0.3.12 requires rustc 1.88
+  instability@0.3.12 requires rustc 1.88
+  time@0.3.47 requires rustc 1.88.0
+  time-core@0.1.8 requires rustc 1.88.0
+Either upgrade rustc or select compatible dependency versions with
+`cargo update <name>@<current-ver> --precise <compatible-ver>`
+where `<compatible-ver>` is the latest version supporting rustc 1.86.0
+
+
+
+=== Step 2: cargo update -p instability --precise 0.3.10 ===
+    Updating crates.io index
+ Downgrading darling v0.23.0 -> v0.20.11
+ Downgrading darling_core v0.23.0 -> v0.20.11
+ Downgrading darling_macro v0.23.0 -> v0.20.11
+ Downgrading instability v0.3.12 -> v0.3.10
+note: pass `--verbose` to see 34 unchanged dependencies behind latest
+
+
+=== Step 3: cargo update -p time --precise 0.3.41 ===
+    Updating crates.io index
+ Downgrading deranged v0.5.8 -> v0.4.0
+ Downgrading num-conv v0.2.1 -> v0.1.0
+ Downgrading time v0.3.47 -> v0.3.41
+ Downgrading time-core v0.1.8 -> v0.1.4 (available: v0.1.8)
+ Downgrading time-macros v0.2.27 -> v0.2.22 (available: v0.2.27)
+note: pass `--verbose` to see 34 unchanged dependencies behind latest
+
+
+=== Step 4: cargo +1.86.0 check --locked --all-targets (After Strategy 1 lockfile pin) ===
+(tail of output)
+   Compiling generic-array v0.14.7
+    Checking http-body v1.0.1
+    Checking rustls-pki-types v1.14.1
+    Checking itertools v0.14.0
+    Checking num-integer v0.1.46
+    Checking getrandom v0.2.17
+   Compiling instability v0.3.10
+    Checking futures-task v0.3.32
+   Compiling serde_core v1.0.228
+    Checking socket2 v0.6.3
+    Checking mio v1.2.0
+    Checking slab v0.4.12
+   Compiling httparse v1.10.1
+    Checking static_assertions v1.1.0
+    Checking castaway v0.2.4
+    Checking untrusted v0.9.0
+   Compiling indoc v2.0.7
+    Checking bitflags v1.3.2
+   Compiling crossbeam-utils v0.8.21
+    Checking powerfmt v0.2.0
+   Compiling convert_case v0.10.0
+    Checking compact_str v0.9.0
+    Checking futures-util v0.3.32
+    Checking deranged v0.4.0
+    Checking unicode-truncate v2.0.1
+    Checking lru v0.16.4
+    Checking aho-corasick v1.1.4
+    Checking try-lock v0.2.5
+    Checking time-core v0.1.4
+    Checking bytemuck v1.25.0
+    Checking typenum v1.20.0
+    Checking num-conv v0.1.0
+    Checking regex-syntax v0.8.10
+   Compiling synstructure v0.13.2
+   Compiling darling_core v0.20.11
+   Compiling rustls v0.23.40
+    Checking tower-service v0.3.3
+    Checking time v0.3.41
+    Checking symphonia-core v0.5.5
+    Checking want v0.3.1
+    Checking form_urlencoded v1.2.2
+    Checking windows-result v0.1.2
+    Checking futures-channel v0.3.32
+    Checking encoding_rs v0.8.35
+   Compiling crc32fast v1.5.0
+    Checking strength_reduce v0.2.4
+    Checking atomic-waker v1.1.2
+   Compiling litrs v1.0.0
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+    Checking byteorder v1.5.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.5
+   Compiling thiserror-impl v2.0.18
+   Compiling tokio-macros v2.7.0
+   Compiling tracing-attributes v0.1.31
+   Compiling strum_macros v0.27.2
+    Checking regex-automata v0.4.14
+   Compiling derive_more-impl v2.1.1
+   Compiling darling_macro v0.20.11
+   Compiling thiserror v1.0.69
+    Checking tokio v1.52.3
+    Checking subtle v2.6.1
+    Checking zerofrom v0.1.7
+    Checking symphonia-metadata v0.5.5
+    Checking yoke v0.8.2
+   Compiling darling v0.20.11
+   Compiling document-features v0.2.12
+   Compiling thiserror-impl v1.0.69
+    Checking tracing v0.1.44
+    Checking derive_more v2.1.1
+    Checking kasuari v0.4.12
+    Checking zerovec v0.11.6
+    Checking zerotrie v0.2.4
+   Compiling serde_derive v1.0.228
+    Checking transpose v0.2.3
+    Checking windows-core v0.54.0
+    Checking crossbeam-channel v0.5.15
+    Checking crossterm_winapi v0.9.1
+    Checking strum v0.27.2
+    Checking winapi-util v0.1.11
+    Checking ratatui-core v0.1.0
+    Checking primal-check v0.3.4
+    Checking tinystr v0.8.3
+    Checking potential_utf v0.1.5
+    Checking windows-sys v0.48.0
+    Checking num-complex v0.4.6
+    Checking sync_wrapper v1.0.2
+    Checking line-clipping v0.3.7
+    Checking icu_collections v2.2.0
+    Checking icu_locale_core v2.2.0
+    Checking simd-adler32 v0.3.9
+    Checking tinyvec_macros v0.1.1
+   Compiling anyhow v1.0.102
+   Compiling ntapi v0.4.3
+    Checking ipnet v2.12.0
+    Checking adler2 v2.0.1
+    Checking base64 v0.22.1
+    Checking tower-layer v0.3.3
+   Compiling cpal v0.15.3
+   Compiling serde_json v1.0.149
+    Checking ratatui-widgets v0.3.0
+    Checking miniz_oxide v0.8.9
+    Checking icu_provider v2.2.0
+    Checking rustfft v6.4.1
+    Checking icu_normalizer v2.2.0
+    Checking icu_properties v2.2.0
+    Checking tinyvec v1.11.0
+    Checking crossterm v0.29.0
+    Checking rustls-webpki v0.103.13
+    Checking windows v0.54.0
+    Checking same-file v1.0.6
+    Checking hyper v1.9.0
+    Checking tower v0.5.3
+    Checking matchers v0.2.0
+    Checking symphonia-bundle-mp3 v0.5.5
+    Checking ogg v0.8.0
+   Compiling windows-implement v0.51.1
+   Compiling windows-interface v0.51.1
+    Checking crypto-common v0.1.7
+    Checking idna_adapter v1.2.2
+    Checking block-buffer v0.10.4
+    Checking webpki-roots v1.0.7
+    Checking nu-ansi-term v0.50.3
+    Checking idna v1.1.0
+    Checking tracing-log v0.2.0
+    Checking windows-core v0.51.1
+    Checking hyper-util v0.1.20
+    Checking windows-core v0.52.0
+    Checking sharded-slab v0.1.7
+    Checking thread_local v1.1.9
+    Checking url v2.5.8
+    Checking minimal-lexical v0.2.1
+    Checking option-ext v0.2.0
+    Checking dasp_sample v0.11.0
+    Checking windows v0.52.0
+    Checking serde_urlencoded v0.7.1
+    Checking tracing-subscriber v0.3.23
+    Checking dirs-sys v0.4.1
+    Checking nom v7.1.3
+    Checking tower-http v0.6.10
+    Checking digest v0.10.7
+    Checking symphonia v0.5.5
+    Checking ratatui-crossterm v0.1.0
+    Checking windows v0.51.1
+    Checking lewton v0.10.2
+    Checking flate2 v1.1.9
+    Checking walkdir v2.5.0
+    Checking ratatui-macros v0.7.0
+    Checking http-body-util v0.1.3
+    Checking filetime v0.2.28
+    Checking hound v3.5.1
+    Checking claxon v0.4.3
+    Checking widestring v1.2.1
+    Checking unicode-width v0.1.14
+    Checking symlink v0.1.0
+    Checking cpufeatures v0.2.17
+    Checking base64 v0.21.7
+    Checking realfft v3.5.0
+    Checking notify v6.1.1
+    Checking sha2 v0.10.9
+    Checking tracing-appender v0.2.5
+    Checking ratatui v0.30.0
+    Checking tokio-rustls v0.26.4
+    Checking rubato v0.15.0
+    Checking hdrhistogram v7.5.4
+    Checking directories v5.0.1
+    Checking regex v1.12.3
+    Checking tui-input v0.15.3
+    Checking windows-sys v0.52.0
+    Checking hyper-rustls v0.27.9
+    Checking hex v0.4.3
+   Compiling getrandom v0.4.2
+   Compiling cfg_aliases v0.1.1
+   Compiling winreg v0.10.1
+   Compiling vte_generate_state_changes v0.1.2
+    Checking reqwest v0.12.28
+    Checking utf8parse v0.2.2
+    Checking encode_unicode v1.0.0
+   Compiling nix v0.28.0
+    Checking fastrand v2.4.1
+    Checking filedescriptor v0.8.3
+    Checking serial2 v0.2.37
+    Checking shared_library v0.1.9
+    Checking console v0.16.3
+    Checking shell-words v1.1.1
+    Checking downcast-rs v1.2.1
+    Checking similar v2.7.0
+    Checking vte v0.11.1
+    Checking tempfile v3.27.0
+    Checking vt100 v0.15.2
+    Checking portable-pty v0.9.0
+    Checking insta v1.47.2
+    Checking rodio v0.17.3
+    Checking wasapi v0.14.0
+    Checking sysinfo v0.30.13
+    Checking tui-translator v0.1.4 (C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 05s
+
+=== Step 5: cargo +1.86.0 test --locked --no-run -j 2 ===
+(tail of output -- note: codegen/link aborted by host disk pressure; MSRV resolver gate clean)
+   Compiling notify v6.1.1
+   Compiling reqwest v0.12.28
+   Compiling sysinfo v0.30.13
+   Compiling ratatui v0.30.0
+   Compiling rubato v0.15.0
+   Compiling directories v5.0.1
+   Compiling regex v1.12.3
+   Compiling tui-input v0.15.3
+   Compiling windows-sys v0.52.0
+   Compiling hex v0.4.3
+   Compiling getrandom v0.4.2
+   Compiling encode_unicode v1.0.0
+   Compiling utf8parse v0.2.2
+   Compiling fastrand v2.4.1
+   Compiling tempfile v3.27.0
+   Compiling vte v0.11.1
+   Compiling console v0.16.3
+   Compiling nix v0.28.0
+   Compiling winreg v0.10.1
+   Compiling filedescriptor v0.8.3
+   Compiling shared_library v0.1.9
+   Compiling serial2 v0.2.37
+   Compiling similar v2.7.0
+   Compiling shell-words v1.1.1
+   Compiling downcast-rs v1.2.1
+   Compiling portable-pty v0.9.0
+   Compiling insta v1.47.2
+   Compiling vt100 v0.15.2
+   Compiling tui-translator v0.1.4 (C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo)
+rustc-LLVM ERROR: IO failure on output stream: No space left on device
+rustc-LLVM ERROR: IO failure on output stream: No space left on device
+error: could not compile `tui-translator` (test "config_dual_mode")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\<user>\.rustup\toolchains\1.86.0-x86_64-pc-windows-gnu\bin\rustc.exe --crate-name config_dual_mode --edition=2021 tests\config_dual_mode.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"audio-integration\", \"local-mt\", \"local-stt\", \"ort\", \"production-audio\", \"sentencepiece-rs\", \"whisper-rs\"))" -C metadata=b02e5425a39ea8bc -C extra-filename=-1731048a6219ff3b --out-dir C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps -C incremental=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\incremental -L dependency=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps --extern anyhow=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libanyhow-3f00dcb22025730a.rlib --extern base64=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libbase64-fd6b45a7cc62b5c1.rlib --extern crossterm=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libcrossterm-0eed9cb576b91192.rlib --extern directories=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libdirectories-0f81ea7f420350bc.rlib --extern hdrhistogram=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libhdrhistogram-862b365559c93845.rlib --extern hex=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libhex-a5146e1959d2c30c.rlib --extern insta=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libinsta-1894c9af57fe7fab.rlib --extern notify=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libnotify-546e39054ce84c97.rlib --extern portable_pty=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libportable_pty-78d455bde0fed683.rlib --extern ratatui=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libratatui-f2af4ddea8ec13a7.rlib --extern regex=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libregex-1bce31ef996b4df8.rlib --extern reqwest=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libreqwest-f64ced17e00b688b.rlib --extern rodio=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\librodio-81632e280b76a432.rlib --extern rubato=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\librubato-2c222b7323f5e0ea.rlib --extern serde=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libserde-477691cf7c7d4c88.rlib --extern serde_json=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libserde_json-66513e59da2f3aa4.rlib --extern sha2=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libsha2-8d71c361e5951934.rlib --extern sysinfo=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libsysinfo-8f7d21ccb3970352.rlib --extern tempfile=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtempfile-6f31401b05d36a38.rlib --extern thiserror=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libthiserror-869e4299e22bffdd.rlib --extern tokio=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtokio-62272acdb8692f05.rlib --extern tracing=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtracing-f959ba2e5b07deac.rlib --extern tracing_appender=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtracing_appender-66bb826b4d50074d.rlib --extern tracing_subscriber=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtracing_subscriber-939fe438b333896c.rlib --extern tui_input=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtui_input-56f7b561be7be5e2.rlib --extern unicode_width=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libunicode_width-8090c9bdf5d9481c.rlib --extern vt100=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libvt100-73b16d50e81f3165.rlib --extern wasapi=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libwasapi-97caed820f9ce9e0.rlib --extern windows_sys=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libwindows_sys-19406cd096f6c380.rlib -L native=C:\Users\<user>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winapi-x86_64-pc-windows-gnu-0.4.0\lib -L native=C:\Users\<user>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.48.5\lib -L native=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\build\ring-43c25d1aab0e6ec5\out -L native=C:\Users\<user>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.52.6\lib` (exit code: 101)
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `tui-translator` (test "integration")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\<user>\.rustup\toolchains\1.86.0-x86_64-pc-windows-gnu\bin\rustc.exe --crate-name integration --edition=2021 tests\integration.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"audio-integration\", \"local-mt\", \"local-stt\", \"ort\", \"production-audio\", \"sentencepiece-rs\", \"whisper-rs\"))" -C metadata=6bf945d1816b1e6e -C extra-filename=-119511bc4455b54d --out-dir C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps -C incremental=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\incremental -L dependency=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps --extern anyhow=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libanyhow-3f00dcb22025730a.rlib --extern base64=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libbase64-fd6b45a7cc62b5c1.rlib --extern crossterm=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libcrossterm-0eed9cb576b91192.rlib --extern directories=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libdirectories-0f81ea7f420350bc.rlib --extern hdrhistogram=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libhdrhistogram-862b365559c93845.rlib --extern hex=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libhex-a5146e1959d2c30c.rlib --extern insta=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libinsta-1894c9af57fe7fab.rlib --extern notify=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libnotify-546e39054ce84c97.rlib --extern portable_pty=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libportable_pty-78d455bde0fed683.rlib --extern ratatui=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libratatui-f2af4ddea8ec13a7.rlib --extern regex=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libregex-1bce31ef996b4df8.rlib --extern reqwest=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libreqwest-f64ced17e00b688b.rlib --extern rodio=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\librodio-81632e280b76a432.rlib --extern rubato=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\librubato-2c222b7323f5e0ea.rlib --extern serde=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libserde-477691cf7c7d4c88.rlib --extern serde_json=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libserde_json-66513e59da2f3aa4.rlib --extern sha2=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libsha2-8d71c361e5951934.rlib --extern sysinfo=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libsysinfo-8f7d21ccb3970352.rlib --extern tempfile=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtempfile-6f31401b05d36a38.rlib --extern thiserror=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libthiserror-869e4299e22bffdd.rlib --extern tokio=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtokio-62272acdb8692f05.rlib --extern tracing=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtracing-f959ba2e5b07deac.rlib --extern tracing_appender=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtracing_appender-66bb826b4d50074d.rlib --extern tracing_subscriber=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtracing_subscriber-939fe438b333896c.rlib --extern tui_input=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libtui_input-56f7b561be7be5e2.rlib --extern unicode_width=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libunicode_width-8090c9bdf5d9481c.rlib --extern vt100=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libvt100-73b16d50e81f3165.rlib --extern wasapi=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libwasapi-97caed820f9ce9e0.rlib --extern windows_sys=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\deps\libwindows_sys-19406cd096f6c380.rlib -L native=C:\Users\<user>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winapi-x86_64-pc-windows-gnu-0.4.0\lib -L native=C:\Users\<user>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.48.5\lib -L native=C:\Users\<user>\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo\target\debug\build\ring-43c25d1aab0e6ec5\out -L native=C:\Users\<user>\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.52.6\lib` (exit code: 101)

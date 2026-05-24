@@ -1,0 +1,44 @@
+# Wave-1 Prereq allow-list (per-tentacle sections).
+# Authorising document:
+#   verification-evidence/waves/wave-1/pr512-ci-blocker-arbitration.md §5
+# Confidence: 1.00. Do not extend without an arbiter ruling.
+#
+# Each tentacle MUST stay strictly inside its own section.
+# tests/** is implicitly allowed for both tentacles (per arbitration).
+
+# ============================================================
+# PRE-A — fix(tui): frame_pacer macOS-14 wall-clock flake
+# Tentacle slug: w1-prereq-prea-frame-pacer-macos14
+# Branch:        fix/prea-frame-pacer-macos14  (from origin/main)
+# ============================================================
+src/tui/frame_pacer.rs
+tests/**
+
+# ============================================================
+# PRE-B — fix(msrv): restore Rust 1.86 buildability or bump rust-version
+# Tentacle slug: w1-prereq-preb-msrv-repair
+# Branch:        fix/preb-msrv-repair  (from origin/main)
+#
+# Strategy 1 (pin transitive deps; preferred):
+#   Cargo.lock only.
+# Strategy 2 (bump rust-version to 1.88; fallback only):
+#   Cargo.toml + Cargo.lock + .github/workflows/ci.yml +
+#   verification-evidence/ci/CI-01-required-checks.md.
+# The Strategy-2-only entries below are conditionally allowed and
+# documented in PRE-B-strategy.md; pick exactly one strategy.
+# ============================================================
+Cargo.toml
+Cargo.lock
+.github/workflows/ci.yml
+verification-evidence/ci/CI-01-required-checks.md
+tests/**
+
+# ============================================================
+# Setup artefacts (this mini-wave's own evidence; not part of
+# implementation tentacle allow-lists, listed here for completeness).
+# ============================================================
+verification-evidence/waves/wave-1-prereq/plan.md
+verification-evidence/waves/wave-1-prereq/files_allowed.txt
+verification-evidence/waves/wave-1-prereq/PRE-B-strategy.md
+verification-evidence/waves/wave-1-prereq/PRE-A-*
+verification-evidence/waves/wave-1-prereq/PRE-B-*

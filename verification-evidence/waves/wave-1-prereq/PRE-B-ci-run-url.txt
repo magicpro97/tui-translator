@@ -1,0 +1,19 @@
+Deferred evidence — no branch-local MSRV run URL exists.
+
+PR #516 does **not** contain the CI-01 `MSRV (Rust 1.86) build` job:
+that job is defined by PR #512's `.github/workflows/ci.yml` and is
+absent from `main` and from `fix/preb-msrv-repair`. There is
+therefore no workflow on this branch that can be triggered (via
+`workflow_dispatch` or otherwise) to produce a branch-local MSRV run
+URL for PR #516.
+
+Authoritative MSRV evidence is deferred to PR #512 post-rebase: once
+PR #515/#516 merge and PR #512 rebases onto the new `main`, capture
+the green PR #512 MSRV run URL here (or in a follow-up evidence file
+/ follow-up PR), in the form:
+
+  https://github.com/magicpro97/tui-translator/actions/runs/<id>
+
+Available checks on PR #516 itself are sufficient for merge under the
+Wave-1 arbitration; the missing MSRV gate is structural, not a
+failure.
