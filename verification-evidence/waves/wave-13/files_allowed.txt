@@ -1,0 +1,7 @@
+# Wave W13 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+Cargo.toml
+src/config/mod.rs
+src/providers/local_mt/model_cache.rs

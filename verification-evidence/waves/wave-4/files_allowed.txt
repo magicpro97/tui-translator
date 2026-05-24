@@ -1,0 +1,10 @@
+# Wave W4 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+src/config/mod.rs
+src/pipeline/mod.rs
+src/pipeline/playback.rs
+tests/dm06_dual_tts_policy.rs
+verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json
+verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json

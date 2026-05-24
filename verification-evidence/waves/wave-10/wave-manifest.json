@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "wave": "W10",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 3,
+  "issues": [
+    {
+      "number": 478,
+      "title": "REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz",
+      "family": "REL",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        458,
+        462,
+        463,
+        472,
+        477
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "packaging/linux",
+        "verification-evidence/rel/REL-02-linux-packaging.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 481,
+      "title": "I18N-01 — Cross-platform i18n architecture and live locale switching",
+      "family": "I18N",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        479,
+        480
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/i18n.rs",
+        "src/tui/mod.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 508,
+      "title": "QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+      "family": "QA8",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        458,
+        461,
+        462,
+        475,
+        477
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/soak.yml"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

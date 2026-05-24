@@ -1,0 +1,13 @@
+# Wave H — Human acceptance only.
+# No AI implementation dispatch.
+# files_allowed below is the human reviewer evidence surface (acceptance log / Layer-5 artifacts).
+
+verification-evidence/<rc-tag>/
+verification-evidence/<rc-tag>/L5-1/
+verification-evidence/<rc-tag>/L5-2/
+verification-evidence/<rc-tag>/L5-3/
+verification-evidence/<rc-tag>/L5-4/
+verification-evidence/<rc-tag>/L5-5/
+verification-evidence/<rc-tag>/L5-6/
+verification-evidence/<rc-tag>/L5-7/
+verification-evidence/<rc-tag>/acceptance-log.md

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "wave": "W3",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 2,
+  "issues": [
+    {
+      "number": 452,
+      "title": "MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight",
+      "family": "MACOS-WBS",
+      "red_mode": "tests_first",
+      "dependencies": [
+        450,
+        451
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/mod.rs",
+        "src/audio/probe.rs",
+        "src/audio/screencapturekit_capture.rs",
+        "src/config/mod.rs",
+        "verification-evidence/macos/MAC-A12-screencapturekit-capture.json",
+        "verification-evidence/macos/MAC-A4-tcc-preflight.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 463,
+      "title": "REL-01 — Cross-platform release packaging, notarization, and GA promotion plan",
+      "family": "REL",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        462
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "packaging/macos",
+        "packaging/windows/tui-translator.iss",
+        "verification-evidence/rel/REL-01-codesign-verify.txt",
+        "verification-evidence/rel/REL-01-notarytool-submit.json",
+        "verification-evidence/rel/REL-01-release-checklist.md",
+        "verification-evidence/rel/REL-01-rollback-drill.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

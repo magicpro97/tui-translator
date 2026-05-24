@@ -1,0 +1,21 @@
+# Wave W7 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+.github/workflows/ci.yml
+.github/workflows/release.yml
+Cargo.toml
+src/audio/alsa_capture.rs
+src/audio/mod.rs
+src/audio/portal_capture.rs
+src/audio/probe.rs
+src/config/mod.rs
+src/pipeline/playback.rs
+src/providers/google
+src/providers/local
+src/providers/mod.rs
+src/providers/mt
+src/tui/mod.rs
+verification-evidence/ctrl/VOICE-A5-voice-hotswap.json
+verification-evidence/model/MODEL-02-bench.json
+verification-evidence/model/MODEL-02-macos-runtime.json

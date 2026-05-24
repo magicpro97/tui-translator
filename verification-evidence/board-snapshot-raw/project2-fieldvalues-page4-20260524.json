@@ -1,0 +1,1804 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "items": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "Y3Vyc29yOnYyOpK5MDAwMDAwMDAuMDAzMDM5NTEzNjc3ODExNc4LYwYc"
+          },
+          "nodes": [
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtiP3I",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 483,
+                "title": "STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/483",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtiP5M",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 484,
+                "title": "STD-02 — Refactor existing oversized modules to meet budgets",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/484",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6D4",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 485,
+                "title": "SUPERTONIC-WBS: Supertonic local TTS evaluation and default-readiness epic",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/485",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: research"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: epic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: performance"
+                    },
+                    {
+                      "name": "type: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6F8",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 486,
+                "title": "SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/486",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: research"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6IE",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 487,
+                "title": "SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/487",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: research"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: privacy"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6Kg",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 488,
+                "title": "SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/488",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "type: research"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6Mw",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 489,
+                "title": "SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/489",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6Oo",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 490,
+                "title": "SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/490",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: pipeline"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6Q0",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 491,
+                "title": "SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/491",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: privacy"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6TA",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 492,
+                "title": "SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/492",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6Vc",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 493,
+                "title": "SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/493",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6Yg",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 494,
+                "title": "SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/494",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6bQ",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 495,
+                "title": "SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/495",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: performance"
+                    },
+                    {
+                      "name": "area: pipeline"
+                    },
+                    {
+                      "name": "area: virtual-mic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6dE",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 496,
+                "title": "SUPERTONIC-11: Default-readiness ADR and gated default flip",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/496",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgti6ec",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 497,
+                "title": "SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/497",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "documentation"
+                    },
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "provider: local"
+                    },
+                    {
+                      "name": "area: docs"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBHc",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 498,
+                "title": "[EPIC] QA8-WBS - 8-hour cross-platform stability and 60fps QA epic",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/498",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: epic"
+                    },
+                    {
+                      "name": "area: performance"
+                    },
+                    {
+                      "name": "type: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBIc",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 499,
+                "title": "QA8-01 - QA charter, standards mapping, and risk register",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/499",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBLQ",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 500,
+                "title": "QA8-02 - Machine-readable SLO schema and gate checker",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/500",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBNI",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 501,
+                "title": "QA8-03 - Soak evidence schema v2 and telemetry export contract",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/501",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBPM",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 502,
+                "title": "QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/502",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBRQ",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 503,
+                "title": "QA8-05 - 8-hour soak runner v2 with fault injection",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/503",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBSk",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 504,
+                "title": "QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/504",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBUo",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 505,
+                "title": "QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/505",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: pipeline"
+                    },
+                    {
+                      "name": "area: virtual-mic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBXM",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 506,
+                "title": "QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/506",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: privacy"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBZA",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 507,
+                "title": "QA8-09 - Deterministic cross-platform simulation and fixture parity",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/507",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBbA",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 508,
+                "title": "QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/508",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBdg",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 509,
+                "title": "QA8-11 - Project priority and issue hygiene enforcement",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/509",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "type: automation"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBgE",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 510,
+                "title": "QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/510",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgtjBhw",
+              "type": "ISSUE",
+              "fieldValues": {
+                "nodes": [
+                  {
+                    "__typename": "ProjectV2ItemFieldRepositoryValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldLabelValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldTextValue"
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "P0",
+                    "field": {
+                      "name": "Priority"
+                    }
+                  },
+                  {
+                    "__typename": "ProjectV2ItemFieldSingleSelectValue",
+                    "name": "Todo",
+                    "field": {
+                      "name": "Status"
+                    }
+                  }
+                ]
+              },
+              "content": {
+                "__typename": "Issue",
+                "number": 511,
+                "title": "QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/511",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    },
+                    {
+                      "name": "area: performance"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

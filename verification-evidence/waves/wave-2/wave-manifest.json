@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "wave": "W2",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 9,
+  "issues": [
+    {
+      "number": 451,
+      "title": "MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP",
+      "family": "MACOS-WBS",
+      "red_mode": "tests_first",
+      "dependencies": [
+        450
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/coreaudio_capture.rs",
+        "src/audio/mod.rs",
+        "src/audio/probe.rs",
+        "verification-evidence/macos/MAC-A1-coreaudio-capture.json",
+        "verification-evidence/macos/MAC-A2-virtual-device-classification.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 462,
+      "title": "SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy",
+      "family": "SEC",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        461
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "PRIVACY.md",
+        "deny.toml",
+        "verification-evidence/sec/SEC-01-cargo-deny.txt",
+        "verification-evidence/sec/SEC-01-cosign-verify.txt",
+        "verification-evidence/sec/SEC-01-sbom.cdx.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 487,
+      "title": "SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+      "family": "SUPERTONIC",
+      "red_mode": "evidence_first",
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "verification-evidence/supertonic/SUPERTONIC-02-license-privacy.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 488,
+      "title": "SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+      "family": "SUPERTONIC",
+      "red_mode": "evidence_first",
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-03-quality-bench.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 489,
+      "title": "SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+      "family": "SUPERTONIC",
+      "red_mode": "evidence_first",
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-04-perf-bench.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 490,
+      "title": "SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+      "family": "SUPERTONIC",
+      "red_mode": "evidence_first",
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-05-streaming-spike.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 493,
+      "title": "SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+      "family": "SUPERTONIC",
+      "red_mode": "tests_first",
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "src/providers/local_mt/mod.rs",
+        "src/providers/local_mt/supertonic.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 507,
+      "title": "QA8-09 - Deterministic cross-platform simulation and fixture parity",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [
+        460
+      ],
+      "files_allowed": [
+        "src/audio/file_source.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 511,
+      "title": "QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [
+        501
+      ],
+      "files_allowed": [
+        "src/metrics/latency.rs",
+        "src/metrics/snapshot.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

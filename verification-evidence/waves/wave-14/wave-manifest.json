@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "wave": "W14",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 2,
+  "issues": [
+    {
+      "number": 494,
+      "title": "SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+      "family": "SUPERTONIC",
+      "red_mode": "tests_first",
+      "dependencies": [
+        454,
+        455,
+        479,
+        480,
+        481,
+        486,
+        492,
+        493
+      ],
+      "files_allowed": [
+        "src/providers/local_mt/voice_catalog.rs",
+        "src/tui/mod.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 496,
+      "title": "SUPERTONIC-11: Default-readiness ADR and gated default flip",
+      "family": "SUPERTONIC",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481,
+        482,
+        486,
+        491,
+        492
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "verification-evidence/supertonic/SUPERTONIC-11-default-readiness-adr.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

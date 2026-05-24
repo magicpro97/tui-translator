@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "wave": "W11",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 2,
+  "issues": [
+    {
+      "number": 482,
+      "title": "CFG-01 — Live settings apply without reload where safe",
+      "family": "CFG",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481
+      ],
+      "files_allowed": [
+        "src/config/capture_supervisor.rs",
+        "src/config/mod.rs",
+        "src/config/recorder_supervisor.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 497,
+      "title": "SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+      "family": "SUPERTONIC",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        458,
+        462,
+        463,
+        472,
+        477,
+        478,
+        486
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "docs/supertonic-user-guide.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

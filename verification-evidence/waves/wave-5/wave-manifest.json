@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "wave": "W5",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 1,
+  "issues": [
+    {
+      "number": 454,
+      "title": "CTRL-01 — Real-time input/output volume and gain controls",
+      "family": "CTRL",
+      "red_mode": "tests_first",
+      "dependencies": [
+        451,
+        452,
+        456
+      ],
+      "files_allowed": [
+        "src/audio/mod.rs",
+        "src/config/mod.rs",
+        "src/pipeline/audio_sink.rs",
+        "src/pipeline/playback.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOL-A6-gain-rms.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

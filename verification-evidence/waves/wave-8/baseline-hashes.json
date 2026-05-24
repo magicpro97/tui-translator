@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "wave": "W8",
+  "note": "Placeholder schema. Pre-implementation, the orchestrator (or wave start hook) MUST populate `files` with {path, sha256_pre} for every file in files_allowed.txt that exists on main HEAD at wave-start time. Post-implementation, the implementation tentacle records {sha256_post}. CI/wave-close hook diffs pre vs post to enforce closed-list compliance.",
+  "generated_at": null,
+  "main_head_sha": null,
+  "files": [],
+  "files_allowed_source": "waves/wave-8/files_allowed.txt"
+}

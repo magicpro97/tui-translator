@@ -1,0 +1,8 @@
+# Wave W14 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+src/config/mod.rs
+src/providers/local_mt/voice_catalog.rs
+src/tui/mod.rs
+verification-evidence/supertonic/SUPERTONIC-11-default-readiness-adr.md

@@ -1,0 +1,10 @@
+# Wave P — Planning / decomposition only.
+# No AI implementation dispatch is allowed against these epics.
+# files_allowed below is the planning/evidence surface only; WBS children must be created with concrete src paths before any wave assignment.
+
+.github/ISSUE_TEMPLATE/wbs-issue.yml
+.github/workflows/standards.yml
+docs/cross-platform-architecture.md
+docs/engineering-standards.md
+verification-evidence/parity/PARITY-01-matrix.md
+verification-evidence/proc/PROC-01-review-gate.md

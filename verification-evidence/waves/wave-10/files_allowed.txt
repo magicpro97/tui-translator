@@ -1,0 +1,13 @@
+# Wave W10 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+.github/workflows/ci.yml
+.github/workflows/release.yml
+.github/workflows/soak.yml
+Cargo.toml
+packaging/linux
+src/config/mod.rs
+src/i18n.rs
+src/tui/mod.rs
+verification-evidence/rel/REL-02-linux-packaging.md
