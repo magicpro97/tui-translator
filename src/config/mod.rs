@@ -2073,6 +2073,17 @@ mod tests {
     };
     use tempfile::{NamedTempFile, TempDir};
 
+    /// Deadline for hot-reload polling in tests.
+    ///
+    /// The watcher reload is normally observed in well under a second on
+    /// developer workstations and Linux/Windows CI, but shared GitHub-hosted
+    /// macOS-14 (Apple-silicon) runners frequently stall under contention
+    /// (notify backend startup + tempdir fsync + thread scheduling) and the
+    /// previous 5 s budget tripped intermittently on PR #512. 15 s gives
+    /// enough headroom on shared runners while still failing fast if the
+    /// watcher is genuinely broken.
+    const HOT_RELOAD_TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
     #[test]
     fn default_config_is_valid() {
         let cfg = AppConfig::default();
@@ -2868,14 +2879,17 @@ mod tests {
         )
         .unwrap();
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + HOT_RELOAD_TEST_TIMEOUT;
         while std::time::Instant::now() < deadline {
             if rx.borrow().target_language == "en" {
                 return; // success
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        panic!("hot-reload did not apply target_language change within 5 seconds");
+        panic!(
+            "hot-reload did not apply target_language change within {:?}",
+            HOT_RELOAD_TEST_TIMEOUT
+        );
     }
 
     #[tokio::test]
@@ -2906,7 +2920,7 @@ mod tests {
         };
         write_config(&path, &next).unwrap();
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + HOT_RELOAD_TEST_TIMEOUT;
         while std::time::Instant::now() < deadline {
             if rx.borrow().target_language == "en" {
                 assert!(
@@ -2917,7 +2931,10 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        panic!("hot-reload did not observe write_config atomic replace within 5 seconds");
+        panic!(
+            "hot-reload did not observe write_config atomic replace within {:?}",
+            HOT_RELOAD_TEST_TIMEOUT
+        );
     }
 
     #[tokio::test]
@@ -2971,7 +2988,7 @@ mod tests {
         )
         .unwrap();
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + HOT_RELOAD_TEST_TIMEOUT;
         while std::time::Instant::now() < deadline {
             if restart_required.load(Ordering::Relaxed) {
                 return;
@@ -2979,7 +2996,10 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
 
-        panic!("restart_required flag was not set after google_api_key changed");
+        panic!(
+            "restart_required flag was not set after google_api_key changed within {:?}",
+            HOT_RELOAD_TEST_TIMEOUT
+        );
     }
 
     #[tokio::test]
