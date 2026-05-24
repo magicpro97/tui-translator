@@ -15,9 +15,15 @@
 
 **Strategy 1** — pin the offending transitive crates in `Cargo.lock` only.
 No edits to `Cargo.toml`, `.github/workflows/ci.yml`, or
-`verification-evidence/ci/CI-01-required-checks.md`. The
-`MSRV (Rust 1.86) build` required-check name in CI and in
-`CI-01-required-checks.md` is **unchanged**.
+`verification-evidence/ci/CI-01-required-checks.md`. PR #516 preserves
+the `MSRV (Rust 1.86) build` required-check name by **not modifying**
+the CI-01 contract introduced by PR #512 / Issue #461. The job
+definition itself does not exist on `main` nor on this branch
+(`fix/preb-msrv-repair`): it lives on the PR #512 (`wave-1/t0-batch`)
+branch and will land on `main` only when PR #512 merges. PR #516
+therefore **cannot host the MSRV job**; it only guarantees that the
+lockfile-pin remediation is compatible with the unchanged
+`MSRV (Rust 1.86) build` name once PR #512 rebases on top of #516.
 
 ## Why Strategy 1 is feasible
 
@@ -67,7 +73,7 @@ formally).
 | `cargo +1.86.0 check --locked --all-targets` after the lockfile pin | ✅ Pass (Finished `dev` profile [unoptimized + debuginfo]) | `PRE-B-dryrun.log` § *After Strategy 1 lockfile pin* |
 | `cargo +1.86.0 test --locked --no-run` | ⚠️ Compilation fails late in the link/codegen stage with `rustc-LLVM ERROR: IO failure on output stream: No space left on device` — environmental (host disk pressure, ~3 GB free during link of test binaries). The MSRV resolver gate (which is what the required check enforces) is fully clean. CI runners have ample disk; the canonical re-run on `workflow_dispatch` after push is the authoritative gate. | `PRE-B-dryrun.log` § *test --no-run* |
 | `cargo audit` delta vs `main` | ⚠️ Not run locally — `cargo-audit` is not installed in the sub-agent environment and installing it under the current disk-pressure conditions is unsafe. The crate downgrades stay within the same major version for every crate and do not pull in any yanked version (verified against `https://crates.io/api/v1/crates/<crate>` metadata); no new advisory class is introduced. The orchestrator should run `cargo audit` on the canonical runner once before merge. | `PRE-B-cargo-audit-delta.log` |
-| `workflow_dispatch` MSRV rerun against the pushed `fix/preb-msrv-repair` tip | ⏳ Pending push by orchestrator | `PRE-B-ci-run-url.txt` (placeholder until orchestrator pushes) |
+| `workflow_dispatch` MSRV rerun against the pushed `fix/preb-msrv-repair` tip | ⛔ Not applicable — structurally unavailable on PR #516 | The MSRV job (`MSRV (Rust 1.86) build`) is defined by PR #512's `.github/workflows/ci.yml` and does not exist on `main` or on this branch. There is no workflow on `fix/preb-msrv-repair` that can be `workflow_dispatch`-triggered to validate MSRV. Authoritative MSRV evidence is **deferred to PR #512 post-rebase**: once PR #515/#516 merge and PR #512 rebases onto the new `main`, capture the green PR #512 MSRV run URL in `PRE-B-ci-run-url.txt` (or in a follow-up evidence file/PR). | `PRE-B-ci-run-url.txt` (deferred-evidence marker) |
 
 ## Files modified
 
@@ -95,9 +101,9 @@ updated.
 ## Hand-off
 
 This sub-agent does **not** commit or push. The Cargo.lock change and
-the evidence bundle are left in the working tree of the worktree at
-`C:\Users\linhnt102\.copilot\session-state\worktrees\zoom-terminal-translator-rs\w1-prereq-preb-msrv-repair\repo`
-on branch `fix/preb-msrv-repair`, ready for the orchestrator to:
+the evidence bundle are left in the working tree of the
+`w1-prereq-preb-msrv-repair` worktree on branch
+`fix/preb-msrv-repair`, ready for the orchestrator to:
 
 1. Run `cargo audit` on the canonical CI runner and append the result
    to `PRE-B-cargo-audit-delta.log` (or confirm "no new advisories").
@@ -105,6 +111,10 @@ on branch `fix/preb-msrv-repair`, ready for the orchestrator to:
    `fix(msrv): restore Rust 1.86 buildability` and the body bullet-
    listing the 6 root crates pinned (mirror of the table above).
 3. Push to `origin/fix/preb-msrv-repair`.
-4. Trigger the `workflow_dispatch` MSRV gate rerun against the pushed
-   tip; record the run URL in `PRE-B-ci-run-url.txt`.
+4. Recognise that the `MSRV (Rust 1.86) build` gate **cannot run on
+   PR #516** (the job definition lives on PR #512). Once PR #516
+   merges and PR #512 rebases onto the new `main`, capture the green
+   PR #512 MSRV run URL in `PRE-B-ci-run-url.txt` (or a follow-up
+   evidence file). Available checks on PR #516 are sufficient for
+   merge; the MSRV authoritative evidence is deferred by design.
 5. Open PR (orchestrator owns the PR-open step), targeting `main`.

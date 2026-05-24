@@ -79,10 +79,18 @@ under the arbitration; forbidden elsewhere until re-authorised."
 Use only if Strategy 1 produces an unsatisfiable graph or pulls in
 crate versions with open security advisories.
 
-### 3.1 Edits
+> Scope note: Strategy 2 targets the **CI-01 workflow contract owned
+> by PR #512 / Issue #461**, not this PR (#516). The MSRV job
+> (`dtolnay/rust-toolchain@1.86.0` + step `name: MSRV (Rust 1.86)
+> build`) is introduced by PR #512's `.github/workflows/ci.yml` and is
+> **not present on `main` nor on this branch**. The edits below
+> therefore describe changes that would have to land on the PR #512
+> branch (or a successor PR after #512 merges) — not on PR #516.
+
+### 3.1 Edits (apply on the PR #512 branch, not on PR #516)
 
 - `Cargo.toml`: `rust-version = "1.86"` → `"1.88"`.
-- `.github/workflows/ci.yml`:
+- `.github/workflows/ci.yml` **as introduced by PR #512**:
   - `dtolnay/rust-toolchain@1.86.0` → `dtolnay/rust-toolchain@1.88.0`.
   - Job/step `name:` containing `MSRV (Rust 1.86) build` →
     `MSRV (Rust 1.88) build`.
