@@ -1,0 +1,8 @@
+Pending: orchestrator-triggered workflow_dispatch MSRV (Rust 1.86) build
+rerun against fix/preb-msrv-repair after push. Record the run URL
+here once available, e.g.:
+
+https://github.com/magicpro97/tui-translator/actions/runs/<id>
+
+Sub-agent cannot push and therefore cannot trigger CI; this file is
+intentionally a placeholder until the orchestrator fills it in.

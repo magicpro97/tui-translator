@@ -1,0 +1,31 @@
+PRE-B Strategy 1 — cargo audit delta vs main
+=============================================
+
+Environment limitation: `cargo-audit` is not installed in the sub-agent
+worktree, and installing it locally was unsafe under the current disk-
+pressure conditions (the host had < 4 GB free during validation). The
+orchestrator MUST run `cargo audit` on the canonical CI runner before
+merge and append the result here (or simply confirm "no new advisories
+introduced").
+
+Manual semver-level analysis of the lockfile delta:
+
+  darling        0.23.0  -> 0.20.11   (downgrade within 0.x, not yanked, MSRV 1.56)
+  darling_core   0.23.0  -> 0.20.11   (downgrade within 0.x, not yanked, MSRV 1.56)
+  darling_macro  0.23.0  -> 0.20.11   (downgrade within 0.x, not yanked, MSRV 1.56)
+  instability    0.3.12  -> 0.3.10    (patch downgrade,            not yanked, MSRV 1.64)
+  time           0.3.47  -> 0.3.41    (patch downgrade,            not yanked, MSRV 1.67.1)
+  time-core      0.1.8   -> 0.1.4     (patch downgrade,            not yanked, MSRV 1.67.1)
+  time-macros    0.2.27  -> 0.2.22    (patch downgrade,            not yanked, transitive)
+  deranged       0.5.8   -> 0.4.0     (transitive of time,         not yanked)
+  num-conv       0.2.1   -> 0.1.0     (transitive of time,         not yanked)
+
+Yanked status verified via https://crates.io/api/v1/crates/<name>:
+all target versions are `yanked: false`.
+
+No new crates are added; no crates are removed. Every change is a
+downgrade within the same major (0.x) line. No advisory category
+known to apply to these crates in the affected version ranges (per
+rustsec.org/advisories cross-check by crate name done manually).
+
+Pending: orchestrator-run `cargo audit` on a fresh runner.
