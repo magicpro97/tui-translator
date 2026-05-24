@@ -1,0 +1,4 @@
+.\.github\workflows\issue-hygiene.yml:268:17: context "secrets" is not allowed here. available contexts are "env", "github", "inputs", "job", "matrix", "needs", "runner", "steps", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+    |
+268 |         if: ${{ secrets.PROJECT_TOKEN != '' }}
+    |                 ^~~~~~~~~~~~~~~~~~~~~

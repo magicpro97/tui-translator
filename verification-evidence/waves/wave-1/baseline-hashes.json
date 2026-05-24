@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "wave": "W1",
+  "note": "Pre-implementation baseline. Populated by Opus state agent at wave start (orchestrator delegated). Records sha256_pre for each allow-listed file that exists on main HEAD. Files marked exists_pre=false are scheduled to be created by an implementation tentacle; the wave-close hook will verify they appear only via authorised tentacles. Post-implementation, sha256_post is recorded separately and CI diffs pre vs post against this allow-list.",
+  "generated_at": "2026-05-24T02:31:50Z",
+  "main_head_sha": "aca1d92ab0da8eeee753859b47efd5c91b102939",
+  "files_allowed_source": "waves/wave-1/files_allowed.txt",
+  "t0_authorised_issues": [
+    450,
+    459,
+    460,
+    461,
+    468,
+    474,
+    476,
+    486,
+    499,
+    500,
+    509,
+    510
+  ],
+  "deferred_issues": [
+    384
+  ],
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "exists_pre": true,
+      "sha256_pre": "10e0a65ea0fbd89b56d7833aad76e8ccf17722b07faa4af090636bba5c9f0d8e"
+    },
+    {
+      "path": ".github/workflows/contract-weekly.yml",
+      "exists_pre": true,
+      "sha256_pre": "9f6fa352b1e4ba27fe07e7bcb3b4309c207d007e82fe3ac45c48d4f23daa8738"
+    },
+    {
+      "path": ".github/workflows/issue-hygiene.yml",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": ".github/workflows/release-gate.yml",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "docs/04-verification-plan.md",
+      "exists_pre": true,
+      "sha256_pre": "7a97c06f6b3c7e827f51912a1dd26dc24aec90b2b371b509a590d681af632c55"
+    },
+    {
+      "path": "docs/dual-mode.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "src/audio/file_source.rs",
+      "exists_pre": true,
+      "sha256_pre": "5018652c880ee5046521891c4c32411d8cd2769c357caaafa0749254b35e6d65"
+    },
+    {
+      "path": "src/bin/audio_stability_proof.rs",
+      "exists_pre": true,
+      "sha256_pre": "bcd4219f4232acdd337757b865789574a1a128bb256a45467fdc6d6f5fba96b7"
+    },
+    {
+      "path": "src/metrics/loss.rs",
+      "exists_pre": true,
+      "sha256_pre": "5cac2d6a1dc6f10acdbf9279f2d4c83f494cfe6949485f261965199f3f9d2d5b"
+    },
+    {
+      "path": "src/metrics/memory_guard.rs",
+      "exists_pre": true,
+      "sha256_pre": "259604ac4f09e7f43d00ace73259983870e4dcdb996ad1c90244739c5a8a5b7c"
+    },
+    {
+      "path": "src/metrics/network.rs",
+      "exists_pre": true,
+      "sha256_pre": "a3d82799b2d908fe16587b9ed874ebb91306324f7942c276f5dfa8c2ed9d4345"
+    },
+    {
+      "path": "src/metrics/process.rs",
+      "exists_pre": true,
+      "sha256_pre": "bf04736a0968a87c1f82a383ded184650ef79d67488544cab9c3b12813f48ed7"
+    },
+    {
+      "path": "src/metrics/snapshot.rs",
+      "exists_pre": true,
+      "sha256_pre": "dae628659ec62b7814f828e329262855153f0444b70b15cab171108d4faaf059"
+    },
+    {
+      "path": "verification-evidence/ci/CI-01-matrix-run-url.json",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/ci/CI-01-required-checks.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/linux/linux-01-spike-decision.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/macos/macos-01-latency-measurements.json",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/macos/macos-01-spike-decision.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/macos/macos-01-tcc-behavior.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa/QA-01-master-test-plan.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa/QA-01-quality-thresholds.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa/QA-01-traceability-matrix.csv",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa/QA-02-linux-portability-plan.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa8/QA8-01-charter.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa8/QA8-02-slo-schema.json",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/qa8/QA8-03-soak-schema-v2.json",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/supertonic/SUPERTONIC-01-spike.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/test/TEST-01-evidence-schema.json",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/test/TEST-01-simulation-harness-plan.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    },
+    {
+      "path": "verification-evidence/test/TEST-02-linux-simulation.md",
+      "exists_pre": false,
+      "sha256_pre": null,
+      "note": "absent at wave start; to be created by implementation tentacle"
+    }
+  ]
+}

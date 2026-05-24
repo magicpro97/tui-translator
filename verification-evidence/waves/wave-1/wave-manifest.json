@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "wave": "W1",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 18,
+  "issues": [
+    {
+      "number": 384,
+      "title": "DM-08 â€” Dual-mode docs and config examples",
+      "family": "DM",
+      "red_mode": "doc_first",
+      "dependencies": [],
+      "files_allowed": [
+        "docs/dual-mode.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 450,
+      "title": "MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+      "family": "MACOS-WBS",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+        "verification-evidence/macos/macos-01-latency-measurements.json",
+        "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+        "verification-evidence/macos/macos-01-spike-decision.md",
+        "verification-evidence/macos/macos-01-tcc-behavior.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 459,
+      "title": "QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+      "family": "QA",
+      "red_mode": "doc_first",
+      "dependencies": [],
+      "files_allowed": [
+        "docs/04-verification-plan.md",
+        "verification-evidence/qa/QA-01-master-test-plan.md",
+        "verification-evidence/qa/QA-01-quality-thresholds.md",
+        "verification-evidence/qa/QA-01-traceability-matrix.csv"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 460,
+      "title": "TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+      "family": "TEST",
+      "red_mode": "tests_first",
+      "dependencies": [],
+      "files_allowed": [
+        "src/audio/file_source.rs",
+        "verification-evidence/test/TEST-01-evidence-schema.json",
+        "verification-evidence/test/TEST-01-simulation-harness-plan.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 461,
+      "title": "CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+      "family": "CI",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/contract-weekly.yml",
+        "verification-evidence/ci/CI-01-matrix-run-url.json",
+        "verification-evidence/ci/CI-01-required-checks.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 468,
+      "title": "LINUX-01 — Spike: Linux capture backend decision",
+      "family": "LINUX-WBS",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/linux/linux-01-spike-decision.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 474,
+      "title": "TEST-02 — Linux deterministic audio simulation fixture",
+      "family": "TEST",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/test/TEST-02-linux-simulation.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 476,
+      "title": "QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+      "family": "QA",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/qa/QA-02-linux-portability-plan.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 486,
+      "title": "SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+      "family": "SUPERTONIC",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-01-spike.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 499,
+      "title": "QA8-01 - QA charter, standards mapping, and risk register",
+      "family": "QA8",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/qa8/QA8-01-charter.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 500,
+      "title": "QA8-02 - Machine-readable SLO schema and gate checker",
+      "family": "QA8",
+      "red_mode": "evidence_first",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/qa8/QA8-02-slo-schema.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 501,
+      "title": "QA8-03 - Soak evidence schema v2 and telemetry export contract",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/snapshot.rs",
+        "verification-evidence/qa8/QA8-03-soak-schema-v2.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 502,
+      "title": "QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/process.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 503,
+      "title": "QA8-05 - 8-hour soak runner v2 with fault injection",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [],
+      "files_allowed": [
+        "src/bin/audio_stability_proof.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 505,
+      "title": "QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/loss.rs",
+        "src/metrics/network.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 506,
+      "title": "QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/memory_guard.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 509,
+      "title": "QA8-11 - Project priority and issue hygiene enforcement",
+      "family": "QA8",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/issue-hygiene.yml"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 510,
+      "title": "QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+      "family": "QA8",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/release-gate.yml"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

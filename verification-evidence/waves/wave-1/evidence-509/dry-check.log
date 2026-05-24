@@ -1,0 +1,8 @@
+PASS A: single priority:P0
+  action=ok effective_priority='priority:P0' writeP0=true skipNeutral=false
+PASS B: single priority:P2
+  action=ok effective_priority='priority:P2' writeP0=false skipNeutral=true
+PASS C: no priority label
+  action=apply-default effective_priority='priority:P0' writeP0=true skipNeutral=false
+PASS D: mismatch P0+P2
+  action=mismatch effective_priority='' writeP0=false skipNeutral=true

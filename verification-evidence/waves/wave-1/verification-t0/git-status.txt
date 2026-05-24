@@ -1,0 +1,24 @@
+ M .github/workflows/ci.yml
+ M docs/04-verification-plan.md
+?? .github/steps/project-board-roadmap.md
+?? .github/workflows/issue-hygiene.yml
+?? .github/workflows/release-gate.yml
+?? tests/qa8_slo_schema_contract.rs
+?? tests/test_01_file_source_replay.rs
+?? verification-evidence/board-snapshot-raw/
+?? verification-evidence/ci/
+?? verification-evidence/linux/
+?? verification-evidence/macos/
+?? verification-evidence/qa/
+?? verification-evidence/qa8/
+?? verification-evidence/supertonic/
+?? verification-evidence/test/
+?? verification-evidence/w0-r1/
+?? verification-evidence/w0-r2/
+?? verification-evidence/w0-r3/
+?? verification-evidence/w0-r4/
+?? verification-evidence/w0-r5/
+?? verification-evidence/w0-r6/
+?? verification-evidence/w0-r7/
+?? verification-evidence/w0-r8/
+?? verification-evidence/waves/
