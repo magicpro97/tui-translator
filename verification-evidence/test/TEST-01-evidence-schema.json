@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magicpro97/tui-translator/verification-evidence/test/TEST-01-evidence-schema.json",
+  "title": "TEST-01 simulation-harness evidence",
+  "description": "Evidence artifact emitted by a single run of the TEST-01 deterministic simulation harness (issue #460). Wave-1 ships the headless file-source replayer (L1); provider mock / PTY / VMIC paths (L2-L4) are filled in by successor issue TEST-01b.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "harness_id",
+    "level",
+    "run_id",
+    "started_at",
+    "fixture",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Schema version string. Increment when a field becomes required, is removed, or changes type. Additive optional fields do not require a bump.",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)*$",
+      "examples": ["1", "1.0"]
+    },
+    "harness_id": {
+      "description": "Stable identifier for the harness that produced the artifact.",
+      "type": "string",
+      "const": "TEST-01"
+    },
+    "level": {
+      "description": "Harness ladder level. L1 = file-source replayer (this wave). L2 = provider mock. L3 = PTY harness. L4 = virtual-mic / VMIC roundtrip. L2-L4 are scaffolded by successor TEST-01b.",
+      "type": "string",
+      "enum": ["L1", "L2", "L3", "L4"]
+    },
+    "run_id": {
+      "description": "UUID v4 (or other globally-unique opaque token) identifying this run.",
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "description": "RFC 3339 UTC timestamp marking the start of the run.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "description": "RFC 3339 UTC timestamp marking the end of the run. Optional: omitted when the run is still in progress.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "git_sha": {
+      "description": "Commit SHA the binary under test was built from. Optional in L1 scaffold; required for promotion to release evidence.",
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 40
+    },
+    "platform": {
+      "description": "OS / arch the harness ran on. Optional in the wave-1 scaffold.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "os": { "type": "string", "examples": ["windows", "linux", "macos"] },
+        "arch": { "type": "string", "examples": ["x86_64", "aarch64"] }
+      }
+    },
+    "fixture": {
+      "description": "Audio fixture used to drive the replayer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sample_rate_hz", "channels", "bit_depth", "total_samples"],
+      "properties": {
+        "path": {
+          "description": "Repository-relative path to the WAV fixture.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sample_rate_hz": {
+          "description": "Sample rate in Hz. Must be 16000 to match Google STT requirements.",
+          "type": "integer",
+          "const": 16000
+        },
+        "channels": {
+          "description": "Channel count. Must be 1 (mono).",
+          "type": "integer",
+          "const": 1
+        },
+        "bit_depth": {
+          "description": "Sample bit depth. Must be 16.",
+          "type": "integer",
+          "const": 16
+        },
+        "total_samples": {
+          "description": "Total decoded PCM samples in the fixture.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "description": "Optional hex-encoded SHA-256 of the WAV bytes, for fixture-drift detection.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "result": {
+      "description": "Outcome of the harness run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "chunks_emitted", "samples_emitted", "loops_completed"],
+      "properties": {
+        "status": {
+          "description": "Pass/fail/error verdict.",
+          "type": "string",
+          "enum": ["pass", "fail", "error"]
+        },
+        "chunks_emitted": {
+          "description": "Number of AudioChunks the replayer emitted during the run.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "samples_emitted": {
+          "description": "Number of PCM samples the replayer emitted during the run (sum across all chunks).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "loops_completed": {
+          "description": "Number of complete loops through the fixture during the run.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "wall_clock_ms": {
+          "description": "Wall-clock duration of the run in milliseconds. Optional in L1 scaffold.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "description": "Optional list of human-readable failure descriptions when status != \"pass\".",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "metrics": {
+      "description": "Optional level-specific telemetry (RMS, drop count, latency p50/p95/p99, etc.). Open-shape in this scaffold; tightened by successor TEST-01b once L2-L4 land.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "notes": {
+      "description": "Free-form notes captured by the harness operator.",
+      "type": "string"
+    }
+  }
+}

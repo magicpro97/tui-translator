@@ -3,6 +3,10 @@ name: CI
 on:
   push:
   pull_request:
+  # Issue #461 / CI-01: allow manual dispatch so the new cross-platform +
+  # feature matrix can be exercised on a feature branch before branch
+  # protection is updated. Evidence URL: verification-evidence/ci/CI-01-matrix-run-url.json.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -577,3 +581,112 @@ jobs:
         run: cargo build --bins
       - name: Run binary unit tests (no audio, skip future real_api cases)
         run: cargo test --bins -- --nocapture --skip real_api
+
+  # ── CI-01 cross-platform matrix (Issue #461) ────────────────────────────────
+  # New required gates that prove the default-feature build compiles and runs
+  # binary unit tests on Windows + macOS-13 (Intel) + macOS-14 (Apple silicon).
+  # All jobs use `--locked` so any tampering of `Cargo.lock` fails the gate.
+  # Required-check names are documented in
+  # verification-evidence/ci/CI-01-required-checks.md §2.3.
+  cross-platform:
+    name: Cross-platform build (${{ matrix.os }}, ${{ matrix.feature }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-13, macos-14]
+        feature: [default]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci01-xplat-${{ matrix.feature }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build (debug, --locked, default features)
+        run: cargo build --locked --bins
+      - name: Run binary unit tests (skip real_api)
+        run: cargo test --locked --bins -- --nocapture --skip real_api
+
+  # ── CI-01 feature matrix (Issue #461) ───────────────────────────────────────
+  # Compiles the hardware-free optional feature flags on Windows + both macOS
+  # runners. `audio-integration` and `production-audio` are no-op feature
+  # gates (no extra deps) so they compile cleanly without external toolchains.
+  # `local-stt` and `local-mt` are explicitly NOT included here because they
+  # pull whisper-rs / ort which require platform-specific native toolchains
+  # outside the scope of this issue.
+  feature-matrix:
+    name: Feature matrix (${{ matrix.os }}, ${{ matrix.feature }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-13, macos-14]
+        feature: [audio-integration, production-audio]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci01-feat-${{ matrix.feature }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build with feature (--locked)
+        run: cargo build --locked --bins --features ${{ matrix.feature }}
+      - name: Compile feature-gated tests (no run)
+        run: cargo test --locked --no-run --features ${{ matrix.feature }}
+
+  # ── CI-01 MSRV gate (Issue #461) ────────────────────────────────────────────
+  # Enforces the `rust-version` declared in Cargo.toml (1.86 at the time of
+  # CI-01). Runs `--locked` so MSRV regressions and Cargo.lock tampering both
+  # surface as a red required check.
+  msrv:
+    name: MSRV (Rust 1.86) build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.86.0
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci01-msrv-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build with MSRV toolchain (--locked)
+        run: cargo build --locked --bins
+
+  # ── CI-01 beta toolchain (Issue #461) — ALLOWED-FAIL ────────────────────────
+  # Documented allowed-fail per issue #461 acceptance: "Beta toolchain failure
+  # is allowed-fail only where documented". Branch protection MUST NOT require
+  # this context — see verification-evidence/ci/CI-01-required-checks.md §2.4.
+  beta-allowed-fail:
+    name: Beta toolchain (allowed-fail)
+    runs-on: windows-latest
+    # reason: Beta is an early-warning signal only. Issue #461 acceptance
+    # explicitly allows this job to fail without failing the workflow run,
+    # and CI-01-required-checks.md §2.4 forbids adding this context to
+    # branch protection. Failures here surface nightly toolchain regressions
+    # without blocking PR merges on stable.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@beta
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci01-beta-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build on beta toolchain
+        run: cargo build --bins

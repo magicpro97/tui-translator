@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0.0",
+  "artifact": "macos-01-blackhole-capture-60s",
+  "issue": 450,
+  "wave": 1,
+  "tier": "T0",
+  "red_mode": "evidence_first",
+  "test_case": "Capture from BlackHole 2ch for 60 seconds and measure sample-continuity",
+  "status": "not_measured",
+  "reason_not_measured": "Arbiter host is Windows 11; no macOS Apple-Silicon hardware available at spike time. The acceptance matrix entry for issue #450 explicitly authorises this path: 'Requires real macOS hardware to satisfy measurement test cases; if unavailable, evidence must explicitly record the limitation and emit a follow-up spike issue.'",
+  "follow_up_blocker": {
+    "name": "MACOS-01b",
+    "parent_issue": 450,
+    "blocks": ["MACOS-02"],
+    "see": "macos-01-spike-decision.md §6"
+  },
+  "expected_when_measured": {
+    "device": "BlackHole 2ch",
+    "install_command": "brew install blackhole-2ch",
+    "input_sample_rate_hz": 48000,
+    "input_channels": 2,
+    "input_format": "f32",
+    "post_downmix_resample": {
+      "sample_rate_hz": 16000,
+      "channels": 1,
+      "format": "i16",
+      "expected_sample_count": 960000,
+      "tolerance_samples": 480
+    },
+    "continuity_metrics_to_record": [
+      "total_samples_captured",
+      "expected_samples",
+      "dropped_chunks",
+      "discontinuities_detected",
+      "max_gap_samples",
+      "rms_input_dbfs",
+      "underrun_count",
+      "overrun_count"
+    ],
+    "pass_thresholds": {
+      "sample_count_delta_pct_max": 0.1,
+      "discontinuities_max": 0,
+      "underrun_count_max": 0
+    }
+  },
+  "measurement_protocol": {
+    "host_requirement": "Apple Silicon Mac running macOS 13.x or 14.x",
+    "preconditions": [
+      "BlackHole 2ch installed via 'brew install blackhole-2ch'",
+      "System Settings → Sound → Output set to 'BlackHole 2ch' (or a Multi-Output Device that includes it)",
+      "Terminal that will host the process has Microphone permission granted in Privacy & Security",
+      "Audio source playing for the full 60 s (e.g., a known sine sweep or the project's audio harness fixture)"
+    ],
+    "harness": "verification-evidence/macos/macos-01-screencapturekit-prototype.md §4 (Tier-2 cpal sketch). Wire it into a small bin and run for exactly 60 s.",
+    "steps": [
+      "Start the harness; record monotonic clock t0 at first audio callback",
+      "Accumulate i16 samples until 60.000 s elapsed",
+      "Compute total_samples_captured and compare against 16000 * 60 = 960000",
+      "Detect discontinuities by emitting a known sine input and checking phase continuity across chunk boundaries",
+      "Record dropped_chunks from the cpal error callback counter",
+      "Write the populated JSON back to this file path"
+    ]
+  },
+  "result": null,
+  "authored_at": "2026-05-24",
+  "authored_by": "tentacle:w1-t0-450-macos-spike",
+  "notes": "This file intentionally records 'not_measured'. Populating 'result' requires the MACOS-01b follow-up spike on real hardware. Do NOT fabricate numbers."
+}
