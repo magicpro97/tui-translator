@@ -1,16 +1,16 @@
 //! Backend-selection contract for STT, MT, and TTS (MODEL-01, issue #457).
 //!
 //! Defines a small, typed wrapper around the existing
-//! [`crate::config::AppConfig`] string-typed provider fields so the rest of
-//! the codebase can reason about backend choice and cloud-fallback consent in
-//! one place.
+//! `AppConfig` (from `crate::config`) string-typed provider fields so the
+//! rest of the codebase can reason about backend choice and cloud-fallback
+//! consent in one place.
 //!
 //! # Why this exists
 //!
 //! `AppConfig` ships the canonical provider strings (`stt_provider`,
 //! `mt_provider`, `tts_provider`) and per-stage consent flags
 //! (`stt_fallback_policy`, `mt_cloud_fallback`, `tts_cloud_fallback`).
-//! Validation is enforced inside [`crate::config::AppConfig::validate`].
+//! Validation is enforced inside `AppConfig::validate` (in `crate::config`).
 //!
 //! This module does **not** duplicate that validation — it only re-projects
 //! the validated config into typed values so a single contract test can
@@ -27,14 +27,14 @@
 //! [`BackendSelection::from_fields`] takes the raw strings/options directly
 //! so this module compiles in unit-test contexts that pull
 //! `src/providers/mod.rs` via `#[path]` without the surrounding config
-//! crate.  The thin convenience method [`AppConfig::backend_selection`]
+//! crate.  The thin convenience method `AppConfig::backend_selection`
 //! lives in `src/config/mod.rs`.
 
 /// Which family of backend implementation a stage is currently pointed at.
 ///
 /// String parsing is forgiving: leading/trailing whitespace is ignored and
 /// matching is case-insensitive so the typed view tracks the same surface
-/// that [`AppConfig::validate`] accepts.  Unknown values map to
+/// that `AppConfig::validate` accepts.  Unknown values map to
 /// [`BackendKind::Unknown`] so callers can surface a typed error instead of
 /// silently treating a typo as a known backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +82,7 @@ impl BackendKind {
 ///   expected on use.
 /// * [`CloudFallbackConsent::ExplicitWithoutKey`] — operator configured a
 ///   cloud fallback but no key is available.  This is rejected by
-///   [`AppConfig::validate`]; the variant exists only so contract tests can
+///   `AppConfig::validate`; the variant exists only so contract tests can
 ///   assert that this configuration never reaches a running pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloudFallbackConsent {
@@ -148,8 +148,8 @@ impl BackendSelection {
     /// Project raw config field values into a typed backend selection.
     ///
     /// Caller responsibilities:
-    /// * Call [`crate::config::AppConfig::validate`] first; this function
-    ///   does not re-validate.
+    /// * Call `AppConfig::validate` (in `crate::config`) first; this
+    ///   function does not re-validate.
     /// * Pass `key_present = true` only when the configured API key is a
     ///   non-empty string.
     ///
@@ -317,12 +317,7 @@ mod tests {
     #[test]
     fn key_presence_alone_does_not_enable_cloud_for_local_mt() {
         let sel = BackendSelection::from_fields(
-            "local",
-            "none",
-            "local",
-            /* mt_cloud_fallback = */ None,
-            "google",
-            None,
+            "local", "none", "local", /* mt_cloud_fallback = */ None, "google", None,
             /* key_present = */ true,
         );
         assert_eq!(sel.mt.backend, BackendKind::Local);
@@ -338,13 +333,7 @@ mod tests {
         // STT pinned to local, fallback policy disabled — even with a key
         // present, the policy-driven cloud call MUST NOT be reachable.
         let sel = BackendSelection::from_fields(
-            "local",
-            "none",
-            "local",
-            None,
-            "google",
-            None,
-            /* key_present = */ true,
+            "local", "none", "local", None, "google", None, /* key_present = */ true,
         );
         assert_eq!(sel.stt.backend, BackendKind::Local);
         assert_eq!(sel.stt.cloud_fallback, CloudFallbackConsent::None);
