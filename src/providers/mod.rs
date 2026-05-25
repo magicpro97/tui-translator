@@ -253,8 +253,179 @@ pub trait MtProvider: Send + Sync {
 /// Text-to-speech provider (optional feature).
 ///
 /// Accepts a string and returns synthesised audio as a [`TtsResult`].
+///
+/// # Non-blocking guarantee (SUPERTONIC-05, issue #490)
+/// Callers MUST NOT await `synthesise` from latency-sensitive paths
+/// (TUI render loop, audio capture callback). The pipeline runs every
+/// TTS call on a dedicated Tokio task and forwards the result through a
+/// bounded channel; see
+/// `docs/adr/supertonic-05-tts-streaming-contract.md` for the full
+/// rationale and migration plan.
 pub trait TtsProvider: Send + Sync {
     /// Synthesise speech for `text` in `language_code` (BCP-47).
     async fn synthesise(&self, text: &str, language_code: &str)
         -> Result<TtsResult, ProviderError>;
+}
+
+// ── Streaming/non-blocking TTS contract (SUPERTONIC-05, issue #490) ──────────
+
+/// A single chunk of synthesised audio emitted by a streaming TTS provider.
+///
+/// Providers that can deliver audio progressively (e.g. a local neural model
+/// that produces frames before the utterance completes) push one or more
+/// [`TtsAudioChunk`] values through the sink supplied to
+/// [`TtsStreamProvider::synthesise_stream`]. Buffer-only providers (today's
+/// Google REST adapter) emit exactly one chunk with `is_final = true`.
+#[derive(Debug, Clone)]
+pub struct TtsAudioChunk {
+    /// Raw audio bytes for this chunk. The encoding matches the provider's
+    /// [`TtsResult::mime_type`]; consumers MUST be prepared for either PCM
+    /// or container formats (e.g. `audio/mpeg`).
+    pub audio_bytes: Vec<u8>,
+    /// MIME type of `audio_bytes`. Repeated on every chunk so consumers do
+    /// not need to track state across chunks.
+    pub mime_type: String,
+    /// Monotonically increasing sequence number within the utterance,
+    /// starting at `0`.
+    pub sequence_number: u32,
+    /// `true` for the last chunk of an utterance; `false` for intermediate
+    /// chunks. Receivers may close the channel after receiving a final
+    /// chunk; senders MUST emit exactly one final chunk per successful
+    /// utterance.
+    pub is_final: bool,
+}
+
+/// Streaming / non-blocking TTS contract.
+///
+/// Extends [`TtsProvider`] for providers that can emit audio progressively.
+/// The default implementation calls [`TtsProvider::synthesise`] and emits the
+/// whole buffer as a single final chunk so any existing [`TtsProvider`] can
+/// participate in the streaming pipeline without changes.
+///
+/// # Non-blocking guarantee
+/// Implementations MUST NOT block the calling task waiting on the receiver
+/// side. The sink is a `tokio::sync::mpsc::Sender`; when its capacity is
+/// exhausted, providers should back off using `send().await` and abandon the
+/// utterance if the receiver is dropped.
+///
+/// # Cancellation
+/// When the consumer drops the receiver, `sink.send` returns `Err` and the
+/// provider MUST exit the synthesis loop within 50 ms so a stale utterance
+/// does not delay the next one. See
+/// `docs/adr/supertonic-05-tts-streaming-contract.md` for the migration
+/// plan and benchmark targets.
+#[allow(dead_code)]
+pub trait TtsStreamProvider: TtsProvider {
+    /// Begin streaming synthesis of `text` in `language_code`.
+    ///
+    /// Chunks are pushed to `sink` in order, ending with one chunk where
+    /// `is_final = true`. On error, exactly one `Err(_)` is sent and the
+    /// stream is terminated.
+    ///
+    /// The default implementation calls [`TtsProvider::synthesise`] once and
+    /// emits the result as a single final chunk. Providers that natively
+    /// stream (e.g. Supertonic, issue #493) override this method.
+    async fn synthesise_stream(
+        &self,
+        text: &str,
+        language_code: &str,
+        sink: &tokio::sync::mpsc::Sender<Result<TtsAudioChunk, ProviderError>>,
+    ) {
+        let result = self.synthesise(text, language_code).await;
+        let chunk = match result {
+            Ok(out) => Ok(TtsAudioChunk {
+                audio_bytes: out.audio_bytes,
+                mime_type: out.mime_type,
+                sequence_number: 0,
+                is_final: true,
+            }),
+            Err(err) => Err(err),
+        };
+        // Receiver-dropped is a legitimate cancellation signal — ignore.
+        let _ = sink.send(chunk).await;
+    }
+}
+
+#[cfg(test)]
+mod tts_stream_tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    struct BufferOnlyProvider {
+        bytes: Vec<u8>,
+        mime: String,
+    }
+
+    impl TtsProvider for BufferOnlyProvider {
+        async fn synthesise(
+            &self,
+            _text: &str,
+            _language_code: &str,
+        ) -> Result<TtsResult, ProviderError> {
+            Ok(TtsResult {
+                audio_bytes: self.bytes.clone(),
+                mime_type: self.mime.clone(),
+            })
+        }
+    }
+
+    impl TtsStreamProvider for BufferOnlyProvider {}
+
+    #[tokio::test]
+    async fn default_stream_impl_emits_single_final_chunk() {
+        let provider = BufferOnlyProvider {
+            bytes: vec![1, 2, 3, 4],
+            mime: "audio/mpeg".to_string(),
+        };
+        let (tx, mut rx) = mpsc::channel(4);
+        provider.synthesise_stream("hello", "en-US", &tx).await;
+        drop(tx);
+
+        let first = rx.recv().await.expect("one chunk expected");
+        let chunk = first.expect("synthesis succeeded");
+        assert_eq!(chunk.audio_bytes, vec![1, 2, 3, 4]);
+        assert_eq!(chunk.mime_type, "audio/mpeg");
+        assert_eq!(chunk.sequence_number, 0);
+        assert!(
+            chunk.is_final,
+            "buffer-only providers MUST emit is_final=true"
+        );
+        assert!(rx.recv().await.is_none(), "no further chunks after final");
+    }
+
+    struct FailingProvider;
+
+    impl TtsProvider for FailingProvider {
+        async fn synthesise(
+            &self,
+            _text: &str,
+            _language_code: &str,
+        ) -> Result<TtsResult, ProviderError> {
+            Err(ProviderError::ServiceUnavailable("down".to_string()))
+        }
+    }
+
+    impl TtsStreamProvider for FailingProvider {}
+
+    #[tokio::test]
+    async fn default_stream_impl_propagates_error_once() {
+        let (tx, mut rx) = mpsc::channel(4);
+        FailingProvider.synthesise_stream("x", "en-US", &tx).await;
+        drop(tx);
+
+        let first = rx.recv().await.expect("one error expected");
+        assert!(matches!(first, Err(ProviderError::ServiceUnavailable(_))));
+        assert!(rx.recv().await.is_none(), "no further messages after error");
+    }
+
+    #[tokio::test]
+    async fn default_stream_impl_tolerates_dropped_receiver() {
+        let provider = BufferOnlyProvider {
+            bytes: vec![0xAA, 0xBB],
+            mime: "audio/mpeg".to_string(),
+        };
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        provider.synthesise_stream("y", "en-US", &tx).await;
+    }
 }
