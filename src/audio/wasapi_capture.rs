@@ -185,6 +185,9 @@ fn capture_loop(
 
     let mut silence_detector = SilenceDetector::new(silence_threshold, DEFAULT_SILENCE_GATE_MS);
 
+    // CTRL-01: per-thread linear-ramp state for input-gain smoothing.
+    let mut input_gain = crate::audio::audio_gain::InputGainRamp::new();
+
     // Carry buffer: unprocessed mono-f32 samples that didn't fill a full chunk.
     let mut carry: Vec<f32> = Vec::with_capacity(FRAMES_PER_CHUNK * 2);
 
@@ -208,9 +211,12 @@ fn capture_loop(
         // Process complete FRAMES_PER_CHUNK-sized windows through the resampler.
         while carry.len() >= FRAMES_PER_CHUNK {
             let input: Vec<f32> = carry.drain(..FRAMES_PER_CHUNK).collect();
-            let resampled = resampler
+            let mut resampled = resampler
                 .process(&[input], None)
                 .map_err(|e| anyhow!("rubato resample: {e}"))?;
+
+            // CTRL-01: apply input gain (clamped, smoothed) before quantising.
+            input_gain.apply_in_place(&mut resampled[0]);
 
             let samples_i16: Vec<i16> = resampled[0]
                 .iter()

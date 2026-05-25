@@ -604,6 +604,8 @@ impl RodioSink {
         };
         match rodio::Sink::try_new(&self.stream_handle) {
             Ok(sink) => {
+                // CTRL-01: apply real-time output volume.
+                sink.set_volume(crate::audio::audio_gain::output_volume_linear());
                 sink.append(source);
                 Some(sink)
             }
