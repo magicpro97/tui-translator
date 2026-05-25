@@ -1,0 +1,253 @@
+{
+  "schema_version": "jv-08-v1",
+  "wbs_key": "JV-08",
+  "issue": 416,
+  "title": "Head-to-head local MT default eligibility decision",
+  "executed_at": "2026-05-22",
+  "routing_confidence": 1.0,
+  "default_flip_decision": "defer-no-evidence",
+  "current_default": "google",
+  "implementation_target": {
+    "candidate": "opus-mt-ja-vi",
+    "rationale_ref": "docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md",
+    "runtime_ref": "docs/adr/jv-10-runtime-engine-spike.md",
+    "binds_issues": [
+      "JV-09",
+      "JV-11"
+    ],
+    "notes": "OPUS-MT ja-vi remains the first implementation target because JV-01 selected it as the primary permissive candidate and JV-10 selected ORT KV-cache as the next runtime path. This is not a default flip."
+  },
+  "inputs": [
+    {
+      "wbs": "JV-01",
+      "issue": 409,
+      "path": "docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md",
+      "sha256": "b8e98c9f61f0ba7fc728e9bd14f6cc55c422b8b0321f1c47b95ab04022371a26",
+      "schema": "adr-markdown",
+      "status": "research-record"
+    },
+    {
+      "wbs": "JV-02",
+      "issue": 410,
+      "path": "docs/evidence/ja-vi-benchmark-corpus-plan.md",
+      "sha256": "40b9e590f7e900142ab467bdfdd9423e62d619aa6ebae38f891f7edf7ed79cb0",
+      "schema": "evidence-markdown",
+      "status": "seed-only"
+    },
+    {
+      "wbs": "JV-03",
+      "issue": 411,
+      "path": "docs/evidence/lf-04-benchmark.json",
+      "sha256": "a857020d7e39426bb5b0d4fd651d1cd6bbafedf25e6139dab6384d0fe9b143dd",
+      "schema": "lf-04-v2",
+      "status": "pending"
+    },
+    {
+      "wbs": "JV-04",
+      "issue": 412,
+      "path": "docs/evidence/jv-google-baseline.json",
+      "sha256": "9302a75bf24c6fd9d6d6e1fd6eeca75c32632430c90a48ec19db2c0ce92a9a3b",
+      "schema": "jv-04-v2",
+      "status": "blocked"
+    },
+    {
+      "wbs": "JV-05",
+      "issue": 413,
+      "path": null,
+      "sha256": null,
+      "schema": null,
+      "status": "missing",
+      "notes": "OPUS-MT smoke/benchmark evidence exists only in issue comments from stale scratch work and is not committed artifact evidence."
+    },
+    {
+      "wbs": "JV-06",
+      "issue": 414,
+      "path": null,
+      "sha256": null,
+      "schema": null,
+      "status": "missing",
+      "notes": "M2M100 evidence exists only in issue comments from stale scratch work and is not committed artifact evidence."
+    },
+    {
+      "wbs": "JV-07",
+      "issue": 415,
+      "path": null,
+      "sha256": null,
+      "schema": null,
+      "status": "missing",
+      "notes": "NLLB evidence exists only in issue comments from stale scratch work and is not committed artifact evidence."
+    },
+    {
+      "wbs": "JV-10-ADR",
+      "issue": 418,
+      "path": "docs/adr/jv-10-runtime-engine-spike.md",
+      "sha256": "116fd462d11b351defafc129e5edf37a046834601d665867fd1e959a96390212",
+      "schema": "adr-markdown",
+      "status": "spike-record"
+    },
+    {
+      "wbs": "JV-10",
+      "issue": 418,
+      "path": "docs/evidence/jv-10-runtime-spike.json",
+      "sha256": "f30c07b940c403001bbbf6ea60aa93ac1488b2799adf8f6c18b2717d04bec974",
+      "schema": "lf-04-v2",
+      "status": "pending"
+    }
+  ],
+  "gates": [
+    {
+      "id": "G1-chrf-ratio",
+      "threshold": "local chrF++ >= 0.90 * Google chrF++ and local chrF++ >= 45.0",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-04",
+        "JV-05",
+        "JV-06",
+        "JV-07"
+      ]
+    },
+    {
+      "id": "G2-chrf-ci-lower-bound",
+      "threshold": "bootstrap confidence interval lower bound >= -3 chrF versus Google",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-04",
+        "JV-05",
+        "JV-06",
+        "JV-07"
+      ]
+    },
+    {
+      "id": "G3-latency-p95",
+      "threshold": "p95 <= 700 ms",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-05",
+        "JV-06",
+        "JV-07",
+        "JV-10"
+      ]
+    },
+    {
+      "id": "G4-realtime-factor",
+      "threshold": "RTF <= 0.5",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-05",
+        "JV-06",
+        "JV-07",
+        "JV-10"
+      ]
+    },
+    {
+      "id": "G5-error-rate",
+      "threshold": "error rate <= 0.5%",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-05",
+        "JV-06",
+        "JV-07"
+      ]
+    },
+    {
+      "id": "G6-rss",
+      "threshold": "peak RSS delta <= 1 GiB",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-05",
+        "JV-06",
+        "JV-07",
+        "JV-10"
+      ]
+    },
+    {
+      "id": "G7-cpu",
+      "threshold": "translator CPU <= 60% during Zoom co-run",
+      "candidate": "all-local-candidates",
+      "observed": null,
+      "result": "blocked-no-evidence",
+      "evidence_refs": [],
+      "blockers": [
+        "JV-16"
+      ]
+    },
+    {
+      "id": "G8-no-silent-fallback",
+      "threshold": "Cloud fallback requires explicit mt_cloud_fallback consent and a key; key presence alone is not consent.",
+      "candidate": "runtime-routing-contract",
+      "observed": "mt_cloud_fallback is absent by default, only accepts google with google_api_key, and unsupported local routes resolve to Unsupported unless cloud_fallback_configured=true.",
+      "result": "pass",
+      "evidence_refs": [
+        "src/config/mod.rs:650-666",
+        "src/config/mod.rs:1079-1096",
+        "src/providers/mt/routing.rs:20-28",
+        "src/providers/mt/routing.rs:179-205",
+        "tests/mt_routing.rs:95-109",
+        "tests/mt_routing.rs:179-254"
+      ],
+      "blockers": []
+    }
+  ],
+  "rejected_alternatives": [
+    {
+      "candidate": "flip-to-opus-mt-now",
+      "reason": "JV-05 has no committed benchmark artifact, JV-10 recorded no live model smoke, and G1-G7 are blocked-no-evidence."
+    },
+    {
+      "candidate": "flip-to-m2m100-now",
+      "reason": "JV-06 has no committed benchmark artifact and the runtime path is not implemented."
+    },
+    {
+      "candidate": "flip-to-nllb-now",
+      "reason": "JV-07 has no committed benchmark artifact and JV-01 records the NLLB CC-BY-NC license as non-default for bundled/commercial distribution."
+    }
+  ],
+  "reviews": {
+    "nfr": {
+      "status": "completed",
+      "reviewer": "nfr-verification-gate (claude-opus-4.6)",
+      "verdict_ref": "https://github.com/magicpro97/tui-translator/pull/448"
+    },
+    "security": {
+      "status": "completed",
+      "reviewer": "tui-security-auditor (claude-opus-4.6)",
+      "verdict_ref": "https://github.com/magicpro97/tui-translator/pull/448"
+    }
+  },
+  "gap_issues": [
+    "JV-04",
+    "JV-05",
+    "JV-06",
+    "JV-07",
+    "JV-09",
+    "JV-11",
+    "JV-16",
+    "JV-18"
+  ],
+  "privacy": {
+    "contains_source_text": false,
+    "contains_target_text": false,
+    "contains_api_key": false,
+    "network_call_attempted": false,
+    "artifact_policy": "Only relative paths, SHA-256 hashes, issue IDs, aggregate gate statuses, and code references are stored."
+  },
+  "non_secret_evidence": "python scripts/jv08_evaluate_gate.py docs/evidence/jv-08-eligibility-gate.json"
+}

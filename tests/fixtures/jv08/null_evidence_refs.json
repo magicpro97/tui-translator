@@ -1,0 +1,30 @@
+{
+  "schema_version": "jv-08-v1",
+  "wbs_key": "JV-08",
+  "issue": 416,
+  "routing_confidence": 1.0,
+  "default_flip_decision": "defer-no-evidence",
+  "implementation_target": {
+    "candidate": "opus-mt-ja-vi",
+    "rationale_ref": "docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md",
+    "runtime_ref": "docs/adr/jv-10-runtime-engine-spike.md"
+  },
+  "inputs": [
+    {
+      "wbs": "JV-05",
+      "path": null,
+      "sha256": null,
+      "status": "missing"
+    }
+  ],
+  "gates": [
+    {
+      "id": "G1-chrf-ratio",
+      "threshold": "local chrF++ >= 0.90 * Google chrF++",
+      "candidate": "opus-mt-ja-vi",
+      "observed": null,
+      "result": "pass",
+      "evidence_refs": null
+    }
+  ]
+}
