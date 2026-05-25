@@ -1,0 +1,119 @@
+{
+  "$schema": "./depends.schema.json",
+  "version": 1,
+  "description": "Runtime dependency manifest for Linux packages of tui-translator. Consumed by cargo-deb / cargo-generate-rpm / AppImage tooling and by the runtime preflight in src/audio/linux/preflight.rs (see verification-evidence/linux/linux-05-deps-and-preflight.md).",
+  "targets": {
+    "debian-12": {
+      "package_format": "deb",
+      "required": [
+        "libc6 (>= 2.36)",
+        "libpipewire-0.3-0 (>= 0.3.65)",
+        "libpulse0 (>= 16.1)",
+        "libasound2 (>= 1.2.8)",
+        "libdbus-1-3 (>= 1.14)"
+      ],
+      "recommends": [
+        "pipewire",
+        "pipewire-pulse",
+        "xdg-desktop-portal"
+      ],
+      "suggests": [
+        "pavucontrol",
+        "alsa-utils"
+      ],
+      "install_hint": "sudo apt install pipewire pipewire-pulse xdg-desktop-portal"
+    },
+    "ubuntu-22.04": {
+      "package_format": "deb",
+      "required": [
+        "libc6 (>= 2.35)",
+        "libpulse0 (>= 15.99)",
+        "libasound2 (>= 1.2.6)",
+        "libdbus-1-3 (>= 1.12)"
+      ],
+      "recommends": [
+        "libpipewire-0.3-0",
+        "pipewire",
+        "pipewire-pulse",
+        "xdg-desktop-portal"
+      ],
+      "suggests": [
+        "pavucontrol",
+        "alsa-utils"
+      ],
+      "install_hint": "sudo apt install pipewire pipewire-pulse xdg-desktop-portal"
+    },
+    "ubuntu-24.04": {
+      "package_format": "deb",
+      "required": [
+        "libc6 (>= 2.39)",
+        "libpipewire-0.3-0 (>= 1.0.5)",
+        "libpulse0 (>= 16.1)",
+        "libasound2t64 (>= 1.2.11)",
+        "libdbus-1-3 (>= 1.14)"
+      ],
+      "recommends": [
+        "pipewire",
+        "pipewire-pulse",
+        "xdg-desktop-portal"
+      ],
+      "suggests": [
+        "pavucontrol",
+        "alsa-utils"
+      ],
+      "install_hint": "sudo apt install pipewire pipewire-pulse xdg-desktop-portal"
+    },
+    "fedora-40": {
+      "package_format": "rpm",
+      "required": [
+        "glibc >= 2.39",
+        "pipewire-libs >= 1.0.5",
+        "pulseaudio-libs >= 17.0",
+        "alsa-lib >= 1.2.11",
+        "dbus-libs >= 1.14"
+      ],
+      "recommends": [
+        "pipewire",
+        "pipewire-pulseaudio",
+        "xdg-desktop-portal"
+      ],
+      "suggests": [
+        "pavucontrol",
+        "alsa-utils"
+      ],
+      "install_hint": "sudo dnf install pipewire pipewire-pulseaudio xdg-desktop-portal"
+    }
+  },
+  "runtime_libraries": {
+    "pipewire": {
+      "soname": "libpipewire-0.3.so.0",
+      "tier": 1,
+      "purpose": "Native low-latency capture and translated-audio output.",
+      "missing_remediation": "Install the 'pipewire' package for your distro; restart the user session."
+    },
+    "pulse": {
+      "soname": "libpulse.so.0",
+      "tier": 2,
+      "purpose": "Fallback capture/output on PulseAudio-only environments.",
+      "missing_remediation": "Install the 'pulseaudio' or 'pipewire-pulse' package."
+    },
+    "alsa": {
+      "soname": "libasound.so.2",
+      "tier": 3,
+      "purpose": "Last-resort capture/output (reduced-feature ALSA-only mode).",
+      "missing_remediation": "Install the 'alsa-lib' / 'libasound2' package."
+    },
+    "dbus": {
+      "soname": "libdbus-1.so.3",
+      "tier": 0,
+      "purpose": "Required for xdg-desktop-portal communication.",
+      "missing_remediation": "Install the 'dbus' / 'libdbus-1-3' package."
+    }
+  },
+  "preflight": {
+    "minimum_required_libraries": ["dbus", "alsa"],
+    "minimum_required_runtime_one_of": ["pipewire", "pulse", "alsa"],
+    "failure_action": "exit_with_remediation",
+    "log_field": "preflight.linux.result"
+  }
+}
