@@ -10,7 +10,18 @@ targets = [
 all-features = false
 
 [advisories]
-ignore = []
+# RUSTSEC-2026-0009 — DoS via stack exhaustion in `time` parsing.
+# Fixed upstream in time 0.3.47, but that release bumps the required
+# rustc to 1.88, which is higher than this repo's current MSRV gate of
+# 1.86 (see `.github/workflows/ci.yml` → "MSRV (Rust 1.86) build").
+# tui-translator does not parse untrusted external date strings: time
+# is only used internally for timestamps and metrics, so the stack-
+# exhaustion path is not reachable from user/network input. The
+# advisory will be cleared on the next MSRV bump (tracked under
+# `docs/security/supply-chain.md` §1 promotion criteria).
+ignore = [
+    { id = "RUSTSEC-2026-0009", reason = "Not reachable: tui-translator does not parse untrusted date strings; fix requires MSRV bump to 1.88." },
+]
 yanked = "deny"
 
 [licenses]

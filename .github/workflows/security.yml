@@ -97,15 +97,31 @@ jobs:
         run: cargo install cargo-cyclonedx --locked
       - name: Generate CycloneDX SBOM (JSON, all features)
         run: |
+          set -euo pipefail
           cargo cyclonedx --format json --all --spec-version 1.5
-          # cargo-cyclonedx writes `bom.json` next to each Cargo.toml.
+          # cargo-cyclonedx 0.5.x writes either `bom.json` or
+          # `<crate>_<version>.cdx.json` next to each Cargo.toml depending on
+          # version. Collect both shapes so the gate is robust across upgrades.
           mkdir -p sbom-out
-          find . -maxdepth 3 -name 'bom.json' -print -exec cp {} sbom-out/ \;
+          find . -maxdepth 4 \( -name 'bom.json' -o -name '*.cdx.json' \) \
+            -not -path './sbom-out/*' -not -path './target/*' \
+            -print -exec cp {} sbom-out/ \;
+          echo "--- sbom-out contents ---"
           ls -la sbom-out/
+          if [ -z "$(ls -A sbom-out/ 2>/dev/null)" ]; then
+            echo "::error::cargo-cyclonedx produced no SBOM files"
+            exit 1
+          fi
       - name: Validate SBOM is non-empty CycloneDX
         run: |
           set -euo pipefail
-          for f in sbom-out/*.json; do
+          shopt -s nullglob
+          files=(sbom-out/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no SBOM JSON files found in sbom-out/"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
             echo "Validating $f"
             python3 -c "import json,sys; d=json.load(open('$f')); \
               assert d.get('bomFormat') == 'CycloneDX', 'bomFormat missing'; \
