@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magicpro97/tui-translator/blob/main/docs/specs/jv-09/model-bundle-manifest.schema.json",
+  "title": "Local MT Model Bundle Manifest (JV-09)",
+  "description": "Pinned manifest describing one local MT (or STT) model bundle. The runtime validates every field before any network request and writes a consent record using `id`, `version`, `license`, and `source_url` before downloading any byte. See src/providers/local/model_download.rs (`ModelBundleManifest`).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "version",
+    "license",
+    "source_url",
+    "files"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable model identifier. Used as the consent-record key and as the default cache subdirectory under `%LOCALAPPDATA%/tui-translator/models/mt/<id>`. Must remain stable across bundle revisions of the same model."
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable name shown to operators before download."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Monotonic version string. Changing this triggers a fresh consent prompt (Stale -> re-consent)."
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short SPDX identifier or full licence text shown to the user before download. Stored in the consent record as `license_text`."
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1,
+      "description": "Provenance / licence URL pointing to the upstream model card. Stored in the consent record as `license_url`."
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file"
+      },
+      "description": "Files that make up the bundle. Every entry is validated for SHA-256 length and path safety before any network request is sent."
+    }
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_path",
+        "download_url",
+        "size_bytes",
+        "sha256"
+      ],
+      "properties": {
+        "relative_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Destination path relative to the bundle directory. Must not start with `/` or `\\`, must not contain `..`, and must not contain a drive prefix (`C:\\...`). Validated by `safe_relative_path`."
+        },
+        "download_url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "description": "HTTPS URL for the file. The downloader supports resume via HTTP Range requests when the server returns 206 Partial Content."
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Expected total byte size. The downloader compares both the advertised `Content-Length` and the final on-disk size to this value."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Expected SHA-256 digest of the entire file as 64 lower-case hex characters. Mismatch triggers a quarantine + `ChecksumMismatch` error."
+        }
+      }
+    }
+  }
+}

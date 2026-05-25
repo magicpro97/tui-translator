@@ -1398,6 +1398,9 @@ fn validate_local_stt_bundle_manifest(
 
 fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
     let manifest = read_model_bundle_manifest(&args.manifest)?;
+    let consent_manifest = manifest
+        .consent_manifest()
+        .context("local MT bundle manifest is missing consent metadata")?;
     let model_dir = match &args.model_dir {
         Some(path) => path.clone(),
         None => providers::local::model_cache_dir()
@@ -1408,8 +1411,38 @@ fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
 
     let mut stdout = io::stdout();
     writeln!(stdout, "{}", manifest.preview_text()).context("failed to write model preview")?;
+    writeln!(stdout, "License text:\n{}\n", consent_manifest.license_text)
+        .context("failed to write model license text")?;
     writeln!(stdout, "Destination: {}", model_dir.display())
         .context("failed to write model destination")?;
+
+    let prior_consent = providers::local::model_consent_status(&consent_manifest)
+        .context("failed to read existing local MT consent status")?;
+    match &prior_consent {
+        providers::local::ConsentStatus::Fresh => {
+            writeln!(
+                stdout,
+                "Existing consent record found for {} {} — re-using.",
+                consent_manifest.name, consent_manifest.version,
+            )
+            .context("failed to write consent reuse note")?;
+        }
+        providers::local::ConsentStatus::Missing => {
+            writeln!(
+                stdout,
+                "No prior consent record for {} {} — a new record will be written on --yes.",
+                consent_manifest.name, consent_manifest.version,
+            )
+            .context("failed to write consent missing note")?;
+        }
+        providers::local::ConsentStatus::Stale { reason } => {
+            writeln!(
+                stdout,
+                "Existing consent record is stale and must be reconfirmed ({reason}).",
+            )
+            .context("failed to write consent stale note")?;
+        }
+    }
 
     if !args.yes {
         writeln!(
@@ -1419,6 +1452,19 @@ fn run_local_mt_model_install(args: &LocalMtModelInstallArgs) -> Result<()> {
         .context("failed to write model confirmation hint")?;
         return Ok(());
     }
+
+    providers::local::write_model_consent_record(&consent_manifest).with_context(|| {
+        format!(
+            "failed to persist consent record for local MT model {} {}",
+            consent_manifest.name, consent_manifest.version,
+        )
+    })?;
+    writeln!(
+        stdout,
+        "Consent recorded for {} {} (license: {}).",
+        consent_manifest.name, consent_manifest.version, consent_manifest.license_url,
+    )
+    .context("failed to write consent persistence summary")?;
 
     let client = model_download_client()?;
     let rt = tokio::runtime::Builder::new_current_thread()
