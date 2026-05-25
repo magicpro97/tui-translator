@@ -1,0 +1,215 @@
+{
+  "schema_version": "2",
+  "run_id": "qa8-03-golden-90s",
+  "dry_run": true,
+  "started_at_utc": "2026-05-13T01:02:16Z",
+  "finished_at_utc": "2026-05-13T01:03:46Z",
+  "duration_secs": 90,
+  "audio_fixture": "tests/soak/soak_audio.wav",
+  "app_binary": null,
+  "soak_config_path": null,
+
+  "run_metadata": {
+    "profile": "smoke-90s",
+    "owners": ["magicpro97"],
+    "issue_refs": ["#501", "#498"],
+    "notes": "Golden v2 sample: ≥3 timestamped samples, deterministic config hash, additive over v1."
+  },
+
+  "host": {
+    "os": "windows",
+    "arch": "x86_64",
+    "os_version": "10.0.19045",
+    "hostname_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "logical_cpus": 8,
+    "total_memory_mb": 16384.0
+  },
+
+  "build": {
+    "version": "0.1.4",
+    "git_sha": "a94a002",
+    "target_triple": "x86_64-pc-windows-msvc",
+    "profile": "release",
+    "features": []
+  },
+
+  "config": {
+    "hash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "hash_algorithm": "sha256",
+    "stripped_keys": [
+      "google_api_key",
+      "providers.google.api_key",
+      "tts.azure.api_key"
+    ],
+    "source_path": "config.example.json"
+  },
+
+  "samples": [
+    {
+      "elapsed_secs": 0,
+      "timestamp_utc": "2026-05-13T01:02:16Z",
+      "memory_mb": 10.0,
+      "cpu_pct": 0.0,
+      "total_chunks_sent": 0,
+      "total_chunks_dropped": 0,
+      "api_failures": 0,
+      "latest_subtitle_latency_ms": null,
+      "estimated_cost_usd": 0.0,
+      "frame_pacing": { "target_fps": 60.0, "observed_fps": 60.0, "p99_frame_ms": 4.0, "dropped_frames": 0 },
+      "audio": { "chunks_sent": 0, "chunks_dropped": 0, "capture_underruns": 0 },
+      "provider": { "stt_calls": 0, "stt_failures": 0, "translate_calls": 0, "translate_failures": 0 },
+      "virtual_mic": { "enabled": false, "active": false, "drop_count": 0 },
+      "tokio": { "workers": 8, "blocking_threads": 512, "global_queue_depth": 0, "busy_pct": 0.0 },
+      "handles": { "windows_handles": 120, "file_descriptors": null }
+    },
+    {
+      "elapsed_secs": 30,
+      "timestamp_utc": "2026-05-13T01:02:46Z",
+      "memory_mb": 10.5,
+      "cpu_pct": 4.2,
+      "total_chunks_sent": 90,
+      "total_chunks_dropped": 0,
+      "api_failures": 0,
+      "latest_subtitle_latency_ms": 1800.0,
+      "estimated_cost_usd": 0.0012,
+      "frame_pacing": { "target_fps": 60.0, "observed_fps": 59.8, "p99_frame_ms": 6.5, "dropped_frames": 1 },
+      "audio": { "chunks_sent": 90, "chunks_dropped": 0, "capture_underruns": 0 },
+      "provider": { "stt_calls": 3, "stt_failures": 0, "translate_calls": 3, "translate_failures": 0 },
+      "virtual_mic": { "enabled": false, "active": false, "drop_count": 0 },
+      "tokio": { "workers": 8, "blocking_threads": 512, "global_queue_depth": 1, "busy_pct": 8.1 },
+      "handles": { "windows_handles": 124, "file_descriptors": null }
+    },
+    {
+      "elapsed_secs": 60,
+      "timestamp_utc": "2026-05-13T01:03:16Z",
+      "memory_mb": 10.7,
+      "cpu_pct": 5.1,
+      "total_chunks_sent": 180,
+      "total_chunks_dropped": 0,
+      "api_failures": 0,
+      "latest_subtitle_latency_ms": 1900.0,
+      "estimated_cost_usd": 0.0024,
+      "frame_pacing": { "target_fps": 60.0, "observed_fps": 59.7, "p99_frame_ms": 6.9, "dropped_frames": 2 },
+      "audio": { "chunks_sent": 180, "chunks_dropped": 0, "capture_underruns": 0 },
+      "provider": { "stt_calls": 6, "stt_failures": 0, "translate_calls": 6, "translate_failures": 0 },
+      "virtual_mic": { "enabled": false, "active": false, "drop_count": 0 },
+      "tokio": { "workers": 8, "blocking_threads": 512, "global_queue_depth": 0, "busy_pct": 9.4 },
+      "handles": { "windows_handles": 124, "file_descriptors": null }
+    },
+    {
+      "elapsed_secs": 90,
+      "timestamp_utc": "2026-05-13T01:03:46Z",
+      "memory_mb": 10.7,
+      "cpu_pct": 4.8,
+      "total_chunks_sent": 270,
+      "total_chunks_dropped": 0,
+      "api_failures": 0,
+      "latest_subtitle_latency_ms": 1850.0,
+      "estimated_cost_usd": 0.0036,
+      "frame_pacing": { "target_fps": 60.0, "observed_fps": 59.8, "p99_frame_ms": 6.7, "dropped_frames": 2 },
+      "audio": { "chunks_sent": 270, "chunks_dropped": 0, "capture_underruns": 0 },
+      "provider": { "stt_calls": 9, "stt_failures": 0, "translate_calls": 9, "translate_failures": 0 },
+      "virtual_mic": { "enabled": false, "active": false, "drop_count": 0 },
+      "tokio": { "workers": 8, "blocking_threads": 512, "global_queue_depth": 0, "busy_pct": 9.0 },
+      "handles": { "windows_handles": 124, "file_descriptors": null }
+    }
+  ],
+
+  "frame_pacing": {
+    "target_fps": 60.0,
+    "observed_fps_median": 59.8,
+    "observed_fps_p01": 59.7,
+    "p99_frame_ms": 6.9,
+    "total_dropped_frames": 5,
+    "unsupported": false
+  },
+  "audio_capture": {
+    "total_chunks_sent": 270,
+    "dropped_chunks": 0,
+    "dropped_chunks_ratio": 0.0,
+    "capture_underruns": 0
+  },
+  "provider": {
+    "stt_calls": 9,
+    "stt_failures": 0,
+    "stt_failure_ratio": 0.0,
+    "translate_calls": 9,
+    "translate_failures": 0,
+    "translate_failure_ratio": 0.0
+  },
+  "virtual_mic": {
+    "enabled": false,
+    "active_secs": 0,
+    "drop_count": 0
+  },
+  "tokio": {
+    "workers": 8,
+    "blocking_threads": 512,
+    "max_global_queue_depth": 1,
+    "busy_pct_p99": 9.4,
+    "unsupported": false
+  },
+  "crash": {
+    "panic_count": 0,
+    "oom_count": 0,
+    "last_event": null
+  },
+  "fault_injection": {
+    "enabled": false,
+    "events": []
+  },
+  "rss": {
+    "slope_mb_per_hour": 28.0,
+    "samples_used": 4,
+    "r_squared": 0.92,
+    "first_sample_mb": 10.0,
+    "last_sample_mb": 10.7
+  },
+  "handles": {
+    "max_windows_handles": 124,
+    "max_file_descriptors": null,
+    "slope_per_hour": 160.0,
+    "unsupported": false
+  },
+
+  "attachments": [
+    {
+      "id": "config-canonical",
+      "path": "verification-evidence/qa8/QA8-03-golden-90s/config.canonical.json",
+      "kind": "config_canonical",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "bytes": 1024,
+      "description": "Secret-stripped canonical config used to compute `config.hash`."
+    }
+  ],
+
+  "network_disconnect_test": null,
+  "billing_actual_usd": null,
+  "gaps": [
+    "metrics_ipc: real chunk counts and subtitle latency require the metrics-IPC bridge tracked by Gap 1 in v1 sample."
+  ],
+  "threshold_evaluation": {
+    "all_evaluated_pass": true,
+    "any_blocker_triggered": false
+  },
+
+  "telemetry_export": {
+    "contract_version": "1.0.0",
+    "metrics": [
+      { "path": "crash.panic_count", "category": "crash", "unit": "count" },
+      { "path": "crash.oom_count", "category": "crash", "unit": "count" },
+      { "path": "frame_pacing.observed_fps_p01", "category": "frame", "unit": "fps", "nullable": true },
+      { "path": "frame_pacing.p99_frame_ms", "category": "frame", "unit": "ms", "nullable": true },
+      { "path": "frame_pacing.total_dropped_frames", "category": "frame", "unit": "count" },
+      { "path": "rss.slope_mb_per_hour", "category": "rss_slope", "unit": "MB/hour" },
+      { "path": "tokio.busy_pct_p99", "category": "cpu", "unit": "percent", "nullable": true },
+      { "path": "tokio.max_global_queue_depth", "category": "queue", "unit": "count" },
+      { "path": "audio_capture.dropped_chunks", "category": "audio", "unit": "count" },
+      { "path": "audio_capture.dropped_chunks_ratio", "category": "audio", "unit": "ratio" },
+      { "path": "provider.stt_failure_ratio", "category": "provider", "unit": "ratio" },
+      { "path": "provider.translate_failure_ratio", "category": "provider", "unit": "ratio" },
+      { "path": "virtual_mic.drop_count", "category": "virtual_mic", "unit": "count" },
+      { "path": "virtual_mic.enabled", "category": "virtual_mic", "unit": "bool" }
+    ]
+  }
+}

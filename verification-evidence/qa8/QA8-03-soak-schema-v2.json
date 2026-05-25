@@ -1,0 +1,497 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/magicpro97/tui-translator/blob/main/verification-evidence/qa8/QA8-03-soak-schema-v2.json",
+  "title": "tui-translator Soak Evidence Schema v2 (QA8-03)",
+  "description": "Machine-readable contract for the soak / 8-hour-stability evidence report produced by `tests/soak/run_soak.rs` and consumed by the QA8-02 SLO gate checker. Schema v2 is strictly additive over v1: every field present in `verification-evidence/sample/soak-report-sample.json` (schema_version='1') is still readable, but v2 adds run metadata, host/build/config provenance, per-sample frame-pacing / audio / provider / virtual-mic / Tokio probes, crash, fault-injection, RSS-slope, handle counts, attachments, and an explicit telemetry export contract. The telemetry export contract (`telemetry_export.metrics[].path`) lists the dotted metric paths that this evidence file guarantees to populate; QA8-02 SLO gates MUST reference only paths declared here.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "started_at_utc",
+    "duration_secs",
+    "run_metadata",
+    "host",
+    "build",
+    "config",
+    "samples",
+    "telemetry_export"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Soak-evidence schema version. v2 is additive over v1; readers MUST accept '1' and 2.",
+      "oneOf": [
+        { "type": "string", "enum": ["1", "2"] },
+        { "type": "integer", "enum": [1, 2] }
+      ]
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Stable identifier for this soak run (typically a unix timestamp or UUID).",
+      "minLength": 1
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "True when the run did not exercise live providers / WASAPI capture."
+    },
+    "started_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 UTC timestamp marking the start of the soak run."
+    },
+    "finished_at_utc": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "RFC3339 UTC timestamp marking the end of the soak run; null if the run was interrupted."
+    },
+    "duration_secs": {
+      "type": "integer",
+      "description": "Wall-clock duration of the soak run in seconds.",
+      "minimum": 0
+    },
+    "audio_fixture": { "type": ["string", "null"] },
+    "app_binary": { "type": ["string", "null"] },
+    "soak_config_path": { "type": ["string", "null"] },
+
+    "run_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["profile", "owners"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "description": "Profile name, e.g. 'smoke-10m', 'soak-1h', 'soak-8h', 'release'.",
+          "minLength": 1
+        },
+        "owners": {
+          "type": "array",
+          "description": "GitHub handles responsible for this run.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "issue_refs": {
+          "type": "array",
+          "description": "GitHub issue references this run is evidence for.",
+          "items": { "type": "string", "pattern": "^#[0-9]+$" },
+          "uniqueItems": true
+        },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "host": {
+      "type": "object",
+      "description": "Host characteristics captured at run start.",
+      "additionalProperties": true,
+      "required": ["os", "arch"],
+      "properties": {
+        "os": {
+          "type": "string",
+          "description": "Operating-system family: 'windows', 'linux', 'macos'.",
+          "enum": ["windows", "linux", "macos"]
+        },
+        "arch": {
+          "type": "string",
+          "description": "CPU architecture, e.g. 'x86_64', 'aarch64'.",
+          "minLength": 1
+        },
+        "os_version": { "type": "string" },
+        "hostname_hash": {
+          "type": "string",
+          "description": "SHA-256 hex digest of the hostname; the raw hostname MUST NOT be recorded (PII).",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "logical_cpus": { "type": "integer", "minimum": 1 },
+        "total_memory_mb": { "type": "number", "minimum": 0 }
+      }
+    },
+
+    "build": {
+      "type": "object",
+      "description": "Build provenance of the binary under test.",
+      "additionalProperties": true,
+      "required": ["version", "target_triple"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Crate version (Cargo.toml).",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "git_sha": {
+          "type": ["string", "null"],
+          "description": "Full or short git SHA of the source tree; null when unavailable.",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "target_triple": {
+          "type": "string",
+          "description": "Rustc target triple, e.g. 'x86_64-pc-windows-msvc'.",
+          "minLength": 1
+        },
+        "profile": {
+          "type": "string",
+          "description": "Cargo build profile, e.g. 'release', 'debug'.",
+          "enum": ["debug", "release"]
+        },
+        "features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "config": {
+      "type": "object",
+      "description": "Configuration provenance. The `hash` MUST be computed over a secret-stripped, key-sorted, canonical-JSON serialisation of the effective config so that two runs with identical non-secret config produce identical hashes (deterministic). The raw config MUST NOT be embedded here.",
+      "additionalProperties": false,
+      "required": ["hash", "hash_algorithm", "stripped_keys"],
+      "properties": {
+        "hash": {
+          "type": "string",
+          "description": "Hex-encoded digest of the secret-stripped, canonicalised config.",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "hash_algorithm": {
+          "type": "string",
+          "enum": ["sha256"]
+        },
+        "stripped_keys": {
+          "type": "array",
+          "description": "Sorted list of config keys removed before hashing (secrets / API keys / per-host paths).",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "source_path": {
+          "type": ["string", "null"],
+          "description": "Path of the source config.json (informational; not used in hashing)."
+        }
+      }
+    },
+
+    "samples": {
+      "type": "array",
+      "description": "Ordered, timestamped samples. The runner MUST emit at least one sample per `sample_secs` cadence; soak runs of >=90s MUST produce >=3 samples.",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/sample" }
+    },
+
+    "frame_pacing": { "$ref": "#/definitions/frame_pacing_summary" },
+    "audio_capture": { "$ref": "#/definitions/audio_summary" },
+    "provider": { "$ref": "#/definitions/provider_summary" },
+    "virtual_mic": { "$ref": "#/definitions/virtual_mic_summary" },
+    "tokio": { "$ref": "#/definitions/tokio_summary" },
+    "crash": { "$ref": "#/definitions/crash_summary" },
+    "fault_injection": { "$ref": "#/definitions/fault_injection_summary" },
+    "rss": { "$ref": "#/definitions/rss_summary" },
+    "handles": { "$ref": "#/definitions/handles_summary" },
+
+    "attachments": {
+      "type": "array",
+      "description": "Sidecar files referenced by this report (logs, crash dumps, flamegraphs).",
+      "items": { "$ref": "#/definitions/attachment" },
+      "uniqueItems": true
+    },
+
+    "network_disconnect_test": {},
+    "billing_actual_usd": { "type": ["number", "null"] },
+    "gaps": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "threshold_evaluation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "v1 threshold-evaluation block; preserved for backward compatibility."
+    },
+
+    "telemetry_export": {
+      "type": "object",
+      "description": "Explicit contract enumerating which dotted metric paths this evidence guarantees to populate, and which SLO gate categories (see QA8-02-slo-schema.json `category` enum) they are exported for. QA8-02 SLO gates MUST reference only paths declared here.",
+      "additionalProperties": false,
+      "required": ["contract_version", "metrics"],
+      "properties": {
+        "contract_version": {
+          "type": "string",
+          "description": "Semantic version of the telemetry export contract.",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "metrics": {
+          "type": "array",
+          "description": "Dotted metric paths exported by this report.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/exported_metric" }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "sample": {
+      "type": "object",
+      "description": "One timestamped probe taken during the soak run. v1 numeric fields (memory_mb, cpu_pct, *_chunks_*, latency_ms, cost_usd) remain readable; v2 adds nested probe groups.",
+      "additionalProperties": true,
+      "required": ["elapsed_secs", "timestamp_utc"],
+      "properties": {
+        "elapsed_secs": { "type": "integer", "minimum": 0 },
+        "timestamp_utc": { "type": "string", "format": "date-time" },
+        "memory_mb": { "type": ["number", "null"], "minimum": 0 },
+        "cpu_pct": { "type": ["number", "null"], "minimum": 0 },
+        "total_chunks_sent": { "type": ["integer", "null"], "minimum": 0 },
+        "total_chunks_dropped": { "type": ["integer", "null"], "minimum": 0 },
+        "api_failures": { "type": ["integer", "null"], "minimum": 0 },
+        "latest_subtitle_latency_ms": { "type": ["number", "null"], "minimum": 0 },
+        "estimated_cost_usd": { "type": ["number", "null"], "minimum": 0 },
+        "frame_pacing": { "$ref": "#/definitions/frame_pacing_sample" },
+        "audio": { "$ref": "#/definitions/audio_sample" },
+        "provider": { "$ref": "#/definitions/provider_sample" },
+        "virtual_mic": { "$ref": "#/definitions/virtual_mic_sample" },
+        "tokio": { "$ref": "#/definitions/tokio_sample" },
+        "handles": { "$ref": "#/definitions/handles_sample" }
+      }
+    },
+
+    "frame_pacing_sample": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "target_fps": { "type": "number", "minimum": 0 },
+        "observed_fps": { "type": "number", "minimum": 0 },
+        "p99_frame_ms": { "type": "number", "minimum": 0 },
+        "dropped_frames": { "type": "integer", "minimum": 0 },
+        "unsupported": { "type": "boolean" }
+      }
+    },
+    "frame_pacing_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "target_fps": { "type": "number" },
+        "observed_fps_median": { "type": ["number", "null"] },
+        "observed_fps_p01": { "type": ["number", "null"] },
+        "p99_frame_ms": { "type": ["number", "null"] },
+        "total_dropped_frames": { "type": "integer", "minimum": 0 },
+        "unsupported": { "type": "boolean" }
+      }
+    },
+
+    "audio_sample": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "chunks_sent": { "type": "integer", "minimum": 0 },
+        "chunks_dropped": { "type": "integer", "minimum": 0 },
+        "capture_underruns": { "type": "integer", "minimum": 0 },
+        "device_id_hash": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "audio_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "total_chunks_sent": { "type": "integer", "minimum": 0 },
+        "dropped_chunks": { "type": "integer", "minimum": 0 },
+        "dropped_chunks_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "capture_underruns": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "provider_sample": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "stt_calls": { "type": "integer", "minimum": 0 },
+        "stt_failures": { "type": "integer", "minimum": 0 },
+        "translate_calls": { "type": "integer", "minimum": 0 },
+        "translate_failures": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "provider_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "stt_calls": { "type": "integer", "minimum": 0 },
+        "stt_failures": { "type": "integer", "minimum": 0 },
+        "stt_failure_ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "translate_calls": { "type": "integer", "minimum": 0 },
+        "translate_failures": { "type": "integer", "minimum": 0 },
+        "translate_failure_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+
+    "virtual_mic_sample": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "drop_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "virtual_mic_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "active_secs": { "type": "integer", "minimum": 0 },
+        "drop_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "tokio_sample": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "workers": { "type": "integer", "minimum": 0 },
+        "blocking_threads": { "type": "integer", "minimum": 0 },
+        "global_queue_depth": { "type": "integer", "minimum": 0 },
+        "busy_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "unsupported": { "type": "boolean" }
+      }
+    },
+    "tokio_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "workers": { "type": "integer", "minimum": 0 },
+        "blocking_threads": { "type": "integer", "minimum": 0 },
+        "max_global_queue_depth": { "type": "integer", "minimum": 0 },
+        "busy_pct_p99": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "unsupported": { "type": "boolean" }
+      }
+    },
+
+    "crash_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["panic_count", "oom_count"],
+      "properties": {
+        "panic_count": { "type": "integer", "minimum": 0 },
+        "oom_count": { "type": "integer", "minimum": 0 },
+        "last_event": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "kind": { "type": "string", "enum": ["panic", "oom", "abort", "signal"] },
+            "elapsed_secs": { "type": "integer", "minimum": 0 },
+            "message": { "type": "string" },
+            "dump_attachment_id": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+
+    "fault_injection_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "events"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["name", "t_start_secs"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "t_start_secs": { "type": "integer", "minimum": 0 },
+              "t_end_secs": { "type": ["integer", "null"], "minimum": 0 },
+              "expected_recovery_ms": { "type": ["integer", "null"], "minimum": 0 },
+              "observed_recovery_ms": { "type": ["integer", "null"], "minimum": 0 },
+              "recovered_within_budget": { "type": ["boolean", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "rss_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["slope_mb_per_hour", "samples_used"],
+      "description": "Linear-regression summary of RSS over the run; QA8-02 reads `rss.slope_mb_per_hour`.",
+      "properties": {
+        "slope_mb_per_hour": { "type": "number" },
+        "samples_used": { "type": "integer", "minimum": 2 },
+        "r_squared": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "first_sample_mb": { "type": "number", "minimum": 0 },
+        "last_sample_mb": { "type": "number", "minimum": 0 }
+      }
+    },
+
+    "handles_sample": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "windows_handles": { "type": ["integer", "null"], "minimum": 0 },
+        "file_descriptors": { "type": ["integer", "null"], "minimum": 0 },
+        "unsupported": { "type": "boolean" }
+      }
+    },
+    "handles_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "max_windows_handles": { "type": ["integer", "null"], "minimum": 0 },
+        "max_file_descriptors": { "type": ["integer", "null"], "minimum": 0 },
+        "slope_per_hour": { "type": ["number", "null"] },
+        "unsupported": { "type": "boolean" }
+      }
+    },
+
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "kind", "sha256", "bytes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["log", "crash_dump", "flamegraph", "fault_script", "config_canonical", "other"]
+        },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "description": { "type": "string" }
+      }
+    },
+
+    "exported_metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "category", "unit"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Dotted metric path readable from this report (e.g. 'audio.dropped_chunks', 'rss.slope_mb_per_hour').",
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$"
+        },
+        "category": {
+          "type": "string",
+          "description": "Matches one of the QA8-02 SLO categories.",
+          "enum": [
+            "crash",
+            "frame",
+            "rss_slope",
+            "cpu",
+            "queue",
+            "audio",
+            "provider",
+            "virtual_mic"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nullable": {
+          "type": "boolean",
+          "description": "True when the field MAY be null/absent (e.g. on a platform that does not support the probe).",
+          "default": false
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}
