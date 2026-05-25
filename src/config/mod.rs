@@ -665,6 +665,43 @@ pub struct AppConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mt_cloud_fallback: Option<String>,
 
+    /// Text-to-speech provider backend (SUPERTONIC-06, issue #491).
+    ///
+    /// Extends the unified backend-selection schema (issue #457) to TTS.
+    /// Accepted values:
+    /// - `"google"` *(default)* — Google Cloud Text-to-Speech via the
+    ///   existing REST adapter.
+    ///
+    /// Additional values (e.g. `"supertonic"`) are reserved for upcoming
+    /// local-TTS work and will be enabled when the corresponding provider
+    /// lands; until then, [`AppConfig::validate`] rejects them with a
+    /// visible error so misconfigurations cannot silently produce no audio.
+    ///
+    /// Changing this value requires restarting the application.
+    #[serde(default = "default_tts_provider")]
+    pub tts_provider: String,
+
+    /// Cloud provider to use when the configured local TTS backend cannot
+    /// satisfy a synthesis request (SUPERTONIC-06, issue #491).
+    ///
+    /// Absent by default (`None`).  Set to `"google"` to allow the pipeline
+    /// to fall back to Google Text-to-Speech when the local TTS provider
+    /// reports `ModelNotFound`, `ChecksumMismatch`, or `Unimplemented`.
+    ///
+    /// **Key presence alone is not consent to send data to the network.**
+    /// This field must be explicitly configured; without it, an unavailable
+    /// local TTS surfaces a visible error rather than silently producing
+    /// cloud-routed audio.  When set to `"google"`, a successful fallback
+    /// MUST emit a visible log/metric so the user can see that the privacy
+    /// boundary was crossed.
+    ///
+    /// Accepted values when present: `"google"`.  Any other value is
+    /// rejected by [`AppConfig::validate`].
+    ///
+    /// Changing this value requires restarting the application.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_cloud_fallback: Option<String>,
+
     /// Fallback policy when the primary STT provider encounters a permanent
     /// error.  Accepted values:
     /// - `"google-when-keyed"` *(default, issue #371)* — when `stt_provider`
@@ -838,6 +875,8 @@ impl Default for AppConfig {
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
             mt_cloud_fallback: None,
+            tts_provider: default_tts_provider(),
+            tts_cloud_fallback: None,
             stt_fallback_policy: default_stt_fallback_policy(),
             audio_source: default_audio_source(),
             audio_file_path: None,
@@ -872,6 +911,8 @@ impl std::fmt::Debug for AppConfig {
             .field("stt_provider", &self.stt_provider)
             .field("mt_provider", &self.mt_provider)
             .field("mt_cloud_fallback", &self.mt_cloud_fallback)
+            .field("tts_provider", &self.tts_provider)
+            .field("tts_cloud_fallback", &self.tts_cloud_fallback)
             .field("stt_fallback_policy", &self.stt_fallback_policy)
             .field("audio_source", &self.audio_source)
             .field("audio_file_path", &self.audio_file_path)
@@ -917,6 +958,11 @@ fn default_mt_provider() -> String {
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_stt_fallback_policy() -> String {
     "google-when-keyed".to_string()
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute (SUPERTONIC-06, issue #491)
+fn default_tts_provider() -> String {
+    "google".to_string()
 }
 
 // VAD default helpers — referenced via #[serde(default = "...")] attributes on VadConfigJson.
@@ -1094,6 +1140,51 @@ impl AppConfig {
                 }
             }
         }
+        // ── tts_provider validation (SUPERTONIC-06, issue #491) ───────────
+        // Extends the issue #457 backend-selection contract to TTS. Only
+        // "google" is accepted today; additional values (e.g. "supertonic")
+        // will be enabled when those providers land. Unknown values are
+        // rejected visibly so a typo cannot silently disable spoken output.
+        match self.tts_provider.as_str() {
+            "google" => {}
+            other => {
+                bail!(
+                    "`tts_provider` must be \"google\" (got {other:?}); \
+                     additional providers will be enabled when their adapters ship"
+                );
+            }
+        }
+        // ── tts_cloud_fallback validation (SUPERTONIC-06, issue #491) ─────
+        // Mirrors `mt_cloud_fallback` semantics: absent by default, and key
+        // presence alone is not consent. When present, the only accepted
+        // value is "google" and a usable `google_api_key` is required.
+        // Cloud fallback is forbidden when the primary `tts_provider` is
+        // already cloud-based, because the pipeline would then have no
+        // local provider that could fail over.
+        if let Some(fallback) = &self.tts_cloud_fallback {
+            match fallback.as_str() {
+                "google" => {
+                    if self.google_api_key.is_none() {
+                        bail!(
+                            "`tts_cloud_fallback = \"google\"` requires `google_api_key`; \
+                             key presence alone is not consent, but explicit fallback also needs a usable key"
+                        );
+                    }
+                    if self.tts_provider == "google" {
+                        bail!(
+                            "`tts_cloud_fallback = \"google\"` is only meaningful when \
+                             `tts_provider` is a local backend; remove the field or switch \
+                             `tts_provider` to a local provider"
+                        );
+                    }
+                }
+                other => {
+                    bail!(
+                        "`tts_cloud_fallback` accepts only \"google\" when present, got {other:?}"
+                    );
+                }
+            }
+        }
         if self.cpu_budget_pct < 0.0 {
             bail!(
                 "`cpu_budget_pct` must be >= 0.0 (0.0 disables throttling), got {}",
@@ -1230,6 +1321,8 @@ impl AppConfig {
     /// | `stt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_provider` | **restart** | Provider trait object must be reconstructed. |
     /// | `mt_cloud_fallback` | **restart** | Cloud-fallback consent changes route resolution and provider construction. |
+    /// | `tts_provider` | **restart** | Provider trait object must be reconstructed (SUPERTONIC-06, issue #491). |
+    /// | `tts_cloud_fallback` | **restart** | Cloud-fallback consent for TTS changes route resolution and provider construction (SUPERTONIC-06, issue #491). |
     /// | `stt_fallback_policy` | **restart** | Fallback chain is wired at pipeline initialisation. |
     /// | `cpu_budget_pct` | **hot** | Budget atomic is updated via `CpuGate::update_budget_pct` on each metrics tick; no pipeline rebuild required. |
     /// | `vad` | **restart** | VAD filter is wired at pipeline construction. |
@@ -1265,6 +1358,8 @@ impl AppConfig {
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
             || self.mt_cloud_fallback != next.mt_cloud_fallback
+            || self.tts_provider != next.tts_provider
+            || self.tts_cloud_fallback != next.tts_cloud_fallback
             || self.stt_fallback_policy != next.stt_fallback_policy
             || self.vad != next.vad
             || self.stt_phrase_hints != next.stt_phrase_hints
@@ -2419,6 +2514,175 @@ mod tests {
             err.to_string().contains("stt_provider = \"local\""),
             "error should explain google-when-keyed only applies to local STT; got: {err}"
         );
+    }
+
+    // ── TTS backend contract (SUPERTONIC-06, issue #491) ─────────────────────
+
+    /// Default `tts_provider` is `"google"` and a default config validates.
+    #[test]
+    fn tts_provider_default_is_google() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.tts_provider, "google");
+        assert!(cfg.tts_cloud_fallback.is_none());
+        cfg.validate().expect("default config must validate");
+    }
+
+    /// Unknown `tts_provider` values are rejected with a visible error;
+    /// the Supertonic provider is not yet shipped (#493) so it must not be
+    /// accepted as a silent no-op.
+    #[test]
+    fn tts_provider_unknown_value_is_rejected() {
+        let cfg = AppConfig {
+            tts_provider: "supertonic".to_string(),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("tts_provider"),
+            "error should mention tts_provider; got: {err}"
+        );
+    }
+
+    /// `tts_cloud_fallback = "google"` requires a usable `google_api_key`
+    /// (key presence alone is not consent — but explicit consent still
+    /// needs a credential).
+    #[test]
+    fn tts_cloud_fallback_google_requires_api_key() {
+        let cfg = AppConfig {
+            tts_provider: "google".to_string(),
+            tts_cloud_fallback: Some("google".to_string()),
+            google_api_key: None,
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("tts_cloud_fallback"),
+            "error should mention tts_cloud_fallback; got: {err}"
+        );
+    }
+
+    /// Any value other than `"google"` for `tts_cloud_fallback` is rejected.
+    #[test]
+    fn tts_cloud_fallback_rejects_unknown_value() {
+        let cfg = AppConfig {
+            tts_cloud_fallback: Some("azure".to_string()),
+            google_api_key: Some("demo-key".to_string()),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("tts_cloud_fallback"),
+            "error should mention tts_cloud_fallback; got: {err}"
+        );
+    }
+
+    /// Setting `tts_cloud_fallback = "google"` when the primary
+    /// `tts_provider` is already `"google"` is meaningless — there is no
+    /// local backend that could fail over.  Reject visibly so a copy/paste
+    /// config error does not hide intent.
+    #[test]
+    fn tts_cloud_fallback_rejected_when_primary_is_google() {
+        let cfg = AppConfig {
+            tts_provider: "google".to_string(),
+            tts_cloud_fallback: Some("google".to_string()),
+            google_api_key: Some("demo-key".to_string()),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("tts_cloud_fallback")
+                && (msg.contains("local backend") || msg.contains("tts_provider")),
+            "error should explain fallback only applies to a local primary; got: {msg}"
+        );
+    }
+
+    /// Absent `tts_cloud_fallback` means "no silent cloud call" — even when
+    /// `google_api_key` is present.  The validator must accept this case so
+    /// existing configs (without the new field) continue to load.
+    #[test]
+    fn tts_cloud_fallback_absent_loads_with_api_key_present() {
+        let cfg = AppConfig {
+            google_api_key: Some("demo-key".to_string()),
+            tts_cloud_fallback: None,
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("absent tts_cloud_fallback must load even when key is present");
+    }
+
+    /// Changing `tts_provider` requires a restart (provider trait object
+    /// must be reconstructed).
+    #[test]
+    fn tts_provider_change_requires_restart() {
+        let current = AppConfig::default();
+        // Only "google" is accepted by `validate()` today; this test
+        // exercises the restart-classification surface against a
+        // hand-built `AppConfig` (which bypasses validation) using a
+        // hypothetical future value so the assertion stays meaningful
+        // once additional providers ship.
+        let next = AppConfig {
+            tts_provider: "supertonic".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing tts_provider must require a restart"
+        );
+    }
+
+    /// Changing `tts_cloud_fallback` requires a restart (fallback chain
+    /// wired at init, consent semantics may differ).
+    #[test]
+    fn tts_cloud_fallback_change_requires_restart() {
+        let current = AppConfig::default();
+        let next = AppConfig {
+            tts_cloud_fallback: Some("google".to_string()),
+            ..AppConfig::default()
+        };
+        assert!(
+            current.requires_restart(&next),
+            "changing tts_cloud_fallback must require a restart"
+        );
+    }
+
+    /// All supported `tts_provider` / `tts_cloud_fallback` combinations
+    /// parse cleanly from JSON (forward-compat contract test).
+    #[test]
+    fn tts_backend_combinations_parse() {
+        // (json fragment, expected_validate_ok)
+        let cases: &[(&str, bool)] = &[
+            // Default-shape config (no fields set).
+            (
+                r#"{"source_language":"ja-JP","target_language":"vi"}"#,
+                true,
+            ),
+            // Explicit google provider, no fallback.
+            (
+                r#"{"source_language":"ja-JP","target_language":"vi","tts_provider":"google"}"#,
+                true,
+            ),
+            // google + key + fallback to google -> rejected (primary already cloud).
+            (
+                r#"{"source_language":"ja-JP","target_language":"vi","tts_provider":"google","tts_cloud_fallback":"google","google_api_key":"demo-key"}"#,
+                false,
+            ),
+            // Unknown provider -> rejected.
+            (
+                r#"{"source_language":"ja-JP","target_language":"vi","tts_provider":"bogus"}"#,
+                false,
+            ),
+        ];
+        for (json, expect_ok) in cases {
+            let cfg: AppConfig = serde_json::from_str(json)
+                .unwrap_or_else(|e| panic!("must parse: {json}\nerr: {e}"));
+            let result = cfg.validate();
+            assert_eq!(
+                result.is_ok(),
+                *expect_ok,
+                "validation outcome mismatch for {json}: result={result:?}"
+            );
+        }
     }
 
     #[test]

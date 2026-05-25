@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::providers::{CostReporter, ProviderError, TtsProvider, TtsResult};
+use crate::providers::{CostReporter, ProviderError, TtsProvider, TtsResult, TtsStreamProvider};
 
 use super::sanitize_google_error_body;
 
@@ -236,6 +236,13 @@ impl TtsProvider for GoogleTtsProvider {
         })
     }
 }
+
+// Google TTS opts into the streaming/non-blocking contract using the default
+// [`TtsStreamProvider`] implementation: a single final chunk per utterance.
+// The REST API does not return audio progressively, so streaming is a no-op
+// shape today; the trait wiring lets the pipeline use the streaming code
+// path uniformly across providers (issue #490).
+impl TtsStreamProvider for GoogleTtsProvider {}
 
 #[cfg(test)]
 mod tests {
