@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "doc": "docs/parity-matrix.md",
+  "issue": "https://github.com/magicpro97/tui-translator/issues/467",
+  "generated_at": "2026-05-25",
+  "platforms": [
+    "win",
+    "mac-arm64",
+    "mac-x64",
+    "linux-pw",
+    "linux-pulse",
+    "linux-alsa"
+  ],
+  "status_legend": {
+    "shipping": "Mandatory and shipping with evidence",
+    "best-effort": "Allowed to fail; does not block GA",
+    "not-supported": "Explicit not-supported with ADR",
+    "blocking": "Owed for GA; blocks release"
+  },
+  "release_policy": {
+    "blocks_release_if_any_cell_is": ["blocking"],
+    "requires_evidence_for": ["shipping", "best-effort", "not-supported"]
+  },
+  "features": [
+    {
+      "id": "audio-capture",
+      "title": "Audio capture (loopback or equivalent)",
+      "owner_issue": 466,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "src/audio/wasapi_capture.rs" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "https://github.com/magicpro97/tui-translator/issues/450" },
+        "mac-x64":      { "status": "blocking",     "evidence": "https://github.com/magicpro97/tui-translator/issues/450" },
+        "linux-pw":     { "status": "blocking",     "evidence": "LINUX-01" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "LINUX-01" },
+        "linux-alsa":   { "status": "best-effort",  "evidence": "LINUX-02" }
+      }
+    },
+    {
+      "id": "realtime-volume",
+      "title": "Real-time volume meter",
+      "owner_issue": 454,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/evidence/" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "454" },
+        "mac-x64":      { "status": "blocking",     "evidence": "454" },
+        "linux-pw":     { "status": "blocking",     "evidence": "454" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "454" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "454" }
+      }
+    },
+    {
+      "id": "voice-hot-swap",
+      "title": "Real-time voice hot-swap",
+      "owner_issue": 455,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/evidence/" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "455" },
+        "mac-x64":      { "status": "blocking",     "evidence": "455" },
+        "linux-pw":     { "status": "blocking",     "evidence": "455" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "455" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "455" }
+      }
+    },
+    {
+      "id": "single-active-voice",
+      "title": "Single-active-voice invariant",
+      "owner_issue": 456,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/evidence/" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "456" },
+        "mac-x64":      { "status": "blocking",     "evidence": "456" },
+        "linux-pw":     { "status": "blocking",     "evidence": "456" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "456" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "456" }
+      }
+    },
+    {
+      "id": "local-remote-backend",
+      "title": "Local/remote backend contract",
+      "owner_issue": 457,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/10-local-mt-backend-decision.md" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "457" },
+        "mac-x64":      { "status": "blocking",     "evidence": "457" },
+        "linux-pw":     { "status": "blocking",     "evidence": "457" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "457" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "457" }
+      }
+    },
+    {
+      "id": "virtual-mic",
+      "title": "Virtual mic / translated audio output",
+      "owner_issue": 12,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/12-virtual-mic-setup.md" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "451" },
+        "mac-x64":      { "status": "blocking",     "evidence": "451" },
+        "linux-pw":     { "status": "blocking",     "evidence": "LINUX-01" },
+        "linux-pulse":  { "status": "best-effort",  "evidence": "LINUX-02" },
+        "linux-alsa":   { "status": "not-supported","evidence": "LINUX-02" }
+      }
+    },
+    {
+      "id": "i18n",
+      "title": "i18n (full string coverage)",
+      "owner_issue": "I18N-01",
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "src/i18n" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "I18N-01" },
+        "mac-x64":      { "status": "blocking",     "evidence": "I18N-01" },
+        "linux-pw":     { "status": "blocking",     "evidence": "I18N-01" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "I18N-01" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "I18N-01" }
+      }
+    },
+    {
+      "id": "no-reload-settings",
+      "title": "No-reload settings editor",
+      "owner_issue": "CFG-01",
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": ".github/steps/config-editor-selection-ux.md" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "CFG-01" },
+        "mac-x64":      { "status": "blocking",     "evidence": "CFG-01" },
+        "linux-pw":     { "status": "blocking",     "evidence": "CFG-01" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "CFG-01" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "CFG-01" }
+      }
+    },
+    {
+      "id": "tui-shortcuts",
+      "title": "TUI shortcuts (Space, L, T, M, S, R, ?, Q)",
+      "owner_issue": "UX-01",
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "src/tui" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "UX-01" },
+        "mac-x64":      { "status": "blocking",     "evidence": "UX-01" },
+        "linux-pw":     { "status": "blocking",     "evidence": "UX-01" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "UX-01" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "UX-01" }
+      }
+    },
+    {
+      "id": "soak-30min",
+      "title": "Crash-free 30 min soak",
+      "owner_issue": 459,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/08-audio-stability-proof.md" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "459" },
+        "mac-x64":      { "status": "blocking",     "evidence": "459" },
+        "linux-pw":     { "status": "blocking",     "evidence": "459" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "459" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "459" }
+      }
+    },
+    {
+      "id": "packaging",
+      "title": "Packaging (signed installer / tarball)",
+      "owner_issue": 463,
+      "cells": {
+        "win":          { "status": "shipping",     "evidence": "docs/07-packaging-verification.md" },
+        "mac-arm64":    { "status": "blocking",     "evidence": "463" },
+        "mac-x64":      { "status": "blocking",     "evidence": "463" },
+        "linux-pw":     { "status": "blocking",     "evidence": "463" },
+        "linux-pulse":  { "status": "blocking",     "evidence": "463" },
+        "linux-alsa":   { "status": "blocking",     "evidence": "463" }
+      }
+    }
+  ]
+}
