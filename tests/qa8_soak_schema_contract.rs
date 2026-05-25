@@ -19,8 +19,7 @@
 use serde_json::Value;
 
 const SCHEMA_SRC: &str = include_str!("../verification-evidence/qa8/QA8-03-soak-schema-v2.json");
-const V1_SAMPLE_SRC: &str =
-    include_str!("../verification-evidence/sample/soak-report-sample.json");
+const V1_SAMPLE_SRC: &str = include_str!("../verification-evidence/sample/soak-report-sample.json");
 const V2_SAMPLE_SRC: &str =
     include_str!("../verification-evidence/sample/soak-report-sample-v2.json");
 
@@ -74,7 +73,10 @@ fn schema_declares_draft_07_meta_schema() {
         .get("$schema")
         .and_then(Value::as_str)
         .expect("schema must declare a $schema URI");
-    assert_eq!(meta, DRAFT_07_META, "QA8-03 must pin to JSON-Schema Draft-07; got {meta}");
+    assert_eq!(
+        meta, DRAFT_07_META,
+        "QA8-03 must pin to JSON-Schema Draft-07; got {meta}"
+    );
 }
 
 #[test]
@@ -141,6 +143,7 @@ fn v2_sample_has_at_least_three_timestamped_samples() {
         samples.len()
     );
     let mut last_elapsed: i64 = -1;
+    let mut last_ts: Option<String> = None;
     for (idx, s) in samples.iter().enumerate() {
         let elapsed = s["elapsed_secs"]
             .as_i64()
@@ -148,12 +151,22 @@ fn v2_sample_has_at_least_three_timestamped_samples() {
         let ts = s["timestamp_utc"]
             .as_str()
             .unwrap_or_else(|| panic!("samples[{idx}].timestamp_utc must be a string"));
-        assert!(ts.ends_with('Z'), "samples[{idx}].timestamp_utc must be RFC3339 UTC");
+        assert!(
+            ts.ends_with('Z'),
+            "samples[{idx}].timestamp_utc must be RFC3339 UTC"
+        );
         assert!(
             elapsed > last_elapsed,
             "samples[{idx}].elapsed_secs ({elapsed}) must be strictly greater than the previous ({last_elapsed})"
         );
+        if let Some(prev) = &last_ts {
+            assert!(
+                ts > prev.as_str(),
+                "samples[{idx}].timestamp_utc ({ts}) must be strictly greater than the previous ({prev}) — issue #501 acceptance: monotonic timestamps"
+            );
+        }
         last_elapsed = elapsed;
+        last_ts = Some(ts.to_string());
     }
 }
 
@@ -169,7 +182,8 @@ fn v2_sample_config_hash_is_deterministic_sha256_hex() {
         hash.len()
     );
     assert!(
-        hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        hash.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "config.hash must be lower-hex; got {hash}"
     );
     assert_eq!(
@@ -198,7 +212,8 @@ fn v2_sample_host_hostname_hash_is_sha256_hex_not_raw() {
         .expect("host.hostname_hash must be present (PII-safe identity)");
     assert_eq!(h.len(), 64, "hostname_hash must be SHA-256 hex");
     assert!(
-        h.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        h.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "hostname_hash must be lower-hex; got {h}"
     );
 }
@@ -206,7 +221,13 @@ fn v2_sample_host_hostname_hash_is_sha256_hex_not_raw() {
 #[test]
 fn v1_sample_remains_readable_against_v2_schema() {
     let v1 = v1_sample();
-    for field in ["schema_version", "run_id", "started_at_utc", "duration_secs", "samples"] {
+    for field in [
+        "schema_version",
+        "run_id",
+        "started_at_utc",
+        "duration_secs",
+        "samples",
+    ] {
         assert!(
             v1.get(field).is_some(),
             "v1 sample is missing field `{field}` — additive guarantee violated upstream"
@@ -236,12 +257,20 @@ fn telemetry_export_covers_every_qa8_02_category() {
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '.'),
             "metric.path `{path}` must be lower snake-case dotted"
         );
-        let cat = m["category"].as_str().expect("metric.category must be a string");
+        let cat = m["category"]
+            .as_str()
+            .expect("metric.category must be a string");
         assert!(
             QA8_02_CATEGORIES.contains(&cat),
             "metric.category `{cat}` must be one of the QA8-02 categories {QA8_02_CATEGORIES:?}"
         );
-        covered.insert(QA8_02_CATEGORIES.iter().find(|c| **c == cat).copied().unwrap());
+        covered.insert(
+            QA8_02_CATEGORIES
+                .iter()
+                .find(|c| **c == cat)
+                .copied()
+                .unwrap(),
+        );
         let _ = m["unit"].as_str().expect("metric.unit must be a string");
     }
     for cat in QA8_02_CATEGORIES {
@@ -280,7 +309,10 @@ fn schema_run_metadata_requires_profile_and_owners() {
         .expect("run_metadata.required must exist");
     let listed: Vec<&str> = required.iter().filter_map(Value::as_str).collect();
     for f in ["profile", "owners"] {
-        assert!(listed.contains(&f), "run_metadata.required must include `{f}`");
+        assert!(
+            listed.contains(&f),
+            "run_metadata.required must include `{f}`"
+        );
     }
 }
 
