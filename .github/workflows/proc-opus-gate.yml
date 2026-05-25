@@ -1,0 +1,126 @@
+name: PROC-01 Opus review gate
+
+# Enforces the PROC-01 process gate tracked by issue #465.
+# - PRs MUST declare a Confidence value.
+# - PRs that touch sensitive paths OR declare Confidence < 1.0 MUST include
+#   an Opus review evidence section (link to reviewer verdict or an
+#   explicit user override).
+# - The job manages the `needs-opus-review` label on the PR for visibility.
+#
+# This complements STD-01 (#483, .github/workflows/standards.yml) which
+# covers code-style/LOC/unwrap/commit gates. PROC-01 is purely about the
+# review process.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  opus-gate:
+    name: Confidence + Opus review evidence
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Collect PR body and changed files
+        id: collect
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .proc-gate
+          printf '%s' "${PR_BODY:-}" > .proc-gate/body.md
+          # Fetch base ref so the diff is complete on forks/shallow clones.
+          git fetch --no-tags --depth=200 origin "$BASE_SHA" "$HEAD_SHA" || true
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > .proc-gate/files.txt
+          echo "Changed files:"
+          cat .proc-gate/files.txt
+
+      - name: Run PROC-01 gate
+        id: gate
+        run: |
+          python scripts/proc/check_pr_confidence.py \
+            --body-file .proc-gate/body.md \
+            --files-file .proc-gate/files.txt \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Manage needs-opus-review label
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          NEEDS_EVIDENCE: ${{ steps.gate.outputs.needs_evidence }}
+          GATE_OK: ${{ steps.gate.outputs.ok }}
+        with:
+          script: |
+            const labelName = "needs-opus-review";
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const needs = (process.env.NEEDS_EVIDENCE || "").trim() === "true";
+            const gateOk = (process.env.GATE_OK || "").trim() === "true";
+            // Ensure the label exists; create it once if missing.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: labelName });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner, repo, name: labelName, color: "fbca04",
+                  description: "PROC-01 (#465): Opus review evidence required",
+                });
+              } else { throw e; }
+            }
+            const hasLabel = (pr.labels || []).some(l => l.name === labelName);
+            // Add label when evidence is required and gate has not yet passed;
+            // remove it once evidence is present (gate green).
+            if (needs && !gateOk && !hasLabel) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number, labels: [labelName],
+              });
+            } else if ((!needs || gateOk) && hasLabel) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: pr.number, name: labelName,
+                });
+              } catch (e) {
+                if (e.status !== 404) { throw e; }
+              }
+            }
+
+      - name: Write step summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## PROC-01 Opus review gate"
+            echo ""
+            echo "- Confidence: ${{ steps.gate.outputs.confidence }}"
+            echo "- Needs Opus evidence: ${{ steps.gate.outputs.needs_evidence }}"
+            echo "- Gate OK: ${{ steps.gate.outputs.ok }}"
+            echo ""
+            echo "See [docs/proc-opus-gate.md](../docs/proc-opus-gate.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  proc-scripts-tests:
+    name: PROC-01 script unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unit tests
+        run: python -m unittest scripts.proc.tests.test_check_pr_confidence -v

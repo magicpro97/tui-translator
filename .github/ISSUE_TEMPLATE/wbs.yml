@@ -1,0 +1,108 @@
+name: "Work-breakdown structure (WBS) issue"
+description: "Atomic execution slice with Opus-reviewable WBS fields (PROC-01, #465)."
+title: "<scope>: <one-line summary>"
+labels: ["enhancement", "triage", "level: atomic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for any work package that will be executed by a sub-agent.
+        Every field below is required by the PROC-01 gate (issue #465, enforced by
+        `.github/workflows/proc-opus-gate.yml`). A draft missing any section fails
+        template review.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this needed? What user-visible problem does it solve?
+      placeholder: One short paragraph in plain English.
+    validations:
+      required: true
+
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs
+      description: Files, prior issues, or external references the executor must read.
+      placeholder: |
+        - src/path/to/file.rs
+        - docs/something.md
+        - #123 (prior work)
+    validations:
+      required: true
+
+  - type: textarea
+    id: outputs
+    attributes:
+      label: Outputs
+      description: Concrete artefacts produced (code, docs, workflow, label, etc.).
+      placeholder: |
+        - new file scripts/foo/bar.py
+        - updated .github/workflows/foo.yml
+    validations:
+      required: true
+
+  - type: textarea
+    id: test-cases
+    attributes:
+      label: Test cases
+      description: |
+        Enumerated, executable acceptance scenarios. Each line must describe a
+        check that can be run by a reviewer or CI.
+      placeholder: |
+        1. Running `cargo test --test foo` exits 0.
+        2. CI fails when <bad input>.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this issue is done? Bullet checklist.
+      placeholder: |
+        - [ ] Workflow is green on a PR exercising the gate.
+        - [ ] Opus review CLEAN.
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other issues that must close first. Use `None` if independent.
+      placeholder: "#483, None"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Confidence
+      description: |
+        Executor confidence that the listed Test cases + Acceptance criteria
+        unambiguously define done. `1.0` means no unknowns; lower values require
+        spike evidence or a documented user override before merge.
+      options:
+        - "1.0"
+        - "0.9"
+        - "0.8"
+        - "0.7"
+        - "0.6"
+        - "<0.6 (spike required)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: opus-review-gate
+    attributes:
+      label: Opus review gate
+      description: |
+        State whether Opus review is mandatory for this issue. Always mandatory
+        when this issue touches `src/audio/`, `src/providers/`, `src/pipeline/`,
+        or when Confidence < 1.0. Reviewer evidence (CLEAN / link to review
+        comment) is recorded on the merging PR, not here.
+      placeholder: "Mandatory. Reviewer verifies the process cannot be bypassed silently."
+    validations:
+      required: true
