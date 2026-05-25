@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "wave": "H",
+  "kind": "human_acceptance",
+  "implementation_dispatch_allowed": false,
+  "issue_count": 10,
+  "issues": [
+    {
+      "number": 19,
+      "title": "[EPIC] WP-19 — Human Acceptance Testing on Real Hardware (Verification Layer 5)",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 115,
+      "title": "[P2] WP-19.02 — Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-1/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 116,
+      "title": "[P2] WP-19.03 — Run L5-1 subtitle accuracy review",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-2/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 117,
+      "title": "[P2] WP-19.04 — Run L5-2 bilingual translation review",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-3/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 118,
+      "title": "[P2] WP-19.05 — Validate L5-3 translated audio toggle",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-4/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 119,
+      "title": "[P2] WP-19.06 — Verify L5-4 terminal compatibility matrix",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-5/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 120,
+      "title": "[P2] WP-19.07 — Run L5-5 non-developer onboarding review",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-6/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 121,
+      "title": "[P2] WP-19.08 — Run L5-6 live meeting readability review",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/L5-7/"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 122,
+      "title": "[P2] WP-19.09 — Sign and date the acceptance log",
+      "family": "WP-19",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/acceptance-log.md"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 366,
+      "title": "verification: recruit and schedule named Layer 5 human reviewers",
+      "family": "VERIF-OPS",
+      "red_mode": "human_acceptance_log",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/<rc-tag>/acceptance-log.md"
+      ],
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

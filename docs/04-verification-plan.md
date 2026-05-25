@@ -421,3 +421,26 @@ Once a month, a reviewer repeats the Zoom meeting test (Section 7.1 and 7.2) on 
 **TUI (Text User Interface):** An application whose entire visual interface is made of characters displayed in a terminal window, rather than graphical buttons and images.
 
 **Word error rate:** A measure of transcription accuracy. A word error rate of 10% means 1 in 10 words was incorrect. Lower is better.
+
+---
+
+## 13. ISO 25010 + ISO/IEC/IEEE 29119 QA Plan and Traceability
+
+This verification plan describes *what* must be proven before a release. The
+international-standards counterpart describes *how* the proof is structured
+against ISO/IEC 25010:2023 (product quality model) and ISO/IEC/IEEE 29119
+(software testing). The companion artifacts are:
+
+- **Master Test Plan** — [`verification-evidence/qa/QA-01-master-test-plan.md`](../verification-evidence/qa/QA-01-master-test-plan.md). Defines purpose, scope, test items, approach, deliverables, test-ID naming convention, roles, risks, and entry/exit criteria, organised per 29119-2.
+- **Quality Thresholds** — [`verification-evidence/qa/QA-01-quality-thresholds.md`](../verification-evidence/qa/QA-01-quality-thresholds.md). Per-characteristic pass criteria (latency budgets, accuracy targets, soak duration, security gates) and whether each is enforced in Wave-1 or scheduled for a later wave.
+- **Traceability Matrix** — [`verification-evidence/qa/QA-01-traceability-matrix.csv`](../verification-evidence/qa/QA-01-traceability-matrix.csv). Every P0 issue in `verification-evidence/waves/wave-1/acceptance-matrix.md` maps to at least one Test-ID, an ISO 25010 characteristic, a verification layer (L1..L5 from this document), and an evidence artifact.
+
+### How they relate to this document
+
+- This document is the **narrative**: what each layer L1..L5 does and why.
+- QA-01 is the **structured cross-reference**: which characteristic each test addresses, which issue owns it, which evidence proves it, and whether it is a Wave-1 release blocker.
+- Neither replaces the other; both must be current at release time.
+
+### Wave-1 acceptance note (issue #459)
+
+Issue #459 requires that "Every WBS implementation issue references ≥1 test ID". The Test-IDs are defined and assigned by QA-01 in this wave; backfilling per-issue PR description references and adding doc-lint tooling are recorded as a Wave-1 acceptance gap and tracked by a successor issue.

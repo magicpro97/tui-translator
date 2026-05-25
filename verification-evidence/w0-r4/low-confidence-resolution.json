@@ -1,0 +1,448 @@
+{
+  "schema_version": 1,
+  "tentacle": "w0-r4-low-confidence",
+  "generated_at": "2026-05-24T00:00:00Z",
+  "source": {
+    "snapshot": "verification-evidence/board-snapshot-20260524.json",
+    "rest_reconciliation": "verification-evidence/board-count-rest-20260524.json",
+    "graphql_reconciliation": "verification-evidence/board-count-graphql-20260524.json"
+  },
+  "method": "Fetched each LOW-confidence issue body via GitHub REST (gh api /repos/magicpro97/tui-translator/issues/{n}). Extracted Acceptance criteria, Test cases, Outputs, and Inputs sections. Mapped Outputs/Inputs to concrete repo paths verified to exist (src/audio/**, src/providers/**, src/pipeline/**, src/config/**, src/tui/**, .github/workflows/**, packaging/windows/**, deny.toml, PRIVACY.md, tests/**). Promoted rows whose issue body provides explicit AI-actionable acceptance criteria from LOW to MEDIUM; flagged #366 as needs_human_clarification because its outputs are exclusively human-only (recruiting, scheduling, identifying named reviewers).",
+  "summary": {
+    "low_rows_input": 15,
+    "promoted_to_medium": 14,
+    "promoted_to_high": 0,
+    "remaining_low_needs_human_clarification": 1,
+    "fabricated_certainty": false
+  },
+  "rows": [
+    {
+      "number": 366,
+      "title": "verification: recruit and schedule named Layer 5 human reviewers",
+      "url": "https://github.com/magicpro97/tui-translator/issues/366",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #366; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/**"],
+        "needs_human_clarification": false
+      },
+      "after": {
+        "confidence": "LOW",
+        "acceptance": "Operational/recruiting issue. Acceptance from issue body: (1) identify at least two named reviewers, (2) confirm one is fluent in Japanese AND Vietnamese for L5-2, (3) confirm one is a non-developer for L5-5/L5-6, (4) schedule the real-hardware Zoom session(s), (5) link the resulting acceptance log path verification-evidence/{RC_TAG}/acceptance-log.md. The issue body itself states 'Automation cannot complete this issue.' Unblocks human-only Layer 5 issues #115-#122 and epic #19.",
+        "files_touched_hint": ["verification-evidence/{RC_TAG}/acceptance-log.md"],
+        "needs_human_clarification": true,
+        "human_clarification_reason": "Issue body explicitly states 'Automation cannot complete this issue.' All five acceptance items require human identity, scheduling, and live-meeting outputs that an AI agent cannot satisfy. Needs a human operator to assign reviewers and produce the acceptance-log."
+      },
+      "evidence": {
+        "source": "Issue #366 body",
+        "quotes": [
+          "Identify at least two named reviewers.",
+          "Confirm one reviewer is fluent enough in Japanese and Vietnamese for L5-2.",
+          "Confirm one reviewer is a non-developer for L5-5/L5-6.",
+          "Schedule the real-hardware Zoom session(s).",
+          "Link the resulting acceptance log path (`verification-evidence/{RC_TAG}/acceptance-log.md`).",
+          "Automation cannot complete this issue. It exists to unblock human-only Layer 5 issues #115-#122 and epic #19."
+        ]
+      }
+    },
+    {
+      "number": 450,
+      "title": "MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+      "url": "https://github.com/magicpro97/tui-translator/issues/450",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #450; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/audio/**", "verification-evidence/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Spike/decision issue. Acceptance from issue body: (1) confidence reaches 1.0 for starting MACOS-02; (2) confidence reaches 1.0 or a follow-up blocker is recorded for MACOS-03; (3) Soundflower and bundled-driver paths are explicitly rejected; (4) TCC remediation path is documented; (5) Opus review confirms the decision record is sufficient. Test outputs: (a) CoreAudio/cpal hello-capture emitting 16 kHz mono i16; (b) 60s BlackHole 2ch capture with sample-continuity measurement; (c) ScreenCaptureKit audio-only prototype or Obj-C/Swift trampoline; (d) permission-denied/TCC behavior from terminal launch; (e) first-sample and steady-state latency on at least one Apple Silicon host. Output is a decision record in issue comments + implementation prerequisites for MACOS-02 and MACOS-03; no production capture code shipped here. Out of scope: shipping production macOS capture code.",
+        "files_touched_hint": [
+          "verification-evidence/macos/macos-01-spike-decision.md",
+          "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+          "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+          "verification-evidence/macos/macos-01-tcc-behavior.md",
+          "verification-evidence/macos/macos-01-latency-measurements.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #450 body — Acceptance criteria + Test cases + Outputs + Out of scope sections",
+        "repo_anchors": ["src/audio/mod.rs", "src/audio/wasapi_capture.rs", "Cargo.toml"]
+      }
+    },
+    {
+      "number": 451,
+      "title": "MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP",
+      "url": "https://github.com/magicpro97/tui-translator/issues/451",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #451; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/audio/**", "verification-evidence/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) MAC-A1 CoreAudio capture evidence exists; (2) MAC-A2 virtual-device classification evidence exists or is linked; (3) no Windows WASAPI behavior regresses; (4) Opus review clean. Test cases: 60s BlackHole capture with sample-continuity >= 0.98 at 16 kHz mono i16; missing capture device surfaces plain-English error; disconnect/reconnect does not crash and is logged with recoverable state; `cargo test` passes on macos-13 and macos-14. Outputs: cfg(target_os = \"macos\") capture module preserving AudioChunk format; macOS device listing; BlackHole/named-device capture route; evidence under verification-evidence/macos/. Out of scope: ScreenCaptureKit (MACOS-03), bundling drivers. Depends on MACOS-01.",
+        "files_touched_hint": [
+          "src/audio/mod.rs",
+          "src/audio/coreaudio_capture.rs",
+          "src/audio/probe.rs",
+          "Cargo.toml",
+          "tests/integration",
+          "verification-evidence/macos/MAC-A1-coreaudio-capture.json",
+          "verification-evidence/macos/MAC-A2-virtual-device-classification.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #451 body — Acceptance criteria + Test cases + Outputs + Inputs sections",
+        "repo_anchors": ["src/audio/wasapi_capture.rs (parallel module pattern)", "src/audio/probe.rs", "src/audio/virtual_device.rs"]
+      }
+    },
+    {
+      "number": 452,
+      "title": "MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight",
+      "url": "https://github.com/magicpro97/tui-translator/issues/452",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #452; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/audio/**", "verification-evidence/**", "src/**", "docs/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) MAC-A4 TCC preflight evidence exists; (2) MAC-A12 ScreenCaptureKit capture evidence exists; (3) i18n/localization explicitly out of scope; (4) Opus review clean. Test cases: permission denied exits with code 2 + remediation steps printed; 5-minute ScreenCaptureKit capture continuity >= 0.95; no silent failure when Screen Recording not approved; macOS 14 and macOS 15 behavior recorded. Outputs: capture_source = \"system_audio\" path; permission preflight check; plain-English remediation message; ScreenCaptureKit capture evidence. Depends on MACOS-01, MACOS-02.",
+        "files_touched_hint": [
+          "src/audio/mod.rs",
+          "src/audio/screencapturekit_capture.rs",
+          "src/audio/probe.rs",
+          "src/config/mod.rs",
+          "Cargo.toml",
+          "verification-evidence/macos/MAC-A4-tcc-preflight.json",
+          "verification-evidence/macos/MAC-A12-screencapturekit-capture.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #452 body — Acceptance + Test cases + Outputs + Dependencies sections"
+      }
+    },
+    {
+      "number": 453,
+      "title": "MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers",
+      "url": "https://github.com/magicpro97/tui-translator/issues/453",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #453; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/audio/**", "docs/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) MAC-A2 and MAC-A3 evidence exist; (2) no driver binary is bundled or redistributed; (3) Windows VB-CABLE classification still passes; (4) Opus review clean. Test cases: classify `BlackHole 2ch`, `Loopback Audio`, `VB-Cable` Mac names; tts_routing = \"virtual_mic\" resolves to expected route; tts_routing = \"both\" routes to speakers and virtual mic without duplicate decode; when BlackHole is installed a smoke test writes non-silent PCM to it. Outputs: macOS virtual-device patterns + enumeration/probe; route selection for virtual_mic and both; no-driver-bundling policy in issue evidence. Depends on MACOS-02.",
+        "files_touched_hint": [
+          "src/audio/virtual_device.rs",
+          "src/pipeline/playback.rs",
+          "src/audio/router.rs",
+          "tests/vmic_audio_integration.rs",
+          "verification-evidence/macos/MAC-A2-virtual-device-classification.json",
+          "verification-evidence/macos/MAC-A3-routing-report.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #453 body — Inputs cite src/audio/virtual_device.rs and src/pipeline/playback.rs; Acceptance + Test cases sections",
+        "repo_anchors": ["src/audio/virtual_device.rs (verified exists)", "src/pipeline/playback.rs (verified exists)", "docs/12-virtual-mic-setup.md (referenced, read-only)"]
+      }
+    },
+    {
+      "number": 454,
+      "title": "CTRL-01 — Real-time input/output volume and gain controls",
+      "url": "https://github.com/magicpro97/tui-translator/issues/454",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #454; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/audio/**", "src/tui/**", "src/config/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) VOL-A6 evidence exists; (2) runtime controls work without restart; (3) no silent fallback on invalid config; (4) Opus review clean. Test cases: gain values clamp at min/max; 0.5 gain produces RMS ≈ 0.5x input RMS within ±2%; hotkey change effective ≤ 50 ms; gain transitions use short ramp/smoothing (no zipper noise); max gain does not clip above target limiter policy. Outputs: input/output gain settings; TUI gauges + hotkeys; watch-channel-based live updates; RMS evidence artifacts. Out of scope: OS-level mixer synchronization (unless separate spike approves).",
+        "files_touched_hint": [
+          "src/audio/mod.rs",
+          "src/pipeline/playback.rs",
+          "src/pipeline/audio_sink.rs",
+          "src/config/mod.rs",
+          "src/tui/mod.rs",
+          "verification-evidence/ctrl/VOL-A6-gain-rms.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #454 body — Inputs cite capture pipeline, PlaybackService, AudioSink, config hot-reload, TUI key handling; Acceptance + Test cases sections",
+        "repo_anchors": ["src/pipeline/playback.rs", "src/pipeline/audio_sink.rs", "src/config/mod.rs", "src/tui/mod.rs"]
+      }
+    },
+    {
+      "number": 455,
+      "title": "CTRL-02 — Real-time TTS voice catalog and hot-swap",
+      "url": "https://github.com/magicpro97/tui-translator/issues/455",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #455; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/providers/**", "src/tui/**", "src/config/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) VOICE-A5 evidence exists; (2) voice selection is provider-aware; (3) no concurrent second voice is introduced; (4) Opus review clean. Test cases: mocked Google TTS request contains selected voice name; voice swap affects next synthesis call; p95 voice-swap-to-first-audio ≤ 500 ms for next utterance; invalid voice surfaces visible user error; in-flight utterance finishes (not cut) unless policy changes. Outputs: VoiceSelection model; provider voice catalog/listing; TUI voice picker; hot-swap state update path. Depends on CTRL-03. Out of scope: streaming TTS interruption/crossfade.",
+        "files_touched_hint": [
+          "src/providers/mod.rs",
+          "src/providers/google",
+          "src/config/mod.rs",
+          "src/tui/mod.rs",
+          "src/pipeline/playback.rs",
+          "verification-evidence/ctrl/VOICE-A5-voice-hotswap.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #455 body — Inputs cite GoogleTtsProvider, TtsProvider trait, config/TUI controls; Acceptance + Test cases sections",
+        "repo_anchors": ["src/providers/mod.rs", "src/providers/google/", "src/config/mod.rs", "src/tui/mod.rs"]
+      }
+    },
+    {
+      "number": 456,
+      "title": "CTRL-03 — Single active voice invariant across single and dual modes",
+      "url": "https://github.com/magicpro97/tui-translator/issues/456",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #456; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/config/**", "verification-evidence/**", "src/pipeline/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) VOICE-A8 and VOICE-A9 evidence exist; (2) no existing DM-06 policy regresses; (3) Opus review clean. Test cases: property/state tests prove concurrently playing TTS streams ≤ 1; dual mode with primary slot A suppresses slot B audio; dual mode with primary slot B suppresses slot A audio; second playback service/mixer creation returns explicit error or is structurally impossible; voice swap mid-utterance preserves invariant and applies on next utterance. Outputs: single TTS playback owner or mixer; primary-slot policy for dual mode; invariant tests; explicit error/guard for attempted second playback owner. Out of scope: simultaneous bilingual spoken output (forbidden by roadmap).",
+        "files_touched_hint": [
+          "src/pipeline/playback.rs",
+          "src/pipeline/mod.rs",
+          "src/config/mod.rs",
+          "tests/dm06_dual_tts_policy.rs",
+          "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json",
+          "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #456 body — Inputs explicitly cite tests/dm06_dual_tts_policy.rs, TtsSource config, dual-slot pipeline orchestrator, PlaybackService",
+        "repo_anchors": ["tests/dm06_dual_tts_policy.rs (verified exists)", "src/pipeline/playback.rs (verified exists)"]
+      }
+    },
+    {
+      "number": 457,
+      "title": "MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS",
+      "url": "https://github.com/magicpro97/tui-translator/issues/457",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #457; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/providers/**", "src/config/**", "src/**", "docs/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) provider contract tests pass; (2) privacy/security review finds no silent cloud fallback; (3) Opus review clean. Test cases: all supported local/remote combinations parse and validate; unsupported local pair errors unless explicit cloud fallback configured; no network call occurs without explicit consent/config; when fallback is explicitly enabled a user-visible log line or metric records the fallback for privacy audit. Outputs: backend matrix for STT/MT/TTS; config schema decision; fallback and consent contract; contract tests. Out of scope: implementing every remote provider (contract + minimal tests only).",
+        "files_touched_hint": [
+          "src/providers/mod.rs",
+          "src/providers/local",
+          "src/providers/mt",
+          "src/config/mod.rs",
+          "src/config/provider_supervisor.rs",
+          "tests/contract",
+          "tests/contract.rs",
+          "tests/mt_routing.rs",
+          "verification-evidence/model/MODEL-01-backend-matrix.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #457 body — Inputs cite src/providers/mod.rs, Google/local providers, config provider fields, fallback policies, privacy requirements",
+        "repo_anchors": ["src/providers/mod.rs", "src/providers/local/", "src/providers/mt/", "src/config/provider_supervisor.rs", "tests/contract/"]
+      }
+    },
+    {
+      "number": 458,
+      "title": "MODEL-02 — macOS local model runtime validation and packaging constraints",
+      "url": "https://github.com/magicpro97/tui-translator/issues/458",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #458; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/providers/**", ".github/workflows/release.yml", "Cargo.toml", "src/providers/local_mt/**", "src/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) benchmark/evidence artifact exists; (2) packaging plan excludes large model binaries unless explicitly approved; (3) Opus review clean. Test cases: local-stt builds on macos-13/14; local-mt builds on macos-13/14; CPU fallback runs without GPU/Metal; model cache uses `~/Library/Application Support/tui-translator/models` or documented ProjectDirs equivalent; RSS/CPU thresholds recorded against baseline. Outputs: macOS build/runtime validation report; model cache path validation; Metal/CoreML decision or deferral; packaging constraints for models and native libraries. Depends on MODEL-01, CI-01.",
+        "files_touched_hint": [
+          "src/providers/local",
+          "src/providers/mt",
+          "Cargo.toml",
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          "tests/local_model_bootstrap.rs",
+          "verification-evidence/model/MODEL-02-macos-runtime.json",
+          "verification-evidence/model/MODEL-02-bench.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #458 body — Inputs cite local-stt/local-mt Cargo features, model cache code, offline benchmark evidence",
+        "repo_anchors": ["src/providers/local/ (verified exists)", "src/providers/mt/ (verified exists)", "tests/local_model_bootstrap.rs (verified exists)"]
+      }
+    },
+    {
+      "number": 459,
+      "title": "QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+      "url": "https://github.com/magicpro97/tui-translator/issues/459",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #459; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["verification-evidence/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) QA plan covers functional suitability, reliability, performance efficiency, compatibility, security, maintainability, portability, and interaction capability (ISO/IEC 25010); (2) traceability matrix complete for P0 scope; (3) Opus review confirms standards alignment. Test cases: every P0 requirement maps to ≥ 1 test or evidence item; every WBS implementation issue references ≥ 1 test ID; CI/doc lint fails for missing referenced test IDs once tooling exists; Opus QA review validates standards mapping. Outputs: Master Test Plan deliverable; traceability matrix; Test-ID naming convention; quality threshold table. Out of scope: purchasing copyrighted standards text (use compliant summaries).",
+        "files_touched_hint": [
+          "verification-evidence/qa/QA-01-master-test-plan.md",
+          "verification-evidence/qa/QA-01-traceability-matrix.csv",
+          "verification-evidence/qa/QA-01-quality-thresholds.md",
+          "docs/04-verification-plan.md"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #459 body — Inputs cite docs/04-verification-plan.md, ISO/IEC 25010, ISO/IEC/IEEE 29119; Acceptance + Test cases sections",
+        "repo_anchors": ["docs/04-verification-plan.md (verified exists)"]
+      }
+    },
+    {
+      "number": 460,
+      "title": "TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+      "url": "https://github.com/magicpro97/tui-translator/issues/460",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #460; evidence linked in issue; manual review optional.",
+        "files_touched_hint": ["src/audio/**", "src/**", "verification-evidence/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) simulation evidence artifacts generated in a stable schema; (2) L1-L4 can run without a live meeting except explicitly marked hardware tests; (3) Opus review clean. Test cases: audio fixture replayer drives pipeline headlessly; provider mock returns 429/503/slow responses with retry/status verification; PTY resize/cleanup tests pass; virtual mic memory PCM roundtrip validates RMS/drop/latency gates; soak file-source mode emits schema-versioned JSON. Outputs: simulation harness plan; fixture replayer tasks; fake provider/network chaos tasks; virtual mic memory-tier tests; evidence schema. Depends on QA-01. Out of scope: replacing L5 human acceptance.",
+        "files_touched_hint": [
+          "tests/fixtures",
+          "tests/contract",
+          "tests/pty",
+          "tests/soak",
+          "tests/vmic_audio_integration.rs",
+          "tests/vmic_b4_production_sink.rs",
+          "src/audio/file_source.rs",
+          "src/bin/run_soak (if present)",
+          "verification-evidence/test/TEST-01-simulation-harness-plan.md",
+          "verification-evidence/test/TEST-01-evidence-schema.json"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #460 body — Inputs cite tests/fixtures/, run_soak, vbcable_ci_probe, PTY harness, contract mocks",
+        "repo_anchors": ["tests/fixtures (verified exists)", "tests/contract (verified exists)", "tests/pty (verified exists)", "tests/soak (verified exists)", "src/audio/file_source.rs (verified exists)", "src/audio/vbcable_ci.rs (verified exists)"]
+      }
+    },
+    {
+      "number": 461,
+      "title": "CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+      "url": "https://github.com/magicpro97/tui-translator/issues/461",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #461; evidence linked in issue; manual review optional.",
+        "files_touched_hint": [".github/workflows/**", "verification-evidence/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) CI run URL shows required contexts green; (2) branch protection can use the new required checks; (3) no existing Windows gate is weakened; (4) Opus review clean. Test cases: tampering Cargo.lock causes --locked jobs to fail; required feature combinations compile on macOS and Windows; beta toolchain failure is allowed-fail only where documented; VMIC hardware-dependent jobs remain skip-safe with explicit evidence. Outputs: Windows + macos-13 + macos-14 CI matrix; MSRV/stable/beta policy; feature matrix; required status check list. Depends on QA-01, TEST-01. Out of scope: signing/notarization, SBOM (SEC-01/REL-01).",
+        "files_touched_hint": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/contract-weekly.yml",
+          "verification-evidence/ci/CI-01-matrix-run-url.json",
+          "verification-evidence/ci/CI-01-required-checks.md"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #461 body — Inputs cite .github/workflows/ci.yml, Cargo MSRV 1.86, Cargo features, existing VMIC/soak jobs",
+        "repo_anchors": [".github/workflows/ci.yml (verified exists)", ".github/workflows/contract-weekly.yml (verified exists)"]
+      }
+    },
+    {
+      "number": 462,
+      "title": "SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy",
+      "url": "https://github.com/magicpro97/tui-translator/issues/462",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #462; evidence linked in issue; manual review optional.",
+        "files_touched_hint": [".github/workflows/**", ".github/workflows/release.yml", "Cargo.toml", "src/**", "docs/**"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) security gate required before release; (2) no secrets or private paths leak into CI artifacts/logs; (3) SBOM and provenance generated for release assets; (4) tui-security-auditor or Opus security review clean. Test cases: fake secret fixture blocks PR without exposing real credentials; cargo deny failure blocks PR; SBOM validates and is attached to release artifacts; cosign verify succeeds for untampered artifacts and fails after byte tamper; logs/telemetry do not expose Google API keys, sensitive BlackHole device names, or user home paths. Outputs: cargo-deny/audit gate; secret scanning gate; SAST/SARIF plan; CycloneDX/SPDX SBOM; SLSA provenance; cosign/signing policy. Depends on CI-01. Out of scope: procurement of code-signing certificates (REL-01).",
+        "files_touched_hint": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          "deny.toml",
+          "Cargo.toml",
+          "PRIVACY.md",
+          "verification-evidence/sec/SEC-01-cargo-deny.txt",
+          "verification-evidence/sec/SEC-01-sbom.cdx.json",
+          "verification-evidence/sec/SEC-01-cosign-verify.txt"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #462 body — Inputs cite deny.toml, .github/workflows/release.yml, PRIVACY.md, config/log surfaces, GitHub OIDC, SBOM/SLSA tooling",
+        "repo_anchors": ["deny.toml (verified exists)", "PRIVACY.md (verified exists)", ".github/workflows/release.yml (verified exists)"]
+      }
+    },
+    {
+      "number": 463,
+      "title": "REL-01 — Cross-platform release packaging, notarization, and GA promotion plan",
+      "url": "https://github.com/magicpro97/tui-translator/issues/463",
+      "before": {
+        "confidence": "LOW",
+        "acceptance": "Implementation matches issue body acceptance criteria for #463; evidence linked in issue; manual review optional.",
+        "files_touched_hint": [".github/workflows/**", ".github/workflows/release.yml", "Cargo.toml"]
+      },
+      "after": {
+        "confidence": "MEDIUM",
+        "acceptance": "Acceptance from issue body: (1) release checklist includes all CI, security, QA, soak, human acceptance, and Opus review gates; (2) artifacts are signed/notarized where applicable; (3) GA promotion is blocked until all gates pass; (4) Opus review clean. Test cases: lipo -info or equivalent confirms universal/target architecture policy; codesign --verify passes; notarytool submit --wait returns accepted; stapler and spctl verification pass; Gatekeeper first-launch UX validated on a clean VM; rollback drill proves users can return to previous release. Outputs: v2 alpha/beta/GA release plan; macOS packaging workflow; notarization and stapling verification; rollback plan; release-readiness checklist. Depends on CI-01, SEC-01, QA-01, TEST-01, MACOS-02, MACOS-04. Out of scope: Mac App Store distribution, Homebrew tap.",
+        "files_touched_hint": [
+          ".github/workflows/release.yml",
+          "packaging/windows/tui-translator.iss",
+          "packaging/macos (new)",
+          "verification-evidence/rel/REL-01-codesign-verify.txt",
+          "verification-evidence/rel/REL-01-notarytool-submit.json",
+          "verification-evidence/rel/REL-01-release-checklist.md",
+          "verification-evidence/rel/REL-01-rollback-drill.md"
+        ],
+        "needs_human_clarification": false
+      },
+      "evidence": {
+        "source": "Issue #463 body — Inputs cite .github/workflows/release.yml, packaging/windows/, Apple Developer ID requirements; Acceptance + Test cases sections; issue has 1 prior comment",
+        "repo_anchors": [".github/workflows/release.yml (verified exists)", "packaging/windows/tui-translator.iss (verified exists)"]
+      }
+    }
+  ],
+  "remaining_human_clarification_blockers": [
+    {
+      "number": 366,
+      "blocker": "Operational/recruiting task — requires human to identify and confirm at least two named reviewers (one bilingual JA/VI, one non-developer), schedule live Zoom session(s) on real hardware, and produce verification-evidence/{RC_TAG}/acceptance-log.md. The issue body itself states automation cannot complete it.",
+      "unblocks": ["#115", "#116", "#117", "#118", "#119", "#120", "#121", "#122", "#19 (epic)"]
+    }
+  ],
+  "notes": [
+    "No issue bodies, comments, labels, or GitHub state were modified. Only read operations (gh api GET) were used.",
+    "src/** was NOT modified. Per-task scope is verification-evidence/w0-r4/** and the board snapshot only.",
+    "files_touched_hint values are predictions for downstream implementers; they include paths verified to exist in the repo today plus the new files (clearly named or marked new) those issues will create.",
+    "Confidence promoted to MEDIUM (not HIGH) because each issue still requires Opus/specialist review before close (per the 'Opus review gate' section in every body) and several depend on a spike (MACOS-01) or a foundational decision (MODEL-01, QA-01, CI-01) that has not yet landed."
+  ]
+}

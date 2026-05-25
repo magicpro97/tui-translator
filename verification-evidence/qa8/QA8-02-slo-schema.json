@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/magicpro97/tui-translator/blob/main/verification-evidence/qa8/QA8-02-slo-schema.json",
+  "title": "tui-translator SLO Specification (QA8-02)",
+  "description": "Machine-readable Service Level Objective (SLO) contract consumed by the QA8-02b gate checker. Each gate declares a category, the metric path the checker must extract from soak/release evidence, a comparator, a threshold value, and a severity. A blocker gate failure must cause the checker to exit non-zero. This schema is the wave-1 deliverable for issue #500 (DOWNGRADED): schema only, no checker binary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "spec_version",
+    "generated_at",
+    "gates"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "Version of THIS JSON-Schema document. Bumped when the schema's structure changes.",
+      "minimum": 1,
+      "const": 1
+    },
+    "spec_version": {
+      "type": "string",
+      "description": "Semantic version of the SLO specification instance (the thresholds), e.g. 1.0.0.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "generated_at": {
+      "type": "string",
+      "description": "RFC3339 timestamp when this SLO spec was authored or last updated.",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "description": "Provenance of this SLO spec.",
+      "additionalProperties": false,
+      "properties": {
+        "issue": {
+          "type": "string",
+          "description": "GitHub issue reference, e.g. \"#500\"."
+        },
+        "owners": {
+          "type": "array",
+          "description": "GitHub handles that own this SLO spec.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form notes (review links, ADR refs, etc.)."
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "description": "Ordered list of SLO gates. Order is informational; the checker must evaluate every gate.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/definitions/gate" }
+    }
+  },
+  "definitions": {
+    "category": {
+      "type": "string",
+      "description": "The QA8-02 gate category. Must be one of the eight categories from issue #500: crash, frame, rss_slope, cpu, queue, audio, provider, virtual_mic.",
+      "enum": [
+        "crash",
+        "frame",
+        "rss_slope",
+        "cpu",
+        "queue",
+        "audio",
+        "provider",
+        "virtual_mic"
+      ]
+    },
+    "comparator": {
+      "type": "string",
+      "description": "How to compare the observed metric against the threshold.",
+      "enum": [
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "eq",
+        "neq"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "description": "Failure severity. A 'blocker' failure must cause the checker to exit non-zero. 'warn' is informational.",
+      "enum": [
+        "blocker",
+        "warn"
+      ]
+    },
+    "gate": {
+      "type": "object",
+      "description": "A single SLO gate the checker evaluates.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "metric",
+        "comparator",
+        "threshold",
+        "unit",
+        "severity",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable, unique identifier for the gate (kebab-case).",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+        },
+        "category": { "$ref": "#/definitions/category" },
+        "metric": {
+          "type": "string",
+          "description": "Dotted path the checker reads from evidence JSON to obtain the observed value, e.g. \"audio.dropped_chunks\" or \"rss.slope_mb_per_hour\".",
+          "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$"
+        },
+        "comparator": { "$ref": "#/definitions/comparator" },
+        "threshold": {
+          "description": "The threshold value the observed metric is compared against. Accepts a number (integers are valid JSON Schema numbers under Draft-07), a boolean, or a non-empty string. A bare union of types is used instead of `oneOf` to avoid the Draft-07 ambiguity where an integer literal matches both `{type:number}` and `{type:integer}`, which would cause `oneOf` to reject integer thresholds.",
+          "type": ["number", "boolean", "string"],
+          "minLength": 1
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit string, e.g. \"count\", \"ms\", \"MB/hour\", \"percent\", \"bool\".",
+          "minLength": 1
+        },
+        "severity": { "$ref": "#/definitions/severity" },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of the gate and why it exists.",
+          "minLength": 1
+        },
+        "evidence_source": {
+          "type": "string",
+          "description": "Optional hint to the checker about which evidence file produces this metric.",
+          "minLength": 1
+        },
+        "applies_to": {
+          "type": "array",
+          "description": "Optional list of run profiles this gate applies to (e.g. \"soak-1h\", \"soak-8h\", \"release\"). If omitted, the gate applies to all profiles.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

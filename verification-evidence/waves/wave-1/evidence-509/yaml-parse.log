@@ -1,0 +1,2 @@
+jobs: ['enforce-priority-label', 'sync-project-priority', 'weekly-audit']
+triggers: ['issues', 'schedule', 'workflow_dispatch']

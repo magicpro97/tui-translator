@@ -1,0 +1,293 @@
+[
+  {
+    "number": 384,
+    "title": "DM-08 â€” Dual-mode docs and config examples",
+    "url": "https://github.com/magicpro97/tui-translator/issues/384",
+    "state": "open",
+    "labels": [
+      "type: feature",
+      "area: config",
+      "priority:P2",
+      "level: atomic",
+      "area: docs"
+    ],
+    "milestone": null,
+    "body": "## Context\n\nDocument dual mode for users.\n\n## Current state\n\nNo dual-mode docs.\n\n## Inputs\n\nFinal shapes from DM-01..DM-07.\n\n## Outputs\n\nUpdated `README.md`, `USAGE.md`, `config.example.json` (commented dual block), and roadmap.\n\n## Implementation scope\n\n- Add dual-mode quickstart, screenshots/ascii of A/B panes, troubleshooting (per-slot halted, tts_source).\n\n## Acceptance criteria\n\nDocs reflect shipped behaviour; example dual config boots.\n\n## Test cases / evidence gates\n\n- Manual review.\n- `config.example.json` parses.\n\n## Dependencies / parallelization\n\nBlocked by DM-01..DM-07. Lands last in cluster.\n\n## Agent routing\n\nBuild: docs specialist. Cross-review: tui-rust-code-reviewer.\n"
+  },
+  {
+    "number": 450,
+    "title": "MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+    "url": "https://github.com/magicpro97/tui-translator/issues/450",
+    "state": "open",
+    "labels": [
+      "type: research",
+      "area: audio",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0"
+    ],
+    "milestone": null,
+    "body": "## Summary\n\n    Resolve macOS audio-capture confidence gaps before implementation starts.\n\n    ## Why is this needed?\n\n    ScreenCaptureKit bindings, TCC behavior, CoreAudio device lifecycle, BlackHole capture, and latency are below confidence 1.0. Implementation must not begin from guesses.\n\n    ## Context\n\n    The Windows path uses WASAPI loopback behind `src/audio/wasapi_capture.rs`; macOS needs an equivalent plan that preserves the `AudioSource` contract and the 16 kHz mono i16 pipeline.\n\n    ## Inputs\n\n    - `src/audio/mod.rs`\n- `src/audio/wasapi_capture.rs`\n- `Cargo.toml` target dependencies\n- Opus macOS research risk list\n- macOS 13/14/15 test hosts or runners\n\n    ## Outputs\n\n    - Decision record in issue comments\n- Chosen tier-1 and tier-2 capture strategy\n- Rejected alternatives with rationale\n- Implementation prerequisites for MACOS-02 and MACOS-03\n\n    ## Test cases\n\n    - [ ] Build a CoreAudio/cpal hello-capture that emits 16 kHz mono i16 chunks\n- [ ] Capture from BlackHole 2ch for 60 seconds and measure sample-continuity\n- [ ] Prototype ScreenCaptureKit audio-only capture or Objective-C/Swift trampoline\n- [ ] Confirm permission-denied/TCC behavior from terminal launch\n- [ ] Measure first-sample and steady-state latency on at least one Apple Silicon host\n\n    ## Acceptance criteria\n\n    - [ ] Confidence reaches 1.0 for starting MACOS-02\n- [ ] Confidence reaches 1.0 or a follow-up blocker is recorded for MACOS-03\n- [ ] Soundflower and bundled-driver paths are explicitly rejected\n- [ ] TCC remediation path is documented\n- [ ] Opus review confirms the decision record is sufficient\n\n    ## Dependencies\n\n    - MACOS-WBS\n\n    ## Opus review gate\n\n    Mandatory before marking the spike done; if any decision remains below confidence 1.0, create a narrower follow-up spike instead of unblocking implementation.\n\n    ## Out of scope for this request\n\n    Shipping production macOS capture code. This is a spike and decision issue.\n\n    ## Related background\n\n    - Created from tentacle-orchestration planning on 2026-05-22.\n    - Opus WBS review verdict: CLEAN with non-blocking advisory notes incorporated where applicable.\n    - Target project: https://github.com/users/magicpro97/projects/2"
+  },
+  {
+    "number": 459,
+    "title": "QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+    "url": "https://github.com/magicpro97/tui-translator/issues/459",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0"
+    ],
+    "milestone": null,
+    "body": "## Summary\n\n    Create an international-standard QA baseline for the roadmap using ISO/IEC 25010 and ISO/IEC/IEEE 29119.\n\n    ## Why is this needed?\n\n    The user requested QA according to international standards, not only ad hoc tests. Requirements, tests, evidence, and release gates must be traceable.\n\n    ## Context\n\n    The repo already has `docs/04-verification-plan.md` with L1-L5 verification. This issue turns that into a 29119-style test plan and 25010 quality matrix for the macOS/cross-platform roadmap.\n\n    ## Inputs\n\n    - `docs/04-verification-plan.md`\n- requirements/design docs\n- issue backlog\n- ISO/IEC 25010 quality characteristics\n- ISO/IEC/IEEE 29119 test documentation structure\n\n    ## Outputs\n\n    - Master Test Plan deliverable\n- Traceability matrix\n- Test-ID naming convention\n- Quality threshold table\n\n    ## Test cases\n\n    - [ ] Every P0 requirement maps to at least one test or evidence item\n- [ ] Every WBS implementation issue references at least one test ID\n- [ ] CI/doc lint fails for missing referenced test IDs once tooling exists\n- [ ] Opus QA review validates standards mapping\n\n    ## Acceptance criteria\n\n    - [ ] QA plan covers functional suitability, reliability, performance efficiency, compatibility, security, maintainability, portability, and interaction capability\n- [ ] Traceability matrix is complete for P0 scope\n- [ ] Opus review confirms standards alignment\n\n    ## Dependencies\n\n    - MACOS-WBS\n\n    ## Opus review gate\n\n    Mandatory; reviewer must be QA-focused and verify standards are not name-dropped without deliverables.\n\n    ## Out of scope for this request\n\n    Purchasing or reproducing copyrighted standards text. Use compliant summaries and project-local templates.\n\n    ## Related background\n\n    - Created from tentacle-orchestration planning on 2026-05-22.\n    - Opus WBS review verdict: CLEAN with non-blocking advisory notes incorporated where applicable.\n    - Target project: https://github.com/users/magicpro97/projects/2"
+  },
+  {
+    "number": 460,
+    "title": "TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+    "url": "https://github.com/magicpro97/tui-translator/issues/460",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: audio",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0"
+    ],
+    "milestone": null,
+    "body": "## Summary\n\n    Design and implement deterministic simulation layers so macOS/live-audio work can be tested without relying only on live meetings.\n\n    ## Why is this needed?\n\n    The roadmap needs clear test and simulation methods for audio, provider failures, terminal behavior, virtual mic routing, and long-running reliability.\n\n    ## Context\n\n    The repo already has fixtures, PTY tests, VMIC evidence, and soak binaries. This issue unifies them into a reproducible simulation strategy for the new roadmap.\n\n    ## Inputs\n\n    - `tests/fixtures/`\n- `run_soak`\n- `vbcable_ci_probe`\n- PTY harness\n- contract mocks\n- QA-01 test IDs\n\n    ## Outputs\n\n    - Simulation harness plan\n- Fixture replayer tasks\n- Fake provider/network chaos tasks\n- Virtual mic memory-tier tests\n- Evidence schema\n\n    ## Test cases\n\n    - [ ] Audio fixture replayer drives pipeline headlessly\n- [ ] Provider mock returns 429/503/slow responses and verifies retry/status behavior\n- [ ] PTY resize and cleanup tests pass on target platforms\n- [ ] Virtual mic memory PCM roundtrip validates RMS/drop/latency gates\n- [ ] Soak file-source mode emits schema-versioned JSON\n\n    ## Acceptance criteria\n\n    - [ ] Simulation evidence artifacts are generated in a stable schema\n- [ ] L1-L4 can run without a live meeting except explicitly marked hardware tests\n- [ ] Opus review is clean\n\n    ## Dependencies\n\n    - QA-01\n\n    ## Opus review gate\n\n    Mandatory; reviewer must check that simulation proves the same criteria as production gates and does not fake success.\n\n    ## Out of scope for this request\n\n    Replacing L5 human acceptance. Simulation reduces risk but does not remove real hardware/reviewer gates.\n\n    ## Related background\n\n    - Created from tentacle-orchestration planning on 2026-05-22.\n    - Opus WBS review verdict: CLEAN with non-blocking advisory notes incorporated where applicable.\n    - Target project: https://github.com/users/magicpro97/projects/2"
+  },
+  {
+    "number": 461,
+    "title": "CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+    "url": "https://github.com/magicpro97/tui-translator/issues/461",
+    "state": "open",
+    "labels": [
+      "type: ci",
+      "area: infra",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0"
+    ],
+    "milestone": null,
+    "body": "## Summary\n\n    Expand CI to cover Windows and macOS target platforms, feature combinations, MSRV/stable policy, and required release gates.\n\n    ## Why is this needed?\n\n    Current CI is Windows-heavy and lacks macOS jobs. macOS support cannot ship without platform and feature matrix evidence.\n\n    ## Context\n\n    `.github/workflows/ci.yml` already contains fmt, clippy, tests, PTY, VMIC, packaging, soak, and hot-config jobs. This issue extends rather than replaces those gates.\n\n    ## Inputs\n\n    - `.github/workflows/ci.yml`\n- Cargo MSRV 1.86\n- Cargo features\n- existing VMIC/soak jobs\n- QA-01 and TEST-01 outputs\n\n    ## Outputs\n\n    - Windows + macos-13 + macos-14 CI matrix\n- MSRV/stable/beta policy\n- Feature matrix\n- Required status check list\n\n    ## Test cases\n\n    - [ ] Tampering `Cargo.lock` causes `--locked` jobs to fail\n- [ ] Required feature combinations compile on macOS and Windows\n- [ ] Beta toolchain failure is allowed-fail only where documented\n- [ ] VMIC hardware-dependent jobs remain skip-safe with explicit evidence\n\n    ## Acceptance criteria\n\n    - [ ] CI run URL shows required contexts green\n- [ ] Branch protection can use the new required checks\n- [ ] No existing Windows gate is weakened\n- [ ] Opus review is clean\n\n    ## Dependencies\n\n    - QA-01\n- TEST-01\n\n    ## Opus review gate\n\n    Mandatory after workflow changes; reviewer must check no release gate was accidentally downgraded.\n\n    ## Out of scope for this request\n\n    Signing/notarization and SBOM/provenance implementation; tracked by SEC-01 and REL-01.\n\n    ## Related background\n\n    - Created from tentacle-orchestration planning on 2026-05-22.\n    - Opus WBS review verdict: CLEAN with non-blocking advisory notes incorporated where applicable.\n    - Target project: https://github.com/users/magicpro97/projects/2"
+  },
+  {
+    "number": 468,
+    "title": "LINUX-01 — Spike: Linux capture backend decision",
+    "url": "https://github.com/magicpro97/tui-translator/issues/468",
+    "state": "open",
+    "labels": [
+      "type: research",
+      "area: audio",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic"
+    ],
+    "milestone": null,
+    "body": "<!-- linux-cross-platform-quality-roadmap:LINUX-01 -->\nCreated from tentacle-orchestration Linux/cross-platform roadmap planning.\n\nParent roadmap ledger: `.github/steps/linux-cross-platform-quality-roadmap.md`.\n\nFinal Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\n\nLinux needs a WASAPI-loopback equivalent for meeting/system audio. PipeWire is the likely tier-1 path, PulseAudio compatibility is fallback, ALSA-only is best-effort, and portal capture may be needed for sandboxed packages.\n## Inputs\n\n`src/audio/wasapi_capture.rs`, `src/audio/mod.rs`, PipeWire/PulseAudio/ALSA/xdg-desktop-portal docs, Ubuntu 22.04/24.04, Fedora 40, Debian 12, one PulseAudio-only environment.\n## Outputs\n\nADR deciding backend order, permissions, latency budget, fallback chain, distro support, and package dependencies.\n## Test cases\n\n60-second non-silent 16 kHz mono capture on each target; continuity >= 0.98; first-sample latency <= 200 ms; steady-state p95 <= 60 ms; portal permission-denied UX documented; fallback chain tested.\n## Acceptance criteria\n\nConfidence for LINUX-02 becomes 1.0 or implementation stays blocked; evidence stored under `verification-evidence/linux-01/`; Opus review CLEAN.\n## Dependencies\n\nXPLAT-01.\n## Opus review gate\n\nMandatory; reviewer must verify measured evidence, not docs-only claims.\n\n## Related existing roadmap issues\n\n- #454 real-time volume evidence where applicable\n- #455 real-time voice hot-swap evidence where applicable\n- #456 single-active-voice invariant evidence where applicable\n- #457 local/remote backend contract where applicable\n- #459 QA master plan\n- #460 deterministic simulation harness\n- #461 CI master plan\n- #462 security/supply-chain master plan\n- #463 release packaging/channel/rollback master plan\n\n## Project\n\nAdd to https://github.com/users/magicpro97/projects/2.\n"
+  },
+  {
+    "number": 474,
+    "title": "TEST-02 — Linux deterministic audio simulation fixture",
+    "url": "https://github.com/magicpro97/tui-translator/issues/474",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: audio",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic"
+    ],
+    "milestone": null,
+    "body": "<!-- linux-cross-platform-quality-roadmap:TEST-02 -->\nCreated from tentacle-orchestration Linux/cross-platform roadmap planning.\n\nParent roadmap ledger: `.github/steps/linux-cross-platform-quality-roadmap.md`.\n\nFinal Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\n\nInternational QA and CI need hardware-free Linux audio tests for capture, playback, and virtual mic.\n## Inputs\n\n#460, PipeWire/PulseAudio null-sink, `pw-cat`, `pactl`, `WavFileSource`, PTY tests, soak runner.\n## Outputs\n\nHeadless fixture scripts, Linux probe binary mirroring `vbcable_ci_probe`, schema-versioned JSON evidence, FFT/RMS assertions, deterministic replayer.\n## Test cases\n\n1 kHz tone roundtrip peak in [995, 1005] Hz; silence floor RMS < -60 dBFS; daemon restart recovery; 10 runs produce byte-identical evidence except timestamps; fixture completes <= 90 seconds; zero flakes over 100 runs.\n## Acceptance criteria\n\nFixture gates CI-02 and supports LINUX-02/LINUX-04; Opus review CLEAN.\n## Dependencies\n\nLINUX-02.\n## Opus review gate\n\nMandatory; reviewer checks deterministic evidence and flake budget.\n\n## Related existing roadmap issues\n\n- #454 real-time volume evidence where applicable\n- #455 real-time voice hot-swap evidence where applicable\n- #456 single-active-voice invariant evidence where applicable\n- #457 local/remote backend contract where applicable\n- #459 QA master plan\n- #460 deterministic simulation harness\n- #461 CI master plan\n- #462 security/supply-chain master plan\n- #463 release packaging/channel/rollback master plan\n\n## Project\n\nAdd to https://github.com/users/magicpro97/projects/2.\n"
+  },
+  {
+    "number": 476,
+    "title": "QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+    "url": "https://github.com/magicpro97/tui-translator/issues/476",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic"
+    ],
+    "milestone": null,
+    "body": "<!-- linux-cross-platform-quality-roadmap:QA-02 -->\nCreated from tentacle-orchestration Linux/cross-platform roadmap planning.\n\nParent roadmap ledger: `.github/steps/linux-cross-platform-quality-roadmap.md`.\n\nFinal Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\n\nLinux multiplies target environments, so QA must explicitly cover portability, installability, adaptability, performance efficiency, reliability, usability, and compatibility.\n## Inputs\n\n#459 master QA plan, Linux target distros, Wayland/X11, terminal emulators, audio daemons, package formats, parity matrix.\n## Outputs\n\nLinux QA sub-plan, ISO traceability matrix, risk-based test priority, evidence folder structure, release promotion criteria.\n## Test cases\n\nUbuntu 22.04/24.04, Fedora 40, Debian 12, Arch; GNOME/KDE/Wayland/X11; gnome-terminal, konsole, alacritty, wezterm, foot, kitty, xterm; UTF-8/CJK/RTL rendering; package install/uninstall; config upgrade preserves user data.\n## Acceptance criteria\n\n100% traceability for mandatory Linux cells; evidence from release commit; Opus review CLEAN.\n## Dependencies\n\nPARITY-01, LINUX-02, LINUX-04, UX-01, I18N-01, REL-02.\n## Opus review gate\n\nMandatory.\n\n## Related existing roadmap issues\n\n- #454 real-time volume evidence where applicable\n- #455 real-time voice hot-swap evidence where applicable\n- #456 single-active-voice invariant evidence where applicable\n- #457 local/remote backend contract where applicable\n- #459 QA master plan\n- #460 deterministic simulation harness\n- #461 CI master plan\n- #462 security/supply-chain master plan\n- #463 release packaging/channel/rollback master plan\n\n## Project\n\nAdd to https://github.com/users/magicpro97/projects/2.\n"
+  },
+  {
+    "number": 486,
+    "title": "SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+    "url": "https://github.com/magicpro97/tui-translator/issues/486",
+    "state": "open",
+    "labels": [
+      "type: research",
+      "area: providers",
+      "phase: post-v1",
+      "level: atomic",
+      "provider: local",
+      "area: performance"
+    ],
+    "milestone": null,
+    "body": "## Context\nVendor evidence shows Supertonic is promising, but Windows performance, Rust shutdown behavior, streaming/first-audio latency, and integration shape are unknown.\n\n## Inputs\n- Upstream `supertone-inc/supertonic` repo.\n- Supertonic 3 Hugging Face model card.\n- Rust example and Python `supertonic serve` docs.\n- `src/providers/mod.rs`, `src/providers/google/tts.rs`, and local ONNX/ORT patterns from local MT.\n\n## Outputs\nSpike report deciding native Rust ONNX vs Python HTTP sidecar vs CLI; rejected alternatives; effort estimate for native provider; list of unresolved blockers.\n\n## Test cases\n- Run vendor Rust example offline.\n- Run Python local HTTP only as research path.\n- Synthesize one `en`, one `ja`, and one `vi` utterance.\n- Measure cold start, warm synthesis, time-to-first-audio proxy, RTF, RSS, and whether shutdown is clean without `_exit`.\n\n## Acceptance criteria\n- Decision confidence reaches 1.0 for production integration shape.\n- Python sidecar is accepted only for research or explicitly rejected for shipping.\n- No `src/providers/` implementation starts until this closes.\n\n## Dependencies\nSUPERTONIC-WBS.\n\n## Opus review gate\nMandatory; reviewer checks source citations and that no STT/MT scope leaked in.\n\nParent: #485\n"
+  },
+  {
+    "number": 499,
+    "title": "QA8-01 - QA charter, standards mapping, and risk register",
+    "url": "https://github.com/magicpro97/tui-translator/issues/499",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-01\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nThe roadmap needs a single international-standard QA artifact instead of ad hoc stability checks.\n\n## Inputs\n#459, #476, #483, ISO/IEC 25010/25022/25023, ISO/IEC/IEEE 29119, IEEE 1633, OWASP ASVS L1, SLSA policy issues.\n\n## Outputs\nQA charter, standards compliance matrix, risk register, and traceability template mapping requirement -> ISO characteristic -> risk -> SLO -> test case -> evidence artifact.\n\n## Test cases\nEvery ISO 25010 characteristic has at least one SLO; every High/Critical risk has at least one Tier-2 or higher test; every 8h stability SLO maps to an evidence artifact.\n\n## Acceptance criteria\nMatrix covers Windows/macOS/Linux; doc/schema checks pass; #459/#476 are linked as parent QA references; Opus review CLEAN.\n\n## Dependencies\nQA8-WBS.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 500,
+    "title": "QA8-02 - Machine-readable SLO schema and gate checker",
+    "url": "https://github.com/magicpro97/tui-translator/issues/500",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic",
+      "area: performance"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-02\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nRelease gates must be machine-verifiable rather than prose-only.\n\n## Inputs\nAccepted SLO draft, current metrics snapshot fields, `frame_pacing_bench` JSON mode, soak reports.\n\n## Outputs\nVersioned SLO schema, pass/fail gate checker, synthetic pass/fail fixtures, and CI integration plan.\n\n## Test cases\nSynthetic clean run passes; one fixture fails each category (crash, frame, RSS slope, CPU, queue, audio, provider, virtual mic); malformed evidence fails with a clear message.\n\n## Acceptance criteria\nChecker exits non-zero for any blocker gate failure; it is reusable by `nfr-verification-gate`; Opus review CLEAN.\n\n## Dependencies\nQA8-01.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 501,
+    "title": "QA8-03 - Soak evidence schema v2 and telemetry export contract",
+    "url": "https://github.com/magicpro97/tui-translator/issues/501",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: metrics",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-03\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nExisting soak artifacts are not rich enough to prove 8h stability, 60fps, no crash, and cross-platform parity.\n\n## Inputs\n`tests/soak/run_soak.rs`, `src/metrics/snapshot.rs`, `src/metrics/process.rs`, `src/tui/frame_pacer.rs`, current `audio_stability_proof` JSON.\n\n## Outputs\nAdditive schema v2 with run metadata, host/build/config hash, samples, frame pacing, audio capture, provider, virtual mic, Tokio, crash, fault-injection, RSS slope, handles/FDs, and attachments.\n\n## Test cases\nv1 fields remain readable; v2 golden sample validates; a 90-second dry-run produces at least three timestamped samples; secret-stripped config hash is deterministic.\n\n## Acceptance criteria\nSchema is documented and consumed by QA8-02; no breaking removal of existing report fields; Opus review CLEAN.\n\n## Dependencies\nQA8-02.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 502,
+    "title": "QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+    "url": "https://github.com/magicpro97/tui-translator/issues/502",
+    "state": "open",
+    "labels": [
+      "type: feature",
+      "area: metrics",
+      "area: reliability",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic",
+      "area: performance"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-04\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nCurrent process metrics need cross-platform parity and leak signals for 8-hour runs.\n\n## Inputs\n`src/metrics/process.rs`, `src/metrics/memory_guard.rs`, Windows psapi, macOS `task_info`/`proc_pidinfo`, Linux `/proc/self/status` and `/proc/self/fd`.\n\n## Outputs\nPlatform probe trait, Windows/macOS/Linux implementations, thread/handle/FD counts, private bytes/physical footprint where supported, and overhead notes.\n\n## Test cases\nValues are non-zero on each OS; injected fixture leak is detected; sampling overhead <= 0.5% CPU; unavailable metrics are explicit `unsupported`, not zero-shaped success.\n\n## Acceptance criteria\n8h schema can report RSS, private bytes, thread count, and handle/FD count on all three platforms; Opus review CLEAN.\n\n## Dependencies\nQA8-03.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 503,
+    "title": "QA8-05 - 8-hour soak runner v2 with fault injection",
+    "url": "https://github.com/magicpro97/tui-translator/issues/503",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic",
+      "area: performance"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-05\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nExisting CI validates fixtures and short dry-runs, but the user needs an 8-hour crash-free meeting proof.\n\n## Inputs\nQA8-02/03/04, existing soak runner, `tests/soak/soak_audio.wav`, #495 lower-tier soak, mock provider scripts from #460.\n\n## Outputs\n`--hours 8`, `--sample-secs 30`, `--fault-script`, `--crash-watch`, schema v2 artifact output, and fault-event recording.\n\n## Test cases\n10-minute smoke produces a complete v2 artifact; 1-hour deterministic schedule records network outage/provider 429/device hot-swap/CPU pressure events; forced panic creates actionable crash evidence.\n\n## Acceptance criteria\nOne 8-hour green run per platform can be recorded for a single `git_sha`; all QA8-02 blocker gates pass; `tui-soak-monitor` review CLEAN.\n\n## Dependencies\nQA8-03, QA8-04, QA8-09.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 505,
+    "title": "QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+    "url": "https://github.com/magicpro97/tui-translator/issues/505",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "area: audio",
+      "area: providers",
+      "area: reliability",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic",
+      "area: pipeline",
+      "area: virtual-mic"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-07\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\n8h stability can fail through audio jitter, provider queue growth, stale cancellation, fanout drops, or virtual-mic underruns without crashing.\n\n## Inputs\n`src/audio/wasapi_capture.rs`, future macOS/Linux capture backends, `src/audio/fanout.rs`, `src/pipeline/audio_sink.rs`, `src/pipeline/mod.rs`, #495, and prior audio/provider/virtual-mic issues linked by search at implementation time.\n\n## Outputs\nAudio inter-chunk jitter histogram, capture stall counters, provider queue/inflight/error recovery counters, cancellation latency histogram, virtual-mic latency and underrun telemetry.\n\n## Test cases\nReplayer with injected gap increments capture stall; synthetic provider outage records recovery; synthetic sink underrun is counted; no fanout drops under nominal dual mode.\n\n## Acceptance criteria\nQA8-05 artifacts report all telemetry sections and enforce audio/provider/virtual-mic thresholds; Opus review CLEAN.\n\n## Dependencies\nQA8-03, QA8-06.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 506,
+    "title": "QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+    "url": "https://github.com/magicpro97/tui-translator/issues/506",
+    "state": "open",
+    "labels": [
+      "type: feature",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic",
+      "area: privacy"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-08\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\n\"No crash\" needs platform-native evidence and an actionable root-cause workflow if a crash occurs.\n\n## Inputs\n`src/main.rs`, Tokio task supervision, `crash-root-cause` agent, Windows WER LocalDumps, macOS DiagnosticReports, Linux `systemd-coredump`/core files, release debug symbols.\n\n## Outputs\nPanic hook, metrics flush on panic, crash-watch docs/scripts, `.pdb`/`.dSYM`/`.debug` collection plan, symbolication commands, normalized crash JSON node.\n\n## Test cases\nForced panic writes `panic-log.txt`; Windows/macOS/Linux crash watchers collect a sentinel crash artifact; symbolication produces a backtrace text artifact; dump scrubber removes secrets before upload.\n\n## Acceptance criteria\nQA8-05 cannot pass if any dump/crash artifact exists; `crash-root-cause` review CLEAN for failure workflow.\n\n## Dependencies\nQA8-03, QA8-04.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 509,
+    "title": "QA8-11 - Project priority and issue hygiene enforcement",
+    "url": "https://github.com/magicpro97/tui-translator/issues/509",
+    "state": "open",
+    "labels": [
+      "area: infra",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic",
+      "type: automation"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-11\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nThe user requires every new issue to be P0 in Project #2 and no new issue should miss priority.\n\n## Inputs\nProject #2 ID `PVT_kwHOAT2vsM4BXVxn`, Priority field `PVTSSF_lAHOAT2vsM4BXVxnzhSjUPQ`, P0 option `b654f0a5`, label `priority:P0`, issue/project GraphQL APIs.\n\n## Outputs\nIssue hygiene workflow or script that applies/validates exactly one `priority:*` label and syncs Project #2 `Priority` field; one-time audit/backfill report for this WBS issue set.\n\n## Test cases\nIssue without priority gets `priority:P0`; Project item Priority is set to P0; mismatch is reported; created QA8 issues audit returns `missing_label=0` and `missing_project_priority=0`.\n\n## Acceptance criteria\nAll QA8 issues have label `priority:P0` and Project #2 Priority P0; weekly drift audit plan exists; Opus review CLEAN.\n\n## Dependencies\nQA8-WBS.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  },
+  {
+    "number": 510,
+    "title": "QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+    "url": "https://github.com/magicpro97/tui-translator/issues/510",
+    "state": "open",
+    "labels": [
+      "type: testing",
+      "type: release",
+      "area: infra",
+      "area: reliability",
+      "area: verification",
+      "phase: post-v1",
+      "priority:P0",
+      "level: atomic"
+    ],
+    "milestone": null,
+    "body": "Roadmap marker: eight-hour-stability-qa-roadmap:QA8-12\nCreated from tentacle-orchestration 8-hour stability QA roadmap planning. Final Opus WBS review: CLEAN, confidence 1.0.\n\n## Context\nEach completed work package must be reviewed, and release promotion must consume the evidence instead of relying on claims.\n\n## Inputs\nQA8-01..11, `nfr-verification-gate`, `tui-soak-monitor`, `tui-rust-code-reviewer`, `tui-security-auditor`, `crash-root-cause`, #463 release plan.\n\n## Outputs\nRelease evidence bundle schema, review checklist, Opus final-review template, NFR gate requirements, issue closeout checklist requiring command/artifact evidence.\n\n## Test cases\nSimulated all-green evidence passes; missing one platform artifact blocks; missing Opus review blocks; one crash artifact blocks; stale weekly soak blocks.\n\n## Acceptance criteria\nNo QA8 child can be closed without evidence links and Opus/specialist review result; RC/GA gates consume the same evidence bundle; Opus review CLEAN.\n\n## Dependencies\nQA8-02, QA8-05, QA8-10, QA8-11.\n\n## Opus review gate\nMandatory.\n\nParent: #498\n"
+  }
+]

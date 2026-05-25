@@ -1,0 +1,3141 @@
+{
+  "data": {
+    "user": {
+      "projectV2": {
+        "title": "tui-translator roadmap",
+        "items": {
+          "totalCount": 329,
+          "pageInfo": {
+            "hasNextPage": true,
+            "endCursor": "Y3Vyc29yOnYyOpKrMDAwMDAwMDAuMDHOCxbvYg=="
+          },
+          "nodes": [
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyYo",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 23,
+                "title": "[EPIC] WP-23 — Post-v1 Feature — Ollama Local Translation Post-Processing",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/23",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "help wanted"
+                    },
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: ollama"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "needs: human-reviewer"
+                    },
+                    {
+                      "name": "priority:P4"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyZY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 22,
+                "title": "[EPIC] WP-22 — Post-v1 Feature — Azure Provider Integration",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/22",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "help wanted"
+                    },
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: azure"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "priority:P4"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyak",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 21,
+                "title": "[EPIC] WP-21 — Post-v1 Validation — Per-Process Audio Capture (Zoom-Only Loopback)",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/21",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "help wanted"
+                    },
+                    {
+                      "name": "type: research"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "needs: human-reviewer"
+                    },
+                    {
+                      "name": "priority:P4"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWybg",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 20,
+                "title": "[EPIC] WP-20 — Post-v1 Validation — gRPC Streaming STT",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/20",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "help wanted"
+                    },
+                    {
+                      "name": "type: research"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "phase: post-v1"
+                    },
+                    {
+                      "name": "needs: human-reviewer"
+                    },
+                    {
+                      "name": "priority:P4"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWycI",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 19,
+                "title": "[EPIC] WP-19 — Human Acceptance Testing on Real Hardware (Verification Layer 5)",
+                "state": "OPEN",
+                "url": "https://github.com/magicpro97/tui-translator/issues/19",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "help wanted"
+                    },
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "needs: human-reviewer"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyck",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 18,
+                "title": "[EPIC] WP-18 — Soak and Stability Tests (Verification Layer 4)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/18",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWydU",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 17,
+                "title": "[EPIC] WP-17 — Terminal Behavior Tests — PTY Layout and Cleanup (Verification Layer 3)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/17",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWydg",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 16,
+                "title": "[EPIC] WP-16 — Integration and Contract Tests (Verification Layer 2)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/16",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyd4",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 15,
+                "title": "[EPIC] WP-15 — CI Pipeline — Build, Lint, and Unit Tests (Verification Layer 1)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/15",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyeg",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 14,
+                "title": "[EPIC] WP-14 — Packaging — Single Windows Executable and User Setup Guide",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/14",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWygE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 13,
+                "title": "[EPIC] WP-13 — Reliability — Error Handling, Retry Logic, and Graceful Shutdown",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/13",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWygc",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 12,
+                "title": "[EPIC] WP-12 — Observability — Latency Histogram and Runtime Metrics",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/12",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyg4",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 11,
+                "title": "[EPIC] WP-11 — Session Cost Tracking and Display",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/11",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyhU",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 10,
+                "title": "[EPIC] WP-10 — Configuration System — config.json Loading and Hot-Reload",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/10",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyh4",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 9,
+                "title": "[EPIC] WP-09 — Runtime Keyboard Controls",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/9",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyiQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 8,
+                "title": "[EPIC] WP-08 — Terminal UI — Status Bar and Metrics Display",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/8",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyi0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 7,
+                "title": "[EPIC] WP-07 — Terminal UI — Bilingual Subtitle Panel",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/7",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyjQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 6,
+                "title": "[EPIC] WP-06 — Google Text-to-Speech Integration (Optional Audio)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/6",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyj4",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 5,
+                "title": "[EPIC] WP-05 — Google Translation Integration",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/5",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWykY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 4,
+                "title": "[EPIC] WP-04 — Google Speech-to-Text Integration",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/4",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWyk0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 3,
+                "title": "[EPIC] WP-03 — Provider Trait Architecture — STT, MT, and TTS Interfaces",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/3",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWylk",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 2,
+                "title": "[EPIC] WP-02 — Windows Audio Capture — WASAPI Loopback and Resampler",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/2",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsWymQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 1,
+                "title": "[EPIC] WP-01 — Project Skeleton — Cargo Workspace, CI, Minimal TUI",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/1",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: setup"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: epic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW4zw",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 24,
+                "title": "[P0] WP-01.01 — Create a Cargo workspace at the repository root with the following module folders…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/24",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: setup"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW43k",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 25,
+                "title": "[P0] WP-01.02 — Add the following dependencies to Cargo.toml",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/25",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: setup"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW46A",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 26,
+                "title": "[P0] WP-01.03 — Write a main.rs entry point that opens a terminal window using ratatui and…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/26",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: setup"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5Ao",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 27,
+                "title": "[P0] WP-01.04 — Set up a GitHub Actions workflow file (.github/workflows/ci.yml) that runs on…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/27",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: setup"
+                    },
+                    {
+                      "name": "area: infra"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5FA",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 28,
+                "title": "[P0] WP-02.01 — Add wasapi (the wasapi-rs crate) and rubato to Cargo.toml.",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/28",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5Gw",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 29,
+                "title": "[P0] WP-02.02 — Implement src/audio/mod.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/29",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5IM",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 30,
+                "title": "[P0] WP-02.03 — Add a silence detector",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/30",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5JY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 31,
+                "title": "[P0] WP-02.04 — Add a simple live audio-level bar (a row of block characters that grows and…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/31",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5Ls",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 32,
+                "title": "[P0] WP-02.05 — The module must run for at least 10 minutes without crashing, increasing memory…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/32",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: audio"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5OE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 33,
+                "title": "[P0] WP-03.01 — Create src/providers/mod.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/33",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5QM",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 34,
+                "title": "[P0] WP-03.02 — Define ProviderError as an enum covering at minimum",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/34",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5Sg",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 35,
+                "title": "[P0] WP-03.03 — Define AudioChunk and SttResult, MtResult, TtsResult as plain Rust structs in…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/35",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5Us",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 36,
+                "title": "[P0] WP-03.04 — Write a simple mock implementation of each trait in src/providers/mock.rs that…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/36",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5W4",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 37,
+                "title": "[P0] WP-03.05 — Add unit tests confirming that the mock implementations satisfy the trait bounds…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/37",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: architecture"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5aU",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 38,
+                "title": "[P1] WP-04.01 — Add the Google Cloud Rust client library (or use reqwest for HTTP calls to the…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/38",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5bo",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 39,
+                "title": "[P1] WP-04.02 — Create src/providers/google/stt.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/39",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5c0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 40,
+                "title": "[P1] WP-04.03 — Configure the STT request with",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/40",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5eY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 41,
+                "title": "[P1] WP-04.04 — Add a status indicator showing the current STT state",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/41",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5fw",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 42,
+                "title": "[P1] WP-04.05 — Write a contract test in tests/contract/google_stt.rs that sends a real short…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/42",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5rE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 43,
+                "title": "[P1] WP-05.01 — Create src/providers/google/mt.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/43",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5wk",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 44,
+                "title": "[P1] WP-05.02 — Display bilingual pairs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/44",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW50M",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 45,
+                "title": "[P1] WP-05.03 — Handle empty or whitespace-only input",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/45",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW518",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 46,
+                "title": "[P1] WP-05.04 — Handle mid-sentence truncation gracefully",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/46",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW54g",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 47,
+                "title": "[P1] WP-05.05 — Write a contract test in tests/contract/google_mt.rs that sends a known Japanese…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/47",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW56Q",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 48,
+                "title": "[P1] WP-06.01 — Add rodio (or equivalent audio playback crate) to Cargo.toml.",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/48",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW57I",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 49,
+                "title": "[P1] WP-06.02 — Create src/providers/google/tts.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/49",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW58Y",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 50,
+                "title": "[P1] WP-06.03 — Add a TTS playback sub-task",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/50",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW59s",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 51,
+                "title": "[P1] WP-06.04 — The TTS enabled/disabled state is controlled by the T key (implemented in WP-09)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/51",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW5-o",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 52,
+                "title": "[P1] WP-06.05 — The output device for TTS audio is configurable in config.json as…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/52",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6BY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 53,
+                "title": "[P1] WP-06.06 — Write a contract test in tests/contract/google_tts.rs that sends a short…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/53",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: providers"
+                    },
+                    {
+                      "name": "provider: google"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6Fc",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 54,
+                "title": "[P1] WP-07.01 — Implement the subtitle pane as a ratatui Widget",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/54",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6HU",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 55,
+                "title": "[P1] WP-07.02 — Implement responsive layout",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/55",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6KQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 56,
+                "title": "[P1] WP-07.03 — Apply distinct colors (where the terminal supports color) to the [SRC] and [TGT]…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/56",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6OI",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 57,
+                "title": "[P1] WP-07.04 — Write snapshot tests in tests/snapshot/ using ratatui's built-in test backend",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/57",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6P0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 58,
+                "title": "[P1] WP-08.01 — Implement the status strip and metrics strip as ratatui widgets.",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/58",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6Rs",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 59,
+                "title": "[P1] WP-08.02 — Implement the compact/expanded toggle for the metrics section, controlled by a…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/59",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6Sw",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 60,
+                "title": "[P1] WP-08.03 — Implement adaptive layout",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/60",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6Uc",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 61,
+                "title": "[P1] WP-08.04 — All metric values are received via a shared observable state struct (e.g., a tokio",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/61",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6V0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 62,
+                "title": "[P1] WP-08.05 — Add snapshot tests for the status strip at 80×24 and 120×40 terminal sizes.",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/62",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6ZQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 63,
+                "title": "[P1] WP-09.01 — Implement a keyboard event loop using crossterm's event polling",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/63",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6eI",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 64,
+                "title": "[P1] WP-09.02 — Implement each command",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/64",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6iE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 65,
+                "title": "[P1] WP-09.03 — The control bar at the bottom of the terminal always shows",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/65",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6lo",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 66,
+                "title": "[P1] WP-09.04 — The session summary (shown on quit) includes",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/66",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: tui"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6qw",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 67,
+                "title": "[P1] WP-10.01 — Create src/config/mod.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/67",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6sg",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 68,
+                "title": "[P1] WP-10.02 — Implement hot-reload",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/68",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6uE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 69,
+                "title": "[P1] WP-10.03 — Create config.example.json at the repository root",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/69",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6u8",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 70,
+                "title": "[P1] WP-10.04 — Write unit tests covering",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/70",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: config"
+                    },
+                    {
+                      "name": "priority:P1"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6xE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 71,
+                "title": "[P2] WP-11.01 — Create src/metrics/cost.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/71",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW6zo",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 72,
+                "title": "[P2] WP-11.02 — The cost counter is thread-safe (uses AtomicF64 or a Mutex<f64>)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/72",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW62s",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 73,
+                "title": "[P2] WP-11.03 — Display the cost in the status bar as ~$0.012 (2 decimal places, rounded up, with…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/73",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW65s",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 74,
+                "title": "[P2] WP-11.04 — When current_estimate_usd() exceeds the cost_warning_threshold_usd from…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/74",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW69k",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 75,
+                "title": "[P2] WP-11.05 — On session end (quit), include the final cost estimate in the session summary…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/75",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7Bo",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 76,
+                "title": "[P2] WP-11.06 — Write unit tests covering",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/76",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7F4",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 77,
+                "title": "[P2] WP-12.01 — Create src/metrics/mod.rs",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/77",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7G0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 78,
+                "title": "[P2] WP-12.02 — Implement a LatencyHistogram wrapper around hdrhistogram",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/78",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7IY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 79,
+                "title": "[P2] WP-12.03 — Implement ProcessMetrics",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/79",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7Kk",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 80,
+                "title": "[P2] WP-12.04 — Implement NetworkMetrics",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/80",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7L8",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 81,
+                "title": "[P2] WP-12.05 — Implement LossMetrics",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/81",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7NQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 82,
+                "title": "[P2] WP-12.06 — Aggregate all metrics into a MetricsSnapshot struct that is sent via watch",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/82",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7QE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 83,
+                "title": "[P2] WP-12.07 — Record the latency timestamp when the audio chunk is submitted to STT, and mark…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/83",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: metrics"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7VQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 84,
+                "title": "[P2] WP-13.01 — Implement the orchestrator task that drives the STT → MT → TTS pipeline",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/84",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7XY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 85,
+                "title": "[P2] WP-13.02 — All errors that exhaust retries result in a visible but non-crashing status bar…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/85",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7aY",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 86,
+                "title": "[P2] WP-13.03 — On AuthError, display the API key error message and stop making API calls",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/86",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7b8",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 87,
+                "title": "[P2] WP-13.04 — Implement graceful shutdown",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/87",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7dI",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 88,
+                "title": "[P2] WP-13.05 — Ensure that a forced terminal close (user closes the terminal window without…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/88",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7e0",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 89,
+                "title": "[P2] WP-13.06 — Write integration tests that simulate each error type (using mock providers…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/89",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: feature"
+                    },
+                    {
+                      "name": "area: reliability"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7ik",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 90,
+                "title": "[P2] WP-14.01 — Confirm that cargo build --release --target x86_64-pc-windows-msvc produces a…",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/90",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7jQ",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 91,
+                "title": "[P2] WP-14.02 — Create USAGE.md at the repository root",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/91",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7kU",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 92,
+                "title": "[P2] WP-14.03 — Update README.md to link to USAGE.md and to the releases page.",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/92",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7mE",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 93,
+                "title": "[P2] WP-14.04 — Confirm that the built .exe can be run from any folder (no hardcoded paths).",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/93",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: release"
+                    },
+                    {
+                      "name": "area: packaging"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7pM",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 94,
+                "title": "[P0] WP-15.01 — Create .github/workflows/ci.yml",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/94",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7sI",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 95,
+                "title": "[P0] WP-15.02 — The CI job runs on windows-latest (GitHub-hosted Windows runner) and includes",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/95",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7vA",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 96,
+                "title": "[P0] WP-15.03 — Add a second job for contract tests",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/96",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7yM",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 97,
+                "title": "[P0] WP-15.04 — Add a CI status badge to README.md.",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/97",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW7zc",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 98,
+                "title": "[P0] WP-15.05 — Ensure the CI run completes in under 10 minutes on the GitHub-hosted runner",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/98",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: ci"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P0"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW708",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 99,
+                "title": "[P2] WP-16.01 — Audio-to-transcript integration test (tests/integration/audio_to_transcript.rs)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/99",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "id": "PVTI_lAHOAT2vsM4BXVxnzgsW72I",
+              "type": "ISSUE",
+              "content": {
+                "__typename": "Issue",
+                "number": 100,
+                "title": "[P2] WP-16.02 — Translation round-trip test (tests/integration/translation_roundtrip.rs)",
+                "state": "CLOSED",
+                "url": "https://github.com/magicpro97/tui-translator/issues/100",
+                "repository": {
+                  "nameWithOwner": "magicpro97/tui-translator"
+                },
+                "labels": {
+                  "nodes": [
+                    {
+                      "name": "type: testing"
+                    },
+                    {
+                      "name": "area: verification"
+                    },
+                    {
+                      "name": "priority:P2"
+                    },
+                    {
+                      "name": "level: atomic"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

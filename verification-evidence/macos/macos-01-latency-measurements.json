@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0.0",
+  "artifact": "macos-01-latency-measurements",
+  "issue": 450,
+  "wave": 1,
+  "tier": "T0",
+  "red_mode": "evidence_first",
+  "test_case": "Measure first-sample and steady-state latency on at least one Apple Silicon host",
+  "status": "not_measured",
+  "reason_not_measured": "Arbiter host is Windows 11; no Apple-Silicon hardware available at spike time. Acceptance matrix for #450 authorises 'honest could-not-measure rationale + follow-up blocker' for this exact case.",
+  "follow_up_blocker": {
+    "name": "MACOS-01b",
+    "parent_issue": 450,
+    "blocks": ["MACOS-02"],
+    "see": "macos-01-spike-decision.md §6"
+  },
+  "metrics_to_record": [
+    {
+      "name": "first_sample_latency_ms",
+      "definition": "Wall-clock time between start_capture() returning and the first audio callback delivering >= 1 sample.",
+      "target_max_ms": 500,
+      "rationale": "WASAPI loopback baseline on Windows is typically 50–200 ms; we accept up to 500 ms on first sample because SCK requires a content-discovery round-trip."
+    },
+    {
+      "name": "steady_state_latency_ms_p50",
+      "definition": "Median end-to-end latency from acoustic event at the system mixer to the i16 sample landing in the AudioSource consumer.",
+      "target_max_ms": 150,
+      "rationale": "Mirrors the Windows WASAPI target inherited by the AudioSource trait."
+    },
+    {
+      "name": "steady_state_latency_ms_p95",
+      "definition": "95th-percentile end-to-end latency over a 60 s steady-state window.",
+      "target_max_ms": 250
+    },
+    {
+      "name": "steady_state_latency_ms_p99",
+      "definition": "99th-percentile end-to-end latency over a 60 s steady-state window.",
+      "target_max_ms": 400
+    },
+    {
+      "name": "chunk_jitter_ms_stddev",
+      "definition": "Standard deviation of inter-callback gap times.",
+      "target_max_ms": 5
+    }
+  ],
+  "measurement_protocol": {
+    "hosts_required": [
+      "Apple Silicon M1 or newer, macOS 13.x",
+      "Apple Silicon M1 or newer, macOS 14.x"
+    ],
+    "paths_to_measure": [
+      {
+        "name": "tier1_screencapturekit",
+        "harness": "verification-evidence/macos/macos-01-screencapturekit-prototype.md §3 (Swift trampoline)"
+      },
+      {
+        "name": "tier2_coreaudio_blackhole",
+        "harness": "verification-evidence/macos/macos-01-screencapturekit-prototype.md §4 (cpal sketch)"
+      }
+    ],
+    "first_sample_method": "Record monotonic timestamp immediately before tui_macos_start (or stream.play()) returns; record monotonic timestamp inside the first audio callback. Subtract.",
+    "steady_state_method": "Play a known impulse pattern through the system output (or directly into BlackHole 2ch); cross-correlate against the captured stream to derive end-to-end latency per pulse; bucket into a histogram and report p50/p95/p99.",
+    "sample_count": "At least 600 impulses spread across the 60 s window for a stable percentile estimate.",
+    "warmup_seconds": 5
+  },
+  "result": null,
+  "authored_at": "2026-05-24",
+  "authored_by": "tentacle:w1-t0-450-macos-spike",
+  "notes": "Populating 'result' requires MACOS-01b on real hardware. Do NOT estimate or interpolate from Windows numbers."
+}

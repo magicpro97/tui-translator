@@ -1,0 +1,56 @@
+test_id,issue,wbs_code,iso_25010_characteristic,verification_layer,test_design_technique,requirement_summary,evidence_artifact,wave1_status,reviewer
+QA-01-T-001,459,QA-01,functional_suitability,L1+L2,equivalence_partitioning,Master test plan covers all ISO 25010 characteristics,verification-evidence/qa/QA-01-master-test-plan.md,enforced-wave1,code-review
+QA-01-T-002,459,QA-01,functional_suitability,L1,doc_review,Traceability matrix is complete for P0 scope,verification-evidence/qa/QA-01-traceability-matrix.csv,enforced-wave1,opus-qa
+QA-01-T-003,459,QA-01,maintainability,L1,doc_review,Quality thresholds documented per characteristic,verification-evidence/qa/QA-01-quality-thresholds.md,enforced-wave1,code-review
+QA-01-T-004,459,QA-01,maintainability,L1,doc_review,docs/04-verification-plan.md references QA-01 artifacts,docs/04-verification-plan.md §12a,enforced-wave1,code-review
+QA-01-T-005,459,QA-01,interaction_capability,L3+L5,use_case,Keyboard shortcut surface and help panel covered by quality thresholds,verification-evidence/qa/QA-01-quality-thresholds.md §4,enforced-wave1,code-review
+QA-01-T-006,459,QA-01,flexibility,L2,equivalence_partitioning,Provider trait swappability covered by quality thresholds,verification-evidence/qa/QA-01-quality-thresholds.md §9,enforced-wave1,code-review
+QA-01-T-007,459,QA-01,safety,L2+L4,error_guessing,Translated audio + cost-counter hazard warnings covered by quality thresholds,verification-evidence/qa/QA-01-quality-thresholds.md §10,enforced-wave1,code-review
+TEST-01-T-001,460,TEST-01,functional_suitability,L2,use_case,Audio fixture replayer drives pipeline headlessly,verification-evidence/test/TEST-01-simulation-harness-plan.md,enforced-wave1,code-review
+TEST-01-T-002,460,TEST-01,functional_suitability,L2,boundary_value_analysis,Evidence schema validates simulation output,verification-evidence/test/TEST-01-evidence-schema.json,enforced-wave1,code-review
+TEST-01-T-003,460,TEST-01,reliability,L4,error_guessing,Soak file-source mode emits schema-versioned JSON,verification-evidence/test/TEST-01-evidence-schema.json,enforced-wave1,code-review
+TEST-01-T-004,460,TEST-01,portability,L2,equivalence_partitioning,file_source.rs scaffold compiles cross-platform headlessly,tests/**,enforced-wave1,code-review
+TEST-01-T-005,460,TEST-01-b,reliability,L2,error_guessing,Provider mock returns 429/503/slow responses (deferred to TEST-01b),successor-issue,enforced-from-w2,code-review
+TEST-02-T-001,474,TEST-02,portability,L2,use_case,Linux simulation plan documents fixture+probe approach,verification-evidence/test/TEST-02-linux-simulation.md,enforced-wave1,code-review
+TEST-02-T-002,474,TEST-02-b,portability,L2,use_case,Probe binary + fixture scripts + JSON evidence (deferred to TEST-02b),successor-issue,enforced-from-w2,code-review
+CI-01-T-001,461,CI-01,maintainability,L1,equivalence_partitioning,Tampering Cargo.lock causes --locked jobs to fail,.github/workflows/ci.yml,enforced-wave1,code-review
+CI-01-T-002,461,CI-01,portability,L1+L2,equivalence_partitioning,Required feature combos compile on macOS+Windows,verification-evidence/ci/CI-01-matrix-run-url.json,enforced-wave1,code-review
+CI-01-T-003,461,CI-01,portability,L1,error_guessing,Beta toolchain failure is allowed-fail only where documented,verification-evidence/ci/CI-01-required-checks.md,enforced-wave1,code-review
+CI-01-T-004,461,CI-01,compatibility,L2,state_transition,VMIC hardware-dependent jobs remain skip-safe with evidence,verification-evidence/ci/CI-01-matrix-run-url.json,enforced-wave1,code-review
+CI-01-T-005,461,CI-01,security,L1,equivalence_partitioning,No existing Windows gate is weakened by matrix expansion,.github/workflows/ci.yml,enforced-wave1,opus-qa
+QA-02-T-001,476,QA-02,portability,L2+L3,use_case,Linux portability plan covers ALSA/PulseAudio/PipeWire capture surfaces,verification-evidence/qa/QA-02-linux-portability-plan.md,enforced-wave1,code-review
+QA-02-T-002,476,QA-02,portability,L5,error_guessing,Release-time Linux evidence noted as deferred follow-up,verification-evidence/qa/QA-02-linux-portability-plan.md,enforced-from-w2,code-review
+LINUX-01-T-001,468,LINUX-01,portability,L2,doc_review,Linux capture backend ADR records decision and rationale,verification-evidence/linux/linux-01-spike-decision.md,enforced-wave1,code-review
+LINUX-01-T-002,468,LINUX-01,portability,L2,doc_review,Measurement JSON inlined or recorded as deferred follow-up,verification-evidence/linux/linux-01-spike-decision.md,enforced-wave1,code-review
+MACOS-01-T-001,450,MACOS-01,portability,L2+L5,use_case,macOS spike documents AVAudioEngine vs ScreenCaptureKit decision,verification-evidence/macos/macos-01-*,enforced-wave1,code-review
+MACOS-01-T-002,450,MACOS-01,compatibility,L5,use_case,macOS spike records hardware caveats and reviewer notes,verification-evidence/macos/macos-01-*,enforced-wave1,code-review
+SUPERTONIC-01-T-001,486,SUPERTONIC-01,functional_suitability,L2,use_case,Supertonic provider spike documents API surface and gaps,verification-evidence/supertonic/SUPERTONIC-01-spike.md,enforced-wave1,code-review
+SUPERTONIC-01-T-002,486,SUPERTONIC-01,security,L2,error_guessing,API key handling documented; no key in spike artifacts,verification-evidence/supertonic/SUPERTONIC-01-spike.md,enforced-wave1,code-review
+QA8-01-T-001,499,QA8-01,maintainability,L1,doc_review,QA8 charter defines reliability/stability programme,verification-evidence/qa8/QA8-01-charter.md,enforced-wave1,code-review
+QA8-01-T-002,499,QA8-01,reliability,L4,doc_review,Risk register present and links to SLOs,verification-evidence/qa8/QA8-01-charter.md,enforced-wave1,code-review
+QA8-02-T-001,500,QA8-02,reliability,L2,boundary_value_analysis,SLO schema JSON validates against meta-schema,verification-evidence/qa8/QA8-02-slo-schema.json,enforced-wave1,code-review
+QA8-02-T-002,500,QA8-02,maintainability,L1,equivalence_partitioning,JSON-Schema self-validation meta-test passes under tests/**,tests/**,enforced-wave1,code-review
+QA8-02-T-003,500,QA8-02-b,reliability,L2,error_guessing,Checker binary (deferred to QA8-02b),successor-issue,enforced-from-w2,code-review
+SEC-01-T-001,509,SEC-01,maintainability,L1,equivalence_partitioning,Issue-hygiene workflow YAML passes actionlint,.github/workflows/issue-hygiene.yml,enforced-wave1,code-review
+SEC-01-T-002,509,SEC-01,security,L1,error_guessing,Workflow does not leak secrets into logs,.github/workflows/issue-hygiene.yml,enforced-wave1,opus-qa
+REL-01-T-001,510,REL-01,maintainability,L1,equivalence_partitioning,Release-gate workflow YAML passes actionlint,.github/workflows/release-gate.yml,enforced-wave1,code-review
+REL-01-T-002,510,REL-01,security,L1+L2,error_guessing,Release-gate signs artefacts where present (SLSA/cosign),.github/workflows/release-gate.yml,enforced-from-w2,code-review
+REL-01-T-003,510,REL-01,reliability,L4,use_case,Release-gate requires soak + CI green before promotion,.github/workflows/release-gate.yml,enforced-wave1,code-review
+SCHEMA-01-T-001,501,QA8-03,reliability,L1,boundary_value_analysis,Metrics snapshot serde round-trips against schema v2,tests/qa8_schema_contract.rs,enforced-from-w2,opus-specialist
+SCHEMA-01-T-002,501,QA8-03,maintainability,L1,equivalence_partitioning,v1 read-back compatibility test (no field removed),tests/**,enforced-from-w2,opus-specialist
+SCHEMA-01-T-003,501,QA8-03,portability,L1,equivalence_partitioning,Cross-platform CI green; Windows mandatory,verification-evidence/qa8/QA8-03-soak-schema-v2.json,enforced-from-w2,opus-specialist
+PROC-01-T-001,502,QA8-04,performance_efficiency,L2,boundary_value_analysis,process.rs leak-fixture test passes; overhead ≤0.5 % CPU note,tests/**,enforced-from-w2,code-review
+PROC-01-T-002,502,QA8-04,portability,L1+L2,equivalence_partitioning,Per-OS metrics marked unsupported where not measurable,src/metrics/process.rs,enforced-from-w2,code-review
+PROC-01-T-003,502,QA8-04,maintainability,L1,equivalence_partitioning,No edits to memory_guard.rs except read-only reference,src/metrics/process.rs,enforced-from-w2,code-review
+LOSS-01-T-001,505,QA8-07,reliability,L1,boundary_value_analysis,Counter/histogram primitives unit tests under tests/**,tests/**,enforced-from-w2,code-review
+LOSS-01-T-002,505,QA8-07,performance_efficiency,L2,equivalence_partitioning,Recording API in loss.rs+network.rs without capture/fanout edits,src/metrics/loss.rs;src/metrics/network.rs,enforced-from-w2,code-review
+LOSS-01-T-003,505,QA8-07-b,performance_efficiency,L2,error_guessing,Call-site wiring (deferred to QA8-07b),successor-issue,enforced-from-w2,code-review
+MEM-01-T-001,506,QA8-08,safety,L1+L4,error_guessing,Forced-panic test captures message+thread+backtrace into JSON,tests/**,enforced-from-w2,opus-specialist
+MEM-01-T-002,506,QA8-08,reliability,L4,boundary_value_analysis,RSS-threshold watcher signals before forced kill (Windows 10/11),src/metrics/memory_guard.rs,enforced-from-w2,opus-specialist
+MEM-01-T-003,506,QA8-08-b,reliability,L4,error_guessing,Crash-dump capture + symbolication (deferred to QA8-08b),successor-issue,enforced-from-w2,code-review
+SOAK-01-T-001,503,QA8-05,reliability,L4,use_case,10-min smoke run produces complete v2 artifact,src/bin/audio_stability_proof.rs,enforced-from-w2,tui-soak-monitor
+SOAK-01-T-002,503,QA8-05,reliability,L4,state_transition,1-hour deterministic schedule produces fault-event log,src/bin/audio_stability_proof.rs,enforced-from-w2,tui-soak-monitor
+SOAK-01-T-003,503,QA8-05,performance_efficiency,L4,boundary_value_analysis,Latency p50/p95 within thresholds over 1 h,src/bin/audio_stability_proof.rs,enforced-from-w2,tui-soak-monitor
+SOAK-01-T-004,503,QA8-05,reliability,L4,use_case,Runner accepts --hours/--sample-secs/--fault-script/--crash-watch flags,src/bin/audio_stability_proof.rs,enforced-from-w2,tui-soak-monitor
+SOAK-01-T-005,503,QA8-05-b,reliability,L4,error_guessing,External fault-driver modules (deferred to QA8-05b),successor-issue,enforced-from-w2,code-review
+DM-08-T-001,384,DM-08,functional_suitability,L1,doc_review,Dual-mode docs (deferred out of Wave-1; depends on DM-01..DM-07),deferred-out-of-wave1,deferred,n/a

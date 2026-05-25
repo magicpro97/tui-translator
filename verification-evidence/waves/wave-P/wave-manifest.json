@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "wave": "P",
+  "kind": "planning_decomposition",
+  "implementation_dispatch_allowed": false,
+  "issue_count": 16,
+  "issues": [
+    {
+      "number": 20,
+      "title": "[EPIC] WP-20 — Post-v1 Validation — gRPC Streaming STT",
+      "family": "WP-20",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 21,
+      "title": "[EPIC] WP-21 — Post-v1 Validation — Per-Process Audio Capture (Zoom-Only Loopback)",
+      "family": "WP-21",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 22,
+      "title": "[EPIC] WP-22 — Post-v1 Feature — Azure Provider Integration",
+      "family": "WP-22",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 23,
+      "title": "[EPIC] WP-23 — Post-v1 Feature — Ollama Local Translation Post-Processing",
+      "family": "WP-23",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 368,
+      "title": "[EPIC] LF â€” Local-first defaults, storage, and offline provider readiness",
+      "family": "LF",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 376,
+      "title": "[EPIC] DM â€” Dual-provider transcript mode with side-by-side A/B panes",
+      "family": "DM",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 385,
+      "title": "[EPIC] HC â€” Hot config without restart",
+      "family": "HC",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 392,
+      "title": "[EPIC] SM â€” Realtime storage metrics for transcripts and audio archive",
+      "family": "SM",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 449,
+      "title": "[EPIC] MACOS-WBS — macOS support, live controls, models, virtual mic, QA, CI/CD, and release roadmap",
+      "family": "MACOS-WBS",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 464,
+      "title": "[EPIC] LINUX-WBS — Linux and cross-platform parity roadmap epic",
+      "family": "LINUX-WBS",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 465,
+      "title": "PROC-01 — Opus review, confidence, and WBS issue-template gate",
+      "family": "PROC",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [
+        ".github/ISSUE_TEMPLATE/wbs-issue.yml",
+        "verification-evidence/proc/PROC-01-review-gate.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 466,
+      "title": "XPLAT-01 — Cross-platform core and audio HAL architecture",
+      "family": "XPLAT",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [
+        "docs/cross-platform-architecture.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 467,
+      "title": "PARITY-01 — Cross-platform feature parity matrix and release policy",
+      "family": "PARITY",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/parity/PARITY-01-matrix.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 483,
+      "title": "STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+      "family": "STD",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/standards.yml",
+        "docs/engineering-standards.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 485,
+      "title": "SUPERTONIC-WBS: Supertonic local TTS evaluation and default-readiness epic",
+      "family": "SUPERTONIC",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    },
+    {
+      "number": 498,
+      "title": "[EPIC] QA8-WBS - 8-hour cross-platform stability and 60fps QA epic",
+      "family": "QA8",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": true,
+      "decomposition_required": true
+    }
+  ]
+}

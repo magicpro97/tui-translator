@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "wave": "W6",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 2,
+  "issues": [
+    {
+      "number": 457,
+      "title": "MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS",
+      "family": "MODEL",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        456
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/config/provider_supervisor.rs",
+        "src/providers/local",
+        "src/providers/mod.rs",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-01-backend-matrix.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 469,
+      "title": "LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP",
+      "family": "LINUX-WBS",
+      "red_mode": "tests_first",
+      "dependencies": [
+        451,
+        452,
+        454,
+        468
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/mod.rs",
+        "src/audio/pipewire_capture.rs",
+        "src/audio/probe.rs",
+        "src/audio/pulse_capture.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

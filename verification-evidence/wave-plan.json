@@ -1,0 +1,4240 @@
+{
+  "schema_version": 1,
+  "tentacle": "w0-r6-wave-plan",
+  "generated_at": "2026-05-24T13:03:33.471Z",
+  "source": {
+    "verification-evidence/board-snapshot-20260524.json": {
+      "sha256": "893A3C52AB12BFE563EDD968CA417061818E651BBE6DA294CE043FFE588BBF92"
+    },
+    "verification-evidence/family-file-map.json": {
+      "sha256": "B36CC3F3FCD63F2E002A266911AF78998B9F8D03B152FD233D62291BB3E7E611"
+    },
+    "verification-evidence/w0-r4/low-confidence-resolution.json": {
+      "sha256": "1F959788667C48A2FC8EBAEC1C979251A1C0AA8F3133B884A871681A11DAAFF7"
+    },
+    "verification-evidence/w0-r5/commands.md": {
+      "sha256": "5E367CF4BF074D17F2CE6BEA655DF0AE63AFAE007B621AC97C12992FAA3D215D"
+    }
+  },
+  "ratifications": [
+    {
+      "cycle": "src/pipeline/playback.rs vs src/config/mod.rs (CTRL-01 #454 vs CTRL-03 #456)",
+      "r5_state": "playback chain had 456 before 454; config chain had 454 before 456 — cycle.",
+      "decision": "CTRL-03 (#456) lands first globally. R5 explicitly marked CTRL-03 as the playback invariant (\"CTRL-03 lands the single-voice invariant first; all later writers must preserve it\"). Config order is therefore re-sequenced to 452→456→454→… so the playback invariant carries.",
+      "affected_paths": [
+        "src/pipeline/playback.rs",
+        "src/config/mod.rs"
+      ]
+    },
+    {
+      "cycle": "src/providers/mod.rs vs src/config/mod.rs (CTRL-02 #455 vs MODEL-01 #457)",
+      "r5_state": "providers/mod chain had 457 before 455; config chain had 455 before 457 — cycle.",
+      "decision": "MODEL-01 (#457) lands first globally. R5 rule on providers/mod (\"MODEL-01 defines the backend-selection contract first; CTRL-02 layers voice catalog on top\") is canonical. Config order is re-sequenced to …454→457→455→… so CTRL-02 registers its voice catalog after MODEL-01's backend trait exists.",
+      "affected_paths": [
+        "src/providers/mod.rs",
+        "src/config/mod.rs"
+      ]
+    },
+    {
+      "cycle": ".github/workflows/ci.yml vs .github/workflows/release.yml (SEC-01 #462 vs MODEL-02 #458)",
+      "r5_state": "ci.yml had 458 before 462; release.yml had 462 before 458 — cycle.",
+      "decision": "SEC-01 (#462) lands first globally. SBOM/signing scaffolding is a prerequisite for MODEL-02's cross-platform release matrix. ci.yml order re-sequenced to 461→462→458→… (matrix → SBOM → macOS runtime layer). Workflows are additive at the job/step level, so concurrent edits in different sections of the same file are safe; cycle break only governs cross-section dependencies.",
+      "affected_paths": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml"
+      ]
+    }
+  ],
+  "carried_caveats": [
+    {
+      "rule": "Cargo.toml is additive-merge only",
+      "detail": "Multiple wave-N issues may append [dependencies] entries concurrently. --locked CI gate (#461) prevents silent drift. If two issues bump the SAME dependency in overlapping windows, the later-merged PR MUST rerun the earlier issue's tests."
+    },
+    {
+      "rule": "src/tui/frame_pacer.rs has a writer-reader split",
+      "detail": "UX-01 (#479) is the sole writer in wave 8. QA8-06 (#504) is read-only in wave 9. If QA8-06 ever needs to write the file, it must be rebased onto UX-01 explicitly and serialized inside CTRL family."
+    },
+    {
+      "rule": "STD-02 (#484) is intentionally last-in-line",
+      "detail": "STD-02 refactors oversized modules across many files. It is assigned to Wave F (final / release-train) and the orchestrator MUST hold STD-02 until all other src-touching tentacles for the affected files have merged."
+    },
+    {
+      "rule": "Planning-stage issues (Wave P) require WBS decomposition before implementation dispatch",
+      "detail": "The 16 epics / planning issues without concrete src ownership MUST spawn WBS children with concrete files_touched_hint values before they can be assigned to any implementation wave. No implementation tentacle may be dispatched against a Wave P issue until its child issues exist on the board."
+    },
+    {
+      "rule": "Spike-before-implementation logical dependencies",
+      "detail": "Although the family-file-map only encodes file-level deps, R6 adds logical deps: MACOS-01 spike (#450) precedes MACOS-02/03/04 (#451/452/453); LINUX-01 spike (#468) precedes LINUX-02..05 (#469-472); SUPERTONIC-01 spike (#486) precedes SUPERTONIC-02..12 (#487-497)."
+    },
+    {
+      "rule": "QA8-06 (#504) reads UX-01 (#479)",
+      "detail": "R6 adds a logical dep 504→479 so the QA8 60fps frame-pacer probe runs after UX-01 schema is stable. Not in family-file-map because 504 is read-only; recorded here as wave-plan serialization rule."
+    }
+  ],
+  "serialization_rules": {
+    "path_orders": {
+      "src/audio/mod.rs": [
+        451,
+        452,
+        454,
+        469,
+        470,
+        495
+      ],
+      "src/audio/probe.rs": [
+        451,
+        452,
+        469,
+        470
+      ],
+      "src/audio/virtual_device.rs": [
+        453,
+        471
+      ],
+      "src/audio/router.rs": [
+        453,
+        471
+      ],
+      "src/audio/file_source.rs": [
+        460,
+        507
+      ],
+      "src/pipeline/playback.rs": [
+        456,
+        454,
+        455,
+        453,
+        495
+      ],
+      "src/config/mod.rs": [
+        452,
+        456,
+        454,
+        457,
+        455,
+        481,
+        482,
+        491,
+        492,
+        496
+      ],
+      "src/tui/mod.rs": [
+        454,
+        455,
+        479,
+        480,
+        481,
+        494
+      ],
+      "src/providers/mod.rs": [
+        457,
+        455,
+        491
+      ],
+      "src/providers/local": [
+        457,
+        458,
+        473
+      ],
+      "src/providers/mt": [
+        457,
+        458,
+        473
+      ],
+      "src/providers/local_mt": [
+        493,
+        492,
+        494
+      ],
+      "src/metrics/snapshot.rs": [
+        501,
+        511
+      ],
+      ".github/workflows/ci.yml": [
+        461,
+        462,
+        458,
+        475,
+        477,
+        508
+      ],
+      ".github/workflows/release.yml": [
+        462,
+        463,
+        458,
+        472,
+        477,
+        478,
+        497
+      ]
+    },
+    "extra_logical_deps": {
+      "504_depends_on_479": "QA8-06 reads frame_pacer.rs; rebases on UX-01 schema.",
+      "451_452_453_depend_on_450": "macOS implementation issues depend on MACOS-01 spike decision.",
+      "469_470_471_472_depend_on_468": "Linux implementation issues depend on LINUX-01 spike decision.",
+      "487..497_depend_on_486": "SUPERTONIC implementation/evaluation issues depend on SUPERTONIC-01 spike."
+    }
+  },
+  "red_mode_policies": {
+    "tests_first": "New or modified src/** code requires failing test(s) committed before implementation.",
+    "workflow_dry_run": "Workflow edits must be exercised on a fork branch via workflow_dispatch before merge.",
+    "doc_first": "Docs/ADR edits require a draft ADR or doc PR with cross-team review.",
+    "evidence_first": "Evidence-only artifacts: baseline must be captured (or schema declared) before changes.",
+    "human_acceptance_log": "WP-19 family: human reviewer signs the acceptance log per child issue.",
+    "decomposition": "Wave P / Wave F: no implementation dispatch until children exist or release-train window opens."
+  },
+  "dependency_dag": {
+    "edges": [
+      {
+        "from": 450,
+        "to": 451
+      },
+      {
+        "from": 450,
+        "to": 452
+      },
+      {
+        "from": 450,
+        "to": 453
+      },
+      {
+        "from": 451,
+        "to": 452
+      },
+      {
+        "from": 451,
+        "to": 454
+      },
+      {
+        "from": 451,
+        "to": 469
+      },
+      {
+        "from": 451,
+        "to": 470
+      },
+      {
+        "from": 451,
+        "to": 495
+      },
+      {
+        "from": 452,
+        "to": 454
+      },
+      {
+        "from": 452,
+        "to": 455
+      },
+      {
+        "from": 452,
+        "to": 456
+      },
+      {
+        "from": 452,
+        "to": 457
+      },
+      {
+        "from": 452,
+        "to": 469
+      },
+      {
+        "from": 452,
+        "to": 470
+      },
+      {
+        "from": 452,
+        "to": 481
+      },
+      {
+        "from": 452,
+        "to": 482
+      },
+      {
+        "from": 452,
+        "to": 491
+      },
+      {
+        "from": 452,
+        "to": 492
+      },
+      {
+        "from": 452,
+        "to": 495
+      },
+      {
+        "from": 452,
+        "to": 496
+      },
+      {
+        "from": 453,
+        "to": 471
+      },
+      {
+        "from": 453,
+        "to": 495
+      },
+      {
+        "from": 454,
+        "to": 453
+      },
+      {
+        "from": 454,
+        "to": 455
+      },
+      {
+        "from": 454,
+        "to": 457
+      },
+      {
+        "from": 454,
+        "to": 469
+      },
+      {
+        "from": 454,
+        "to": 470
+      },
+      {
+        "from": 454,
+        "to": 479
+      },
+      {
+        "from": 454,
+        "to": 480
+      },
+      {
+        "from": 454,
+        "to": 481
+      },
+      {
+        "from": 454,
+        "to": 482
+      },
+      {
+        "from": 454,
+        "to": 491
+      },
+      {
+        "from": 454,
+        "to": 492
+      },
+      {
+        "from": 454,
+        "to": 494
+      },
+      {
+        "from": 454,
+        "to": 495
+      },
+      {
+        "from": 454,
+        "to": 496
+      },
+      {
+        "from": 455,
+        "to": 453
+      },
+      {
+        "from": 455,
+        "to": 479
+      },
+      {
+        "from": 455,
+        "to": 480
+      },
+      {
+        "from": 455,
+        "to": 481
+      },
+      {
+        "from": 455,
+        "to": 482
+      },
+      {
+        "from": 455,
+        "to": 491
+      },
+      {
+        "from": 455,
+        "to": 492
+      },
+      {
+        "from": 455,
+        "to": 494
+      },
+      {
+        "from": 455,
+        "to": 495
+      },
+      {
+        "from": 455,
+        "to": 496
+      },
+      {
+        "from": 456,
+        "to": 453
+      },
+      {
+        "from": 456,
+        "to": 454
+      },
+      {
+        "from": 456,
+        "to": 455
+      },
+      {
+        "from": 456,
+        "to": 457
+      },
+      {
+        "from": 456,
+        "to": 481
+      },
+      {
+        "from": 456,
+        "to": 482
+      },
+      {
+        "from": 456,
+        "to": 491
+      },
+      {
+        "from": 456,
+        "to": 492
+      },
+      {
+        "from": 456,
+        "to": 495
+      },
+      {
+        "from": 456,
+        "to": 496
+      },
+      {
+        "from": 457,
+        "to": 455
+      },
+      {
+        "from": 457,
+        "to": 458
+      },
+      {
+        "from": 457,
+        "to": 473
+      },
+      {
+        "from": 457,
+        "to": 481
+      },
+      {
+        "from": 457,
+        "to": 482
+      },
+      {
+        "from": 457,
+        "to": 491
+      },
+      {
+        "from": 457,
+        "to": 492
+      },
+      {
+        "from": 457,
+        "to": 496
+      },
+      {
+        "from": 458,
+        "to": 472
+      },
+      {
+        "from": 458,
+        "to": 473
+      },
+      {
+        "from": 458,
+        "to": 475
+      },
+      {
+        "from": 458,
+        "to": 477
+      },
+      {
+        "from": 458,
+        "to": 478
+      },
+      {
+        "from": 458,
+        "to": 497
+      },
+      {
+        "from": 458,
+        "to": 508
+      },
+      {
+        "from": 460,
+        "to": 507
+      },
+      {
+        "from": 461,
+        "to": 458
+      },
+      {
+        "from": 461,
+        "to": 462
+      },
+      {
+        "from": 461,
+        "to": 475
+      },
+      {
+        "from": 461,
+        "to": 477
+      },
+      {
+        "from": 461,
+        "to": 508
+      },
+      {
+        "from": 462,
+        "to": 458
+      },
+      {
+        "from": 462,
+        "to": 463
+      },
+      {
+        "from": 462,
+        "to": 472
+      },
+      {
+        "from": 462,
+        "to": 475
+      },
+      {
+        "from": 462,
+        "to": 477
+      },
+      {
+        "from": 462,
+        "to": 478
+      },
+      {
+        "from": 462,
+        "to": 497
+      },
+      {
+        "from": 462,
+        "to": 508
+      },
+      {
+        "from": 463,
+        "to": 458
+      },
+      {
+        "from": 463,
+        "to": 472
+      },
+      {
+        "from": 463,
+        "to": 477
+      },
+      {
+        "from": 463,
+        "to": 478
+      },
+      {
+        "from": 463,
+        "to": 497
+      },
+      {
+        "from": 468,
+        "to": 469
+      },
+      {
+        "from": 468,
+        "to": 470
+      },
+      {
+        "from": 468,
+        "to": 471
+      },
+      {
+        "from": 468,
+        "to": 472
+      },
+      {
+        "from": 469,
+        "to": 470
+      },
+      {
+        "from": 469,
+        "to": 495
+      },
+      {
+        "from": 470,
+        "to": 495
+      },
+      {
+        "from": 472,
+        "to": 477
+      },
+      {
+        "from": 472,
+        "to": 478
+      },
+      {
+        "from": 472,
+        "to": 497
+      },
+      {
+        "from": 475,
+        "to": 477
+      },
+      {
+        "from": 475,
+        "to": 508
+      },
+      {
+        "from": 477,
+        "to": 478
+      },
+      {
+        "from": 477,
+        "to": 497
+      },
+      {
+        "from": 477,
+        "to": 508
+      },
+      {
+        "from": 478,
+        "to": 497
+      },
+      {
+        "from": 479,
+        "to": 480
+      },
+      {
+        "from": 479,
+        "to": 481
+      },
+      {
+        "from": 479,
+        "to": 494
+      },
+      {
+        "from": 479,
+        "to": 504
+      },
+      {
+        "from": 480,
+        "to": 481
+      },
+      {
+        "from": 480,
+        "to": 494
+      },
+      {
+        "from": 481,
+        "to": 482
+      },
+      {
+        "from": 481,
+        "to": 491
+      },
+      {
+        "from": 481,
+        "to": 492
+      },
+      {
+        "from": 481,
+        "to": 494
+      },
+      {
+        "from": 481,
+        "to": 496
+      },
+      {
+        "from": 482,
+        "to": 491
+      },
+      {
+        "from": 482,
+        "to": 492
+      },
+      {
+        "from": 482,
+        "to": 496
+      },
+      {
+        "from": 486,
+        "to": 487
+      },
+      {
+        "from": 486,
+        "to": 488
+      },
+      {
+        "from": 486,
+        "to": 489
+      },
+      {
+        "from": 486,
+        "to": 490
+      },
+      {
+        "from": 486,
+        "to": 491
+      },
+      {
+        "from": 486,
+        "to": 492
+      },
+      {
+        "from": 486,
+        "to": 493
+      },
+      {
+        "from": 486,
+        "to": 494
+      },
+      {
+        "from": 486,
+        "to": 495
+      },
+      {
+        "from": 486,
+        "to": 496
+      },
+      {
+        "from": 486,
+        "to": 497
+      },
+      {
+        "from": 491,
+        "to": 492
+      },
+      {
+        "from": 491,
+        "to": 496
+      },
+      {
+        "from": 492,
+        "to": 494
+      },
+      {
+        "from": 492,
+        "to": 496
+      },
+      {
+        "from": 493,
+        "to": 492
+      },
+      {
+        "from": 493,
+        "to": 494
+      },
+      {
+        "from": 501,
+        "to": 511
+      }
+    ],
+    "notes": "Edges are derived from ratifiedChains path orders + extra_logical_deps. An edge from A to B means A must merge before B."
+  },
+  "waves": [
+    {
+      "id": "H",
+      "kind": "human_acceptance",
+      "issue_count": 10,
+      "issues": [
+        19,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        366
+      ],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/",
+        "verification-evidence/{RC_TAG}/L5-1/",
+        "verification-evidence/{RC_TAG}/L5-2/",
+        "verification-evidence/{RC_TAG}/L5-3/",
+        "verification-evidence/{RC_TAG}/L5-4/",
+        "verification-evidence/{RC_TAG}/L5-5/",
+        "verification-evidence/{RC_TAG}/L5-6/",
+        "verification-evidence/{RC_TAG}/L5-7/",
+        "verification-evidence/{RC_TAG}/acceptance-log.md"
+      ],
+      "implementation_dispatch_allowed": false
+    },
+    {
+      "id": "P",
+      "kind": "planning_decomposition",
+      "issue_count": 16,
+      "issues": [
+        20,
+        21,
+        22,
+        23,
+        368,
+        376,
+        385,
+        392,
+        449,
+        464,
+        465,
+        466,
+        467,
+        483,
+        485,
+        498
+      ],
+      "files_allowed": [
+        ".github/ISSUE_TEMPLATE/wbs-issue.yml",
+        ".github/workflows/standards.yml",
+        "docs/cross-platform-architecture.md",
+        "docs/engineering-standards.md",
+        "verification-evidence/parity/PARITY-01-matrix.md",
+        "verification-evidence/proc/PROC-01-review-gate.md"
+      ],
+      "implementation_dispatch_allowed": false
+    },
+    {
+      "id": "W1",
+      "kind": "implementation",
+      "issue_count": 18,
+      "issues": [
+        384,
+        450,
+        459,
+        460,
+        461,
+        468,
+        474,
+        476,
+        486,
+        499,
+        500,
+        501,
+        502,
+        503,
+        505,
+        506,
+        509,
+        510
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/contract-weekly.yml",
+        ".github/workflows/issue-hygiene.yml",
+        ".github/workflows/release-gate.yml",
+        "docs/04-verification-plan.md",
+        "docs/dual-mode.md",
+        "src/audio/file_source.rs",
+        "src/bin/audio_stability_proof.rs",
+        "src/metrics/loss.rs",
+        "src/metrics/memory_guard.rs",
+        "src/metrics/network.rs",
+        "src/metrics/process.rs",
+        "src/metrics/snapshot.rs",
+        "verification-evidence/ci/CI-01-matrix-run-url.json",
+        "verification-evidence/ci/CI-01-required-checks.md",
+        "verification-evidence/linux/linux-01-spike-decision.md",
+        "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+        "verification-evidence/macos/macos-01-latency-measurements.json",
+        "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+        "verification-evidence/macos/macos-01-spike-decision.md",
+        "verification-evidence/macos/macos-01-tcc-behavior.md",
+        "verification-evidence/qa/QA-01-master-test-plan.md",
+        "verification-evidence/qa/QA-01-quality-thresholds.md",
+        "verification-evidence/qa/QA-01-traceability-matrix.csv",
+        "verification-evidence/qa/QA-02-linux-portability-plan.md",
+        "verification-evidence/qa8/QA8-01-charter.md",
+        "verification-evidence/qa8/QA8-02-slo-schema.json",
+        "verification-evidence/qa8/QA8-03-soak-schema-v2.json",
+        "verification-evidence/supertonic/SUPERTONIC-01-spike.md",
+        "verification-evidence/test/TEST-01-evidence-schema.json",
+        "verification-evidence/test/TEST-01-simulation-harness-plan.md",
+        "verification-evidence/test/TEST-02-linux-simulation.md"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W2",
+      "kind": "implementation",
+      "issue_count": 9,
+      "issues": [
+        451,
+        462,
+        487,
+        488,
+        489,
+        490,
+        493,
+        507,
+        511
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "PRIVACY.md",
+        "deny.toml",
+        "src/audio/coreaudio_capture.rs",
+        "src/audio/file_source.rs",
+        "src/audio/mod.rs",
+        "src/audio/probe.rs",
+        "src/metrics/latency.rs",
+        "src/metrics/snapshot.rs",
+        "src/providers/local_mt/mod.rs",
+        "src/providers/local_mt/supertonic.rs",
+        "verification-evidence/macos/MAC-A1-coreaudio-capture.json",
+        "verification-evidence/macos/MAC-A2-virtual-device-classification.json",
+        "verification-evidence/sec/SEC-01-cargo-deny.txt",
+        "verification-evidence/sec/SEC-01-cosign-verify.txt",
+        "verification-evidence/sec/SEC-01-sbom.cdx.json",
+        "verification-evidence/supertonic/SUPERTONIC-02-license-privacy.md",
+        "verification-evidence/supertonic/SUPERTONIC-03-quality-bench.json",
+        "verification-evidence/supertonic/SUPERTONIC-04-perf-bench.json",
+        "verification-evidence/supertonic/SUPERTONIC-05-streaming-spike.md"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W3",
+      "kind": "implementation",
+      "issue_count": 2,
+      "issues": [
+        452,
+        463
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "packaging/macos",
+        "packaging/windows/tui-translator.iss",
+        "src/audio/mod.rs",
+        "src/audio/probe.rs",
+        "src/audio/screencapturekit_capture.rs",
+        "src/config/mod.rs",
+        "verification-evidence/macos/MAC-A12-screencapturekit-capture.json",
+        "verification-evidence/macos/MAC-A4-tcc-preflight.json",
+        "verification-evidence/rel/REL-01-codesign-verify.txt",
+        "verification-evidence/rel/REL-01-notarytool-submit.json",
+        "verification-evidence/rel/REL-01-release-checklist.md",
+        "verification-evidence/rel/REL-01-rollback-drill.md"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W4",
+      "kind": "implementation",
+      "issue_count": 1,
+      "issues": [
+        456
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/pipeline/mod.rs",
+        "src/pipeline/playback.rs",
+        "tests/dm06_dual_tts_policy.rs",
+        "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json",
+        "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W5",
+      "kind": "implementation",
+      "issue_count": 1,
+      "issues": [
+        454
+      ],
+      "files_allowed": [
+        "src/audio/mod.rs",
+        "src/config/mod.rs",
+        "src/pipeline/audio_sink.rs",
+        "src/pipeline/playback.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOL-A6-gain-rms.json"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W6",
+      "kind": "implementation",
+      "issue_count": 2,
+      "issues": [
+        457,
+        469
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/mod.rs",
+        "src/audio/pipewire_capture.rs",
+        "src/audio/probe.rs",
+        "src/audio/pulse_capture.rs",
+        "src/config/mod.rs",
+        "src/config/provider_supervisor.rs",
+        "src/providers/local",
+        "src/providers/mod.rs",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-01-backend-matrix.json"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W7",
+      "kind": "implementation",
+      "issue_count": 3,
+      "issues": [
+        455,
+        458,
+        470
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "src/audio/alsa_capture.rs",
+        "src/audio/mod.rs",
+        "src/audio/portal_capture.rs",
+        "src/audio/probe.rs",
+        "src/config/mod.rs",
+        "src/pipeline/playback.rs",
+        "src/providers/google",
+        "src/providers/local",
+        "src/providers/mod.rs",
+        "src/providers/mt",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOICE-A5-voice-hotswap.json",
+        "verification-evidence/model/MODEL-02-bench.json",
+        "verification-evidence/model/MODEL-02-macos-runtime.json"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W8",
+      "kind": "implementation",
+      "issue_count": 5,
+      "issues": [
+        453,
+        472,
+        473,
+        475,
+        479
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "docs/linux-runtime-dependencies.md",
+        "src/audio/router.rs",
+        "src/audio/virtual_device.rs",
+        "src/pipeline/playback.rs",
+        "src/providers/local",
+        "src/providers/mt",
+        "src/tui/frame_pacer.rs",
+        "src/tui/mod.rs",
+        "tests/vmic_audio_integration.rs",
+        "verification-evidence/ci/CI-02-linux-matrix.json",
+        "verification-evidence/macos/MAC-A3-routing-report.json",
+        "verification-evidence/model/MODEL-03-linux-runtime.json"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W9",
+      "kind": "implementation",
+      "issue_count": 5,
+      "issues": [
+        471,
+        477,
+        480,
+        495,
+        504
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "src/audio/linux_virtual_device.rs",
+        "src/audio/mod.rs",
+        "src/audio/router.rs",
+        "src/audio/virtual_device.rs",
+        "src/pipeline/playback.rs",
+        "src/tui/frame_pacer.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/sec/SEC-02-linux-supply-chain.md",
+        "verification-evidence/supertonic/SUPERTONIC-10-soak.json"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W10",
+      "kind": "implementation",
+      "issue_count": 3,
+      "issues": [
+        478,
+        481,
+        508
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/soak.yml",
+        "Cargo.toml",
+        "packaging/linux",
+        "src/config/mod.rs",
+        "src/i18n.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/rel/REL-02-linux-packaging.md"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W11",
+      "kind": "implementation",
+      "issue_count": 2,
+      "issues": [
+        482,
+        497
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "docs/supertonic-user-guide.md",
+        "src/config/capture_supervisor.rs",
+        "src/config/mod.rs",
+        "src/config/recorder_supervisor.rs"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W12",
+      "kind": "implementation",
+      "issue_count": 1,
+      "issues": [
+        491
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/providers/mod.rs"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W13",
+      "kind": "implementation",
+      "issue_count": 1,
+      "issues": [
+        492
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/config/mod.rs",
+        "src/providers/local_mt/model_cache.rs"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "W14",
+      "kind": "implementation",
+      "issue_count": 2,
+      "issues": [
+        494,
+        496
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/providers/local_mt/voice_catalog.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/supertonic/SUPERTONIC-11-default-readiness-adr.md"
+      ],
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "id": "F",
+      "kind": "final_refactor",
+      "issue_count": 1,
+      "issues": [
+        484
+      ],
+      "files_allowed": [
+        "STD-02-refactor"
+      ],
+      "implementation_dispatch_allowed": false
+    }
+  ],
+  "issues": [
+    {
+      "number": 19,
+      "title": "[EPIC] WP-19 — Human Acceptance Testing on Real Hardware (Verification Layer 5)",
+      "family": "WP-19",
+      "family_kind": "epic",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/"
+      ],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [
+        "verification-evidence/{RC_TAG}/"
+      ],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 20,
+      "title": "[EPIC] WP-20 — Post-v1 Validation — gRPC Streaming STT",
+      "family": "WP-20",
+      "family_kind": "epic-deferred",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 21,
+      "title": "[EPIC] WP-21 — Post-v1 Validation — Per-Process Audio Capture (Zoom-Only Loopback)",
+      "family": "WP-21",
+      "family_kind": "epic-deferred",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 22,
+      "title": "[EPIC] WP-22 — Post-v1 Feature — Azure Provider Integration",
+      "family": "WP-22",
+      "family_kind": "epic-deferred",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 23,
+      "title": "[EPIC] WP-23 — Post-v1 Feature — Ollama Local Translation Post-Processing",
+      "family": "WP-23",
+      "family_kind": "epic-deferred",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 115,
+      "title": "[P2] WP-19.02 — Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-1/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-1/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": true,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 116,
+      "title": "[P2] WP-19.03 — Run L5-1 subtitle accuracy review",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-2/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-2/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 117,
+      "title": "[P2] WP-19.04 — Run L5-2 bilingual translation review",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-3/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-3/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 118,
+      "title": "[P2] WP-19.05 — Validate L5-3 translated audio toggle",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-4/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-4/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 119,
+      "title": "[P2] WP-19.06 — Verify L5-4 terminal compatibility matrix",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-5/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-5/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 120,
+      "title": "[P2] WP-19.07 — Run L5-5 non-developer onboarding review",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-6/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-6/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 121,
+      "title": "[P2] WP-19.08 — Run L5-6 live meeting readability review",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/L5-7/"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/L5-7/"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 122,
+      "title": "[P2] WP-19.09 — Sign and date the acceptance log",
+      "family": "WP-19",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/acceptance-log.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/acceptance-log.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 366,
+      "title": "verification: recruit and schedule named Layer 5 human reviewers",
+      "family": "VERIF-OPS",
+      "family_kind": "implementation",
+      "wave": "H",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/{RC_TAG}/acceptance-log.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/{RC_TAG}/acceptance-log.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "human_acceptance_log",
+      "human_gate_prereqs": {
+        "required": true,
+        "reasons": [
+          "needs:human-reviewer label on board snapshot"
+        ],
+        "gates": [
+          "named_human_reviewer_assigned (per #366)",
+          "acceptance_log_signed (per #122)"
+        ]
+      },
+      "confidence": "LOW",
+      "needs_human_clarification": true,
+      "board_human_gate": true,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": false,
+      "note": "Human-gated: not assigned to an AI implementation wave. Acceptance is signed via the WP-19 acceptance log."
+    },
+    {
+      "number": 368,
+      "title": "[EPIC] LF â€” Local-first defaults, storage, and offline provider readiness",
+      "family": "LF",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 376,
+      "title": "[EPIC] DM â€” Dual-provider transcript mode with side-by-side A/B panes",
+      "family": "DM",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 384,
+      "title": "DM-08 â€” Dual-mode docs and config examples",
+      "family": "DM",
+      "family_kind": "doc",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "docs/dual-mode.md"
+      ],
+      "owned_paths": [
+        "docs/dual-mode.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "doc_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 385,
+      "title": "[EPIC] HC â€” Hot config without restart",
+      "family": "HC",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 392,
+      "title": "[EPIC] SM â€” Realtime storage metrics for transcripts and audio archive",
+      "family": "SM",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 449,
+      "title": "[EPIC] MACOS-WBS — macOS support, live controls, models, virtual mic, QA, CI/CD, and release roadmap",
+      "family": "MACOS-WBS",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 450,
+      "title": "MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision",
+      "family": "MACOS-WBS",
+      "family_kind": "spike",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+        "verification-evidence/macos/macos-01-latency-measurements.json",
+        "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+        "verification-evidence/macos/macos-01-spike-decision.md",
+        "verification-evidence/macos/macos-01-tcc-behavior.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/macos/macos-01-spike-decision.md",
+        "verification-evidence/macos/macos-01-blackhole-capture-60s.json",
+        "verification-evidence/macos/macos-01-screencapturekit-prototype.md",
+        "verification-evidence/macos/macos-01-tcc-behavior.md",
+        "verification-evidence/macos/macos-01-latency-measurements.json"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 451,
+      "title": "MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP",
+      "family": "MACOS-WBS",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        450
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/coreaudio_capture.rs",
+        "src/audio/mod.rs",
+        "src/audio/probe.rs",
+        "verification-evidence/macos/MAC-A1-coreaudio-capture.json",
+        "verification-evidence/macos/MAC-A2-virtual-device-classification.json"
+      ],
+      "owned_paths": [
+        "src/audio/coreaudio_capture.rs",
+        "verification-evidence/macos/MAC-A1-coreaudio-capture.json",
+        "verification-evidence/macos/MAC-A2-virtual-device-classification.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/mod.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 1
+        },
+        {
+          "path": "src/audio/probe.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 1
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 452,
+      "title": "MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight",
+      "family": "MACOS-WBS",
+      "family_kind": "implementation",
+      "wave": "W3",
+      "wave_numeric": 3,
+      "dependencies": [
+        450,
+        451
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/mod.rs",
+        "src/audio/probe.rs",
+        "src/audio/screencapturekit_capture.rs",
+        "src/config/mod.rs",
+        "verification-evidence/macos/MAC-A12-screencapturekit-capture.json",
+        "verification-evidence/macos/MAC-A4-tcc-preflight.json"
+      ],
+      "owned_paths": [
+        "src/audio/screencapturekit_capture.rs",
+        "verification-evidence/macos/MAC-A4-tcc-preflight.json",
+        "verification-evidence/macos/MAC-A12-screencapturekit-capture.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/mod.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/audio/probe.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 1
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 453,
+      "title": "MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers",
+      "family": "MACOS-WBS",
+      "family_kind": "implementation",
+      "wave": "W8",
+      "wave_numeric": 8,
+      "dependencies": [
+        450,
+        454,
+        455,
+        456
+      ],
+      "files_allowed": [
+        "src/audio/router.rs",
+        "src/audio/virtual_device.rs",
+        "src/pipeline/playback.rs",
+        "tests/vmic_audio_integration.rs",
+        "verification-evidence/macos/MAC-A3-routing-report.json"
+      ],
+      "owned_paths": [
+        "src/audio/router.rs",
+        "verification-evidence/macos/MAC-A3-routing-report.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/virtual_device.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 1
+        },
+        {
+          "path": "src/pipeline/playback.rs",
+          "owner_family": "PLAYBACK-SHARED",
+          "order_within_path": 4
+        },
+        {
+          "path": "tests/vmic_audio_integration.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 1,
+          "note": "tests/ outside src scope"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 454,
+      "title": "CTRL-01 — Real-time input/output volume and gain controls",
+      "family": "CTRL",
+      "family_kind": "implementation",
+      "wave": "W5",
+      "wave_numeric": 5,
+      "dependencies": [
+        451,
+        452,
+        456
+      ],
+      "files_allowed": [
+        "src/audio/mod.rs",
+        "src/config/mod.rs",
+        "src/pipeline/audio_sink.rs",
+        "src/pipeline/playback.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOL-A6-gain-rms.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/ctrl/VOL-A6-gain-rms.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/mod.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 3,
+          "rule": "CTRL-01 rebases on MACOS-02/03 audio source enum and adds gain hook last."
+        },
+        {
+          "path": "src/pipeline/playback.rs",
+          "owner_family": "PLAYBACK-SHARED",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/pipeline/audio_sink.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 1
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/tui/mod.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 1
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 455,
+      "title": "CTRL-02 — Real-time TTS voice catalog and hot-swap",
+      "family": "CTRL",
+      "family_kind": "implementation",
+      "wave": "W7",
+      "wave_numeric": 7,
+      "dependencies": [
+        452,
+        454,
+        456,
+        457
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/pipeline/playback.rs",
+        "src/providers/google",
+        "src/providers/mod.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOICE-A5-voice-hotswap.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/ctrl/VOICE-A5-voice-hotswap.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/providers/mod.rs",
+          "owner_family": "PROVIDERS-SHARED",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/providers/google",
+          "owner_family": "CTRL",
+          "order_within_path": 1
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 4
+        },
+        {
+          "path": "src/tui/mod.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/pipeline/playback.rs",
+          "owner_family": "PLAYBACK-SHARED",
+          "order_within_path": 3
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 456,
+      "title": "CTRL-03 — Single active voice invariant across single and dual modes",
+      "family": "CTRL",
+      "family_kind": "implementation",
+      "wave": "W4",
+      "wave_numeric": 4,
+      "dependencies": [
+        452
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/pipeline/mod.rs",
+        "src/pipeline/playback.rs",
+        "tests/dm06_dual_tts_policy.rs",
+        "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json",
+        "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"
+      ],
+      "owned_paths": [
+        "src/pipeline/mod.rs",
+        "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json",
+        "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/pipeline/playback.rs",
+          "owner_family": "PLAYBACK-SHARED",
+          "order_within_path": 1,
+          "rule": "CTRL-03 lands the single-voice invariant first; all later writers must preserve it."
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 3
+        },
+        {
+          "path": "tests/dm06_dual_tts_policy.rs",
+          "owner_family": "CTRL",
+          "note": "tests/ outside src scope"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 457,
+      "title": "MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS",
+      "family": "MODEL",
+      "family_kind": "implementation",
+      "wave": "W6",
+      "wave_numeric": 6,
+      "dependencies": [
+        452,
+        454,
+        456
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/config/provider_supervisor.rs",
+        "src/providers/local",
+        "src/providers/mod.rs",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-01-backend-matrix.json"
+      ],
+      "owned_paths": [
+        "src/config/provider_supervisor.rs",
+        "verification-evidence/model/MODEL-01-backend-matrix.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/providers/mod.rs",
+          "owner_family": "PROVIDERS-SHARED",
+          "order_within_path": 1,
+          "rule": "MODEL-01 defines the backend-selection contract first; CTRL-02 (#455) layers voice catalog on top."
+        },
+        {
+          "path": "src/providers/local",
+          "owner_family": "MODEL",
+          "order_within_path": 1
+        },
+        {
+          "path": "src/providers/mt",
+          "owner_family": "MODEL",
+          "order_within_path": 1
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 5
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 458,
+      "title": "MODEL-02 — macOS local model runtime validation and packaging constraints",
+      "family": "MODEL",
+      "family_kind": "implementation",
+      "wave": "W7",
+      "wave_numeric": 7,
+      "dependencies": [
+        457,
+        461,
+        462,
+        463
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "src/providers/local",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-02-bench.json",
+        "verification-evidence/model/MODEL-02-macos-runtime.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/model/MODEL-02-macos-runtime.json",
+        "verification-evidence/model/MODEL-02-bench.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/providers/local",
+          "owner_family": "MODEL",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/providers/mt",
+          "owner_family": "MODEL",
+          "order_within_path": 2
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 2
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 3
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 459,
+      "title": "QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix",
+      "family": "QA",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "docs/04-verification-plan.md",
+        "verification-evidence/qa/QA-01-master-test-plan.md",
+        "verification-evidence/qa/QA-01-quality-thresholds.md",
+        "verification-evidence/qa/QA-01-traceability-matrix.csv"
+      ],
+      "owned_paths": [
+        "verification-evidence/qa/QA-01-master-test-plan.md",
+        "verification-evidence/qa/QA-01-traceability-matrix.csv",
+        "verification-evidence/qa/QA-01-quality-thresholds.md",
+        "docs/04-verification-plan.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "doc_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 460,
+      "title": "TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic",
+      "family": "TEST",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "src/audio/file_source.rs",
+        "verification-evidence/test/TEST-01-evidence-schema.json",
+        "verification-evidence/test/TEST-01-simulation-harness-plan.md"
+      ],
+      "owned_paths": [
+        "src/audio/file_source.rs",
+        "verification-evidence/test/TEST-01-simulation-harness-plan.md",
+        "verification-evidence/test/TEST-01-evidence-schema.json"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 461,
+      "title": "CI-01 — CI matrix expansion for Windows/macOS/features and required gates",
+      "family": "CI",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/contract-weekly.yml",
+        "verification-evidence/ci/CI-01-matrix-run-url.json",
+        "verification-evidence/ci/CI-01-required-checks.md"
+      ],
+      "owned_paths": [
+        ".github/workflows/contract-weekly.yml",
+        "verification-evidence/ci/CI-01-matrix-run-url.json",
+        "verification-evidence/ci/CI-01-required-checks.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 1,
+          "rule": "CI-01 lands the matrix expansion first; MODEL-02 (#458) and SEC-01 (#462) layer on top."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 462,
+      "title": "SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy",
+      "family": "SEC",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        461
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "PRIVACY.md",
+        "deny.toml",
+        "verification-evidence/sec/SEC-01-cargo-deny.txt",
+        "verification-evidence/sec/SEC-01-cosign-verify.txt",
+        "verification-evidence/sec/SEC-01-sbom.cdx.json"
+      ],
+      "owned_paths": [
+        "deny.toml",
+        "PRIVACY.md",
+        "verification-evidence/sec/SEC-01-cargo-deny.txt",
+        "verification-evidence/sec/SEC-01-sbom.cdx.json",
+        "verification-evidence/sec/SEC-01-cosign-verify.txt"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 3
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 1
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 463,
+      "title": "REL-01 — Cross-platform release packaging, notarization, and GA promotion plan",
+      "family": "REL",
+      "family_kind": "implementation",
+      "wave": "W3",
+      "wave_numeric": 3,
+      "dependencies": [
+        462
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "packaging/macos",
+        "packaging/windows/tui-translator.iss",
+        "verification-evidence/rel/REL-01-codesign-verify.txt",
+        "verification-evidence/rel/REL-01-notarytool-submit.json",
+        "verification-evidence/rel/REL-01-release-checklist.md",
+        "verification-evidence/rel/REL-01-rollback-drill.md"
+      ],
+      "owned_paths": [
+        "packaging/windows/tui-translator.iss",
+        "packaging/macos",
+        "verification-evidence/rel/REL-01-codesign-verify.txt",
+        "verification-evidence/rel/REL-01-notarytool-submit.json",
+        "verification-evidence/rel/REL-01-release-checklist.md",
+        "verification-evidence/rel/REL-01-rollback-drill.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 2,
+          "rule": "REL-01 lands the cross-platform release matrix after SEC-01 wires SBOM/signing."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 464,
+      "title": "[EPIC] LINUX-WBS — Linux and cross-platform parity roadmap epic",
+      "family": "LINUX-WBS",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 465,
+      "title": "PROC-01 — Opus review, confidence, and WBS issue-template gate",
+      "family": "PROC",
+      "family_kind": "implementation",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        ".github/ISSUE_TEMPLATE/wbs-issue.yml",
+        "verification-evidence/proc/PROC-01-review-gate.md"
+      ],
+      "owned_paths": [
+        ".github/ISSUE_TEMPLATE/wbs-issue.yml",
+        "verification-evidence/proc/PROC-01-review-gate.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 466,
+      "title": "XPLAT-01 — Cross-platform core and audio HAL architecture",
+      "family": "XPLAT",
+      "family_kind": "ADR",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "docs/cross-platform-architecture.md"
+      ],
+      "owned_paths": [
+        "docs/cross-platform-architecture.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 467,
+      "title": "PARITY-01 — Cross-platform feature parity matrix and release policy",
+      "family": "PARITY",
+      "family_kind": "implementation",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/parity/PARITY-01-matrix.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/parity/PARITY-01-matrix.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 468,
+      "title": "LINUX-01 — Spike: Linux capture backend decision",
+      "family": "LINUX-WBS",
+      "family_kind": "spike",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/linux/linux-01-spike-decision.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/linux/linux-01-spike-decision.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 469,
+      "title": "LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP",
+      "family": "LINUX-WBS",
+      "family_kind": "implementation",
+      "wave": "W6",
+      "wave_numeric": 6,
+      "dependencies": [
+        451,
+        452,
+        454,
+        468
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/audio/mod.rs",
+        "src/audio/pipewire_capture.rs",
+        "src/audio/probe.rs",
+        "src/audio/pulse_capture.rs"
+      ],
+      "owned_paths": [
+        "src/audio/pipewire_capture.rs",
+        "src/audio/pulse_capture.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/mod.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 4,
+          "rule": "LINUX-02 rebases on MACOS-02/03 audio source enum and adds the Linux variants last."
+        },
+        {
+          "path": "src/audio/probe.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 3
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 470,
+      "title": "LINUX-03 — ALSA-only and portal fallback strategy",
+      "family": "LINUX-WBS",
+      "family_kind": "implementation",
+      "wave": "W7",
+      "wave_numeric": 7,
+      "dependencies": [
+        451,
+        452,
+        454,
+        468,
+        469
+      ],
+      "files_allowed": [
+        "src/audio/alsa_capture.rs",
+        "src/audio/mod.rs",
+        "src/audio/portal_capture.rs",
+        "src/audio/probe.rs"
+      ],
+      "owned_paths": [
+        "src/audio/alsa_capture.rs",
+        "src/audio/portal_capture.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/mod.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 5
+        },
+        {
+          "path": "src/audio/probe.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 4
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 471,
+      "title": "LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback",
+      "family": "LINUX-WBS",
+      "family_kind": "implementation",
+      "wave": "W9",
+      "wave_numeric": 9,
+      "dependencies": [
+        453,
+        468
+      ],
+      "files_allowed": [
+        "src/audio/linux_virtual_device.rs",
+        "src/audio/router.rs",
+        "src/audio/virtual_device.rs"
+      ],
+      "owned_paths": [
+        "src/audio/linux_virtual_device.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/virtual_device.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 2
+        },
+        {
+          "path": "src/audio/router.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 2,
+          "rule": "LINUX-04 extends the router that MACOS-04 created."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 472,
+      "title": "LINUX-05 — Linux distro dependency manifest and runtime preflight",
+      "family": "LINUX-WBS",
+      "family_kind": "implementation",
+      "wave": "W8",
+      "wave_numeric": 8,
+      "dependencies": [
+        458,
+        462,
+        463,
+        468
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "docs/linux-runtime-dependencies.md"
+      ],
+      "owned_paths": [
+        "docs/linux-runtime-dependencies.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 4
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 473,
+      "title": "MODEL-03 — Linux local model runtime validation",
+      "family": "MODEL",
+      "family_kind": "implementation",
+      "wave": "W8",
+      "wave_numeric": 8,
+      "dependencies": [
+        457,
+        458
+      ],
+      "files_allowed": [
+        "src/providers/local",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-03-linux-runtime.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/model/MODEL-03-linux-runtime.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/providers/local",
+          "owner_family": "MODEL",
+          "order_within_path": 3
+        },
+        {
+          "path": "src/providers/mt",
+          "owner_family": "MODEL",
+          "order_within_path": 3
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 474,
+      "title": "TEST-02 — Linux deterministic audio simulation fixture",
+      "family": "TEST",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/test/TEST-02-linux-simulation.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/test/TEST-02-linux-simulation.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 475,
+      "title": "CI-02 — Linux CI matrix and quality gates",
+      "family": "CI",
+      "family_kind": "implementation",
+      "wave": "W8",
+      "wave_numeric": 8,
+      "dependencies": [
+        458,
+        461,
+        462
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        "verification-evidence/ci/CI-02-linux-matrix.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/ci/CI-02-linux-matrix.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 4
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 476,
+      "title": "QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan",
+      "family": "QA",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/qa/QA-02-linux-portability-plan.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/qa/QA-02-linux-portability-plan.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 477,
+      "title": "SEC-02 — Linux and cross-platform supply-chain security",
+      "family": "SEC",
+      "family_kind": "implementation",
+      "wave": "W9",
+      "wave_numeric": 9,
+      "dependencies": [
+        458,
+        461,
+        462,
+        463,
+        472,
+        475
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "verification-evidence/sec/SEC-02-linux-supply-chain.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/sec/SEC-02-linux-supply-chain.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 5
+        },
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 5
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 478,
+      "title": "REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz",
+      "family": "REL",
+      "family_kind": "implementation",
+      "wave": "W10",
+      "wave_numeric": 10,
+      "dependencies": [
+        458,
+        462,
+        463,
+        472,
+        477
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "packaging/linux",
+        "verification-evidence/rel/REL-02-linux-packaging.md"
+      ],
+      "owned_paths": [
+        "packaging/linux",
+        "verification-evidence/rel/REL-02-linux-packaging.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 6
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 479,
+      "title": "UX-01 — Adaptive TUI layout",
+      "family": "UX",
+      "family_kind": "implementation",
+      "wave": "W8",
+      "wave_numeric": 8,
+      "dependencies": [
+        454,
+        455
+      ],
+      "files_allowed": [
+        "src/tui/frame_pacer.rs",
+        "src/tui/mod.rs"
+      ],
+      "owned_paths": [
+        "src/tui/frame_pacer.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/tui/mod.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 3,
+          "rule": "UX-01 rebases on CTRL-01/CTRL-02 TUI layout and adds adaptive sizing last."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 480,
+      "title": "UX-02 — OS-aware shortcut display",
+      "family": "UX",
+      "family_kind": "implementation",
+      "wave": "W9",
+      "wave_numeric": 9,
+      "dependencies": [
+        454,
+        455,
+        479
+      ],
+      "files_allowed": [
+        "src/tui/mod.rs"
+      ],
+      "owned_paths": [],
+      "shared_paths_in": [
+        {
+          "path": "src/tui/mod.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 4
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 481,
+      "title": "I18N-01 — Cross-platform i18n architecture and live locale switching",
+      "family": "I18N",
+      "family_kind": "implementation",
+      "wave": "W10",
+      "wave_numeric": 10,
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        479,
+        480
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/i18n.rs",
+        "src/tui/mod.rs"
+      ],
+      "owned_paths": [
+        "src/i18n.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/tui/mod.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 5
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 6
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 482,
+      "title": "CFG-01 — Live settings apply without reload where safe",
+      "family": "CFG",
+      "family_kind": "implementation",
+      "wave": "W11",
+      "wave_numeric": 11,
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481
+      ],
+      "files_allowed": [
+        "src/config/capture_supervisor.rs",
+        "src/config/mod.rs",
+        "src/config/recorder_supervisor.rs"
+      ],
+      "owned_paths": [
+        "src/config/capture_supervisor.rs",
+        "src/config/recorder_supervisor.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 7,
+          "rule": "CFG-01 generalizes the hot-reload pattern across supervisors after HC-NN issues land."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 483,
+      "title": "STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates",
+      "family": "STD",
+      "family_kind": "implementation",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/standards.yml",
+        "docs/engineering-standards.md"
+      ],
+      "owned_paths": [
+        ".github/workflows/standards.yml",
+        "docs/engineering-standards.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 484,
+      "title": "STD-02 — Refactor existing oversized modules to meet budgets",
+      "family": "STD",
+      "family_kind": "implementation",
+      "wave": "F",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [
+        "STD-02-refactor"
+      ],
+      "owned_paths": [],
+      "shared_paths_in": [
+        {
+          "path": "STD-02-refactor",
+          "owner_family": "STD",
+          "rule": "STD-02 refactors oversized modules; serialization rule: ONLY runs after all other families have landed their concrete files OR is explicitly scheduled into a release-train window with no other open PRs on the same file."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave F: held until all src-touching tentacles for affected files have merged; orchestrator schedules into a release-train window with no other open PRs on the same files."
+    },
+    {
+      "number": 485,
+      "title": "SUPERTONIC-WBS: Supertonic local TTS evaluation and default-readiness epic",
+      "family": "SUPERTONIC",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 486,
+      "title": "SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape",
+      "family": "SUPERTONIC",
+      "family_kind": "spike",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-01-spike.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-01-spike.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 487,
+      "title": "SUPERTONIC-02: License, model distribution, consent, and privacy audit",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "verification-evidence/supertonic/SUPERTONIC-02-license-privacy.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-02-license-privacy.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 488,
+      "title": "SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-03-quality-bench.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-03-quality-bench.json"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 489,
+      "title": "SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-04-perf-bench.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-04-perf-bench.json"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 490,
+      "title": "SUPERTONIC-05: TTS streaming and non-blocking provider contract spike",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "verification-evidence/supertonic/SUPERTONIC-05-streaming-spike.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-05-streaming-spike.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 491,
+      "title": "SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W12",
+      "wave_numeric": 12,
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481,
+        482,
+        486
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/providers/mod.rs"
+      ],
+      "owned_paths": [],
+      "shared_paths_in": [
+        {
+          "path": "src/providers/mod.rs",
+          "owner_family": "PROVIDERS-SHARED",
+          "order_within_path": 3,
+          "rule": "SUPERTONIC-06 extends the TTS backend contract after MODEL-01 (#457) defines the local-provider trait."
+        },
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 8
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 492,
+      "title": "SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W13",
+      "wave_numeric": 13,
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481,
+        482,
+        486,
+        491,
+        493
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/config/mod.rs",
+        "src/providers/local_mt/model_cache.rs"
+      ],
+      "owned_paths": [
+        "src/providers/local_mt/model_cache.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 9
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 493,
+      "title": "SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        486
+      ],
+      "files_allowed": [
+        "src/providers/local_mt/mod.rs",
+        "src/providers/local_mt/supertonic.rs"
+      ],
+      "owned_paths": [
+        "src/providers/local_mt/supertonic.rs",
+        "src/providers/local_mt/mod.rs"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 494,
+      "title": "SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W14",
+      "wave_numeric": 14,
+      "dependencies": [
+        454,
+        455,
+        479,
+        480,
+        481,
+        486,
+        492,
+        493
+      ],
+      "files_allowed": [
+        "src/providers/local_mt/voice_catalog.rs",
+        "src/tui/mod.rs"
+      ],
+      "owned_paths": [
+        "src/providers/local_mt/voice_catalog.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/tui/mod.rs",
+          "owner_family": "CTRL",
+          "order_within_path": 6,
+          "rule": "SUPERTONIC-09 layers Supertonic voice picker after CTRL-02 (#455) lands the cross-provider voice picker."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 495,
+      "title": "SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W9",
+      "wave_numeric": 9,
+      "dependencies": [
+        451,
+        452,
+        453,
+        454,
+        455,
+        456,
+        469,
+        470,
+        486
+      ],
+      "files_allowed": [
+        "src/audio/mod.rs",
+        "src/pipeline/playback.rs",
+        "verification-evidence/supertonic/SUPERTONIC-10-soak.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-10-soak.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/pipeline/playback.rs",
+          "owner_family": "PLAYBACK-SHARED",
+          "order_within_path": 5
+        },
+        {
+          "path": "src/audio/mod.rs",
+          "owner_family": "MACOS-WBS",
+          "order_within_path": 6
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 496,
+      "title": "SUPERTONIC-11: Default-readiness ADR and gated default flip",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W14",
+      "wave_numeric": 14,
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481,
+        482,
+        486,
+        491,
+        492
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "verification-evidence/supertonic/SUPERTONIC-11-default-readiness-adr.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/supertonic/SUPERTONIC-11-default-readiness-adr.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/config/mod.rs",
+          "owner_family": "CFG-SHARED",
+          "order_within_path": 10
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 497,
+      "title": "SUPERTONIC-12: User docs, troubleshooting, and release checklist",
+      "family": "SUPERTONIC",
+      "family_kind": "implementation",
+      "wave": "W11",
+      "wave_numeric": 11,
+      "dependencies": [
+        458,
+        462,
+        463,
+        472,
+        477,
+        478,
+        486
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "docs/supertonic-user-guide.md"
+      ],
+      "owned_paths": [
+        "docs/supertonic-user-guide.md"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/release.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 7
+        },
+        {
+          "path": "Cargo.toml",
+          "owner_family": "MANIFEST-SHARED",
+          "rule": "additive"
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 498,
+      "title": "[EPIC] QA8-WBS - 8-hour cross-platform stability and 60fps QA epic",
+      "family": "QA8",
+      "family_kind": "epic",
+      "wave": "P",
+      "wave_numeric": null,
+      "dependencies": [],
+      "files_allowed": [],
+      "owned_paths": [],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "decomposition",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "MEDIUM",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": true,
+      "decomposition_required": true,
+      "implementation_dispatch_allowed": false,
+      "note": "Wave P: epic / planning-only issue with no concrete src ownership. WBS children must be created with concrete files_touched_hint before any implementation tentacle may be dispatched against this issue."
+    },
+    {
+      "number": 499,
+      "title": "QA8-01 - QA charter, standards mapping, and risk register",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/qa8/QA8-01-charter.md"
+      ],
+      "owned_paths": [
+        "verification-evidence/qa8/QA8-01-charter.md"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 500,
+      "title": "QA8-02 - Machine-readable SLO schema and gate checker",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "verification-evidence/qa8/QA8-02-slo-schema.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/qa8/QA8-02-slo-schema.json"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "evidence_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 501,
+      "title": "QA8-03 - Soak evidence schema v2 and telemetry export contract",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/snapshot.rs",
+        "verification-evidence/qa8/QA8-03-soak-schema-v2.json"
+      ],
+      "owned_paths": [
+        "verification-evidence/qa8/QA8-03-soak-schema-v2.json"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/metrics/snapshot.rs",
+          "owner_family": "QA8",
+          "order_within_path": 1,
+          "rule": "QA8-03 owns the metrics snapshot schema; later QA8 issues extend its fields additively."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 502,
+      "title": "QA8-04 - Cross-platform process, memory, handle, FD, and thread probes",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/process.rs"
+      ],
+      "owned_paths": [
+        "src/metrics/process.rs"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 503,
+      "title": "QA8-05 - 8-hour soak runner v2 with fault injection",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "src/bin/audio_stability_proof.rs"
+      ],
+      "owned_paths": [
+        "src/bin/audio_stability_proof.rs"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 504,
+      "title": "QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W9",
+      "wave_numeric": 9,
+      "dependencies": [
+        479
+      ],
+      "files_allowed": [
+        "src/tui/frame_pacer.rs"
+      ],
+      "owned_paths": [
+        "src/tui/frame_pacer.rs"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 505,
+      "title": "QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/loss.rs",
+        "src/metrics/network.rs"
+      ],
+      "owned_paths": [
+        "src/metrics/network.rs",
+        "src/metrics/loss.rs"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 506,
+      "title": "QA8-08 - Panic, OOM, dump capture, and symbolication workflow",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        "src/metrics/memory_guard.rs"
+      ],
+      "owned_paths": [
+        "src/metrics/memory_guard.rs"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 507,
+      "title": "QA8-09 - Deterministic cross-platform simulation and fixture parity",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        460
+      ],
+      "files_allowed": [
+        "src/audio/file_source.rs"
+      ],
+      "owned_paths": [],
+      "shared_paths_in": [
+        {
+          "path": "src/audio/file_source.rs",
+          "owner_family": "TEST",
+          "order_within_path": 2,
+          "rule": "QA8-09 extends TEST-01's deterministic file source for cross-platform parity."
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 508,
+      "title": "QA8-10 - Cross-platform CI/CD soak ladder and runner inventory",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W10",
+      "wave_numeric": 10,
+      "dependencies": [
+        458,
+        461,
+        462,
+        475,
+        477
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/soak.yml"
+      ],
+      "owned_paths": [
+        ".github/workflows/soak.yml"
+      ],
+      "shared_paths_in": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "owner_family": "WORKFLOWS-SHARED",
+          "order_within_path": 6
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 509,
+      "title": "QA8-11 - Project priority and issue hygiene enforcement",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/issue-hygiene.yml"
+      ],
+      "owned_paths": [
+        ".github/workflows/issue-hygiene.yml"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 510,
+      "title": "QA8-12 - Release gate orchestrator and Opus/NFR review workflow",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W1",
+      "wave_numeric": 1,
+      "dependencies": [],
+      "files_allowed": [
+        ".github/workflows/release-gate.yml"
+      ],
+      "owned_paths": [
+        ".github/workflows/release-gate.yml"
+      ],
+      "shared_paths_in": [],
+      "evidence_paths": [],
+      "red_mode": "workflow_dry_run",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    },
+    {
+      "number": 511,
+      "title": "QA8-13 - Quality-in-use regression suite for 8-hour sessions",
+      "family": "QA8",
+      "family_kind": "implementation",
+      "wave": "W2",
+      "wave_numeric": 2,
+      "dependencies": [
+        501
+      ],
+      "files_allowed": [
+        "src/metrics/latency.rs",
+        "src/metrics/snapshot.rs"
+      ],
+      "owned_paths": [
+        "src/metrics/latency.rs"
+      ],
+      "shared_paths_in": [
+        {
+          "path": "src/metrics/snapshot.rs",
+          "owner_family": "QA8",
+          "order_within_path": 2
+        }
+      ],
+      "evidence_paths": [],
+      "red_mode": "tests_first",
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "confidence": "HIGH",
+      "needs_human_clarification": false,
+      "board_human_gate": false,
+      "planning_stage": false,
+      "decomposition_required": false,
+      "implementation_dispatch_allowed": true
+    }
+  ],
+  "summary": {
+    "total_issues": 82,
+    "human_gated": 10,
+    "ai_actionable": 72,
+    "ai_planning_stage": 16,
+    "ai_implementation_assigned": 55,
+    "ai_final_refactor": 1,
+    "waves_implementation": 14
+  },
+  "readiness": true,
+  "readiness_notes": [
+    "All 82 in-scope issues classified.",
+    "All 72 AI-actionable issues are either assigned to a numbered wave (Wave 1..14), Wave F (final/refactor), or Wave P (planning/decomposition).",
+    "All 10 human-gated issues are in Wave H with implementation_dispatch_allowed=false.",
+    "All three R5 cycles (config↔playback, providers/mod↔config, ci.yml↔release.yml) are ratified with canonical orderings; no cycle remains in the dependency DAG.",
+    "No Wave P issue may be dispatched until WBS children with concrete files_touched_hint exist on the board.",
+    "Wave F (#484 STD-02) is held until all src-touching tentacles for affected files have merged."
+  ]
+}

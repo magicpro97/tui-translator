@@ -1,0 +1,36 @@
+# Wave W1 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+.github/workflows/ci.yml
+.github/workflows/contract-weekly.yml
+.github/workflows/issue-hygiene.yml
+.github/workflows/release-gate.yml
+docs/04-verification-plan.md
+docs/dual-mode.md
+src/audio/file_source.rs
+src/bin/audio_stability_proof.rs
+src/metrics/loss.rs
+src/metrics/memory_guard.rs
+src/metrics/network.rs
+src/metrics/process.rs
+src/metrics/snapshot.rs
+verification-evidence/ci/CI-01-matrix-run-url.json
+verification-evidence/ci/CI-01-required-checks.md
+verification-evidence/linux/linux-01-spike-decision.md
+verification-evidence/macos/macos-01-blackhole-capture-60s.json
+verification-evidence/macos/macos-01-latency-measurements.json
+verification-evidence/macos/macos-01-screencapturekit-prototype.md
+verification-evidence/macos/macos-01-spike-decision.md
+verification-evidence/macos/macos-01-tcc-behavior.md
+verification-evidence/qa/QA-01-master-test-plan.md
+verification-evidence/qa/QA-01-quality-thresholds.md
+verification-evidence/qa/QA-01-traceability-matrix.csv
+verification-evidence/qa/QA-02-linux-portability-plan.md
+verification-evidence/qa8/QA8-01-charter.md
+verification-evidence/qa8/QA8-02-slo-schema.json
+verification-evidence/qa8/QA8-03-soak-schema-v2.json
+verification-evidence/supertonic/SUPERTONIC-01-spike.md
+verification-evidence/test/TEST-01-evidence-schema.json
+verification-evidence/test/TEST-01-simulation-harness-plan.md
+verification-evidence/test/TEST-02-linux-simulation.md

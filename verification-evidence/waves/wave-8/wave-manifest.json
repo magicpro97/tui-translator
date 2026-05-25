@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "wave": "W8",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 5,
+  "issues": [
+    {
+      "number": 453,
+      "title": "MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers",
+      "family": "MACOS-WBS",
+      "red_mode": "tests_first",
+      "dependencies": [
+        450,
+        454,
+        455,
+        456
+      ],
+      "files_allowed": [
+        "src/audio/router.rs",
+        "src/audio/virtual_device.rs",
+        "src/pipeline/playback.rs",
+        "tests/vmic_audio_integration.rs",
+        "verification-evidence/macos/MAC-A3-routing-report.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 472,
+      "title": "LINUX-05 — Linux distro dependency manifest and runtime preflight",
+      "family": "LINUX-WBS",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        458,
+        462,
+        463,
+        468
+      ],
+      "files_allowed": [
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "docs/linux-runtime-dependencies.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 473,
+      "title": "MODEL-03 — Linux local model runtime validation",
+      "family": "MODEL",
+      "red_mode": "tests_first",
+      "dependencies": [
+        457,
+        458
+      ],
+      "files_allowed": [
+        "src/providers/local",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-03-linux-runtime.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 475,
+      "title": "CI-02 — Linux CI matrix and quality gates",
+      "family": "CI",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        458,
+        461,
+        462
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        "verification-evidence/ci/CI-02-linux-matrix.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 479,
+      "title": "UX-01 — Adaptive TUI layout",
+      "family": "UX",
+      "red_mode": "tests_first",
+      "dependencies": [
+        454,
+        455
+      ],
+      "files_allowed": [
+        "src/tui/frame_pacer.rs",
+        "src/tui/mod.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

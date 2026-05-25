@@ -1,0 +1,5 @@
+# Wave F — Final / refactor held for release-train window.
+# STD-02 (#484) refactors oversized modules across many files.
+# files_allowed must be re-derived at release-train scheduling time from the actual oversized-module audit; this is a placeholder closed-list scoped to STD-02 itself.
+
+STD-02-refactor

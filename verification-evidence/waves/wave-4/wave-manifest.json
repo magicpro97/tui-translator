@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "wave": "W4",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 1,
+  "issues": [
+    {
+      "number": 456,
+      "title": "CTRL-03 — Single active voice invariant across single and dual modes",
+      "family": "CTRL",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/pipeline/mod.rs",
+        "src/pipeline/playback.rs",
+        "tests/dm06_dual_tts_policy.rs",
+        "verification-evidence/ctrl/VOICE-A8-single-voice-invariant.json",
+        "verification-evidence/ctrl/VOICE-A9-dual-primary-slot.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

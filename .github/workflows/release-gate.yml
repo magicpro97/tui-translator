@@ -1,0 +1,484 @@
+# SPDX-License-Identifier: MIT
+#
+# QA8-12 — Release-gate orchestrator and Opus/NFR review workflow.
+#
+# Tracking issue: magicpro97/tui-translator#510
+# Authoritative spec: verification-evidence/waves/wave-1/acceptance-matrix.md
+#                     (row "#510 — QA8-12 — Release gate orchestrator and
+#                     Opus/NFR review workflow").
+#
+# Purpose
+# -------
+# Block closure of any QA8 child issue, and block any RC / GA release, unless
+# the canonical release-evidence bundle is complete AND a CLEAN Opus / NFR
+# specialist review is recorded. This workflow is the single decision point
+# that RC and GA both consume so they cannot drift apart.
+#
+# Why this lives entirely in one YAML
+# -----------------------------------
+# Per the Wave-1 acceptance matrix (#510), the entire bundle schema, review
+# checklist, Opus final-review template, NFR gate requirements, and issue
+# closeout checklist are encoded inline in this file. The Wave-1 allow-list
+# authorises edits to `.github/workflows/release-gate.yml` only; no companion
+# templates under `.github/PULL_REQUEST_TEMPLATE/` or `docs/` may be added in
+# this wave.
+#
+# RED / evidence-first
+# --------------------
+# The first authored revision exposes `workflow_dispatch` only with the full
+# gate logic active. Release triggers (`release: types: [...]`) are wired in
+# the same file so that `release-gate` can be required as a status check on
+# pre-release and release events. No external workflows are dispatched; the
+# gate is self-contained.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Release evidence bundle schema (v1) — inline contract
+# ─────────────────────────────────────────────────────────────────────────────
+# The bundle is a directory committed under `verification-evidence/release/`
+# (typical layout: `verification-evidence/release/<release-tag>/`). It MUST
+# contain the following files. The gate parses them with `jq` and fails fast
+# if any required field is missing.
+#
+#   manifest.json
+#     {
+#       "schema_version": "1",
+#       "release_tag": "v1.0.0",            // semver tag the bundle attests
+#       "gate_kind": "rc" | "ga" | "child-close",
+#       "generated_at": "2026-05-24T02:35:11Z",
+#       "platforms": ["windows-latest", "ubuntu-latest", "macos-latest"],
+#       "soak_run": {
+#         "workflow": "contract-weekly",    // workflow file producing soak
+#         "run_id": 1234567890,
+#         "completed_at": "2026-05-22T03:11:00Z"
+#       },
+#       "review": {
+#         "reviewer_tier": "opus" | "nfr-specialist",
+#         "verdict": "CLEAN" | "NEEDS-FIX" | "BLOCKED" | "MISSING",
+#         "review_url": "https://github.com/magicpro97/tui-translator/pull/...",
+#         "signed_off_by": "@reviewer-handle",
+#         "signed_at": "2026-05-23T10:00:00Z"
+#       },
+#       "crash_summary": { "count": 0, "max_severity": "none" }
+#     }
+#
+#   per-platform/<platform>/nfr.json
+#     {
+#       "platform": "windows-latest",
+#       "rss_max_mb": 512,
+#       "rss_growth_mb_per_h": 0.0,
+#       "cpu_avg_pct": 18.2,
+#       "dropped_chunks": 0,
+#       "subtitle_pairs": 4321,
+#       "first_paint_ms": 750,
+#       "verdict": "PASS"
+#     }
+#
+#   per-platform/<platform>/soak.json
+#     {
+#       "platform": "windows-latest",
+#       "duration_hours": 8.0,
+#       "started_at": "2026-05-21T00:00:00Z",
+#       "completed_at": "2026-05-21T08:00:00Z",
+#       "exit_code": 0,
+#       "panics": 0,
+#       "ooms": 0
+#     }
+#
+#   per-platform/<platform>/crashes/*.json (optional; presence ⇒ block)
+#
+#   review.md
+#     Free-form Opus / NFR final-review narrative. The CLEAN verdict in
+#     `manifest.json.review.verdict` is the machine-checked signal; this file
+#     is the human-readable record.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Review checklist (Opus / NFR final-review template, inline)
+# ─────────────────────────────────────────────────────────────────────────────
+# Reviewer MUST tick every box in `review.md` before flipping verdict to
+# CLEAN:
+#   [ ] All per-platform NFR artefacts present (windows, ubuntu, macos).
+#   [ ] All per-platform soak runs ≥ 8 h with exit_code == 0.
+#   [ ] Zero panics, zero OOMs across all platforms.
+#   [ ] Crash directory empty on every platform.
+#   [ ] RSS growth ≤ 5 MB/h sustained on every platform.
+#   [ ] CPU average ≤ 35 % on every platform.
+#   [ ] Dropped audio chunks == 0 across the soak window.
+#   [ ] Subtitle pair count ≥ baseline floor recorded in prior GA bundle.
+#   [ ] First-paint latency ≤ 1500 ms on every platform.
+#   [ ] Weekly soak (manifest.soak_run.completed_at) is ≤ 7 days old at gate
+#       evaluation time (8 day window allows 24 h scheduling slack).
+#   [ ] Reviewer is a named Opus / NFR specialist; reviewer handle recorded.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Issue closeout checklist (consumed by `child-close` gate kind)
+# ─────────────────────────────────────────────────────────────────────────────
+#   [ ] Issue body links to the bundle commit / artifact URL.
+#   [ ] CI green on the merging PR.
+#   [ ] Release-gate workflow CLEAN run URL recorded in the issue comments.
+#   [ ] Opus / NFR review verdict == CLEAN in `manifest.json`.
+#   [ ] No regression files (`crashes/*.json`) present in the bundle.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Test matrix (matches acceptance-matrix.md row for #510)
+# ─────────────────────────────────────────────────────────────────────────────
+#   1. Simulated all-green evidence ⇒ verdict = PASS.
+#   2. Missing one platform artifact ⇒ verdict = BLOCK
+#      (`platforms_missing` non-empty).
+#   3. Missing Opus review (verdict != CLEAN) ⇒ verdict = BLOCK
+#      (`review_blocked`).
+#   4. One crash artifact present ⇒ verdict = BLOCK (`crashes_present`).
+#   5. Stale weekly soak (> max_soak_age_days) ⇒ verdict = BLOCK
+#      (`soak_stale`).
+# These five cases are exercised by `workflow_dispatch` against synthetic
+# bundles; the run URLs are recorded as the workflow_dry_run evidence for
+# Wave 1.
+
+name: Release Gate (QA8-12)
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_bundle:
+        description: >-
+          Path inside the checked-out repo to the release evidence bundle
+          directory (must contain manifest.json + per-platform subfolders).
+        required: true
+        default: verification-evidence/release/latest
+      gate_kind:
+        description: Which gate is being evaluated.
+        required: true
+        default: rc
+        type: choice
+        options:
+          - rc
+          - ga
+          - child-close
+      max_soak_age_days:
+        description: >-
+          Maximum age (in days) of the weekly soak run referenced by
+          manifest.soak_run.completed_at. Older ⇒ stale ⇒ block.
+        required: false
+        default: "8"
+      required_platforms:
+        description: >-
+          Comma-separated platforms that MUST appear under per-platform/.
+        required: false
+        default: windows-latest,ubuntu-latest,macos-latest
+  release:
+    types:
+      - prereleased
+      - released
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.event.inputs.gate_kind || github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  resolve-inputs:
+    name: Resolve gate inputs
+    runs-on: ubuntu-latest
+    outputs:
+      bundle: ${{ steps.resolve.outputs.bundle }}
+      gate_kind: ${{ steps.resolve.outputs.gate_kind }}
+      max_soak_age_days: ${{ steps.resolve.outputs.max_soak_age_days }}
+      required_platforms: ${{ steps.resolve.outputs.required_platforms }}
+    steps:
+      - name: Resolve effective inputs across event types
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IN_BUNDLE: ${{ github.event.inputs.evidence_bundle }}
+          IN_KIND: ${{ github.event.inputs.gate_kind }}
+          IN_AGE: ${{ github.event.inputs.max_soak_age_days }}
+          IN_PLATFORMS: ${{ github.event.inputs.required_platforms }}
+          REL_TAG: ${{ github.event.release.tag_name }}
+          REL_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            bundle="${IN_BUNDLE}"
+            kind="${IN_KIND}"
+            age="${IN_AGE}"
+            platforms="${IN_PLATFORMS}"
+          else
+            # release event: derive bundle path from the release tag and pick
+            # rc vs ga from the prerelease flag.
+            bundle="verification-evidence/release/${REL_TAG}"
+            if [[ "${REL_PRERELEASE}" == "true" ]]; then
+              kind="rc"
+            else
+              kind="ga"
+            fi
+            age="8"
+            platforms="windows-latest,ubuntu-latest,macos-latest"
+          fi
+          {
+            echo "bundle=${bundle}"
+            echo "gate_kind=${kind}"
+            echo "max_soak_age_days=${age}"
+            echo "required_platforms=${platforms}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Resolved gate inputs:"
+          echo "  bundle             = ${bundle}"
+          echo "  gate_kind          = ${kind}"
+          echo "  max_soak_age_days  = ${age}"
+          echo "  required_platforms = ${platforms}"
+
+  validate-bundle:
+    name: Validate evidence bundle structure
+    needs: resolve-inputs
+    runs-on: ubuntu-latest
+    outputs:
+      manifest_ok: ${{ steps.validate.outputs.manifest_ok }}
+      platforms_missing: ${{ steps.validate.outputs.platforms_missing }}
+    steps:
+      - name: Checkout repository at gate ref
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install jq
+        run: |
+          set -euo pipefail
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends jq
+          fi
+          jq --version
+
+      - name: Validate manifest + per-platform artefacts
+        id: validate
+        env:
+          BUNDLE: ${{ needs.resolve-inputs.outputs.bundle }}
+          REQUIRED_PLATFORMS: ${{ needs.resolve-inputs.outputs.required_platforms }}
+        run: |
+          set -euo pipefail
+          if [[ ! -d "${BUNDLE}" ]]; then
+            echo "::error::Evidence bundle directory not found at ${BUNDLE}"
+            echo "manifest_ok=false" >> "${GITHUB_OUTPUT}"
+            echo "platforms_missing=ALL" >> "${GITHUB_OUTPUT}"
+            exit 1
+          fi
+          manifest="${BUNDLE}/manifest.json"
+          if [[ ! -f "${manifest}" ]]; then
+            echo "::error::manifest.json missing at ${manifest}"
+            echo "manifest_ok=false" >> "${GITHUB_OUTPUT}"
+            echo "platforms_missing=ALL" >> "${GITHUB_OUTPUT}"
+            exit 1
+          fi
+          if ! jq -e '.schema_version == "1"' "${manifest}" >/dev/null; then
+            echo "::error::manifest.schema_version must equal \"1\""
+            echo "manifest_ok=false" >> "${GITHUB_OUTPUT}"
+            exit 1
+          fi
+          for field in release_tag gate_kind generated_at platforms soak_run review crash_summary; do
+            if ! jq -e "has(\"${field}\")" "${manifest}" >/dev/null; then
+              echo "::error::manifest.json missing required field: ${field}"
+              echo "manifest_ok=false" >> "${GITHUB_OUTPUT}"
+              exit 1
+            fi
+          done
+          missing=()
+          IFS=',' read -ra REQ <<< "${REQUIRED_PLATFORMS}"
+          for plat in "${REQ[@]}"; do
+            plat_dir="${BUNDLE}/per-platform/${plat}"
+            if [[ ! -d "${plat_dir}" ]]; then
+              missing+=("${plat}:dir")
+              continue
+            fi
+            for need in nfr.json soak.json; do
+              if [[ ! -f "${plat_dir}/${need}" ]]; then
+                missing+=("${plat}:${need}")
+              fi
+            done
+          done
+          if (( ${#missing[@]} > 0 )); then
+            joined=$(IFS=','; echo "${missing[*]}")
+            echo "::error::Missing per-platform artefacts: ${joined}"
+            echo "manifest_ok=true" >> "${GITHUB_OUTPUT}"
+            echo "platforms_missing=${joined}" >> "${GITHUB_OUTPUT}"
+            exit 1
+          fi
+          echo "manifest_ok=true" >> "${GITHUB_OUTPUT}"
+          echo "platforms_missing=" >> "${GITHUB_OUTPUT}"
+          echo "Bundle structure OK at ${BUNDLE}"
+
+  check-review:
+    name: Check Opus / NFR review verdict
+    needs: [resolve-inputs, validate-bundle]
+    runs-on: ubuntu-latest
+    outputs:
+      review_verdict: ${{ steps.review.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install jq
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y --no-install-recommends jq; }
+      - name: Enforce review.verdict == CLEAN
+        id: review
+        env:
+          BUNDLE: ${{ needs.resolve-inputs.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          manifest="${BUNDLE}/manifest.json"
+          verdict=$(jq -r '.review.verdict // "MISSING"' "${manifest}")
+          tier=$(jq -r '.review.reviewer_tier // "unknown"' "${manifest}")
+          signed_by=$(jq -r '.review.signed_off_by // ""' "${manifest}")
+          echo "Reviewer tier:   ${tier}"
+          echo "Review verdict:  ${verdict}"
+          echo "Signed off by:   ${signed_by}"
+          echo "verdict=${verdict}" >> "${GITHUB_OUTPUT}"
+          case "${tier}" in
+            opus|nfr-specialist) ;;
+            *)
+              echo "::error::review.reviewer_tier must be 'opus' or 'nfr-specialist', got '${tier}'"
+              exit 1
+              ;;
+          esac
+          if [[ -z "${signed_by}" ]]; then
+            echo "::error::review.signed_off_by must be a non-empty reviewer handle"
+            exit 1
+          fi
+          if [[ "${verdict}" != "CLEAN" ]]; then
+            echo "::error::Release gate blocked: review verdict is '${verdict}', required 'CLEAN'"
+            exit 1
+          fi
+
+  check-crashes:
+    name: Check for crash artifacts
+    needs: [resolve-inputs, validate-bundle]
+    runs-on: ubuntu-latest
+    outputs:
+      crashes_present: ${{ steps.crashes.outputs.crashes_present }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install jq
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y --no-install-recommends jq; }
+      - name: Scan per-platform/*/crashes and crash_summary
+        id: crashes
+        env:
+          BUNDLE: ${{ needs.resolve-inputs.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          manifest="${BUNDLE}/manifest.json"
+          summary_count=$(jq -r '.crash_summary.count // 0' "${manifest}")
+          summary_sev=$(jq -r '.crash_summary.max_severity // "none"' "${manifest}")
+          echo "manifest.crash_summary.count        = ${summary_count}"
+          echo "manifest.crash_summary.max_severity = ${summary_sev}"
+          found=0
+          while IFS= read -r -d '' f; do
+            echo "::error::Crash artifact present: ${f}"
+            found=$((found + 1))
+          done < <(find "${BUNDLE}/per-platform" -type f -path '*/crashes/*.json' -print0 2>/dev/null || true)
+          if (( found > 0 )) || [[ "${summary_count}" != "0" ]] || [[ "${summary_sev}" != "none" ]]; then
+            echo "crashes_present=true" >> "${GITHUB_OUTPUT}"
+            echo "::error::Release gate blocked: ${found} crash file(s); summary count=${summary_count} sev=${summary_sev}"
+            exit 1
+          fi
+          echo "crashes_present=false" >> "${GITHUB_OUTPUT}"
+          echo "No crash artifacts found."
+
+  check-soak-freshness:
+    name: Check weekly soak freshness
+    needs: [resolve-inputs, validate-bundle]
+    runs-on: ubuntu-latest
+    outputs:
+      soak_stale: ${{ steps.soak.outputs.soak_stale }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install jq
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y --no-install-recommends jq; }
+      - name: Compare manifest.soak_run.completed_at to max_soak_age_days
+        id: soak
+        env:
+          BUNDLE: ${{ needs.resolve-inputs.outputs.bundle }}
+          MAX_AGE: ${{ needs.resolve-inputs.outputs.max_soak_age_days }}
+        run: |
+          set -euo pipefail
+          manifest="${BUNDLE}/manifest.json"
+          completed_at=$(jq -r '.soak_run.completed_at // ""' "${manifest}")
+          if [[ -z "${completed_at}" ]]; then
+            echo "::error::manifest.soak_run.completed_at is missing"
+            echo "soak_stale=true" >> "${GITHUB_OUTPUT}"
+            exit 1
+          fi
+          if ! soak_epoch=$(date -u -d "${completed_at}" +%s 2>/dev/null); then
+            echo "::error::manifest.soak_run.completed_at not parseable: ${completed_at}"
+            echo "soak_stale=true" >> "${GITHUB_OUTPUT}"
+            exit 1
+          fi
+          now_epoch=$(date -u +%s)
+          age_seconds=$(( now_epoch - soak_epoch ))
+          age_days=$(( age_seconds / 86400 ))
+          echo "Soak completed_at: ${completed_at}"
+          echo "Soak age (days):   ${age_days}"
+          echo "Max allowed days:  ${MAX_AGE}"
+          if (( age_days > MAX_AGE )); then
+            echo "soak_stale=true" >> "${GITHUB_OUTPUT}"
+            echo "::error::Release gate blocked: weekly soak is stale (${age_days}d > ${MAX_AGE}d)"
+            exit 1
+          fi
+          echo "soak_stale=false" >> "${GITHUB_OUTPUT}"
+
+  gate-summary:
+    name: Release-gate verdict (aggregate)
+    needs: [resolve-inputs, validate-bundle, check-review, check-crashes, check-soak-freshness]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit aggregate verdict
+        env:
+          GATE_KIND: ${{ needs.resolve-inputs.outputs.gate_kind }}
+          BUNDLE_RESULT: ${{ needs.validate-bundle.result }}
+          REVIEW_RESULT: ${{ needs.check-review.result }}
+          CRASH_RESULT: ${{ needs.check-crashes.result }}
+          SOAK_RESULT: ${{ needs.check-soak-freshness.result }}
+          PLATFORMS_MISSING: ${{ needs.validate-bundle.outputs.platforms_missing }}
+          REVIEW_VERDICT: ${{ needs.check-review.outputs.review_verdict }}
+          CRASHES_PRESENT: ${{ needs.check-crashes.outputs.crashes_present }}
+          SOAK_STALE: ${{ needs.check-soak-freshness.outputs.soak_stale }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Release-gate verdict (${GATE_KIND})"
+            echo
+            echo "| Gate                  | Result          |"
+            echo "|-----------------------|-----------------|"
+            echo "| validate-bundle       | ${BUNDLE_RESULT} |"
+            echo "| check-review          | ${REVIEW_RESULT} |"
+            echo "| check-crashes         | ${CRASH_RESULT}  |"
+            echo "| check-soak-freshness  | ${SOAK_RESULT}   |"
+            echo
+            echo "Details:"
+            echo "- platforms_missing : \`${PLATFORMS_MISSING:-<none>}\`"
+            echo "- review_verdict    : \`${REVIEW_VERDICT:-<unknown>}\`"
+            echo "- crashes_present   : \`${CRASHES_PRESENT:-<unknown>}\`"
+            echo "- soak_stale        : \`${SOAK_STALE:-<unknown>}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${BUNDLE_RESULT}" == "success" \
+             && "${REVIEW_RESULT}" == "success" \
+             && "${CRASH_RESULT}" == "success" \
+             && "${SOAK_RESULT}" == "success" ]]; then
+            echo "Release gate (${GATE_KIND}) PASS."
+            exit 0
+          fi
+          echo "::error::Release gate (${GATE_KIND}) BLOCKED — see job results above."
+          exit 1

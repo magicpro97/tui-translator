@@ -127,11 +127,20 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
         );
 
         session.send(b"\r").expect("confirm wizard");
-        std::thread::sleep(Duration::from_millis(600));
 
+        // After Enter on Confirm Setup, the binary runs `handle_wizard_outcome`
+        // which calls `config::write_config` (an atomic rename). On slow CI
+        // runners the render → input → write path can take longer than a fixed
+        // sleep, so poll up to STARTUP_TIMEOUT instead of relying on a hard
+        // 600ms delay (see settings_save_defaults_blank_file_audio_path_… for
+        // the same polling pattern on persisted files).
+        let deadline = std::time::Instant::now() + STARTUP_TIMEOUT;
+        while !config_path.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
         assert!(
             config_path.exists(),
-            "completing the wizard must create a per-user config"
+            "completing the wizard must create a per-user config (waited up to {STARTUP_TIMEOUT:?})"
         );
         session.quit_cleanly().expect("quit first session");
         let exit = session.wait_exit(EXIT_TIMEOUT).expect("first session exit");

@@ -1,0 +1,26 @@
+# Wave W2 — Implementation closed allow-list.
+# An implementation tentacle assigned to an issue in this wave MAY ONLY modify files in this list.
+# Tests under tests/** and benches under benches/** are implicitly allowed for tests_first issues even if not listed.
+
+.github/workflows/ci.yml
+.github/workflows/release.yml
+Cargo.toml
+PRIVACY.md
+deny.toml
+src/audio/coreaudio_capture.rs
+src/audio/file_source.rs
+src/audio/mod.rs
+src/audio/probe.rs
+src/metrics/latency.rs
+src/metrics/snapshot.rs
+src/providers/local_mt/mod.rs
+src/providers/local_mt/supertonic.rs
+verification-evidence/macos/MAC-A1-coreaudio-capture.json
+verification-evidence/macos/MAC-A2-virtual-device-classification.json
+verification-evidence/sec/SEC-01-cargo-deny.txt
+verification-evidence/sec/SEC-01-cosign-verify.txt
+verification-evidence/sec/SEC-01-sbom.cdx.json
+verification-evidence/supertonic/SUPERTONIC-02-license-privacy.md
+verification-evidence/supertonic/SUPERTONIC-03-quality-bench.json
+verification-evidence/supertonic/SUPERTONIC-04-perf-bench.json
+verification-evidence/supertonic/SUPERTONIC-05-streaming-spike.md

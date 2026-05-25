@@ -1,0 +1,8 @@
+
+OK   verification-evidence/macos/macos-01-blackhole-capture-60s.json
+OK   verification-evidence/macos/macos-01-latency-measurements.json
+OK   verification-evidence/ci/CI-01-matrix-run-url.json
+OK   verification-evidence/qa8/QA8-02-slo-schema.json
+OK   verification-evidence/test/TEST-01-evidence-schema.json
+OK   verification-evidence/waves/wave-1/baseline-hashes.json
+OK   verification-evidence/waves/wave-1/wave-manifest.json

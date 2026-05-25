@@ -1,0 +1,83 @@
+Issue | magicpro97/tui-translator#23 | state=OPEN | hr=1 | epic=1 | [EPIC] WP-23 — Post-v1 Feature — Ollama Local Translation Post-Processing
+Issue | magicpro97/tui-translator#22 | state=OPEN | hr=0 | epic=1 | [EPIC] WP-22 — Post-v1 Feature — Azure Provider Integration
+Issue | magicpro97/tui-translator#21 | state=OPEN | hr=1 | epic=1 | [EPIC] WP-21 — Post-v1 Validation — Per-Process Audio Capture (Zoom-Only Loopback)
+Issue | magicpro97/tui-translator#20 | state=OPEN | hr=1 | epic=1 | [EPIC] WP-20 — Post-v1 Validation — gRPC Streaming STT
+Issue | magicpro97/tui-translator#19 | state=OPEN | hr=1 | epic=1 | [EPIC] WP-19 — Human Acceptance Testing on Real Hardware (Verification Layer 5)
+Issue | magicpro97/tui-translator#95 | state=CLOSED | hr=0 | epic=0 | [P0] WP-15.02 — The CI job runs on windows-latest (GitHub-hosted Windows runner) and includes
+Issue | magicpro97/tui-translator#115 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.02 — Conduct L5-1 through L5-6 using real hardware (two Windows machines for the Zoom…
+Issue | magicpro97/tui-translator#116 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.03 — Run L5-1 subtitle accuracy review
+Issue | magicpro97/tui-translator#117 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.04 — Run L5-2 bilingual translation review
+Issue | magicpro97/tui-translator#118 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.05 — Validate L5-3 translated audio toggle
+Issue | magicpro97/tui-translator#119 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.06 — Verify L5-4 terminal compatibility matrix
+Issue | magicpro97/tui-translator#120 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.07 — Run L5-5 non-developer onboarding review
+Issue | magicpro97/tui-translator#121 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.08 — Run L5-6 live meeting readability review
+Issue | magicpro97/tui-translator#122 | state=OPEN | hr=1 | epic=0 | [P2] WP-19.09 — Sign and date the acceptance log
+Issue | magicpro97/tui-translator#366 | state=OPEN | hr=1 | epic=0 | verification: recruit and schedule named Layer 5 human reviewers
+Issue | magicpro97/tui-translator#368 | state=OPEN | hr=0 | epic=1 | [EPIC] LF â€” Local-first defaults, storage, and offline provider readiness
+Issue | magicpro97/tui-translator#376 | state=OPEN | hr=0 | epic=1 | [EPIC] DM â€” Dual-provider transcript mode with side-by-side A/B panes
+Issue | magicpro97/tui-translator#384 | state=OPEN | hr=0 | epic=0 | DM-08 â€” Dual-mode docs and config examples
+Issue | magicpro97/tui-translator#385 | state=OPEN | hr=0 | epic=1 | [EPIC] HC â€” Hot config without restart
+Issue | magicpro97/tui-translator#392 | state=OPEN | hr=0 | epic=1 | [EPIC] SM â€” Realtime storage metrics for transcripts and audio archive
+Issue | magicpro97/tui-translator#449 | state=OPEN | hr=0 | epic=1 | [EPIC] MACOS-WBS — macOS support, live controls, models, virtual mic, QA, CI/CD, and release roadmap
+Issue | magicpro97/tui-translator#450 | state=OPEN | hr=0 | epic=0 | MACOS-01 — Spike: macOS capture API, TCC, CoreAudio/BlackHole, and ScreenCaptureKit decision
+Issue | magicpro97/tui-translator#451 | state=OPEN | hr=0 | epic=0 | MACOS-02 — Implement macOS CoreAudio/BlackHole capture MVP
+Issue | magicpro97/tui-translator#452 | state=OPEN | hr=0 | epic=0 | MACOS-03 — Implement ScreenCaptureKit system-audio capture and permission preflight
+Issue | magicpro97/tui-translator#453 | state=OPEN | hr=0 | epic=0 | MACOS-04 — macOS virtual mic routing via BlackHole/Loopback without bundled drivers
+Issue | magicpro97/tui-translator#454 | state=OPEN | hr=0 | epic=0 | CTRL-01 — Real-time input/output volume and gain controls
+Issue | magicpro97/tui-translator#455 | state=OPEN | hr=0 | epic=0 | CTRL-02 — Real-time TTS voice catalog and hot-swap
+Issue | magicpro97/tui-translator#456 | state=OPEN | hr=0 | epic=0 | CTRL-03 — Single active voice invariant across single and dual modes
+Issue | magicpro97/tui-translator#457 | state=OPEN | hr=0 | epic=0 | MODEL-01 — Local/remote backend selection contract for STT, MT, and TTS
+Issue | magicpro97/tui-translator#458 | state=OPEN | hr=0 | epic=0 | MODEL-02 — macOS local model runtime validation and packaging constraints
+Issue | magicpro97/tui-translator#459 | state=OPEN | hr=0 | epic=0 | QA-01 — ISO 25010 + ISO/IEC/IEEE 29119 QA plan and traceability matrix
+Issue | magicpro97/tui-translator#460 | state=OPEN | hr=0 | epic=0 | TEST-01 — Deterministic simulation harness for audio, provider, network, PTY, and virtual mic
+Issue | magicpro97/tui-translator#461 | state=OPEN | hr=0 | epic=0 | CI-01 — CI matrix expansion for Windows/macOS/features and required gates
+Issue | magicpro97/tui-translator#462 | state=OPEN | hr=0 | epic=0 | SEC-01 — Supply-chain/security gates, SBOM, SLSA, and signing policy
+Issue | magicpro97/tui-translator#463 | state=OPEN | hr=0 | epic=0 | REL-01 — Cross-platform release packaging, notarization, and GA promotion plan
+Issue | magicpro97/tui-translator#464 | state=OPEN | hr=0 | epic=1 | [EPIC] LINUX-WBS — Linux and cross-platform parity roadmap epic
+Issue | magicpro97/tui-translator#465 | state=OPEN | hr=0 | epic=0 | PROC-01 — Opus review, confidence, and WBS issue-template gate
+Issue | magicpro97/tui-translator#466 | state=OPEN | hr=0 | epic=0 | XPLAT-01 — Cross-platform core and audio HAL architecture
+Issue | magicpro97/tui-translator#467 | state=OPEN | hr=0 | epic=0 | PARITY-01 — Cross-platform feature parity matrix and release policy
+Issue | magicpro97/tui-translator#468 | state=OPEN | hr=0 | epic=0 | LINUX-01 — Spike: Linux capture backend decision
+Issue | magicpro97/tui-translator#469 | state=OPEN | hr=0 | epic=0 | LINUX-02 — Implement PipeWire/PulseAudio system-audio capture MVP
+Issue | magicpro97/tui-translator#470 | state=OPEN | hr=0 | epic=0 | LINUX-03 — ALSA-only and portal fallback strategy
+Issue | magicpro97/tui-translator#471 | state=OPEN | hr=0 | epic=0 | LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback
+Issue | magicpro97/tui-translator#472 | state=OPEN | hr=0 | epic=0 | LINUX-05 — Linux distro dependency manifest and runtime preflight
+Issue | magicpro97/tui-translator#473 | state=OPEN | hr=0 | epic=0 | MODEL-03 — Linux local model runtime validation
+Issue | magicpro97/tui-translator#474 | state=OPEN | hr=0 | epic=0 | TEST-02 — Linux deterministic audio simulation fixture
+Issue | magicpro97/tui-translator#475 | state=OPEN | hr=0 | epic=0 | CI-02 — Linux CI matrix and quality gates
+Issue | magicpro97/tui-translator#476 | state=OPEN | hr=0 | epic=0 | QA-02 — ISO 25010 and ISO/IEC/IEEE 29119 Linux portability plan
+Issue | magicpro97/tui-translator#477 | state=OPEN | hr=0 | epic=0 | SEC-02 — Linux and cross-platform supply-chain security
+Issue | magicpro97/tui-translator#478 | state=OPEN | hr=0 | epic=0 | REL-02 — Linux packaging for AppImage, deb, rpm, and tar.gz
+Issue | magicpro97/tui-translator#479 | state=OPEN | hr=0 | epic=0 | UX-01 — Adaptive TUI layout
+Issue | magicpro97/tui-translator#480 | state=OPEN | hr=0 | epic=0 | UX-02 — OS-aware shortcut display
+Issue | magicpro97/tui-translator#481 | state=OPEN | hr=0 | epic=0 | I18N-01 — Cross-platform i18n architecture and live locale switching
+Issue | magicpro97/tui-translator#482 | state=OPEN | hr=0 | epic=0 | CFG-01 — Live settings apply without reload where safe
+Issue | magicpro97/tui-translator#483 | state=OPEN | hr=0 | epic=0 | STD-01 — Strict engineering standards, TDD, comments, commits, LOC, and complexity gates
+Issue | magicpro97/tui-translator#484 | state=OPEN | hr=0 | epic=0 | STD-02 — Refactor existing oversized modules to meet budgets
+Issue | magicpro97/tui-translator#485 | state=OPEN | hr=0 | epic=1 | SUPERTONIC-WBS: Supertonic local TTS evaluation and default-readiness epic
+Issue | magicpro97/tui-translator#486 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-01: Spike feasibility, vendor evidence, and integration shape
+Issue | magicpro97/tui-translator#487 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-02: License, model distribution, consent, and privacy audit
+Issue | magicpro97/tui-translator#488 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-03: Supertonic vs Google TTS quality benchmark for ja, vi, and en
+Issue | magicpro97/tui-translator#489 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-04: Standalone performance, first-audio, and model-footprint benchmark
+Issue | magicpro97/tui-translator#490 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-05: TTS streaming and non-blocking provider contract spike
+Issue | magicpro97/tui-translator#491 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-06: Extend TTS backend contract and config fallback semantics
+Issue | magicpro97/tui-translator#492 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-07: Model cache, checksum, and first-run download UX
+Issue | magicpro97/tui-translator#493 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-08: Native Rust Supertonic ONNX provider behind local-tts
+Issue | magicpro97/tui-translator#494 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-09: Supertonic voice catalog, hot-swap, and single-active-voice parity
+Issue | magicpro97/tui-translator#495 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate
+Issue | magicpro97/tui-translator#496 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-11: Default-readiness ADR and gated default flip
+Issue | magicpro97/tui-translator#497 | state=OPEN | hr=0 | epic=0 | SUPERTONIC-12: User docs, troubleshooting, and release checklist
+Issue | magicpro97/tui-translator#498 | state=OPEN | hr=0 | epic=1 | [EPIC] QA8-WBS - 8-hour cross-platform stability and 60fps QA epic
+Issue | magicpro97/tui-translator#499 | state=OPEN | hr=0 | epic=0 | QA8-01 - QA charter, standards mapping, and risk register
+Issue | magicpro97/tui-translator#500 | state=OPEN | hr=0 | epic=0 | QA8-02 - Machine-readable SLO schema and gate checker
+Issue | magicpro97/tui-translator#501 | state=OPEN | hr=0 | epic=0 | QA8-03 - Soak evidence schema v2 and telemetry export contract
+Issue | magicpro97/tui-translator#502 | state=OPEN | hr=0 | epic=0 | QA8-04 - Cross-platform process, memory, handle, FD, and thread probes
+Issue | magicpro97/tui-translator#503 | state=OPEN | hr=0 | epic=0 | QA8-05 - 8-hour soak runner v2 with fault injection
+Issue | magicpro97/tui-translator#504 | state=OPEN | hr=0 | epic=0 | QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate
+Issue | magicpro97/tui-translator#505 | state=OPEN | hr=0 | epic=0 | QA8-07 - Audio capture, provider, and virtual-mic backpressure telemetry
+Issue | magicpro97/tui-translator#506 | state=OPEN | hr=0 | epic=0 | QA8-08 - Panic, OOM, dump capture, and symbolication workflow
+Issue | magicpro97/tui-translator#507 | state=OPEN | hr=0 | epic=0 | QA8-09 - Deterministic cross-platform simulation and fixture parity
+Issue | magicpro97/tui-translator#508 | state=OPEN | hr=0 | epic=0 | QA8-10 - Cross-platform CI/CD soak ladder and runner inventory
+Issue | magicpro97/tui-translator#509 | state=OPEN | hr=0 | epic=0 | QA8-11 - Project priority and issue hygiene enforcement
+Issue | magicpro97/tui-translator#510 | state=OPEN | hr=0 | epic=0 | QA8-12 - Release gate orchestrator and Opus/NFR review workflow
+Issue | magicpro97/tui-translator#511 | state=OPEN | hr=0 | epic=0 | QA8-13 - Quality-in-use regression suite for 8-hour sessions

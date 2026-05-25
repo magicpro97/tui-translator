@@ -1,0 +1,389 @@
+# Issue #509 — QA8-11 — Project priority and issue-hygiene enforcement.
+#
+# Goals (from acceptance-matrix.md / issue #509 body):
+#   1. Every issue carries exactly one `priority:*` label.  Issues without one
+#      receive `priority:P0` automatically (QA8 default).  Issues with more
+#      than one are flagged via a comment so a human can resolve.
+#   2. Project #2 `Priority` field is synced to match the issue label.  Only
+#      the P0 single-select option id is configured for this repository
+#      (`b654f0a5`); when the effective label is `priority:P0` the Project
+#      item Priority option is set to that id.  For `priority:P1`, `P2`, `P3`
+#      (and for issues carrying conflicting priority labels) the sync is
+#      intentionally skipped with a neutral step summary so a human board
+#      choice is never silently clobbered to P0.
+#   3. A weekly drift audit runs every Monday at 03:00 UTC and a summary is
+#      written to the workflow run step summary.  The audit reports
+#      `missing_label` and `missing_project_priority` counts.
+#
+# Secrets and least-privilege notes:
+#   - GITHUB_TOKEN is used for issue label / comment writes (issues: write).
+#   - Project v2 GraphQL mutations require a PAT with the `project` scope.
+#     This is provided via the optional `PROJECT_TOKEN` repository secret.
+#     When the secret is absent the project-sync step writes a "skipped"
+#     summary and exits 0, mirroring the contract-weekly graceful-skip
+#     pattern.  The reactor and audit jobs still run.
+#   - The workflow uses a top-level `permissions:` block set to the minimum
+#     each job needs and elevates only where required.
+#
+# Triggers:
+#   - `issues` events drive the reactor (opened, reopened, labeled, unlabeled,
+#     edited).
+#   - `schedule` runs the weekly drift audit.
+#   - `workflow_dispatch` is exposed for the wave-1 T0 evidence run
+#     (actionlint pass + successful `workflow_dispatch` run URL).
+#
+# Inputs (issue #509, verbatim):
+#   Project #2 ID          PVT_kwHOAT2vsM4BXVxn
+#   Priority field id      PVTSSF_lAHOAT2vsM4BXVxnzhSjUPQ
+#   P0 option id           b654f0a5
+
+name: Issue hygiene (QA8-11)
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+      - labeled
+      - unlabeled
+      - edited
+  schedule:
+    - cron: "0 3 * * 1" # Mondays at 03:00 UTC — weekly drift audit
+  workflow_dispatch:
+    # No inputs: workflow_dispatch only triggers the read-only weekly-audit
+    # job (see job-level `if:` on `weekly-audit`).  An earlier `dry_run`
+    # input was removed because workflow_dispatch never reaches the
+    # mutating job `sync-project-priority` (which is gated on
+    # `github.event_name == 'issues'`), so the input had no effect on
+    # any label or project write and was misleading.
+
+# Top-level permissions are intentionally minimal.  Individual jobs widen
+# permissions only as needed.  Project v2 GraphQL writes require a PAT and
+# are gated on the `PROJECT_TOKEN` secret being present.
+permissions:
+  contents: read
+
+# Avoid clobbering an in-flight reactor run for the same issue.  The audit
+# job uses a separate concurrency group so it cannot starve the reactor.
+concurrency:
+  group: issue-hygiene-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: "PVT_kwHOAT2vsM4BXVxn"
+  PRIORITY_FIELD_ID: "PVTSSF_lAHOAT2vsM4BXVxnzhSjUPQ"
+  PRIORITY_P0_OPTION_ID: "b654f0a5"
+  DEFAULT_PRIORITY_LABEL: "priority:P0"
+
+jobs:
+  # ── Job 1: React to issue events and enforce exactly one priority label ─────
+  enforce-priority-label:
+    name: Enforce single priority:* label
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    outputs:
+      action: ${{ steps.inspect.outputs.action }}
+      effective_priority: ${{ steps.inspect.outputs.effective_priority }}
+    steps:
+      - name: Inspect priority labels on issue
+        id: inspect
+        env:
+          DEFAULT_PRIORITY_LABEL: ${{ env.DEFAULT_PRIORITY_LABEL }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue) {
+              core.info("No issue payload — nothing to enforce.");
+              core.setOutput("action", "skip");
+              core.setOutput("effective_priority", "");
+              return;
+            }
+            const allowed = new Set([
+              "priority:P0",
+              "priority:P1",
+              "priority:P2",
+              "priority:P3",
+            ]);
+            const priorityLabels = (issue.labels || [])
+              .map((l) => (typeof l === "string" ? l : l.name))
+              .filter((n) => typeof n === "string" && n.startsWith("priority:"));
+            core.setOutput("count", String(priorityLabels.length));
+            core.setOutput("labels", priorityLabels.join(","));
+            // effective_priority is the single canonical priority label the
+            // issue will carry after this reactor run.  It is consumed by the
+            // sync-project-priority job to decide whether to write the
+            // Project #2 Priority field.  When more than one priority label
+            // is present we deliberately emit "" so the sync job skips
+            // rather than guessing or clobbering a human choice.
+            let effective = "";
+            if (priorityLabels.length === 0) {
+              core.setOutput("action", "apply-default");
+              effective = process.env.DEFAULT_PRIORITY_LABEL || "priority:P0";
+            } else if (priorityLabels.length === 1) {
+              core.setOutput("action", "ok");
+              if (allowed.has(priorityLabels[0])) {
+                effective = priorityLabels[0];
+              }
+            } else {
+              core.setOutput("action", "mismatch");
+            }
+            core.setOutput("effective_priority", effective);
+
+      - name: Apply default priority:P0 label
+        if: steps.inspect.outputs.action == 'apply-default'
+        uses: actions/github-script@v7
+        env:
+          DEFAULT_PRIORITY_LABEL: ${{ env.DEFAULT_PRIORITY_LABEL }}
+        with:
+          script: |
+            const label = process.env.DEFAULT_PRIORITY_LABEL;
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: [label],
+            });
+            core.info(`Applied default label '${label}'.`);
+
+      - name: Report priority-label mismatch
+        if: steps.inspect.outputs.action == 'mismatch'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = (core.getInput("labels") || "").length
+              ? core.getInput("labels")
+              : "${{ steps.inspect.outputs.labels }}";
+            const body = [
+              "## \u26a0\ufe0f Issue-hygiene mismatch",
+              "",
+              "This issue carries more than one `priority:*` label:",
+              "",
+              "`" + labels + "`",
+              "",
+              "Please remove the extras so exactly one priority label remains.",
+              "The QA8-11 hygiene workflow will re-check on the next edit.",
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body,
+            });
+            core.warning("Multiple priority labels — comment posted.");
+
+      - name: Write step summary
+        run: |
+          {
+            echo "## Issue-hygiene reactor"
+            echo ""
+            echo "- Issue: #${{ github.event.issue.number }}"
+            echo "- Action: ${{ steps.inspect.outputs.action }}"
+            echo "- Priority labels: ${{ steps.inspect.outputs.labels }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Job 2: Sync Project #2 Priority field via GraphQL ───────────────────────
+  # Runs after the reactor on `issues` events.  Requires a PAT with `project`
+  # scope (the `PROJECT_TOKEN` secret).  When the secret is absent the job
+  # writes a skip summary and exits 0 so the workflow remains green.
+  sync-project-priority:
+    name: Sync Project #2 Priority field
+    needs: enforce-priority-label
+    if: github.event_name == 'issues' && always() && needs.enforce-priority-label.result != 'failure'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      EFFECTIVE_PRIORITY: ${{ needs.enforce-priority-label.outputs.effective_priority }}
+    steps:
+      - name: Check for PROJECT_TOKEN secret
+        id: token_check
+        env:
+          SECRET_VALUE: ${{ secrets.PROJECT_TOKEN }}
+        run: |
+          if [ -z "${SECRET_VALUE}" ]; then
+            {
+              echo "## Project Priority sync skipped"
+              echo ""
+              echo "The \`PROJECT_TOKEN\` repository secret is not set."
+              echo "Add a PAT with \`project\` scope to enable Project #2 sync."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip sync — non-P0 priority (only P0 option id is configured)
+        # Only the P0 single-select option id (`b654f0a5`) is known to this
+        # workflow.  Writing P0 for an issue whose label is priority:P1/P2/P3
+        # would silently clobber a human board choice (see code review on
+        # PR for issue #509).  We therefore skip the GraphQL mutation for
+        # any effective priority other than priority:P0 and surface a clear
+        # neutral summary instead.  The "mismatch" case (multiple priority
+        # labels) also lands here because effective_priority is "" then.
+        if: steps.token_check.outputs.has_token == 'true' && env.EFFECTIVE_PRIORITY != 'priority:P0'
+        run: |
+          {
+            echo "## Project Priority sync skipped (non-P0)"
+            echo ""
+            echo "- Issue: #${{ github.event.issue.number }}"
+            echo "- Effective priority: \`${EFFECTIVE_PRIORITY:-<none>}\`"
+            echo ""
+            echo "Only \`priority:P0\` is auto-synced to Project #2 because"
+            echo "only the P0 single-select option id is configured. The"
+            echo "Project #2 Priority field is left untouched for P1/P2/P3"
+            echo "and for issues with conflicting priority labels."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve project item id and set Priority to P0
+        if: steps.token_check.outputs.has_token == 'true' && env.EFFECTIVE_PRIORITY == 'priority:P0'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          PRIORITY_FIELD_ID: ${{ env.PRIORITY_FIELD_ID }}
+          P0_OPTION_ID: ${{ env.PRIORITY_P0_OPTION_ID }}
+        run: |
+          set -euo pipefail
+          # 1) Look up the project item id for this issue, adding it to the
+          #    project if it is not yet tracked.
+          add_resp=$(gh api graphql -f query='
+            mutation($projectId:ID!,$contentId:ID!){
+              addProjectV2ItemById(input:{projectId:$projectId, contentId:$contentId}){
+                item { id }
+              }
+            }' -F projectId="$PROJECT_ID" -F contentId="$ISSUE_NODE_ID")
+          item_id=$(echo "$add_resp" | jq -r '.data.addProjectV2ItemById.item.id')
+          if [ -z "$item_id" ] || [ "$item_id" = "null" ]; then
+            echo "Failed to resolve project item id." >&2
+            echo "$add_resp" >&2
+            exit 1
+          fi
+          # 2) Set the Priority field to the P0 single-select option.
+          gh api graphql -f query='
+            mutation($projectId:ID!,$itemId:ID!,$fieldId:ID!,$optionId:String!){
+              updateProjectV2ItemFieldValue(input:{
+                projectId:$projectId, itemId:$itemId, fieldId:$fieldId,
+                value:{ singleSelectOptionId:$optionId }
+              }){ projectV2Item { id } }
+            }' -F projectId="$PROJECT_ID" -F itemId="$item_id" \
+               -F fieldId="$PRIORITY_FIELD_ID" -F optionId="$P0_OPTION_ID"
+          {
+            echo "## Project Priority sync"
+            echo ""
+            echo "- Issue: #${{ github.event.issue.number }}"
+            echo "- Project item: $item_id"
+            echo "- Priority option: P0 ($P0_OPTION_ID)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Job 3: Weekly drift audit ───────────────────────────────────────────────
+  # Runs on schedule and on manual dispatch.  Counts open issues missing a
+  # priority label.  Project-priority drift counting requires the
+  # PROJECT_TOKEN secret; when absent that section is skipped.
+  weekly-audit:
+    name: Weekly priority drift audit
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    steps:
+      - name: Audit missing priority labels
+        id: label_audit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            // Exclude pull requests; the issues API returns them too.
+            const realIssues = issues.filter((i) => !i.pull_request);
+            const missing = realIssues.filter((i) => {
+              const ls = (i.labels || []).map((l) =>
+                typeof l === "string" ? l : l.name
+              );
+              return !ls.some((n) => typeof n === "string" && n.startsWith("priority:"));
+            });
+            core.setOutput("total", String(realIssues.length));
+            core.setOutput("missing_label", String(missing.length));
+            core.setOutput(
+              "missing_numbers",
+              missing.map((i) => `#${i.number}`).join(" "),
+            );
+
+      - name: Check for PROJECT_TOKEN secret
+        id: token_check
+        env:
+          SECRET_VALUE: ${{ secrets.PROJECT_TOKEN }}
+        run: |
+          if [ -z "${SECRET_VALUE}" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Audit missing project priority
+        id: project_audit
+        if: steps.token_check.outputs.has_token == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          PRIORITY_FIELD_ID: ${{ env.PRIORITY_FIELD_ID }}
+        run: |
+          set -euo pipefail
+          # Page through project items and count those whose Priority field
+          # value is empty.  500-item ceiling is plenty for this repo and
+          # bounds the audit cost.
+          missing=0
+          total=0
+          cursor=""
+          while : ; do
+            if [ -z "$cursor" ]; then after='null'; else after="\"$cursor\""; fi
+            resp=$(gh api graphql -f query="
+              query(\$projectId:ID!){
+                node(id:\$projectId){
+                  ... on ProjectV2 {
+                    items(first:100, after:$after){
+                      pageInfo{ hasNextPage endCursor }
+                      nodes{
+                        id
+                        fieldValueByName(name:\"Priority\"){
+                          __typename
+                          ... on ProjectV2ItemFieldSingleSelectValue { name }
+                        }
+                      }
+                    }
+                  }
+                }
+              }" -F projectId="$PROJECT_ID")
+            nodes=$(echo "$resp" | jq -r '.data.node.items.nodes')
+            count=$(echo "$nodes" | jq 'length')
+            total=$((total + count))
+            empty=$(echo "$nodes" | jq '[.[] | select(.fieldValueByName == null or .fieldValueByName.name == null)] | length')
+            missing=$((missing + empty))
+            has_next=$(echo "$resp" | jq -r '.data.node.items.pageInfo.hasNextPage')
+            cursor=$(echo "$resp" | jq -r '.data.node.items.pageInfo.endCursor')
+            if [ "$has_next" != "true" ] || [ $total -ge 500 ]; then break; fi
+          done
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "missing_project_priority=$missing" >> "$GITHUB_OUTPUT"
+
+      - name: Write audit summary
+        run: |
+          {
+            echo "## Weekly issue-hygiene audit"
+            echo ""
+            echo "- Open issues scanned: ${{ steps.label_audit.outputs.total }}"
+            echo "- missing_label: ${{ steps.label_audit.outputs.missing_label }}"
+            echo "- Issues missing priority label: ${{ steps.label_audit.outputs.missing_numbers }}"
+            if [ -n "${{ steps.project_audit.outputs.total || '' }}" ]; then
+              echo "- Project #2 items scanned: ${{ steps.project_audit.outputs.total }}"
+              echo "- missing_project_priority: ${{ steps.project_audit.outputs.missing_project_priority }}"
+            else
+              echo "- Project #2 audit skipped (PROJECT_TOKEN not configured)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,266 @@
+   Compiling cfg-if v1.0.4
+   Compiling windows-link v0.2.1
+   Compiling smallvec v1.15.1
+   Compiling itoa v1.0.18
+   Compiling stable_deref_trait v1.2.1
+   Compiling log v0.4.29
+   Compiling once_cell v1.21.4
+   Compiling pin-project-lite v0.2.17
+   Compiling scopeguard v1.2.0
+   Compiling zerofrom v0.1.7
+   Compiling libc v0.2.186
+   Compiling bytes v1.11.1
+   Compiling windows-sys v0.61.2
+   Compiling bitflags v2.11.1
+   Compiling unicode-segmentation v1.13.2
+   Compiling lock_api v0.4.14
+   Compiling yoke v0.8.2
+   Compiling parking_lot_core v0.9.12
+   Compiling winapi-x86_64-pc-windows-gnu v0.4.0
+   Compiling windows_x86_64_gnu v0.52.6
+   Compiling memchr v2.8.0
+   Compiling lazy_static v1.5.0
+   Compiling futures-core v0.3.32
+   Compiling windows-targets v0.52.6
+   Compiling winapi v0.3.9
+   Compiling num-traits v0.2.19
+   Compiling zerovec v0.11.6
+   Compiling parking_lot v0.12.5
+   Compiling writeable v0.6.3
+   Compiling litemap v0.8.2
+   Compiling zerotrie v0.2.4
+   Compiling windows_x86_64_gnu v0.48.5
+   Compiling allocator-api2 v0.2.21
+   Compiling ryu v1.0.23
+   Compiling foldhash v0.2.0
+   Compiling equivalent v1.0.2
+   Compiling utf8_iter v1.0.4
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling windows-targets v0.48.5
+   Compiling thiserror v2.0.18
+   Compiling http v1.4.0
+   Compiling tracing-core v0.1.36
+   Compiling percent-encoding v2.3.2
+   Compiling hashbrown v0.16.1
+   Compiling icu_collections v2.2.0
+   Compiling either v1.15.0
+   Compiling icu_locale_core v2.2.0
+   Compiling arrayvec v0.7.6
+   Compiling zeroize v1.8.2
+   Compiling unicode-width v0.2.2
+   Compiling itertools v0.14.0
+   Compiling rustls-pki-types v1.14.1
+   Compiling castaway v0.2.4
+   Compiling icu_normalizer_data v2.2.0
+   Compiling http-body v1.0.1
+   Compiling icu_properties_data v2.2.0
+   Compiling num-integer v0.1.46
+   Compiling getrandom v0.2.17
+   Compiling bitflags v1.3.2
+   Compiling powerfmt v0.2.0
+   Compiling futures-task v0.3.32
+   Compiling static_assertions v1.1.0
+   Compiling slab v0.4.12
+   Compiling icu_provider v2.2.0
+   Compiling untrusted v0.9.0
+   Compiling compact_str v0.9.0
+   Compiling deranged v0.5.8
+   Compiling tracing v0.1.44
+   Compiling kasuari v0.4.12
+   Compiling ring v0.17.14
+   Compiling futures-util v0.3.32
+   Compiling lru v0.16.4
+   Compiling icu_normalizer v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling unicode-truncate v2.0.1
+   Compiling strum v0.27.2
+   Compiling aho-corasick v1.1.4
+   Compiling convert_case v0.10.0
+   Compiling num-conv v0.2.1
+   Compiling typenum v1.20.0
+   Compiling tower-service v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling time-core v0.1.8
+   Compiling bytemuck v1.25.0
+   Compiling regex-syntax v0.8.10
+   Compiling want v0.3.1
+   Compiling derive_more-impl v2.1.1
+   Compiling time v0.3.47
+   Compiling symphonia-core v0.5.5
+   Compiling ratatui-core v0.1.0
+   Compiling httparse v1.10.1
+   Compiling socket2 v0.6.3
+   Compiling mio v1.2.0
+   Compiling rustls-webpki v0.103.13
+   Compiling idna_adapter v1.2.2
+   Compiling tokio v1.52.3
+   Compiling generic-array v0.14.7
+   Compiling crossbeam-utils v0.8.21
+   Compiling regex-automata v0.4.14
+   Compiling serde_core v1.0.228
+   Compiling form_urlencoded v1.2.2
+   Compiling windows-result v0.1.2
+   Compiling futures-channel v0.3.32
+   Compiling encoding_rs v0.8.35
+   Compiling subtle v2.6.1
+   Compiling atomic-waker v1.1.2
+   Compiling strength_reduce v0.2.4
+   Compiling byteorder v1.5.0
+   Compiling rustls v0.23.40
+   Compiling windows-core v0.54.0
+   Compiling crossbeam-channel v0.5.15
+   Compiling derive_more v2.1.1
+   Compiling transpose v0.2.3
+   Compiling idna v1.1.0
+   Compiling winapi-util v0.1.11
+   Compiling crossterm_winapi v0.9.1
+   Compiling primal-check v0.3.4
+   Compiling windows-sys v0.48.0
+   Compiling num-complex v0.4.6
+   Compiling symphonia-metadata v0.5.5
+   Compiling sync_wrapper v1.0.2
+   Compiling line-clipping v0.3.7
+   Compiling adler2 v2.0.1
+   Compiling tower-layer v0.3.3
+   Compiling tinyvec_macros v0.1.1
+   Compiling simd-adler32 v0.3.9
+   Compiling ipnet v2.12.0
+   Compiling base64 v0.22.1
+   Compiling tinyvec v1.11.0
+   Compiling serde v1.0.228
+   Compiling ratatui-widgets v0.3.0
+   Compiling miniz_oxide v0.8.9
+   Compiling thiserror v1.0.69
+   Compiling symphonia-bundle-mp3 v0.5.5
+   Compiling matchers v0.2.0
+   Compiling rustfft v6.4.1
+   Compiling crossterm v0.29.0
+   Compiling windows v0.54.0
+   Compiling url v2.5.8
+   Compiling same-file v1.0.6
+   Compiling ogg v0.8.0
+   Compiling hyper v1.9.0
+   Compiling tokio-rustls v0.26.4
+   Compiling tower v0.5.3
+   Compiling crc32fast v1.5.0
+   Compiling zmij v1.0.21
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling nu-ansi-term v0.50.3
+   Compiling webpki-roots v1.0.7
+   Compiling tracing-log v0.2.0
+   Compiling windows-core v0.51.1
+   Compiling hyper-util v0.1.20
+   Compiling windows-core v0.52.0
+   Compiling sharded-slab v0.1.7
+   Compiling thread_local v1.1.9
+   Compiling minimal-lexical v0.2.1
+   Compiling dasp_sample v0.11.0
+   Compiling option-ext v0.2.0
+   Compiling nom v7.1.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling dirs-sys v0.4.1
+   Compiling windows v0.52.0
+   Compiling hyper-rustls v0.27.9
+   Compiling windows v0.51.1
+   Compiling digest v0.10.7
+   Compiling tower-http v0.6.10
+   Compiling serde_json v1.0.149
+   Compiling flate2 v1.1.9
+   Compiling lewton v0.10.2
+   Compiling realfft v3.5.0
+   Compiling ratatui-crossterm v0.1.0
+   Compiling walkdir v2.5.0
+   Compiling ratatui-macros v0.7.0
+   Compiling symphonia v0.5.5
+   Compiling serde_urlencoded v0.7.1
+   Compiling ntapi v0.4.3
+   Compiling anyhow v1.0.102
+   Compiling http-body-util v0.1.3
+   Compiling filetime v0.2.28
+   Compiling base64 v0.21.7
+   Compiling unicode-width v0.1.14
+   Compiling hound v3.5.1
+   Compiling claxon v0.4.3
+   Compiling widestring v1.2.1
+   Compiling symlink v0.1.0
+   Compiling cpufeatures v0.2.17
+   Compiling hdrhistogram v7.5.4
+   Compiling reqwest v0.12.28
+   Compiling tracing-appender v0.2.5
+   Compiling sha2 v0.10.9
+   Compiling notify v6.1.1
+   Compiling ratatui v0.30.0
+   Compiling rubato v0.15.0
+   Compiling directories v5.0.1
+   Compiling regex v1.12.3
+   Compiling tui-input v0.15.3
+   Compiling windows-sys v0.52.0
+   Compiling hex v0.4.3
+   Compiling getrandom v0.4.2
+   Compiling utf8parse v0.2.2
+   Compiling encode_unicode v1.0.0
+   Compiling fastrand v2.4.1
+   Compiling vte v0.11.1
+   Compiling nix v0.28.0
+   Compiling tempfile v3.27.0
+   Compiling console v0.16.3
+   Compiling winreg v0.10.1
+   Compiling filedescriptor v0.8.3
+   Compiling serial2 v0.2.37
+   Compiling shared_library v0.1.9
+   Compiling shell-words v1.1.1
+   Compiling similar v2.7.0
+   Compiling downcast-rs v1.2.1
+   Compiling vt100 v0.15.2
+   Compiling portable-pty v0.9.0
+   Compiling insta v1.47.2
+   Compiling cpal v0.15.3
+   Compiling rodio v0.17.3
+   Compiling wasapi v0.14.0
+   Compiling sysinfo v0.30.13
+   Compiling tui-translator v0.1.4 (C:\Users\linhnt102\zoom-terminal-translator-rs)
+rustc-LLVM ERROR: IO failure on output stream: No space left on device
+error: could not compile `tui-translator` (test "integration")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\linhnt102\.rustup\toolchains\1.90.0-x86_64-pc-windows-gnu\bin\rustc.exe --crate-name integration --edition=2021 tests\integration.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"audio-integration\", \"local-mt\", \"local-stt\", \"ort\", \"production-audio\", \"sentencepiece-rs\", \"whisper-rs\"))" -C metadata=feff23475a304d64 -C extra-filename=-a8403020a7a20fc4 --out-dir C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps -C incremental=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\incremental -L dependency=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps --extern anyhow=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libanyhow-1041c3ab8841e1b0.rlib --extern base64=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libbase64-f08e634c1618929b.rlib --extern crossterm=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libcrossterm-c7de93f28f48a6f6.rlib --extern directories=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libdirectories-6c3ee68cba9cc8f4.rlib --extern hdrhistogram=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libhdrhistogram-002c5c47883ac5ca.rlib --extern hex=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libhex-ab61edf72fdb3c8f.rlib --extern insta=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libinsta-f9302a5693b35776.rlib --extern notify=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libnotify-f2fa75a817dc1668.rlib --extern portable_pty=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libportable_pty-d3821cbeda646fe9.rlib --extern ratatui=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libratatui-8054769b26eabbab.rlib --extern regex=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libregex-e7f20eb813fafc19.rlib --extern reqwest=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libreqwest-738b95be3b564221.rlib --extern rodio=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\librodio-71b86815d54ff578.rlib --extern rubato=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\librubato-9e5d81d87cac2050.rlib --extern serde=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libserde-298be0957d16d4b2.rlib --extern serde_json=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libserde_json-49d92374a7ea1ba8.rlib --extern sha2=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libsha2-c1520fe7b1683287.rlib --extern sysinfo=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libsysinfo-80be283e4afb3ec4.rlib --extern tempfile=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtempfile-7262e8cf73feebe3.rlib --extern thiserror=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libthiserror-e04ef9485e3d6842.rlib --extern tokio=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtokio-88aa5d7f6f8c1ec9.rlib --extern tracing=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing-423e53d57a07eb66.rlib --extern tracing_appender=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing_appender-475d0a9810e25ea3.rlib --extern tracing_subscriber=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing_subscriber-aa7bbd26437df756.rlib --extern tui_input=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtui_input-3bb1c6e50246ee35.rlib --extern unicode_width=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libunicode_width-04d4f879a4a1acce.rlib --extern vt100=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libvt100-b4b8df5ee643161d.rlib --extern wasapi=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libwasapi-6187a380d88ba406.rlib --extern windows_sys=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libwindows_sys-45dbbfe6bbfd1b3d.rlib -L native=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\build\ring-436edbf6d7a0ea2c\out -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winapi-x86_64-pc-windows-gnu-0.4.0\lib -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.48.5\lib -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.52.6\lib` (exit code: 101)
+warning: build failed, waiting for other jobs to finish...
+rustc-LLVM ERROR: IO failure on output stream: No space left on device
+rustc-LLVM ERROR: IO failure on output stream: No space left on device
+error: could not compile `tui-translator` (test "audio_stability")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\linhnt102\.rustup\toolchains\1.90.0-x86_64-pc-windows-gnu\bin\rustc.exe --crate-name audio_stability --edition=2021 tests\audio_stability.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"audio-integration\", \"local-mt\", \"local-stt\", \"ort\", \"production-audio\", \"sentencepiece-rs\", \"whisper-rs\"))" -C metadata=8083167e7cd93020 -C extra-filename=-b3adc006647d5f6f --out-dir C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps -C incremental=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\incremental -L dependency=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps --extern anyhow=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libanyhow-1041c3ab8841e1b0.rlib --extern base64=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libbase64-f08e634c1618929b.rlib --extern crossterm=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libcrossterm-c7de93f28f48a6f6.rlib --extern directories=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libdirectories-6c3ee68cba9cc8f4.rlib --extern hdrhistogram=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libhdrhistogram-002c5c47883ac5ca.rlib --extern hex=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libhex-ab61edf72fdb3c8f.rlib --extern insta=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libinsta-f9302a5693b35776.rlib --extern notify=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libnotify-f2fa75a817dc1668.rlib --extern portable_pty=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libportable_pty-d3821cbeda646fe9.rlib --extern ratatui=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libratatui-8054769b26eabbab.rlib --extern regex=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libregex-e7f20eb813fafc19.rlib --extern reqwest=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libreqwest-738b95be3b564221.rlib --extern rodio=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\librodio-71b86815d54ff578.rlib --extern rubato=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\librubato-9e5d81d87cac2050.rlib --extern serde=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libserde-298be0957d16d4b2.rlib --extern serde_json=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libserde_json-49d92374a7ea1ba8.rlib --extern sha2=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libsha2-c1520fe7b1683287.rlib --extern sysinfo=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libsysinfo-80be283e4afb3ec4.rlib --extern tempfile=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtempfile-7262e8cf73feebe3.rlib --extern thiserror=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libthiserror-e04ef9485e3d6842.rlib --extern tokio=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtokio-88aa5d7f6f8c1ec9.rlib --extern tracing=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing-423e53d57a07eb66.rlib --extern tracing_appender=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing_appender-475d0a9810e25ea3.rlib --extern tracing_subscriber=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing_subscriber-aa7bbd26437df756.rlib --extern tui_input=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtui_input-3bb1c6e50246ee35.rlib --extern unicode_width=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libunicode_width-04d4f879a4a1acce.rlib --extern vt100=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libvt100-b4b8df5ee643161d.rlib --extern wasapi=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libwasapi-6187a380d88ba406.rlib --extern windows_sys=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libwindows_sys-45dbbfe6bbfd1b3d.rlib -L native=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\build\ring-436edbf6d7a0ea2c\out -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winapi-x86_64-pc-windows-gnu-0.4.0\lib -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.48.5\lib -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.52.6\lib` (exit code: 101)
+error: could not compile `tui-translator` (bin "tui-translator")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\linhnt102\.rustup\toolchains\1.90.0-x86_64-pc-windows-gnu\bin\rustc.exe --crate-name tui_translator --edition=2021 src\main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values(\"audio-integration\", \"local-mt\", \"local-stt\", \"ort\", \"production-audio\", \"sentencepiece-rs\", \"whisper-rs\"))" -C metadata=d4d45d043fa79f36 -C extra-filename=-00ab76df81b8ad0a --out-dir C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps -C incremental=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\incremental -L dependency=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps --extern anyhow=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libanyhow-1041c3ab8841e1b0.rlib --extern base64=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libbase64-f08e634c1618929b.rlib --extern crossterm=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libcrossterm-c7de93f28f48a6f6.rlib --extern directories=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libdirectories-6c3ee68cba9cc8f4.rlib --extern hdrhistogram=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libhdrhistogram-002c5c47883ac5ca.rlib --extern hex=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libhex-ab61edf72fdb3c8f.rlib --extern notify=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libnotify-f2fa75a817dc1668.rlib --extern ratatui=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libratatui-8054769b26eabbab.rlib --extern regex=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libregex-e7f20eb813fafc19.rlib --extern reqwest=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libreqwest-738b95be3b564221.rlib --extern rodio=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\librodio-71b86815d54ff578.rlib --extern rubato=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\librubato-9e5d81d87cac2050.rlib --extern serde=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libserde-298be0957d16d4b2.rlib --extern serde_json=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libserde_json-49d92374a7ea1ba8.rlib --extern sha2=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libsha2-c1520fe7b1683287.rlib --extern sysinfo=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libsysinfo-80be283e4afb3ec4.rlib --extern thiserror=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libthiserror-e04ef9485e3d6842.rlib --extern tokio=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtokio-88aa5d7f6f8c1ec9.rlib --extern tracing=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing-423e53d57a07eb66.rlib --extern tracing_appender=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing_appender-475d0a9810e25ea3.rlib --extern tracing_subscriber=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtracing_subscriber-aa7bbd26437df756.rlib --extern tui_input=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libtui_input-3bb1c6e50246ee35.rlib --extern unicode_width=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libunicode_width-04d4f879a4a1acce.rlib --extern wasapi=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libwasapi-6187a380d88ba406.rlib --extern windows_sys=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\deps\libwindows_sys-45dbbfe6bbfd1b3d.rlib -L native=C:\Users\linhnt102\zoom-terminal-translator-rs\target\debug\build\ring-436edbf6d7a0ea2c\out -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winapi-x86_64-pc-windows-gnu-0.4.0\lib -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.48.5\lib -L native=C:\Users\linhnt102\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\windows_x86_64_gnu-0.52.6\lib` (exit code: 101)
+error: linking with `x86_64-w64-mingw32-gcc` failed: exit code: 1
+  |
+  = note: "x86_64-w64-mingw32-gcc" "-fno-use-linker-plugin" "-Wl,--dynamicbase" "-Wl,--disable-auto-image-base" "-m64" "-Wl,--high-entropy-va" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsbegin.o" "C:\\Users\\LINHNT~1\\AppData\\Local\\Temp\\rustcgjoklR\\symbols.o" "<257 object files omitted>" "-Wl,-Bstatic" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps/{libtracing_appender-475d0a9810e25ea3,libsymlink-fba955af492638bc,libtracing_subscriber-aa7bbd26437df756,libsharded_slab-c85ab1e4660fdab0,libmatchers-31de9be794c8fb87,libnu_ansi_term-ba6c7c6757107a7a,libthread_local-178fa88380d9d3be,libtracing_log-f3e2700ab932ace2,libhex-ab61edf72fdb3c8f,libdirectories-6c3ee68cba9cc8f4,libdirs_sys-36c8dfec62ca52eb,liboption_ext-874307a927730316}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libtest-*,libgetopts-*,libunicode_width-*,librustc_std_workspace_std-*}.rlib" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps/{libunicode_width-04d4f879a4a1acce,libsha2-c1520fe7b1683287,libcpufeatures-8b618f75beabaf6b,libdigest-700e04db89421048,libblock_buffer-8545c53412dd0c12,libcrypto_common-d82bbd97b3ff4b61,libgeneric_array-64c4c3acb73c47fd,libtypenum-6c1ad869431adaf9,libreqwest-738b95be3b564221,libserde_urlencoded-5c2e12c1712c33af,libhyper_rustls-e114d3cb93b96c01,libwebpki_roots-b50f775f49af4b6f,libtokio_rustls-dd59b7398e1b46ce,librustls-d678673247b1c6a7,libsubtle-bb40c5ae73214ee1,libwebpki-dd54661e3f2a7b0e,libring-c7f371e0374e162c,libgetrandom-41ea8acafbb1656c,libuntrusted-dedf94fb42bc5c06,librustls_pki_types-92fa47e2178ab898,libzeroize-8f0fd789d54fb10a,libserde_json-49d92374a7ea1ba8,libzmij-9f12ea4f3d8760dc,libtower_http-c580a0249dc434ce,libtower-f421d87ea1db2354,libtower_layer-d5d6391ca9a9c5a5,libhyper_util-bf21c09f9a62ae31,libbase64-f08e634c1618929b,libipnet-aa2e0d48478982fd,libtower_service-fe8a2d5976c7299a,libtracing-423e53d57a07eb66,libtracing_core-aa3a75dbe9360cf2,libhyper-ea40663ae160e50c,libwant-8aefe690d7582c4e,libtry_lock-f6d327adafd3ae32,libhttparse-2e793ccba0944105,libatomic_waker-c5814a927b8f19e8,libfutures_channel-e3c11604f8266b24,libfutures_util-d0a9e4ca1b6d918f,libfutures_task-2b9fd9d97fcaaa3c,libhttp_body_util-7508b9bc82539148,libhttp_body-5eb2e1b2f4df2c02,liburl-b2de41d5ef94624d,libidna-d42ba1171347adf6,libidna_adapter-0d50b96d6f68400b,libicu_properties-2ea3ef540192a969,libicu_properties_data-0b9dbdeb5c9ce7fb,libicu_normalizer-d187ec2e4e3fbd8c,libicu_normalizer_data-480ad64a0a2b855b,libicu_collections-960a3bcd4bdd4778,libutf8_iter-327c0b1dc7ff1d50,libpotential_utf-13058189a8d84ec5,libicu_provider-94e58ee67adc28fb,libicu_locale_core-636b326bd04f0bde,libtinystr-23ad18db2d0bcdd4,liblitemap-30e0d419c8425946,libwriteable-7571895886f11797,libzerovec-2bb7d618feb63854,libzerotrie-13034b455ffb1e23,libyoke-b850afd36feb3f89,libstable_deref_trait-2394855596ad1663,libzerofrom-60767a5c79961243,libform_urlencoded-641b6c3e1b654aca,libpercent_encoding-779c2107e5c5a980,libhttp-bde33064cf23569a,libsync_wrapper-f28387bc04ccd480,libfutures_core-14c74a170d99cce6,libsysinfo-80be283e4afb3ec4,libntapi-b5e4735482b305f5,liblibc-5b8b8ebf837a6d0b,libwindows-7b1540861690db9d,libwindows_core-d0704d15aa2559b5,libhdrhistogram-002c5c47883ac5ca,libbase64-eba1e2a419a16e97,libflate2-5f23ed7e1f6513d5,libminiz_oxide-a92368205ddbd01a,libsimd_adler32-3e611387868f4237,libcrc32fast-4a304ad7910d03f5,libnom-925316ac3306bc8b,libwindows_sys-45dbbfe6bbfd1b3d,libnotify-f2fa75a817dc1668,libcrossbeam_channel-62d8eb6db2cd711b,libcrossbeam_utils-3cbae2853ee2f59d,libwalkdir-9434640ad80efa9d,libsame_file-3b3027c1559776d8,libwinapi_util-f1778ac9fd24d3ed,libfiletime-1e5f29fb10473be7,libwindows_sys-80125af3d5b7f648,libthiserror-e04ef9485e3d6842,libregex-e7f20eb813fafc19,libregex_automata-0f3100cda6dca976,libaho_corasick-07015bcf09207477,libmemchr-dc679a7a42cb5daf,libregex_syntax-240d2cb2499da7e5,librodio-71b86815d54ff578,libhound-742059750ecc3df0,liblewton-11721be08526235a,libogg-8fb9d9ce09363aaa,libtinyvec-bb2c232e1876e0f0,libtinyvec_macros-b52ff20cbb652983,libbyteorder-363e0e22f318c3a7,libclaxon-b8a74edc27d906dd,libsymphonia-d2ad6fabb86a445f,libsymphonia_metadata-a6362935aa3215a3,libencoding_rs-a6e67b28496a540a,libsymphonia_bundle_mp3-291a21127b81e9f4,libsymphonia_core-c1674dda1e603478,libbytemuck-2c709be87760d7f8,liblazy_static-1dc159a13faafbb8,libbitflags-5943a7e9625e40f3,libarrayvec-b692ef6ba43c5c20,libcpal-edfe5800038f9ddc,libdasp_sample-d105bb33f825ba22,libwindows-3d5016894de077fc,libwindows_core-5ad5dec42b244b53,libwindows_result-187857d5780172c2,libwindows_targets-1474c98e9a8ba58d,libtempfile-7262e8cf73feebe3,libgetrandom-51b46c221a6ec3bd,libfastrand-c97481fc62a2b175,libonce_cell-ea645bd7c24269b7,libwasapi-6187a380d88ba406,libwindows-a717f5ab83eac4db,libwindows_core-c47c537044760540,libwindows_targets-51e24b5216ad155a,libwidestring-2ad9a9a86594d5a8,liblog-1def6674cbf83f4f,librubato-9e5d81d87cac2050,librealfft-98a73d0a556e5aef,librustfft-1d7734ebbc55805d,libprimal_check-3cd04c4d9c48b7ca,libtranspose-16ea2d8a1b79e413,libstrength_reduce-b581fdc2f920ebec,libnum_integer-0a1b180395ee685c,libnum_complex-62a68a941d59e73c,libnum_traits-3fd934977c415ea9,libtokio-88aa5d7f6f8c1ec9,libsocket2-ee8041629a24efc3,libbytes-2acc0f7f30125506,libmio-c371cf78a4cc6f28,libwindows_sys-88a441f86f48629b,libpin_project_lite-daf631cee521c0d7,libtui_input-3bb1c6e50246ee35,libserde-298be0957d16d4b2,libserde_core-8f25b4c9d46c32b4,libratatui-8054769b26eabbab,libratatui_macros-3632db1eda273dda,libratatui_widgets-ac2bc017a97fd922,libtime-13df5aefeb273be5,libtime_core-8966a9f52af4389e,libnum_conv-e82b78a724ba6080,libderanged-5360514b8d43fa47,libpowerfmt-d48bcf6efa6b0f1c,libline_clipping-ba027aae1c090787,libratatui_crossterm-e2f3eb6300daabe6,libratatui_core-7be1e634b357da7d,libunicode_truncate-ad40e1684ba96a25,liblru-e22cc206a3055b7b,libkasuari-7d09059aed911532,libthiserror-f78b84a97dd90379,libitertools-623a915f40f55da6,libeither-c81cda74b75433f0,libhashbrown-74fca882524fcf0e,libequivalent-16fd284116a13336,liballocator_api2-050a329ada05971d,libfoldhash-1bdf5f69386b1bc6,libcompact_str-72daa717b82bd393,libryu-da664a246c87cde5,libitoa-031b7704cd7c7be3,libstatic_assertions-a827a089c55a4c3a,libcastaway-e0e64fc42d887820,libunicode_segmentation-511aaa2c7f34c331,libunicode_width-144955778fd4bd61,libstrum-9ca687b3e1e73af4,libcrossterm-c7de93f28f48a6f6,libbitflags-38229c547f45d1c0,libparking_lot-b86a0e1903b759a4,libparking_lot_core-ae810aa6570fe8a6,libwindows_link-ba9eeeccbfb9bf81,libcfg_if-bea25412e7fa529e,libsmallvec-e7ca03868c230de0,liblock_api-21a6a41ddedd9512,libscopeguard-68cbdbda3d091d01,libderive_more-aa561b275b430d5b,libcrossterm_winapi-19d10e9409ddbf39,libwinapi-6724ff4d03c3992c,libanyhow-1041c3ab8841e1b0}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,libcfg_if-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-lkernel32" "-lbcrypt" "-ladvapi32" "-lwinapi_ntdll" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lwindows.0.48.5" "-lkernel32" "-lwinapi_advapi32" "-lwinapi_cfgmgr32" "-lwinapi_credui" "-lwinapi_gdi32" "-lwinapi_kernel32" "-lwinapi_msimg32" "-lwinapi_opengl32" "-lwinapi_secur32" "-lwinapi_synchronization" "-lwinapi_user32" "-lwinapi_winspool" "-lwinapi_ws2_32" "-lkernel32" "-lkernel32" "-lkernel32" "-lntdll" "-luserenv" "-lws2_32" "-ldbghelp" "-lgcc_eh" "-l:libpthread.a" "-lmsvcrt" "-lmingwex" "-lmingw32" "-lgcc" "-lmsvcrt" "-lmingwex" "-luser32" "-lkernel32" "-Wl,--nxcompat" "-L" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\build\\ring-436edbf6d7a0ea2c\\out" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\winapi-x86_64-pc-windows-gnu-0.4.0\\lib" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.48.5\\lib" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.52.6\\lib" "-o" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps\\tui_translator-11b4012bf67fa632.exe" "-Wl,--gc-sections" "-no-pie" "-nodefaultlibs" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsend.o"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: C:/Users/linhnt102/scoop/apps/mingw-winlibs/15.2.0-13.0.0-r4/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: final link failed: No space left on deviceΓÉì
+          collect2.exe: error: ld returned 1 exit status
+          
+
+error: could not compile `tui-translator` (bin "tui-translator" test) due to 1 previous error
+error: linking with `x86_64-w64-mingw32-gcc` failed: exit code: 1
+  |
+  = note: "x86_64-w64-mingw32-gcc" "-fno-use-linker-plugin" "-Wl,--dynamicbase" "-Wl,--disable-auto-image-base" "-m64" "-Wl,--high-entropy-va" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsbegin.o" "C:\\Users\\LINHNT~1\\AppData\\Local\\Temp\\rustcC7dNYP\\symbols.o" "<257 object files omitted>" "-Wl,-Bstatic" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps/{libdirectories-6c3ee68cba9cc8f4,libdirs_sys-36c8dfec62ca52eb,liboption_ext-874307a927730316,libserde_json-49d92374a7ea1ba8,libitoa-031b7704cd7c7be3,libzmij-9f12ea4f3d8760dc}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libtest-*,libgetopts-*,libunicode_width-*,librustc_std_workspace_std-*}.rlib" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps/{libtracing-423e53d57a07eb66,libtracing_core-aa3a75dbe9360cf2,libwindows_sys-45dbbfe6bbfd1b3d,libnotify-f2fa75a817dc1668,libcrossbeam_channel-62d8eb6db2cd711b,libcrossbeam_utils-3cbae2853ee2f59d,libwalkdir-9434640ad80efa9d,libsame_file-3b3027c1559776d8,libwinapi_util-f1778ac9fd24d3ed,libfiletime-1e5f29fb10473be7,libwindows_sys-80125af3d5b7f648,libthiserror-e04ef9485e3d6842,libregex-e7f20eb813fafc19,libregex_automata-0f3100cda6dca976,libaho_corasick-07015bcf09207477,libmemchr-dc679a7a42cb5daf,libregex_syntax-240d2cb2499da7e5,librodio-71b86815d54ff578,libhound-742059750ecc3df0,liblewton-11721be08526235a,libogg-8fb9d9ce09363aaa,libtinyvec-bb2c232e1876e0f0,libtinyvec_macros-b52ff20cbb652983,libbyteorder-363e0e22f318c3a7,libclaxon-b8a74edc27d906dd,libsymphonia-d2ad6fabb86a445f,libsymphonia_metadata-a6362935aa3215a3,libencoding_rs-a6e67b28496a540a,libsymphonia_bundle_mp3-291a21127b81e9f4,libsymphonia_core-c1674dda1e603478,libbytemuck-2c709be87760d7f8,liblazy_static-1dc159a13faafbb8,libbitflags-5943a7e9625e40f3,libarrayvec-b692ef6ba43c5c20,libcpal-edfe5800038f9ddc,libdasp_sample-d105bb33f825ba22,libwindows-3d5016894de077fc,libwindows_core-5ad5dec42b244b53,libwindows_result-187857d5780172c2,libwindows_targets-1474c98e9a8ba58d,libserde-298be0957d16d4b2,libserde_core-8f25b4c9d46c32b4,libtempfile-7262e8cf73feebe3,libgetrandom-51b46c221a6ec3bd,libfastrand-c97481fc62a2b175,libonce_cell-ea645bd7c24269b7,libwasapi-6187a380d88ba406,libwindows-a717f5ab83eac4db,libwindows_core-c47c537044760540,libwindows_targets-51e24b5216ad155a,libwidestring-2ad9a9a86594d5a8,liblog-1def6674cbf83f4f,librubato-9e5d81d87cac2050,librealfft-98a73d0a556e5aef,librustfft-1d7734ebbc55805d,libprimal_check-3cd04c4d9c48b7ca,libtranspose-16ea2d8a1b79e413,libstrength_reduce-b581fdc2f920ebec,libnum_integer-0a1b180395ee685c,libnum_complex-62a68a941d59e73c,libnum_traits-3fd934977c415ea9,libtokio-88aa5d7f6f8c1ec9,libsocket2-ee8041629a24efc3,libbytes-2acc0f7f30125506,libmio-c371cf78a4cc6f28,libwindows_sys-88a441f86f48629b,libparking_lot-b86a0e1903b759a4,libparking_lot_core-ae810aa6570fe8a6,libwindows_link-ba9eeeccbfb9bf81,libcfg_if-bea25412e7fa529e,libsmallvec-e7ca03868c230de0,liblock_api-21a6a41ddedd9512,libscopeguard-68cbdbda3d091d01,libpin_project_lite-daf631cee521c0d7,libanyhow-1041c3ab8841e1b0}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,libcfg_if-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-lkernel32" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lwindows.0.48.5" "-lkernel32" "-lkernel32" "-lkernel32" "-lntdll" "-luserenv" "-lws2_32" "-ldbghelp" "-lgcc_eh" "-l:libpthread.a" "-lmsvcrt" "-lmingwex" "-lmingw32" "-lgcc" "-lmsvcrt" "-lmingwex" "-luser32" "-lkernel32" "-Wl,--nxcompat" "-L" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\build\\ring-436edbf6d7a0ea2c\\out" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\winapi-x86_64-pc-windows-gnu-0.4.0\\lib" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.48.5\\lib" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.52.6\\lib" "-o" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps\\config_dual_mode-4203f38b052e7b82.exe" "-Wl,--gc-sections" "-no-pie" "-nodefaultlibs" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsend.o"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: C:/Users/linhnt102/scoop/apps/mingw-winlibs/15.2.0-13.0.0-r4/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: final link failed: No space left on deviceΓÉì
+          collect2.exe: error: ld returned 1 exit status
+          
+
+error: could not compile `tui-translator` (test "config_dual_mode") due to 1 previous error
+error: linking with `x86_64-w64-mingw32-gcc` failed: exit code: 1
+  |
+  = note: "x86_64-w64-mingw32-gcc" "-fno-use-linker-plugin" "-Wl,--dynamicbase" "-Wl,--disable-auto-image-base" "-m64" "-Wl,--high-entropy-va" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsbegin.o" "C:\\Users\\LINHNT~1\\AppData\\Local\\Temp\\rustckwm3cA\\symbols.o" "<257 object files omitted>" "-Wl,-Bstatic" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps/{libdirectories-6c3ee68cba9cc8f4,libdirs_sys-36c8dfec62ca52eb,liboption_ext-874307a927730316,libserde_json-49d92374a7ea1ba8,libitoa-031b7704cd7c7be3,libzmij-9f12ea4f3d8760dc}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libtest-*,libgetopts-*,libunicode_width-*,librustc_std_workspace_std-*}.rlib" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps/{libtracing-423e53d57a07eb66,libtracing_core-aa3a75dbe9360cf2,libwindows_sys-45dbbfe6bbfd1b3d,libnotify-f2fa75a817dc1668,libcrossbeam_channel-62d8eb6db2cd711b,libcrossbeam_utils-3cbae2853ee2f59d,libwalkdir-9434640ad80efa9d,libsame_file-3b3027c1559776d8,libwinapi_util-f1778ac9fd24d3ed,libfiletime-1e5f29fb10473be7,libwindows_sys-80125af3d5b7f648,libthiserror-e04ef9485e3d6842,libregex-e7f20eb813fafc19,libregex_automata-0f3100cda6dca976,libaho_corasick-07015bcf09207477,libmemchr-dc679a7a42cb5daf,libregex_syntax-240d2cb2499da7e5,librodio-71b86815d54ff578,libhound-742059750ecc3df0,liblewton-11721be08526235a,libogg-8fb9d9ce09363aaa,libtinyvec-bb2c232e1876e0f0,libtinyvec_macros-b52ff20cbb652983,libbyteorder-363e0e22f318c3a7,libclaxon-b8a74edc27d906dd,libsymphonia-d2ad6fabb86a445f,libsymphonia_metadata-a6362935aa3215a3,libencoding_rs-a6e67b28496a540a,libsymphonia_bundle_mp3-291a21127b81e9f4,libsymphonia_core-c1674dda1e603478,libbytemuck-2c709be87760d7f8,liblazy_static-1dc159a13faafbb8,libbitflags-5943a7e9625e40f3,libarrayvec-b692ef6ba43c5c20,libcpal-edfe5800038f9ddc,libdasp_sample-d105bb33f825ba22,libwindows-3d5016894de077fc,libwindows_core-5ad5dec42b244b53,libwindows_result-187857d5780172c2,libwindows_targets-1474c98e9a8ba58d,libserde-298be0957d16d4b2,libserde_core-8f25b4c9d46c32b4,libtempfile-7262e8cf73feebe3,libgetrandom-51b46c221a6ec3bd,libfastrand-c97481fc62a2b175,libonce_cell-ea645bd7c24269b7,libwasapi-6187a380d88ba406,libwindows-a717f5ab83eac4db,libwindows_core-c47c537044760540,libwindows_targets-51e24b5216ad155a,libwidestring-2ad9a9a86594d5a8,liblog-1def6674cbf83f4f,librubato-9e5d81d87cac2050,librealfft-98a73d0a556e5aef,librustfft-1d7734ebbc55805d,libprimal_check-3cd04c4d9c48b7ca,libtranspose-16ea2d8a1b79e413,libstrength_reduce-b581fdc2f920ebec,libnum_integer-0a1b180395ee685c,libnum_complex-62a68a941d59e73c,libnum_traits-3fd934977c415ea9,libtokio-88aa5d7f6f8c1ec9,libsocket2-ee8041629a24efc3,libbytes-2acc0f7f30125506,libmio-c371cf78a4cc6f28,libwindows_sys-88a441f86f48629b,libparking_lot-b86a0e1903b759a4,libparking_lot_core-ae810aa6570fe8a6,libwindows_link-ba9eeeccbfb9bf81,libcfg_if-bea25412e7fa529e,libsmallvec-e7ca03868c230de0,liblock_api-21a6a41ddedd9512,libscopeguard-68cbdbda3d091d01,libpin_project_lite-daf631cee521c0d7,libanyhow-1041c3ab8841e1b0}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,libcfg_if-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-lkernel32" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lwindows.0.48.5" "-lkernel32" "-lkernel32" "-lkernel32" "-lntdll" "-luserenv" "-lws2_32" "-ldbghelp" "-lgcc_eh" "-l:libpthread.a" "-lmsvcrt" "-lmingwex" "-lmingw32" "-lgcc" "-lmsvcrt" "-lmingwex" "-luser32" "-lkernel32" "-Wl,--nxcompat" "-L" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\build\\ring-436edbf6d7a0ea2c\\out" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\winapi-x86_64-pc-windows-gnu-0.4.0\\lib" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.48.5\\lib" "-L" "C:\\Users\\linhnt102\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.52.6\\lib" "-o" "C:\\Users\\linhnt102\\zoom-terminal-translator-rs\\target\\debug\\deps\\dm06_dual_tts_policy-9ca95c5a2412fd5b.exe" "-Wl,--gc-sections" "-no-pie" "-nodefaultlibs" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsend.o"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: C:/Users/linhnt102/scoop/apps/mingw-winlibs/15.2.0-13.0.0-r4/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: final link failed: No space left on deviceΓÉì
+          collect2.exe: error: ld returned 1 exit status
+          
+
+error: could not compile `tui-translator` (test "dm06_dual_tts_policy") due to 1 previous error

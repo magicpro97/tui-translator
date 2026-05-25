@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "wave": "W7",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 3,
+  "issues": [
+    {
+      "number": 455,
+      "title": "CTRL-02 — Real-time TTS voice catalog and hot-swap",
+      "family": "CTRL",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        456,
+        457
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/pipeline/playback.rs",
+        "src/providers/google",
+        "src/providers/mod.rs",
+        "src/tui/mod.rs",
+        "verification-evidence/ctrl/VOICE-A5-voice-hotswap.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 458,
+      "title": "MODEL-02 — macOS local model runtime validation and packaging constraints",
+      "family": "MODEL",
+      "red_mode": "tests_first",
+      "dependencies": [
+        457,
+        461,
+        462,
+        463
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "src/providers/local",
+        "src/providers/mt",
+        "verification-evidence/model/MODEL-02-bench.json",
+        "verification-evidence/model/MODEL-02-macos-runtime.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 470,
+      "title": "LINUX-03 — ALSA-only and portal fallback strategy",
+      "family": "LINUX-WBS",
+      "red_mode": "tests_first",
+      "dependencies": [
+        451,
+        452,
+        454,
+        468,
+        469
+      ],
+      "files_allowed": [
+        "src/audio/alsa_capture.rs",
+        "src/audio/mod.rs",
+        "src/audio/portal_capture.rs",
+        "src/audio/probe.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

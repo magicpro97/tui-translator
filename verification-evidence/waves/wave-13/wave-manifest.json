@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "wave": "W13",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 1,
+  "issues": [
+    {
+      "number": 492,
+      "title": "SUPERTONIC-07: Model cache, checksum, and first-run download UX",
+      "family": "SUPERTONIC",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481,
+        482,
+        486,
+        491,
+        493
+      ],
+      "files_allowed": [
+        "Cargo.toml",
+        "src/config/mod.rs",
+        "src/providers/local_mt/model_cache.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

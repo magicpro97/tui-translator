@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "issue": "#461",
+  "tentacle": "w1-t0-461-ci-matrix",
+  "evidence_kind": "workflow_dry_run",
+  "status": "pass",
+  "head_sha": "922eab59b24828d2fd995fd688e356fb1de0d175",
+  "branch": "wave-1/t0-batch",
+  "pr": "https://github.com/magicpro97/tui-translator/pull/512",
+  "prereq_merge_sequence": [
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/515",
+      "fix": "UX-01 frame_pacer landing on main so macOS-14 stability test stops flaking PR #512 CI"
+    },
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/516",
+      "fix": "MSRV alignment (Rust 1.86 / Cargo.lock format) so the MSRV gate is reachable from PR #512"
+    },
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/517",
+      "fix": "Timing / scheduler hardening prerequisite for the rebased PR #512 CI run"
+    },
+    {
+      "pr": "https://github.com/magicpro97/tui-translator/pull/518",
+      "fix": "Pre-A3 macOS-14 hot-reload config-watcher canonicalised paths"
+    }
+  ],
+  "actionlint": {
+    "tool": "actionlint",
+    "version": "1.7.1",
+    "platform": "windows_amd64",
+    "files": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/contract-weekly.yml",
+      ".github/workflows/issue-hygiene.yml"
+    ],
+    "exit_code": 0,
+    "result": "pass",
+    "notes": "All workflows lint clean after CI-01 matrix expansion, the macOS-13 queue-mitigation narrowing, and the test-only follow-up commit `922eab5`. Re-run command: `actionlint .github/workflows/ci.yml .github/workflows/contract-weekly.yml .github/workflows/issue-hygiene.yml` (binary at $USERPROFILE/.copilot/bin/actionlint.exe)."
+  },
+  "test_only_followup_commit": {
+    "parent_sha": "43b2f5ae097b71db9bd8396edc681a430ff54311",
+    "current_sha": "922eab59b24828d2fd995fd688e356fb1de0d175",
+    "subject": "test(pty): wait for onboarding config persistence",
+    "scope": [
+      "tests/pty/onboarding_test.rs"
+    ],
+    "rationale": "Wait for onboarding config persistence (Windows PTY flake). Test-only change — no production source, no workflow, no required-check surface modified. The required-check contracts in §2.1–§2.4 of CI-01-required-checks.md are unchanged; the §2.6 macOS-13 narrowing is unchanged.",
+    "required_check_surface_changed": false
+  },
+  "workflow_dispatch_run": {
+    "workflow_file": ".github/workflows/ci.yml",
+    "ref": "wave-1/t0-batch",
+    "run_id": "26381963965",
+    "run_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965",
+    "triggered_at": "2026-05-25T03:41:31Z",
+    "created_at": "2026-05-25T03:41:31Z",
+    "updated_at": "2026-05-25T04:02:32Z",
+    "triggered_by": "pull_request event on PR #512 (head 922eab5)",
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "notes": "This is the canonical PR-checks run on the current head 922eab5 after the test-only follow-up commit to parent 43b2f5a. The parallel push-event run on the same head is `26381963199` (https://github.com/magicpro97/tui-translator/actions/runs/26381963199, conclusion=success, created_at=2026-05-25T03:41:29Z, updated_at=2026-05-25T03:59:40Z); together the two runs comprise the 46/46 check-runs reported on the PR head. The pull_request run is selected as the canonical evidence because branch-protection contexts are surfaced from PR-event checks."
+  },
+  "push_event_run": {
+    "workflow_file": ".github/workflows/ci.yml",
+    "ref": "wave-1/t0-batch",
+    "run_id": "26381963199",
+    "run_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963199",
+    "created_at": "2026-05-25T03:41:29Z",
+    "updated_at": "2026-05-25T03:59:40Z",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "notes": "Parallel push-event CI run on the same head 922eab5; recorded for completeness so the 46/46 check-run total on the PR head is traceable."
+  },
+  "prior_head_runs_for_continuity": {
+    "head_sha": "43b2f5ae097b71db9bd8396edc681a430ff54311",
+    "note": "Runs on the immediate parent commit (pre test-only follow-up). Retained for audit continuity per pr512-ci-macos13-queue-mitigation.md.",
+    "pull_request_run": {
+      "run_id": "26380090087",
+      "run_url": "https://github.com/magicpro97/tui-translator/actions/runs/26380090087",
+      "conclusion": "success",
+      "created_at": "2026-05-25T02:29:35Z",
+      "updated_at": "2026-05-25T02:51:40Z"
+    },
+    "push_run": {
+      "run_id": "26380089328",
+      "run_url": "https://github.com/magicpro97/tui-translator/actions/runs/26380089328",
+      "conclusion": "success",
+      "created_at": "2026-05-25T02:29:33Z",
+      "updated_at": "2026-05-25T02:44:51Z"
+    }
+  },
+  "final_check_summary": {
+    "head_sha": "922eab59b24828d2fd995fd688e356fb1de0d175",
+    "total_check_runs": 46,
+    "success_like": 46,
+    "pending": 0,
+    "failed": 0,
+    "matrix_note": "macOS-13 permutations were removed in commit 43b2f5a as a queue-mitigation; the 46/46 total is on the narrowed matrix (Windows + macOS-14 + Linux + MSRV + VMIC + features) and is preserved unchanged on the test-only follow-up head 922eab5. See §2.6 of CI-01-required-checks.md."
+  },
+  "post_rebase_verified_jobs": [
+    {
+      "name": "MSRV (Rust 1.86) build",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873543",
+      "note": "MSRV gate green on head 922eab5 (PR #516 alignment landed)."
+    },
+    {
+      "name": "Cross-platform build (windows-latest, default)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873512"
+    },
+    {
+      "name": "Cross-platform build (macos-14, default)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873521",
+      "note": "macOS-14 Apple-silicon build green post-rebase + post-mitigation + post test-only follow-up."
+    },
+    {
+      "name": "Feature matrix (windows-latest, audio-integration)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873523"
+    },
+    {
+      "name": "Feature matrix (windows-latest, production-audio)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873524"
+    },
+    {
+      "name": "Feature matrix (macos-14, audio-integration)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873540"
+    },
+    {
+      "name": "Feature matrix (macos-14, production-audio)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873532"
+    },
+    {
+      "name": "Format check (rustfmt)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873516"
+    },
+    {
+      "name": "Lint (clippy)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873505"
+    },
+    {
+      "name": "Build and test",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873473"
+    },
+    {
+      "name": "PTY tests (Windows ConPTY)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873503",
+      "note": "Green on head 922eab5 — validates the test-only follow-up `wait for onboarding config persistence`."
+    },
+    {
+      "name": "Contract tests (mock-only)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873489"
+    },
+    {
+      "name": "Integration tests (fixtures + pipeline boundary)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873472"
+    },
+    {
+      "name": "Packaging verification (MSVC static exe)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873495"
+    },
+    {
+      "name": "Soak fixture validation (issue #109)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873518"
+    },
+    {
+      "name": "Soak runner dry-run (issue #110)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873482"
+    },
+    {
+      "name": "Hot-config matrix (issue #391)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873506"
+    },
+    {
+      "name": "Linux build smoke test",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873500"
+    },
+    {
+      "name": "VMIC-A6 virtual-cable integration",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873484"
+    },
+    {
+      "name": "VMIC-B4 production sink round-trip",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873502"
+    },
+    {
+      "name": "VMIC-A8 MVP readiness",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77653313026"
+    },
+    {
+      "name": "VMIC-B5 production readiness",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77653884074"
+    },
+    {
+      "name": "Beta toolchain (allowed-fail)",
+      "conclusion": "success",
+      "html_url": "https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873522",
+      "note": "Documented allowed-fail context (continue-on-error: true). Reported as success on this head but is NOT a required branch-protection context."
+    }
+  ],
+  "still_pending_or_queued_at_evidence_time": [],
+  "macos13_matrix_removed": {
+    "date": "2026-05-25",
+    "authorisation": "Maintainer instruction `fix hết` (queue-mitigation seat).",
+    "reason": "GitHub-hosted macos-13 runner pool kept the three macos-13 matrix permutations in `queued` for >19 hours on prior run 26360760221, indefinitely blocking PR #512. Removed from .github/workflows/ci.yml matrix in commit 43b2f5a; this is NOT a claim that macos-13 ever passed.",
+    "contexts_removed": [
+      "Cross-platform build (macos-13, default)",
+      "Feature matrix (macos-13, audio-integration)",
+      "Feature matrix (macos-13, production-audio)"
+    ],
+    "audit_doc": "verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md",
+    "checks_doc_section": "verification-evidence/ci/CI-01-required-checks.md §2.6"
+  },
+  "next_steps": [
+    "Post-merge: orchestrator updates branch-protection on `main` so `required_status_checks.contexts` reflects the narrowed matrix in §2.1–§2.4 of CI-01-required-checks.md (i.e. the three removed macos-13 contexts in §2.6 are excluded).",
+    "Future: revisit Intel macOS coverage if/when GitHub-hosted macos-13 queue stabilises or a self-hosted runner becomes available; track via the queue-mitigation audit doc."
+  ],
+  "checks_referenced_in": "verification-evidence/ci/CI-01-required-checks.md"
+}

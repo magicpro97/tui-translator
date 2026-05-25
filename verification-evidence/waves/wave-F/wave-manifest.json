@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "wave": "F",
+  "kind": "final_refactor",
+  "implementation_dispatch_allowed": false,
+  "issue_count": 1,
+  "issues": [
+    {
+      "number": 484,
+      "title": "STD-02 — Refactor existing oversized modules to meet budgets",
+      "family": "STD",
+      "red_mode": "decomposition",
+      "dependencies": [],
+      "files_allowed": [
+        "STD-02-refactor"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": true
+    }
+  ]
+}

@@ -1,0 +1,383 @@
+warning[duplicate]: found 2 duplicate entries for crate 'base64'
+  ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:8:1
+  Γöé  
+8 Γöé Γò¡ base64 0.21.7 registry+https://github.com/rust-lang/crates.io-index
+9 Γöé Γöé base64 0.22.1 registry+https://github.com/rust-lang/crates.io-index
+  Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+  Γöé  
+  Γö£ base64 v0.21.7
+    ΓööΓöÇΓöÇ hdrhistogram v7.5.4
+        ΓööΓöÇΓöÇ tui-translator v0.1.4
+  Γö£ base64 v0.22.1
+    Γö£ΓöÇΓöÇ hyper-util v0.1.20
+    Γöé   Γö£ΓöÇΓöÇ hyper-rustls v0.27.9
+    Γöé   Γöé   ΓööΓöÇΓöÇ reqwest v0.12.28
+    Γöé   Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+    Γöé   ΓööΓöÇΓöÇ reqwest v0.12.28 (*)
+    Γö£ΓöÇΓöÇ reqwest v0.12.28 (*)
+    ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'bitflags'
+   ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:10:1
+   Γöé  
+10 Γöé Γò¡ bitflags 1.3.2 registry+https://github.com/rust-lang/crates.io-index
+11 Γöé Γöé bitflags 2.11.1 registry+https://github.com/rust-lang/crates.io-index
+   Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+   Γöé  
+   Γö£ bitflags v1.3.2
+     Γö£ΓöÇΓöÇ portable-pty v0.9.0
+     Γöé   ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4
+     ΓööΓöÇΓöÇ symphonia-core v0.5.5
+         Γö£ΓöÇΓöÇ symphonia v0.5.5
+         Γöé   ΓööΓöÇΓöÇ rodio v0.17.3
+         Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+         Γö£ΓöÇΓöÇ symphonia-bundle-mp3 v0.5.5
+         Γöé   ΓööΓöÇΓöÇ symphonia v0.5.5 (*)
+         ΓööΓöÇΓöÇ symphonia-metadata v0.5.5
+             Γö£ΓöÇΓöÇ symphonia v0.5.5 (*)
+             ΓööΓöÇΓöÇ symphonia-bundle-mp3 v0.5.5 (*)
+   Γö£ bitflags v2.11.1
+     Γö£ΓöÇΓöÇ crossterm v0.29.0
+     Γöé   Γö£ΓöÇΓöÇ ratatui-crossterm v0.1.0
+     Γöé   Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0
+     Γöé   Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+     Γöé   ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+     Γö£ΓöÇΓöÇ line-clipping v0.3.7
+     Γöé   ΓööΓöÇΓöÇ ratatui-widgets v0.3.0
+     Γöé       Γö£ΓöÇΓöÇ ratatui v0.30.0 (*)
+     Γöé       ΓööΓöÇΓöÇ ratatui-macros v0.7.0
+     Γöé           ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+     Γö£ΓöÇΓöÇ nix v0.28.0
+     Γöé   ΓööΓöÇΓöÇ portable-pty v0.9.0
+     Γöé       ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4 (*)
+     Γö£ΓöÇΓöÇ ratatui-core v0.1.0
+     Γöé   Γö£ΓöÇΓöÇ ratatui v0.30.0 (*)
+     Γöé   Γö£ΓöÇΓöÇ ratatui-crossterm v0.1.0 (*)
+     Γöé   Γö£ΓöÇΓöÇ ratatui-macros v0.7.0 (*)
+     Γöé   ΓööΓöÇΓöÇ ratatui-widgets v0.3.0 (*)
+     Γö£ΓöÇΓöÇ ratatui-widgets v0.3.0 (*)
+     ΓööΓöÇΓöÇ tower-http v0.6.10
+         ΓööΓöÇΓöÇ reqwest v0.12.28
+             ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+warning[license-not-encountered]: license was not encountered
+   ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs\deny.toml:20:6
+   Γöé
+20 Γöé     "Apache-2.0 WITH LLVM-exception",
+   Γöé      ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü unmatched license allowance
+
+warning[license-not-encountered]: license was not encountered
+   ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs\deny.toml:21:6
+   Γöé
+21 Γöé     "BSD-2-Clause",
+   Γöé      ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü unmatched license allowance
+
+warning[license-not-encountered]: license was not encountered
+   ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs\deny.toml:30:6
+   Γöé
+30 Γöé     "Unicode-DFS-2016",
+   Γöé      ΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöüΓöü unmatched license allowance
+
+warning[duplicate]: found 2 duplicate entries for crate 'thiserror'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:184:1
+    Γöé  
+184 Γöé Γò¡ thiserror 1.0.69 registry+https://github.com/rust-lang/crates.io-index
+185 Γöé Γöé thiserror 2.0.18 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ thiserror v1.0.69
+      Γö£ΓöÇΓöÇ filedescriptor v0.8.3
+      Γöé   ΓööΓöÇΓöÇ portable-pty v0.9.0
+      Γöé       ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4
+      ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+    Γö£ thiserror v2.0.18
+      Γö£ΓöÇΓöÇ kasuari v0.4.12
+      Γöé   ΓööΓöÇΓöÇ ratatui-core v0.1.0
+      Γöé       Γö£ΓöÇΓöÇ ratatui v0.30.0
+      Γöé       Γöé   ΓööΓöÇΓöÇ tui-translator v0.1.4
+      Γöé       Γö£ΓöÇΓöÇ ratatui-crossterm v0.1.0
+      Γöé       Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+      Γöé       Γö£ΓöÇΓöÇ ratatui-macros v0.7.0
+      Γöé       Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+      Γöé       ΓööΓöÇΓöÇ ratatui-widgets v0.3.0
+      Γöé           Γö£ΓöÇΓöÇ ratatui v0.30.0 (*)
+      Γöé           ΓööΓöÇΓöÇ ratatui-macros v0.7.0 (*)
+      Γö£ΓöÇΓöÇ ratatui-core v0.1.0 (*)
+      ΓööΓöÇΓöÇ tracing-appender v0.2.5
+          ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'thiserror-impl'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:186:1
+    Γöé  
+186 Γöé Γò¡ thiserror-impl 1.0.69 registry+https://github.com/rust-lang/crates.io-index
+187 Γöé Γöé thiserror-impl 2.0.18 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ thiserror-impl v1.0.69
+      ΓööΓöÇΓöÇ thiserror v1.0.69
+          Γö£ΓöÇΓöÇ filedescriptor v0.8.3
+          Γöé   ΓööΓöÇΓöÇ portable-pty v0.9.0
+          Γöé       ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4
+          ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+    Γö£ thiserror-impl v2.0.18
+      ΓööΓöÇΓöÇ thiserror v2.0.18
+          Γö£ΓöÇΓöÇ kasuari v0.4.12
+          Γöé   ΓööΓöÇΓöÇ ratatui-core v0.1.0
+          Γöé       Γö£ΓöÇΓöÇ ratatui v0.30.0
+          Γöé       Γöé   ΓööΓöÇΓöÇ tui-translator v0.1.4
+          Γöé       Γö£ΓöÇΓöÇ ratatui-crossterm v0.1.0
+          Γöé       Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+          Γöé       Γö£ΓöÇΓöÇ ratatui-macros v0.7.0
+          Γöé       Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+          Γöé       ΓööΓöÇΓöÇ ratatui-widgets v0.3.0
+          Γöé           Γö£ΓöÇΓöÇ ratatui v0.30.0 (*)
+          Γöé           ΓööΓöÇΓöÇ ratatui-macros v0.7.0 (*)
+          Γö£ΓöÇΓöÇ ratatui-core v0.1.0 (*)
+          ΓööΓöÇΓöÇ tracing-appender v0.2.5
+              ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'unicode-width'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:215:1
+    Γöé  
+215 Γöé Γò¡ unicode-width 0.1.14 registry+https://github.com/rust-lang/crates.io-index
+216 Γöé Γöé unicode-width 0.2.2 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ unicode-width v0.1.14
+      Γö£ΓöÇΓöÇ tui-translator v0.1.4
+      ΓööΓöÇΓöÇ vt100 v0.15.2
+          ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4 (*)
+    Γö£ unicode-width v0.2.2
+      Γö£ΓöÇΓöÇ ratatui-core v0.1.0
+      Γöé   Γö£ΓöÇΓöÇ ratatui v0.30.0
+      Γöé   Γöé   ΓööΓöÇΓöÇ tui-translator v0.1.4
+      Γöé   Γö£ΓöÇΓöÇ ratatui-crossterm v0.1.0
+      Γöé   Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+      Γöé   Γö£ΓöÇΓöÇ ratatui-macros v0.7.0
+      Γöé   Γöé   ΓööΓöÇΓöÇ ratatui v0.30.0 (*)
+      Γöé   ΓööΓöÇΓöÇ ratatui-widgets v0.3.0
+      Γöé       Γö£ΓöÇΓöÇ ratatui v0.30.0 (*)
+      Γöé       ΓööΓöÇΓöÇ ratatui-macros v0.7.0 (*)
+      Γö£ΓöÇΓöÇ ratatui-widgets v0.3.0 (*)
+      Γö£ΓöÇΓöÇ tui-input v0.15.3
+      Γöé   ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+      ΓööΓöÇΓöÇ unicode-truncate v2.0.1
+          ΓööΓöÇΓöÇ ratatui-core v0.1.0 (*)
+
+warning[duplicate]: found 3 duplicate entries for crate 'windows'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:233:1
+    Γöé  
+233 Γöé Γò¡ windows 0.51.1 registry+https://github.com/rust-lang/crates.io-index
+234 Γöé Γöé windows 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+235 Γöé Γöé windows 0.54.0 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ windows v0.51.1
+      ΓööΓöÇΓöÇ wasapi v0.14.0
+          ΓööΓöÇΓöÇ tui-translator v0.1.4
+    Γö£ windows v0.52.0
+      ΓööΓöÇΓöÇ sysinfo v0.30.13
+          ΓööΓöÇΓöÇ tui-translator v0.1.4
+    Γö£ windows v0.54.0
+      ΓööΓöÇΓöÇ cpal v0.15.3
+          ΓööΓöÇΓöÇ rodio v0.17.3
+              ΓööΓöÇΓöÇ tui-translator v0.1.4
+
+warning[duplicate]: found 3 duplicate entries for crate 'windows-core'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:236:1
+    Γöé  
+236 Γöé Γò¡ windows-core 0.51.1 registry+https://github.com/rust-lang/crates.io-index
+237 Γöé Γöé windows-core 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+238 Γöé Γöé windows-core 0.54.0 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ windows-core v0.51.1
+      ΓööΓöÇΓöÇ windows v0.51.1
+          ΓööΓöÇΓöÇ wasapi v0.14.0
+              ΓööΓöÇΓöÇ tui-translator v0.1.4
+    Γö£ windows-core v0.52.0
+      ΓööΓöÇΓöÇ windows v0.52.0
+          ΓööΓöÇΓöÇ sysinfo v0.30.13
+              ΓööΓöÇΓöÇ tui-translator v0.1.4
+    Γö£ windows-core v0.54.0
+      ΓööΓöÇΓöÇ windows v0.54.0
+          ΓööΓöÇΓöÇ cpal v0.15.3
+              ΓööΓöÇΓöÇ rodio v0.17.3
+                  ΓööΓöÇΓöÇ tui-translator v0.1.4
+
+warning[duplicate]: found 3 duplicate entries for crate 'windows-sys'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:243:1
+    Γöé  
+243 Γöé Γò¡ windows-sys 0.48.0 registry+https://github.com/rust-lang/crates.io-index
+244 Γöé Γöé windows-sys 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+245 Γöé Γöé windows-sys 0.61.2 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ windows-sys v0.48.0
+      Γö£ΓöÇΓöÇ dirs-sys v0.4.1
+      Γöé   ΓööΓöÇΓöÇ directories v5.0.1
+      Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+      ΓööΓöÇΓöÇ notify v6.1.1
+          ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+    Γö£ windows-sys v0.52.0
+      ΓööΓöÇΓöÇ tui-translator v0.1.4
+    Γö£ windows-sys v0.61.2
+      Γö£ΓöÇΓöÇ console v0.16.3
+      Γöé   ΓööΓöÇΓöÇ insta v1.47.2
+      Γöé       ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4
+      Γö£ΓöÇΓöÇ mio v1.2.0
+      Γöé   ΓööΓöÇΓöÇ tokio v1.52.3
+      Γöé       Γö£ΓöÇΓöÇ hyper v1.9.0
+      Γöé       Γöé   Γö£ΓöÇΓöÇ hyper-rustls v0.27.9
+      Γöé       Γöé   Γöé   ΓööΓöÇΓöÇ reqwest v0.12.28
+      Γöé       Γöé   Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+      Γöé       Γöé   Γö£ΓöÇΓöÇ hyper-util v0.1.20
+      Γöé       Γöé   Γöé   Γö£ΓöÇΓöÇ hyper-rustls v0.27.9 (*)
+      Γöé       Γöé   Γöé   ΓööΓöÇΓöÇ reqwest v0.12.28 (*)
+      Γöé       Γöé   ΓööΓöÇΓöÇ reqwest v0.12.28 (*)
+      Γöé       Γö£ΓöÇΓöÇ hyper-rustls v0.27.9 (*)
+      Γöé       Γö£ΓöÇΓöÇ hyper-util v0.1.20 (*)
+      Γöé       Γö£ΓöÇΓöÇ reqwest v0.12.28 (*)
+      Γöé       Γö£ΓöÇΓöÇ tokio-rustls v0.26.4
+      Γöé       Γöé   Γö£ΓöÇΓöÇ hyper-rustls v0.27.9 (*)
+      Γöé       Γöé   ΓööΓöÇΓöÇ reqwest v0.12.28 (*)
+      Γöé       Γö£ΓöÇΓöÇ tower v0.5.3
+      Γöé       Γöé   Γö£ΓöÇΓöÇ reqwest v0.12.28 (*)
+      Γöé       Γöé   ΓööΓöÇΓöÇ tower-http v0.6.10
+      Γöé       Γöé       ΓööΓöÇΓöÇ reqwest v0.12.28 (*)
+      Γöé       ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4 (*)
+      Γö£ΓöÇΓöÇ nu-ansi-term v0.50.3
+      Γöé   ΓööΓöÇΓöÇ tracing-subscriber v0.3.23
+      Γöé       Γö£ΓöÇΓöÇ tracing-appender v0.2.5
+      Γöé       Γöé   ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+      Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+      Γö£ΓöÇΓöÇ serial2 v0.2.37
+      Γöé   ΓööΓöÇΓöÇ portable-pty v0.9.0
+      Γöé       ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4 (*)
+      Γö£ΓöÇΓöÇ socket2 v0.6.3
+      Γöé   Γö£ΓöÇΓöÇ hyper-util v0.1.20 (*)
+      Γöé   ΓööΓöÇΓöÇ tokio v1.52.3 (*)
+      Γö£ΓöÇΓöÇ tempfile v3.27.0
+      Γöé   Γö£ΓöÇΓöÇ insta v1.47.2 (*)
+      Γöé   ΓööΓöÇΓöÇ (dev) tui-translator v0.1.4 (*)
+      Γö£ΓöÇΓöÇ tokio v1.52.3 (*)
+      ΓööΓöÇΓöÇ winapi-util v0.1.11
+          Γö£ΓöÇΓöÇ same-file v1.0.6
+          Γöé   ΓööΓöÇΓöÇ walkdir v2.5.0
+          Γöé       ΓööΓöÇΓöÇ notify v6.1.1
+          Γöé           ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+          ΓööΓöÇΓöÇ walkdir v2.5.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows-targets'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:246:1
+    Γöé  
+246 Γöé Γò¡ windows-targets 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+247 Γöé Γöé windows-targets 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ windows-targets v0.48.5
+      Γö£ΓöÇΓöÇ windows v0.51.1
+      Γöé   ΓööΓöÇΓöÇ wasapi v0.14.0
+      Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+      Γö£ΓöÇΓöÇ windows-core v0.51.1
+      Γöé   ΓööΓöÇΓöÇ windows v0.51.1 (*)
+      ΓööΓöÇΓöÇ windows-sys v0.48.0
+          Γö£ΓöÇΓöÇ dirs-sys v0.4.1
+          Γöé   ΓööΓöÇΓöÇ directories v5.0.1
+          Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+          ΓööΓöÇΓöÇ notify v6.1.1
+              ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+    Γö£ windows-targets v0.52.6
+      Γö£ΓöÇΓöÇ windows v0.52.0
+      Γöé   ΓööΓöÇΓöÇ sysinfo v0.30.13
+      Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+      Γö£ΓöÇΓöÇ windows v0.54.0
+      Γöé   ΓööΓöÇΓöÇ cpal v0.15.3
+      Γöé       ΓööΓöÇΓöÇ rodio v0.17.3
+      Γöé           ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+      Γö£ΓöÇΓöÇ windows-core v0.52.0
+      Γöé   ΓööΓöÇΓöÇ windows v0.52.0 (*)
+      Γö£ΓöÇΓöÇ windows-core v0.54.0
+      Γöé   ΓööΓöÇΓöÇ windows v0.54.0 (*)
+      Γö£ΓöÇΓöÇ windows-result v0.1.2
+      Γöé   ΓööΓöÇΓöÇ windows-core v0.54.0 (*)
+      ΓööΓöÇΓöÇ windows-sys v0.52.0
+          ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_gnu'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:248:1
+    Γöé  
+248 Γöé Γò¡ windows_x86_64_gnu 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+249 Γöé Γöé windows_x86_64_gnu 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ windows_x86_64_gnu v0.48.5
+      ΓööΓöÇΓöÇ windows-targets v0.48.5
+          Γö£ΓöÇΓöÇ windows v0.51.1
+          Γöé   ΓööΓöÇΓöÇ wasapi v0.14.0
+          Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+          Γö£ΓöÇΓöÇ windows-core v0.51.1
+          Γöé   ΓööΓöÇΓöÇ windows v0.51.1 (*)
+          ΓööΓöÇΓöÇ windows-sys v0.48.0
+              Γö£ΓöÇΓöÇ dirs-sys v0.4.1
+              Γöé   ΓööΓöÇΓöÇ directories v5.0.1
+              Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+              ΓööΓöÇΓöÇ notify v6.1.1
+                  ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+    Γö£ windows_x86_64_gnu v0.52.6
+      ΓööΓöÇΓöÇ windows-targets v0.52.6
+          Γö£ΓöÇΓöÇ windows v0.52.0
+          Γöé   ΓööΓöÇΓöÇ sysinfo v0.30.13
+          Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+          Γö£ΓöÇΓöÇ windows v0.54.0
+          Γöé   ΓööΓöÇΓöÇ cpal v0.15.3
+          Γöé       ΓööΓöÇΓöÇ rodio v0.17.3
+          Γöé           ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+          Γö£ΓöÇΓöÇ windows-core v0.52.0
+          Γöé   ΓööΓöÇΓöÇ windows v0.52.0 (*)
+          Γö£ΓöÇΓöÇ windows-core v0.54.0
+          Γöé   ΓööΓöÇΓöÇ windows v0.54.0 (*)
+          Γö£ΓöÇΓöÇ windows-result v0.1.2
+          Γöé   ΓööΓöÇΓöÇ windows-core v0.54.0 (*)
+          ΓööΓöÇΓöÇ windows-sys v0.52.0
+              ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_msvc'
+    ΓöîΓöÇ C:\Users\linhnt102\zoom-terminal-translator-rs/Cargo.lock:250:1
+    Γöé  
+250 Γöé Γò¡ windows_x86_64_msvc 0.48.5 registry+https://github.com/rust-lang/crates.io-index
+251 Γöé Γöé windows_x86_64_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+    Γöé Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ lock entries
+    Γöé  
+    Γö£ windows_x86_64_msvc v0.48.5
+      ΓööΓöÇΓöÇ windows-targets v0.48.5
+          Γö£ΓöÇΓöÇ windows v0.51.1
+          Γöé   ΓööΓöÇΓöÇ wasapi v0.14.0
+          Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+          Γö£ΓöÇΓöÇ windows-core v0.51.1
+          Γöé   ΓööΓöÇΓöÇ windows v0.51.1 (*)
+          ΓööΓöÇΓöÇ windows-sys v0.48.0
+              Γö£ΓöÇΓöÇ dirs-sys v0.4.1
+              Γöé   ΓööΓöÇΓöÇ directories v5.0.1
+              Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+              ΓööΓöÇΓöÇ notify v6.1.1
+                  ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+    Γö£ windows_x86_64_msvc v0.52.6
+      ΓööΓöÇΓöÇ windows-targets v0.52.6
+          Γö£ΓöÇΓöÇ windows v0.52.0
+          Γöé   ΓööΓöÇΓöÇ sysinfo v0.30.13
+          Γöé       ΓööΓöÇΓöÇ tui-translator v0.1.4
+          Γö£ΓöÇΓöÇ windows v0.54.0
+          Γöé   ΓööΓöÇΓöÇ cpal v0.15.3
+          Γöé       ΓööΓöÇΓöÇ rodio v0.17.3
+          Γöé           ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+          Γö£ΓöÇΓöÇ windows-core v0.52.0
+          Γöé   ΓööΓöÇΓöÇ windows v0.52.0 (*)
+          Γö£ΓöÇΓöÇ windows-core v0.54.0
+          Γöé   ΓööΓöÇΓöÇ windows v0.54.0 (*)
+          Γö£ΓöÇΓöÇ windows-result v0.1.2
+          Γöé   ΓööΓöÇΓöÇ windows-core v0.54.0 (*)
+          ΓööΓöÇΓöÇ windows-sys v0.52.0
+              ΓööΓöÇΓöÇ tui-translator v0.1.4 (*)
+
+advisories ok, bans ok, licenses ok, sources ok

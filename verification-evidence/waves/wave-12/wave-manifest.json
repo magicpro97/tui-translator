@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "wave": "W12",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 1,
+  "issues": [
+    {
+      "number": 491,
+      "title": "SUPERTONIC-06: Extend TTS backend contract and config fallback semantics",
+      "family": "SUPERTONIC",
+      "red_mode": "tests_first",
+      "dependencies": [
+        452,
+        454,
+        455,
+        456,
+        457,
+        481,
+        482,
+        486
+      ],
+      "files_allowed": [
+        "src/config/mod.rs",
+        "src/providers/mod.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

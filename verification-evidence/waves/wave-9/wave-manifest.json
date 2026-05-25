@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "wave": "W9",
+  "kind": "implementation",
+  "implementation_dispatch_allowed": true,
+  "issue_count": 5,
+  "issues": [
+    {
+      "number": 471,
+      "title": "LINUX-04 — Linux virtual mic routing via PipeWire/PulseAudio loopback",
+      "family": "LINUX-WBS",
+      "red_mode": "tests_first",
+      "dependencies": [
+        453,
+        468
+      ],
+      "files_allowed": [
+        "src/audio/linux_virtual_device.rs",
+        "src/audio/router.rs",
+        "src/audio/virtual_device.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 477,
+      "title": "SEC-02 — Linux and cross-platform supply-chain security",
+      "family": "SEC",
+      "red_mode": "workflow_dry_run",
+      "dependencies": [
+        458,
+        461,
+        462,
+        463,
+        472,
+        475
+      ],
+      "files_allowed": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "Cargo.toml",
+        "verification-evidence/sec/SEC-02-linux-supply-chain.md"
+      ],
+      "human_gate_prereqs": {
+        "required": false,
+        "co_sign_required": true,
+        "reasons": [
+          "modifies release workflow / packaging"
+        ],
+        "gates": [
+          "security_review_signoff"
+        ]
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 480,
+      "title": "UX-02 — OS-aware shortcut display",
+      "family": "UX",
+      "red_mode": "tests_first",
+      "dependencies": [
+        454,
+        455,
+        479
+      ],
+      "files_allowed": [
+        "src/tui/mod.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 495,
+      "title": "SUPERTONIC-10: 60fps, non-blocking pipeline, and 30-minute soak gate",
+      "family": "SUPERTONIC",
+      "red_mode": "tests_first",
+      "dependencies": [
+        451,
+        452,
+        453,
+        454,
+        455,
+        456,
+        469,
+        470,
+        486
+      ],
+      "files_allowed": [
+        "src/audio/mod.rs",
+        "src/pipeline/playback.rs",
+        "verification-evidence/supertonic/SUPERTONIC-10-soak.json"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    },
+    {
+      "number": 504,
+      "title": "QA8-06 - Rolling frame-pacing telemetry and 60fps stall gate",
+      "family": "QA8",
+      "red_mode": "tests_first",
+      "dependencies": [
+        479
+      ],
+      "files_allowed": [
+        "src/tui/frame_pacer.rs"
+      ],
+      "human_gate_prereqs": {
+        "required": false
+      },
+      "planning_stage": false,
+      "decomposition_required": false
+    }
+  ]
+}

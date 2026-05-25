@@ -37,6 +37,17 @@ verification-evidence/*.json
 verification-evidence/*.txt
 verification-evidence/hot-config/*.json
 
+# Exceptions: planning inputs that w0-r1 / w0-r6 evidence and the
+# `build-wave-plan.js` driver explicitly reference by path.  These are
+# generated artefacts but their checked-in form is required for the
+# evidence chain to be reproducible from a fresh checkout (the script
+# fails fast otherwise and the w0-r1 / w0-r6 `commands.md` logs would be
+# untrue).  Keep them tracked even though the generic *.json rule above
+# would otherwise exclude them.
+!verification-evidence/board-snapshot-20260524.json
+!verification-evidence/family-file-map.json
+!verification-evidence/wave-plan.json
+
 # Release artifacts
 *.exe
 *.zip
