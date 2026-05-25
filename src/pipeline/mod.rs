@@ -1235,7 +1235,7 @@ where
     commit_aggregated_segment(segment, mt, tts, ctx).await;
 }
 
-/// Translate and commit one [`AggregatedSegment`] that has been emitted by the
+/// Translate and commit one `AggregatedSegment` that has been emitted by the
 /// sentence aggregator (either max-age or shutdown flush).
 async fn commit_aggregated_segment<M, T>(
     segment: Option<sentence_aggregator::AggregatedSegment>,

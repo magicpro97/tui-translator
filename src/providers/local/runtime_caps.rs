@@ -15,15 +15,12 @@
 //!   construction sites.
 //! * [`ActiveLocalInference`] — RAII guard that increments / decrements a
 //!   shared in-flight local-inference operation gauge.  Read by the metrics
-//!   publisher and surfaced through [`MetricsSnapshot::local_active_threads`].
+//!   publisher and surfaced through `MetricsSnapshot::local_active_threads`.
 //!
 //! The throttle / backpressure policy itself lives in
-//! [`crate::pipeline::cpu_gate::CpuGate`] (advisory, defer-next-segment).
+//! `crate::pipeline::cpu_gate::CpuGate` (advisory, defer-next-segment).
 //! This module is concerned only with the **construction-time cap** and the
 //! observability gauge.  No silent sleeps on the hot path.
-//!
-//! [`MetricsSnapshot::local_active_threads`]:
-//!     crate::metrics::MetricsSnapshot::local_active_threads
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
@@ -91,14 +88,11 @@ pub fn local_thread_cap() -> usize {
 /// Incremented when a Whisper STT or OPUS-MT inference begins on a blocking
 /// thread and decremented when it returns.  Read by the metrics publisher
 /// once per second to populate
-/// [`MetricsSnapshot::local_active_threads`].
+/// `MetricsSnapshot::local_active_threads`.
 ///
 /// Using a single static counter (rather than constructor-injected
 /// `Arc<AtomicUsize>`) keeps the existing provider construction surface
 /// untouched and lets local STT and local MT share the same gauge.
-///
-/// [`MetricsSnapshot::local_active_threads`]:
-///     crate::metrics::MetricsSnapshot::local_active_threads
 static ACTIVE_LOCAL_THREADS: AtomicUsize = AtomicUsize::new(0);
 
 /// Current in-flight local-inference count.

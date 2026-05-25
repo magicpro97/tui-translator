@@ -345,7 +345,7 @@ impl MetricsSnapshot {
     /// Apply per-slot fanout drop counts (DM-02, issue #378).
     ///
     /// Called once per second by the metrics-publisher task with values read
-    /// from the shared [`FanoutDropCounters`](crate::audio::FanoutDropCounters)
+    /// from the shared `FanoutDropCounters` (`crate::audio::FanoutDropCounters`)
     /// Arc.  Both arguments are `0` when no fanout node has been started.
     pub fn apply_fanout_drops(&mut self, slot_a_drops: u64, slot_b_drops: u64) {
         self.fanout_slot_a_drops = slot_a_drops;
@@ -362,7 +362,7 @@ impl MetricsSnapshot {
     ///
     /// `local_active_threads` is the in-flight operation count of Whisper STT +
     /// OPUS-MT blocking inferences (read from
-    /// [`crate::providers::local::runtime_caps::active_local_threads`]).
+    /// `crate::providers::local::runtime_caps::active_local_threads`).
     /// `local_cpu_pct` mirrors the process [`cpu_pct`] when local activity is
     /// observed in the current sampling window, and is `0.0` otherwise so
     /// cloud-only sessions read a silent gauge.  Call **after**

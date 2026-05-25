@@ -12,7 +12,7 @@
 //!   fallback mode.  After the first `AuthError` the `using_fallback` flag is
 //!   set permanently so the primary is never called again.
 //! * **AC2** — Local unavailable errors (`ModelNotFound`, `ChecksumMismatch`,
-//!   `Unimplemented`) are treated as permanent by [`with_retry`]; the pipeline
+//!   `Unimplemented`) are treated as permanent by `with_retry`; the pipeline
 //!   halts with an actionable message rather than looping.
 //! * **AC3** — A human-readable status message is written to the shared
 //!   `status_msg` slot **before** the first fallback call so the TUI always
@@ -51,7 +51,7 @@ pub enum SttFallbackPolicy {
 }
 
 impl SttFallbackPolicy {
-    /// Parse the string value from [`AppConfig::stt_fallback_policy`].
+    /// Parse the string value from `AppConfig::stt_fallback_policy`.
     ///
     /// Returns `None` when the value is not a recognised policy name.
     /// The legacy `"local"` string is rejected at the config-validation layer

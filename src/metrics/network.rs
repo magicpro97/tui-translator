@@ -2,14 +2,14 @@
 //!
 //! [`NetworkMetrics`] tracks approximate bytes sent to and received from
 //! provider API endpoints using lock-free atomic counters.  Provider tasks
-//! (orchestrated in [`crate::pipeline`]) call [`NetworkMetrics::record_bytes_sent`]
+//! (orchestrated in `crate::pipeline`) call [`NetworkMetrics::record_bytes_sent`]
 //! and [`NetworkMetrics::record_bytes_recv`] after each HTTP round-trip.
 //!
 //! A background task — the metrics-publisher in `main.rs` — calls
 //! [`NetworkMetrics::drain_window`] once per second.  That method atomically
 //! swaps the per-second window counters to zero, computes rolling kbps rates
 //! from the drained values, and returns a [`NetworkSnapshot`] ready to be
-//! embedded in [`crate::metrics::MetricsSnapshot`].
+//! embedded in `crate::metrics::MetricsSnapshot`.
 //!
 //! # Approximation note
 //!

@@ -41,7 +41,7 @@ pub struct ProcessSnapshot {
     ///
     /// # Source unit
     ///
-    /// `sysinfo` 0.30's [`Process::memory`] already returns bytes, so the
+    /// `sysinfo` 0.30's `Process::memory` already returns bytes, so the
     /// value is stored directly without any conversion.  The TUI displays it
     /// as `ram_bytes / (1024 * 1024)` MiB.
     pub ram_bytes: u64,

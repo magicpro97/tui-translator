@@ -25,7 +25,7 @@
 //! * **Cloud fallback requires explicit config.**  Key presence alone is not
 //!   consent to send data to the cloud.  `mt_cloud_fallback` must be
 //!   explicitly set in `config.json` **and** the configured provider's key
-//!   must be available.  See [`AppConfig::mt_cloud_fallback`].
+//!   must be available.  See `AppConfig::mt_cloud_fallback`.
 
 use crate::providers::ProviderError;
 

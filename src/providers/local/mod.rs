@@ -591,7 +591,7 @@ impl LocalWhisperSttProvider {
     /// 3. Confirm the file exists ([`check_model_present`]).
     /// 4. Verify its SHA-256 checksum ([`verify_model_checksum`]).
     /// 5. *(Only with `local-stt` feature)* Load the model into a
-    ///    [`whisper_rs::WhisperContext`].
+    ///    `whisper_rs::WhisperContext`.
     ///
     /// # Errors
     ///

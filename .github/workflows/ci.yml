@@ -577,10 +577,139 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Build (debug)
-        run: cargo build --bins
+      - name: Build (debug, --locked)
+        # CI-02 (#475): `--locked` so any tampering of `Cargo.lock` fails
+        # the Linux smoke gate the same way it fails the Windows/macOS
+        # CI-01 matrix gates. Preserves the pre-existing
+        # `Linux build smoke test` required-check context name.
+        run: cargo build --locked --bins
       - name: Run binary unit tests (no audio, skip future real_api cases)
-        run: cargo test --bins -- --nocapture --skip real_api
+        run: cargo test --locked --bins -- --nocapture --skip real_api
+
+  # ── CI-02 Linux format check (Issue #475) ──────────────────────────────────
+  # Linux-native rustfmt parity gate. The Windows `Format check (rustfmt)`
+  # gate is preserved unchanged; this is an additional Linux-side gate so a
+  # contributor on Linux gets the same fast feedback as on Windows.
+  linux-fmt:
+    name: Linux format check (rustfmt)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # ── CI-02 Linux clippy (Issue #475) ────────────────────────────────────────
+  # Linux-native clippy parity gate. Runs `--all-targets` on default features
+  # only — feature-gated local-stt/local-mt clippy is deferred to LINUX-02
+  # (#469) which lands the native toolchains.
+  linux-clippy:
+    name: Linux lint (clippy)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci02-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run clippy (default features, all targets)
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  # ── CI-02 Linux rustdoc (Issue #475) ───────────────────────────────────────
+  # Catches broken intra-doc links and rustdoc warnings early on Linux.
+  linux-doc:
+    name: Linux rustdoc check
+    runs-on: ubuntu-22.04
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci02-doc-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo doc (no deps, --locked)
+        run: cargo doc --locked --no-deps --bins
+
+  # ── CI-02 Linux local-stt compile (Issue #475) — ADVISORY ──────────────────
+  # Compiles the `local-stt` feature on Linux to detect bindgen/clang
+  # regressions early. Marked allowed-fail because the native whisper.cpp
+  # toolchain on GitHub-hosted Linux runners is not yet stabilised for this
+  # repo; full Linux local-STT runtime is tracked in LINUX-02 (#469) and the
+  # model-cache work in #213/#218. Branch protection MUST NOT require this
+  # context — see verification-evidence/ci/CI-02-required-checks.md §2.4.
+  linux-local-stt:
+    name: Linux local-stt compile (allowed-fail)
+    runs-on: ubuntu-22.04
+    # reason: Advisory only per CI-02 acceptance ("split into required/
+    # advisory jobs"). The whisper.cpp / bindgen native toolchain on hosted
+    # Linux runners is not yet stabilised; failures here surface regressions
+    # without blocking PR merges. Branch protection must NOT add this
+    # context — see CI-02-required-checks.md §2.4.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake libclang-dev clang pkg-config
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci02-local-stt-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --features local-stt (--locked)
+        run: cargo build --locked --bins --features local-stt
+
+  # ── CI-02 Linux local-mt compile (Issue #475) — ADVISORY ───────────────────
+  # Compiles the `local-mt` feature on Linux to detect ort/sentencepiece
+  # regressions. Same allowed-fail rationale as `linux-local-stt`; ORT runtime
+  # bootstrap is tracked under LINUX-02 (#469) and #218.
+  linux-local-mt:
+    name: Linux local-mt compile (allowed-fail)
+    runs-on: ubuntu-22.04
+    # reason: Advisory only per CI-02 acceptance. ORT / sentencepiece native
+    # runtime bootstrap on Linux is not stable enough for a required gate;
+    # failures here are early-warning signal only. Branch protection must
+    # NOT add this context — see CI-02-required-checks.md §2.4.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci02-local-mt-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --features local-mt (--locked)
+        run: cargo build --locked --bins --features local-mt
 
   # ── CI-01 cross-platform matrix (Issue #461) ────────────────────────────────
   # New required gates that prove the default-feature build compiles and runs
@@ -600,7 +729,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14]
+        os: [windows-latest, macos-14, ubuntu-22.04, ubuntu-24.04]
         feature: [default]
     runs-on: ${{ matrix.os }}
     steps:
@@ -636,7 +765,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14]
+        os: [windows-latest, macos-14, ubuntu-22.04]
         feature: [audio-integration, production-audio]
     runs-on: ${{ matrix.os }}
     steps:

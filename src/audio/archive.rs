@@ -8,7 +8,7 @@
 //! Recording is **off by default** (`store_audio: false` in `config.json`).
 //! The writer is a pure no-op when disabled — no file is created, no directory
 //! is touched.  Enabling archiving requires **both** `store_audio: true` **and**
-//! `consent_given: true` in [`AudioArchiveConfig`]; the application also emits
+//! `consent_given: true` in `AudioArchiveConfig`; the application also emits
 //! a tracing warning on every startup where archiving is active.
 //!
 //! # Output format
@@ -28,8 +28,6 @@
 //! reaches that size limit and finalizes the header.  The limit is checked
 //! **before** each chunk append; a chunk that would push the total past the
 //! limit is discarded and the writer is sealed.
-//!
-//! [`AudioArchiveConfig`]: crate::config::AudioArchiveConfig
 
 use std::{
     io::{Seek, SeekFrom, Write},
@@ -60,7 +58,7 @@ const WAV_HEADER_SIZE: u64 = 44;
 
 // ── Runtime configuration ────────────────────────────────────────────────────
 
-/// Resolved runtime config derived from [`AudioArchiveConfig`].
+/// Resolved runtime config derived from `AudioArchiveConfig`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioArchiveWriterConfig {
     /// Whether archiving is active (both `store_audio` and `consent_given`).
