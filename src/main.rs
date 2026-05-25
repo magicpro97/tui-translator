@@ -52,6 +52,7 @@ use tui_input::InputRequest;
 
 mod audio;
 mod config;
+mod diagnostics;
 mod metrics;
 mod pipeline;
 mod providers;
@@ -1919,6 +1920,17 @@ fn main() -> Result<()> {
     let omp_status = crate::providers::local::runtime_caps::prepare_omp_env();
 
     init_tracing();
+
+    // QA8-08 (issue #506): install panic-sidecar hook before any task
+    // spawns so backgrounded Tokio panics are still captured. The hook
+    // is idempotent and chains to the default hook so existing
+    // backtraces continue to print to stderr / tracing.
+    let dump_dir = diagnostics::resolve_dump_dir();
+    diagnostics::install_panic_hook(dump_dir.clone());
+    tracing::info!(
+        dump_dir = %dump_dir.display(),
+        "QA8-08 panic sidecar hook installed (see docs/13-crash-dump-symbolication.md)"
+    );
 
     #[cfg(feature = "local-mt")]
     {

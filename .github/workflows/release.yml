@@ -90,6 +90,38 @@ jobs:
           Write-Host "Packaged: $zipName  ($size MB)"
           echo "zip_name=$zipName" >> $env:GITHUB_OUTPUT
 
+      - name: Package PDB symbol bundle (QA8-08 / #506)
+        id: pdb
+        shell: pwsh
+        run: |
+          # The MSVC linker writes tui-translator.pdb next to the .exe
+          # even though release `strip = true` removes line info from
+          # the binary itself. Ship the PDB as a separate Release
+          # asset so support engineers can symbolicate WER minidumps
+          # without bloating the end-user zip. See
+          # docs/13-crash-dump-symbolication.md for the workflow.
+          $tag    = "${{ github.ref_name }}"
+          $pdbSrc = "target\x86_64-pc-windows-msvc\release\tui-translator.pdb"
+          if (-not (Test-Path $pdbSrc)) {
+            Write-Host "::warning::tui-translator.pdb not found at $pdbSrc; skipping symbol bundle"
+            echo "pdb_name=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $pdbZip = "tui-translator-${tag}-pdb.zip"
+          Compress-Archive -Path $pdbSrc -DestinationPath $pdbZip -CompressionLevel Optimal -Force
+          $size = [math]::Round((Get-Item $pdbZip).Length / 1MB, 2)
+          Write-Host "Packaged PDB bundle: $pdbZip  ($size MB)"
+          echo "pdb_name=$pdbZip" >> $env:GITHUB_OUTPUT
+
+      - name: Upload PDB workflow artefact (QA8-08 / #506)
+        if: steps.pdb.outputs.pdb_name != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-translator-pdb-${{ github.ref_name }}
+          path: ${{ steps.pdb.outputs.pdb_name }}
+          retention-days: 90
+          if-no-files-found: error
+
       - name: Ensure Inno Setup compiler is available
         id: inno
         shell: pwsh
@@ -225,5 +257,6 @@ jobs:
           files: |
             ${{ steps.package.outputs.zip_name }}
             ${{ steps.installer.outputs.installer_name }}
+            ${{ steps.pdb.outputs.pdb_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
