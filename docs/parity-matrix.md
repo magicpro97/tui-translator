@@ -72,7 +72,9 @@ for the build it gates.
    - a CI run permalink (preferred for verification gates),
    - a file under `docs/evidence/` (preferred for QA plans),
    - an ADR under `docs/adr/` (for not-supported / best-effort
-     downgrades).
+     downgrades),
+   - the parent roadmap ledger .github/steps/linux-cross-platform-quality-roadmap.md
+     (for WBS-owned cells whose dedicated evidence is still owed).
 6. **Opus review** is mandatory before flipping any cell from 🚧 to ✅
    (per `Opus review gate` in the parent roadmap).
 
