@@ -143,6 +143,8 @@ The user controls the program entirely through the keyboard while it is running.
 | **R** | Reload `config.json` from disk |
 | **Q** or **Ctrl+C** | Quit and show session summary |
 
+> **OS-aware labels.** On Windows and Linux the help overlay and status hints render `Ctrl+C` / `Ctrl+D` literally. On macOS the same shortcuts are shown with the macOS control glyph (`⌃C`, `⌃D`) to match platform convention; the underlying key bindings are unchanged. Function keys (`F2`, …) and plain keys are never rewritten. Set `TUI_KEY_OS_OVERRIDE=windows|linux|macos` to force a specific label set (used by snapshot tests). See issue [#480](https://github.com/magicpro97/tui-translator/issues/480).
+
 All controls take effect immediately. There is no confirmation dialog. The status bar updates to reflect the new state within one second.
 
 ---
