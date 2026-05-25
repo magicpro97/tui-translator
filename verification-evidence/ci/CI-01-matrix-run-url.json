@@ -87,14 +87,23 @@
     }
   ],
   "still_pending_or_queued_at_evidence_time": [
-    "Feature matrix (macos-13, audio-integration)",
-    "Feature matrix (macos-13, production-audio)",
-    "Cross-platform build (macos-13, default)",
     "VMIC-B5 production readiness (in_progress)"
   ],
+  "macos13_matrix_removed": {
+    "date": "2026-05-25",
+    "authorisation": "Maintainer instruction `fix hết` (queue-mitigation seat).",
+    "reason": "GitHub-hosted macos-13 runner pool kept the three macos-13 matrix permutations in `queued` for >19 hours on run 26360760221, indefinitely blocking PR #512. Removed from .github/workflows/ci.yml matrix; this is NOT a claim that macos-13 ever passed.",
+    "contexts_removed": [
+      "Cross-platform build (macos-13, default)",
+      "Feature matrix (macos-13, audio-integration)",
+      "Feature matrix (macos-13, production-audio)"
+    ],
+    "audit_doc": "verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md",
+    "checks_doc_section": "verification-evidence/ci/CI-01-required-checks.md §2.6"
+  },
   "next_steps": [
-    "Orchestrator (not this sub-agent) watches the in_progress macOS-13 matrix permutations and the VMIC-B5 readiness job on run https://github.com/magicpro97/tui-translator/actions/runs/26360760221 .",
-    "When every required context in `CI-01-required-checks.md` §2.1–§2.3 reaches `conclusion=success`, the orchestrator flips `status` here to `pass` and adds the final `triggered_at` / `triggered_by` fields.",
+    "Orchestrator (not this sub-agent) re-runs CI on the updated wave-1/t0-batch head and watches the new matrix (Windows + macos-14 + MSRV + VMIC + Linux gates).",
+    "When every required context in `CI-01-required-checks.md` §2.1–§2.3 (excluding the removed macos-13 permutations enumerated in §2.6) reaches `conclusion=success`, the orchestrator flips `status` here to `pass` and adds the final `triggered_at` / `triggered_by` fields.",
     "Until then `status=in_progress_post_rebase` is the truthful state and MUST NOT be claimed as green readiness."
   ],
   "checks_referenced_in": "verification-evidence/ci/CI-01-required-checks.md"

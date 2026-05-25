@@ -584,16 +584,23 @@ jobs:
 
   # ── CI-01 cross-platform matrix (Issue #461) ────────────────────────────────
   # New required gates that prove the default-feature build compiles and runs
-  # binary unit tests on Windows + macOS-13 (Intel) + macOS-14 (Apple silicon).
+  # binary unit tests on Windows + macOS-14 (Apple silicon).
   # All jobs use `--locked` so any tampering of `Cargo.lock` fails the gate.
   # Required-check names are documented in
   # verification-evidence/ci/CI-01-required-checks.md §2.3.
+  #
+  # NOTE (PR #512 queue-mitigation, 2026-05-25): `macos-13` was removed from
+  # this matrix after the GitHub-hosted `macos-13` runner pool kept these jobs
+  # queued for >19 hours, indefinitely blocking PR #512. The decision is a
+  # deliberate matrix change (NOT a claim that macOS-13 passed). Apple-silicon
+  # coverage is retained via `macos-14`. Rationale and audit trail:
+  # verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md.
   cross-platform:
     name: Cross-platform build (${{ matrix.os }}, ${{ matrix.feature }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-13, macos-14]
+        os: [windows-latest, macos-14]
         feature: [default]
     runs-on: ${{ matrix.os }}
     steps:
@@ -613,18 +620,23 @@ jobs:
         run: cargo test --locked --bins -- --nocapture --skip real_api
 
   # ── CI-01 feature matrix (Issue #461) ───────────────────────────────────────
-  # Compiles the hardware-free optional feature flags on Windows + both macOS
-  # runners. `audio-integration` and `production-audio` are no-op feature
+  # Compiles the hardware-free optional feature flags on Windows + the macOS-14
+  # runner. `audio-integration` and `production-audio` are no-op feature
   # gates (no extra deps) so they compile cleanly without external toolchains.
   # `local-stt` and `local-mt` are explicitly NOT included here because they
   # pull whisper-rs / ort which require platform-specific native toolchains
   # outside the scope of this issue.
+  #
+  # NOTE (PR #512 queue-mitigation, 2026-05-25): `macos-13` was removed from
+  # this matrix alongside the cross-platform matrix above. See the comment on
+  # `cross-platform:` and
+  # verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md.
   feature-matrix:
     name: Feature matrix (${{ matrix.os }}, ${{ matrix.feature }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-13, macos-14]
+        os: [windows-latest, macos-14]
         feature: [audio-integration, production-audio]
     runs-on: ${{ matrix.os }}
     steps:

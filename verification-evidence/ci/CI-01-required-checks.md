@@ -3,12 +3,12 @@
 > Issue: [#461 — CI-01 CI matrix expansion for Windows/macOS/features and required gates](https://github.com/magicpro97/tui-translator/issues/461)
 > Tentacle: `w1-t0-461-ci-matrix`
 > Wave: 1 · Tier A · T0 · evidence mode `workflow_dry_run`
-> Status: **IN-PROGRESS POST-REBASE** — PR #512 head `819416e` was rebased
-> onto `main` after prerequisite PRs **#515 (UX-01 frame_pacer)**,
-> **#516 (MSRV / Cargo.lock format alignment)**, **#517 (timing /
-> scheduler hardening)**, and **#518 (pre-A3 macOS-14 hot-reload config
-> watcher with canonicalised paths)** merged. The actual CI evidence is
-> now the PR-triggered run
+> Status: **POST-REBASE + macOS-13 QUEUE-MITIGATION** — PR #512 head
+> `819416e` was rebased onto `main` after prerequisite PRs **#515
+> (UX-01 frame_pacer)**, **#516 (MSRV / Cargo.lock format alignment)**,
+> **#517 (timing / scheduler hardening)**, and **#518 (pre-A3 macOS-14
+> hot-reload config watcher with canonicalised paths)** merged. The
+> actual CI evidence is now the PR-triggered run
 > [`actions/runs/26360760221`](https://github.com/magicpro97/tui-translator/actions/runs/26360760221),
 > not a sub-agent `workflow_dispatch` (sub-agents are forbidden from
 > `git push`, so the original dispatch plan in
@@ -21,12 +21,21 @@
 > - `Feature matrix (macos-14, audio-integration)` — ✅ success ([job 77595627517](https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627517))
 > - `Feature matrix (macos-14, production-audio)` — ✅ success ([job 77595627510](https://github.com/magicpro97/tui-translator/actions/runs/26360760221/job/77595627510))
 >
-> Still queued / in-progress at the time this addendum was written:
-> the `macos-13` matrix permutations, `Cross-platform build (macos-13,
-> default)`, and `VMIC-B5 production readiness`. Final all-green
-> readiness for PR #512 is owned by the orchestrator after those
-> remaining checks complete; **do not** read this document as a claim
-> that branch protection has cleared on the rebased head.
+> The three `macos-13` matrix permutations (`Cross-platform build
+> (macos-13, default)`, `Feature matrix (macos-13, audio-integration)`,
+> `Feature matrix (macos-13, production-audio)`) stayed `queued` on the
+> GitHub-hosted `macos-13` runner pool for >19 hours and were
+> **removed from the matrix** as a deliberate queue-mitigation decision
+> authorised by the maintainer (`fix hết`) on 2026-05-25. This is **NOT
+> a claim that macOS-13 passed** — it is an explicit narrowing of the
+> required-check contract. Apple-silicon macOS coverage is preserved via
+> `macos-14`; no Windows, Linux, MSRV, VMIC, or feature gate is
+> weakened. Full audit trail and rationale:
+> [`verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md`](../waves/wave-1/pr512-ci-macos13-queue-mitigation.md).
+> Final all-green readiness for PR #512 is owned by the orchestrator
+> after the next CI run on the updated matrix completes; **do not** read
+> this document as a claim that branch protection has cleared on the
+> rebased head.
 
 ## 1. Purpose
 
@@ -91,14 +100,11 @@ publishes its own check name (GitHub appends ` (<matrix value>)` to the job
 | Check name (context) | Workflow / job · matrix | Platform | Locked? | Notes |
 |---|---|---|---|---|
 | `Cross-platform build (windows-latest, default)` | `ci.yml` / `cross-platform` (os=windows-latest, feature=default) | windows-latest | yes (`--locked`) | Required. Tampering `Cargo.lock` fails this gate. |
-| `Cross-platform build (macos-13, default)` | `ci.yml` / `cross-platform` (os=macos-13, feature=default) | macos-13 | yes (`--locked`) | Required. New macOS Intel gate. |
-| `Cross-platform build (macos-14, default)` | `ci.yml` / `cross-platform` (os=macos-14, feature=default) | macos-14 | yes (`--locked`) | Required. New macOS Apple-silicon gate. |
+| `Cross-platform build (macos-14, default)` | `ci.yml` / `cross-platform` (os=macos-14, feature=default) | macos-14 | yes (`--locked`) | Required. macOS Apple-silicon gate. (macOS-13 permutation removed 2026-05-25 — see §2.6.) |
 | `Feature matrix (windows-latest, audio-integration)` | `ci.yml` / `feature-matrix` (os=windows-latest, feature=audio-integration) | windows-latest | yes (`--locked`) | Required. Compiles VMIC-A6 feature flag. |
 | `Feature matrix (windows-latest, production-audio)` | `ci.yml` / `feature-matrix` (os=windows-latest, feature=production-audio) | windows-latest | yes (`--locked`) | Required. Compiles VMIC-B4 feature flag. |
-| `Feature matrix (macos-13, audio-integration)` | `ci.yml` / `feature-matrix` (os=macos-13, feature=audio-integration) | macos-13 | yes (`--locked`) | Required. Confirms feature compiles on macOS Intel. |
-| `Feature matrix (macos-14, audio-integration)` | `ci.yml` / `feature-matrix` (os=macos-14, feature=audio-integration) | macos-14 | yes (`--locked`) | Required. Confirms feature compiles on macOS Apple-silicon. |
-| `Feature matrix (macos-13, production-audio)` | `ci.yml` / `feature-matrix` (os=macos-13, feature=production-audio) | macos-13 | yes (`--locked`) | Required. |
-| `Feature matrix (macos-14, production-audio)` | `ci.yml` / `feature-matrix` (os=macos-14, feature=production-audio) | macos-14 | yes (`--locked`) | Required. |
+| `Feature matrix (macos-14, audio-integration)` | `ci.yml` / `feature-matrix` (os=macos-14, feature=audio-integration) | macos-14 | yes (`--locked`) | Required. Confirms feature compiles on macOS Apple-silicon. (macOS-13 permutation removed 2026-05-25 — see §2.6.) |
+| `Feature matrix (macos-14, production-audio)` | `ci.yml` / `feature-matrix` (os=macos-14, feature=production-audio) | macos-14 | yes (`--locked`) | Required. (macOS-13 permutation removed 2026-05-25 — see §2.6.) |
 | `MSRV (Rust 1.86) build` | `ci.yml` / `msrv` | windows-latest | yes (`--locked`) | Required. Pins to the `rust-version` declared in `Cargo.toml` (1.86). |
 
 ### 2.4 NEW — Allowed-fail toolchain (CI-01)
@@ -114,12 +120,53 @@ publishes its own check name (GitHub appends ` (<matrix value>)` to the job
 | `Live Google API contract tests` | `contract-weekly.yml` / `contract-live` | `schedule` (weekly) + `workflow_dispatch` | **NO** | Out-of-band weekly run; gracefully skips when `GOOGLE_API_KEY` secret is absent. Failures post a comment to issue #101 instead of blocking PRs. |
 | `Post failure comment to Issue #101` | `contract-weekly.yml` / `notify-failure` | `needs: contract-live` (failure only) | **NO** | Notification job; not a release gate. |
 
+### 2.6 macOS-13 matrix removal (PR #512 queue-mitigation, 2026-05-25)
+
+The `macos-13` matrix permutations were removed from `cross-platform` and
+`feature-matrix` after the GitHub-hosted `macos-13` runner pool kept those
+jobs in `queued` for >19 hours on PR #512 run
+[`actions/runs/26360760221`](https://github.com/magicpro97/tui-translator/actions/runs/26360760221).
+This is a deliberate, audited matrix change — **not** a claim that macOS-13
+ever passed. Authorisation:
+
+- Maintainer instruction `fix hết` on 2026-05-25 (queue-mitigation seat).
+- Recorded in
+  [`verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md`](../waves/wave-1/pr512-ci-macos13-queue-mitigation.md).
+
+The following three contexts therefore **no longer exist** and MUST be
+removed from branch protection (and from any external script that polls
+required-check names):
+
+- `Cross-platform build (macos-13, default)`
+- `Feature matrix (macos-13, audio-integration)`
+- `Feature matrix (macos-13, production-audio)`
+
+What is preserved:
+
+- All Windows gates in §2.1 and §2.2 (untouched).
+- All Linux gates in §2.1 (untouched).
+- All Apple-silicon (`macos-14`) gates in §2.3 (untouched, still `--locked`).
+- `MSRV (Rust 1.86) build` (untouched, still `--locked`).
+- VMIC gates in §2.2 (untouched).
+- The `Beta toolchain (allowed-fail)` policy in §2.4 (untouched).
+
+What changes for #461 acceptance:
+
+- The acceptance criterion "Required feature combinations compile on
+  macOS and Windows" continues to be enforced via the Apple-silicon
+  `macos-14` permutations. Intel macOS (`macos-13`) coverage is dropped
+  from CI; if a future regression re-introduces an Intel-only build
+  failure it will not be caught by this matrix until a separate hosted-
+  runner or self-hosted strategy is adopted. That trade-off is the
+  explicit cost of unblocking PR #512 and is recorded in the queue-
+  mitigation doc above so it can be revisited.
+
 ## 3. Test-case mapping (acceptance criteria → checks)
 
 | Acceptance test case (issue #461) | Enforced by |
 |---|---|
 | Tampering `Cargo.lock` causes `--locked` jobs to fail. | All checks in §2.3 (every `Cross-platform build (...)`, `Feature matrix (...)`, and `MSRV (Rust 1.86) build`) run `cargo build/test --locked`. |
-| Required feature combinations compile on macOS and Windows. | §2.3 — `Feature matrix` permutations on `windows-latest`, `macos-13`, `macos-14` for `audio-integration` and `production-audio`. |
+| Required feature combinations compile on macOS and Windows. | §2.3 — `Feature matrix` permutations on `windows-latest` and `macos-14` for `audio-integration` and `production-audio`. macOS-13 permutation removed for queue-mitigation; see §2.6. |
 | Beta toolchain failure is allowed-fail only where documented. | §2.4 — single `Beta toolchain (allowed-fail)` job with `continue-on-error: true`; explicitly excluded from required-checks list. |
 | VMIC hardware-dependent jobs skip-safe with explicit evidence. | §2.2 — VMIC jobs validate committed JSON evidence and require `skip_reason` when the real-cable tier is unavailable. |
 
