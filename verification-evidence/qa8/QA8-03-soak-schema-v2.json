@@ -265,12 +265,22 @@
     "frame_pacing_summary": {
       "type": "object",
       "additionalProperties": true,
+      "description": "Lifetime + rolling-window frame-pacing telemetry (QA8-06, issue #504). The rolling-window fields are populated per-bucket by the soak runner and MUST be present whenever the run lasted at least one minute.",
       "properties": {
         "target_fps": { "type": "number" },
         "observed_fps_median": { "type": ["number", "null"] },
         "observed_fps_p01": { "type": ["number", "null"] },
+        "p95_frame_ms": { "type": ["number", "null"], "minimum": 0, "description": "QA8-06 release gate: single p95 <= 20 ms; dual p95 <= 25 ms." },
         "p99_frame_ms": { "type": ["number", "null"] },
+        "p999_frame_ms": { "type": ["number", "null"], "minimum": 0, "description": "QA8-06: lifetime p99.9 frame interval." },
         "total_dropped_frames": { "type": "integer", "minimum": 0 },
+        "render_stalls_ge_100ms": { "type": "integer", "minimum": 0, "description": "QA8-06: count of frames whose interval was >= 100 ms (severe render stall)." },
+        "worst_minute_dropped_frames": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-06: highest dropped-frame count observed in any single 60s window." },
+        "rolling_15min_dropped_frames": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-06: dropped frames in the most recent 15-minute window." },
+        "rolling_15min_p95_frame_ms": { "type": ["number", "null"], "minimum": 0 },
+        "rolling_15min_p99_frame_ms": { "type": ["number", "null"], "minimum": 0 },
+        "rolling_15min_p999_frame_ms": { "type": ["number", "null"], "minimum": 0 },
+        "hgrm_attachment": { "type": ["string", "null"], "description": "QA8-06: optional relative path to the .hgrm (HdrHistogram text export) attachment for the frame interval distribution." },
         "unsupported": { "type": "boolean" }
       }
     },
@@ -423,10 +433,19 @@
     "handles_sample": {
       "type": "object",
       "additionalProperties": true,
+      "description": "Per-sample cross-platform process probe (QA8-04, issue #502). All numeric fields are nullable so a platform that does not support a given probe MUST report null + set its name in `unsupported_fields`; readers MUST NOT treat null as zero.",
       "properties": {
         "windows_handles": { "type": ["integer", "null"], "minimum": 0 },
         "file_descriptors": { "type": ["integer", "null"], "minimum": 0 },
-        "unsupported": { "type": "boolean" }
+        "thread_count": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-04: total OS thread count for the process." },
+        "private_bytes": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-04: process-private (non-shared) memory in bytes. Windows: PROCESS_MEMORY_COUNTERS_EX.PrivateUsage. Linux: RssAnon from /proc/self/status. macOS: physical_footprint when available; null otherwise." },
+        "rss_bytes": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-04: resident set size in bytes (mirrors memory_mb*1MiB for cross-check)." },
+        "unsupported": { "type": "boolean", "description": "True when every probe field on this platform is null/unsupported." },
+        "unsupported_fields": {
+          "type": "array",
+          "description": "Names of fields explicitly unsupported on this platform.",
+          "items": { "type": "string" }
+        }
       }
     },
     "handles_summary": {
@@ -435,8 +454,14 @@
       "properties": {
         "max_windows_handles": { "type": ["integer", "null"], "minimum": 0 },
         "max_file_descriptors": { "type": ["integer", "null"], "minimum": 0 },
+        "max_thread_count": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-04: peak OS thread count over the run." },
+        "max_private_bytes": { "type": ["integer", "null"], "minimum": 0, "description": "QA8-04: peak private bytes over the run." },
         "slope_per_hour": { "type": ["number", "null"] },
-        "unsupported": { "type": "boolean" }
+        "unsupported": { "type": "boolean" },
+        "unsupported_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
 

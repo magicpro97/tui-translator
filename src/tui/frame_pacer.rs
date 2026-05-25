@@ -45,6 +45,14 @@ pub const FRAME_BUDGET: Duration = Duration::from_micros(FRAME_BUDGET_US);
 /// for dual-mode in the DM-07 gate.
 pub const DROPPED_FRAME_THRESHOLD_MS: u64 = 25;
 
+/// A frame whose actual interval (in ms) meets or exceeds this threshold is
+/// counted as a **render stall** under the QA8-06 (#504) telemetry contract.
+/// 100 ms ≈ 10 fps and represents a severe pacing breakdown (e.g. blocking
+/// IO on the render thread) — far worse than the regular dropped-frame
+/// budget. The 8-h release gate fails if any stall is recorded in a soak
+/// window the gate is configured to inspect.
+pub const RENDER_STALL_THRESHOLD_MS: u64 = 100;
+
 // ── FramePacer ────────────────────────────────────────────────────────────────
 
 /// Adaptive 60fps render-loop frame pacer.
@@ -68,6 +76,9 @@ pub struct FramePacer {
     pub hist: Arc<LatencyHistogram>,
     /// Number of frames whose actual interval was ≥ [`DROPPED_FRAME_THRESHOLD_MS`].
     dropped: AtomicU64,
+    /// Number of frames whose actual interval was ≥ [`RENDER_STALL_THRESHOLD_MS`]
+    /// (QA8-06 #504 render-stall counter).
+    stalls_ge_100ms: AtomicU64,
     /// Total completed frame count.
     total: AtomicU64,
     /// Windows timer-resolution guard.  On non-Windows this is a zero-sized no-op.
@@ -81,6 +92,7 @@ impl FramePacer {
             frame_start: Instant::now(),
             hist: Arc::new(LatencyHistogram::new()),
             dropped: AtomicU64::new(0),
+            stalls_ge_100ms: AtomicU64::new(0),
             total: AtomicU64::new(0),
             _timer_resolution: TimerResolutionGuard::new(),
         }
@@ -109,6 +121,9 @@ impl FramePacer {
         if interval_ms >= DROPPED_FRAME_THRESHOLD_MS {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
+        if interval_ms >= RENDER_STALL_THRESHOLD_MS {
+            self.stalls_ge_100ms.fetch_add(1, Ordering::Relaxed);
+        }
         self.total.fetch_add(1, Ordering::Relaxed);
 
         // Advance the frame start for the next iteration after recording the
@@ -120,6 +135,13 @@ impl FramePacer {
     /// Number of frames whose actual interval was ≥ [`DROPPED_FRAME_THRESHOLD_MS`].
     pub fn dropped_frames(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
+    }
+
+    /// Number of frames whose actual interval was ≥ [`RENDER_STALL_THRESHOLD_MS`]
+    /// (QA8-06, issue #504).
+    #[allow(dead_code)]
+    pub fn render_stalls_ge_100ms(&self) -> u64 {
+        self.stalls_ge_100ms.load(Ordering::Relaxed)
     }
 
     /// Total number of completed frames recorded by this pacer.
@@ -147,6 +169,9 @@ impl FramePacer {
         self.hist.record_ms(ms);
         if ms >= DROPPED_FRAME_THRESHOLD_MS {
             self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+        if ms >= RENDER_STALL_THRESHOLD_MS {
+            self.stalls_ge_100ms.fetch_add(1, Ordering::Relaxed);
         }
         self.total.fetch_add(1, Ordering::Relaxed);
     }

@@ -11,6 +11,7 @@
 pub mod frame_pacer;
 pub mod key_hint;
 pub mod onboarding;
+pub mod rolling_frame_stats;
 
 use key_hint::{detect_key_os, render_f2_or_ctrl_d, render_q_or_ctrl_c};
 
