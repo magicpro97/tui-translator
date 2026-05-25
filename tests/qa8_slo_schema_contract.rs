@@ -1,20 +1,19 @@
-//! QA8-02 (issue #500, DOWNGRADED) — JSON-Schema meta-test for the SLO
-//! specification schema shipped at
-//! `verification-evidence/qa8/QA8-02-slo-schema.json`.
+//! QA8-02 (issue #500) — JSON-Schema meta-test for the SLO specification
+//! schema shipped at `verification-evidence/qa8/QA8-02-slo-schema.json`.
 //!
-//! Wave-1 ships **schema only**; the gate checker binary is deferred to the
-//! successor issue QA8-02b. This file therefore provides a structural
-//! meta-test that asserts the schema document is a well-formed JSON-Schema
-//! Draft-07 contract (parses, declares the correct meta-schema, declares an
-//! `$id`, types its top-level object, and ensures every gate category
-//! required by issue #500 is enumerable).
+//! This file is the *schema-shape* meta-test: it asserts the schema
+//! document is a well-formed JSON-Schema Draft-07 contract (parses,
+//! declares the correct meta-schema, declares an `$id`, types its
+//! top-level object, and ensures every gate category required by issue
+//! #500 is enumerable). The end-to-end behaviour of the gate checker
+//! binary that consumes this schema is covered by
+//! `tests/qa8_slo_gate_checker.rs`.
 //!
-//! Implementation note: the workspace dev-dependencies intentionally do NOT
-//! include a full JSON-Schema validator crate (per the wave-1 Cargo policy
-//! prohibiting any edit to `Cargo.toml` / `Cargo.lock`). The meta-test
-//! therefore performs schema-shape validation directly against `serde_json::
-//! Value`. Full Draft-07 meta-schema validation will land with QA8-02b's
-//! checker binary, which is permitted to introduce that dependency.
+//! Implementation note: the workspace dev-dependencies intentionally do
+//! NOT include a full JSON-Schema validator crate. The meta-test
+//! therefore performs schema-shape validation directly against
+//! `serde_json::Value`; the checker binary likewise validates spec shape
+//! manually so it does not pull in a heavyweight validator dependency.
 
 use serde_json::Value;
 

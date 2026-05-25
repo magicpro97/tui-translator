@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "spec_version": "1.0.0",
+  "generated_at": "2026-05-22T00:00:00Z",
+  "source": {
+    "issue": "#500",
+    "owners": ["magicpro97"],
+    "notes": "Reference SLO spec for QA8-02 (issue #500). One gate per category from the issue acceptance list. Thresholds are illustrative defaults; per-release specs may tighten them."
+  },
+  "gates": [
+    {
+      "id": "crash-count-blocker",
+      "category": "crash",
+      "metric": "crash.count",
+      "comparator": "eq",
+      "threshold": 0,
+      "unit": "count",
+      "severity": "blocker",
+      "description": "Soak run must record zero process crashes."
+    },
+    {
+      "id": "frame-p99-budget",
+      "category": "frame",
+      "metric": "frame.p99_ms",
+      "comparator": "lte",
+      "threshold": 50,
+      "unit": "ms",
+      "severity": "blocker",
+      "description": "TUI frame pacing p99 must stay within the 50 ms budget."
+    },
+    {
+      "id": "rss-slope-budget",
+      "category": "rss_slope",
+      "metric": "rss.slope_mb_per_hour",
+      "comparator": "lte",
+      "threshold": 5,
+      "unit": "MB/hour",
+      "severity": "blocker",
+      "description": "Resident set size must not grow faster than 5 MB/hour during an 8-hour soak."
+    },
+    {
+      "id": "cpu-mean-budget",
+      "category": "cpu",
+      "metric": "cpu.mean_percent",
+      "comparator": "lte",
+      "threshold": 30,
+      "unit": "percent",
+      "severity": "blocker",
+      "description": "Mean CPU utilisation must stay at or below 30%."
+    },
+    {
+      "id": "queue-overflow-blocker",
+      "category": "queue",
+      "metric": "queue.overflow_count",
+      "comparator": "eq",
+      "threshold": 0,
+      "unit": "count",
+      "severity": "blocker",
+      "description": "No internal queue may overflow during a soak run."
+    },
+    {
+      "id": "audio-dropped-chunks-blocker",
+      "category": "audio",
+      "metric": "audio.dropped_chunks",
+      "comparator": "eq",
+      "threshold": 0,
+      "unit": "count",
+      "severity": "blocker",
+      "description": "WASAPI loopback capture must not drop any audio chunks."
+    },
+    {
+      "id": "provider-error-rate-budget",
+      "category": "provider",
+      "metric": "provider.error_rate",
+      "comparator": "lte",
+      "threshold": 0.01,
+      "unit": "ratio",
+      "severity": "blocker",
+      "description": "Provider error rate (STT+MT+TTS aggregated) must stay at or below 1%."
+    },
+    {
+      "id": "virtual-mic-sink-healthy",
+      "category": "virtual_mic",
+      "metric": "virtual_mic.sink_healthy",
+      "comparator": "eq",
+      "threshold": true,
+      "unit": "bool",
+      "severity": "blocker",
+      "description": "Virtual microphone sink must report healthy at the end of the run."
+    }
+  ]
+}

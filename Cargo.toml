@@ -48,6 +48,14 @@ path = "src/bin/eval_session.rs"
 name = "mt_bench"
 path = "src/bin/mt_bench.rs"
 
+# QA8-02 (issue #500): machine-readable SLO gate checker. Reads the SLO
+# spec validated against verification-evidence/qa8/QA8-02-slo-schema.json
+# and evaluates gates against soak/release evidence; exits non-zero on any
+# blocker failure so nfr-verification-gate can reuse it directly.
+[[bin]]
+name = "qa8_slo_gate_checker"
+path = "src/bin/qa8_slo_gate_checker.rs"
+
 [dependencies]
 # Terminal user interface
 ratatui = "0.30"
