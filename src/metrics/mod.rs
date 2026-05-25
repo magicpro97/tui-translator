@@ -20,6 +20,7 @@ pub mod latency;
 pub mod loss;
 pub mod memory_guard;
 pub mod network;
+pub mod probe;
 pub mod process;
 pub mod snapshot;
 
@@ -32,6 +33,8 @@ pub use loss::LossMetrics;
 pub use memory_guard::MemoryGuard;
 #[allow(unused_imports)]
 pub use network::NetworkMetrics;
+#[allow(unused_imports)]
+pub use probe::{default_probe, measure_sample_overhead, ProbeSample, ProcessProbe};
 #[allow(unused_imports)]
 pub use process::{spawn_process_metrics_task, ProcessSnapshot};
 #[allow(unused_imports)]

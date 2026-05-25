@@ -146,6 +146,52 @@ impl LatencyHistogram {
             guard.hist.value_at_percentile(pct)
         }
     }
+
+    /// Export the histogram as an HdrHistogram-compatible `.hgrm` percentile
+    /// distribution table (QA8-06, issue #504).
+    ///
+    /// The format matches the canonical
+    /// `Histogram.outputPercentileDistribution` text layout: four whitespace-
+    /// separated columns (`Value`, `Percentile`, `TotalCount`,
+    /// `1/(1-Percentile)`) plus a `#[Mean … Max …]` footer. Consumers such as
+    /// `HistogramLogProcessor` accept this output verbatim. Used by soak
+    /// evidence to ship a `.hgrm` attachment alongside the JSON report.
+    pub fn export_hgrm(&self) -> String {
+        let guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let mut out = String::new();
+        out.push_str("       Value     Percentile TotalCount 1/(1-Percentile)\n\n");
+        let total = guard.hist.len();
+        if total == 0 {
+            out.push_str("#[Mean     =        0.00, StdDeviation   =        0.00]\n");
+            out.push_str("#[Max      =        0.000, Total count    =            0]\n");
+            out.push_str("#[Buckets  =          0,     SubBuckets     =            0]\n");
+            return out;
+        }
+        for q in [0.0, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999, 0.9999, 1.0] {
+            let value = guard.hist.value_at_quantile(q);
+            let count_at = guard.hist.count_at(value);
+            let denom = if (1.0 - q).abs() < f64::EPSILON {
+                f64::INFINITY
+            } else {
+                1.0 / (1.0 - q)
+            };
+            out.push_str(&format!(
+                "{:>12} {:>14.6} {:>10} {:>16.2}\n",
+                value, q, count_at, denom
+            ));
+        }
+        out.push_str(&format!(
+            "#[Mean     = {:>12.2}, StdDeviation   = {:>12.2}]\n",
+            guard.hist.mean(),
+            guard.hist.stdev()
+        ));
+        out.push_str(&format!(
+            "#[Max      = {:>12.3}, Total count    = {:>12}]\n",
+            guard.hist.max(),
+            total
+        ));
+        out
+    }
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
