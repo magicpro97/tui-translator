@@ -9,7 +9,10 @@
 #![allow(dead_code)]
 
 pub mod frame_pacer;
+pub mod key_hint;
 pub mod onboarding;
+
+use key_hint::{detect_key_os, render_f2_or_ctrl_d, render_q_or_ctrl_c};
 
 use std::{
     path::{Path, PathBuf},
@@ -3250,6 +3253,18 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
     };
 
     // ── Content lines ─────────────────────────────────────────────────────────
+    // Render Ctrl-bearing combos per host OS (issue #480 UX-02): Windows/Linux
+    // keep `Ctrl+X`, macOS shows the `⌃X` control glyph.  Function keys and
+    // plain keys are never rewritten.
+    let os = detect_key_os();
+    let settings_line = format!(
+        "  S          Settings ({} cycles field values)",
+        render_f2_or_ctrl_d(os)
+    );
+    let quit_line = format!(
+        "  {} Quit \u{2014} shows session summary",
+        render_q_or_ctrl_c(os)
+    );
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             " Keyboard Shortcuts",
@@ -3265,12 +3280,12 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from("  T          Toggle TTS audio output"),
         Line::from("  M          Toggle metrics panel (compact/expanded)"),
         Line::from("  L          Change target language"),
-        Line::from("  S          Settings (F2/Ctrl+D cycles field values)"),
+        Line::from(settings_line),
         Line::from("  R          Reload config from disk"),
         Line::from("  ?          Show / hide this help"),
         Line::from("  Esc        Dismiss this overlay"),
         Line::from("  Tab        Switch A/B pane focus (dual-slot mode)"),
-        Line::from("  q / Ctrl+C Quit \u{2014} shows session summary"),
+        Line::from(quit_line),
     ];
 
     // ── Scroll arithmetic ─────────────────────────────────────────────────────
@@ -3374,11 +3389,15 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
 
     let is_compact_editor = panel.width < 76 || panel.height <= 16;
     let show_editor_spacing = !is_compact_editor && panel.height >= 27;
-    let key_hint = if is_compact_editor {
-        " Tab/Shift+Tab move  F2 cycle  Enter save  Esc close"
+    let key_hint_owned = if is_compact_editor {
+        " Tab/Shift+Tab move  F2 cycle  Enter save  Esc close".to_string()
     } else {
-        " Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close"
+        format!(
+            " Tab/Down next  Shift+Tab/Up prev  {} cycle  Enter save  Esc close",
+            render_f2_or_ctrl_d(detect_key_os())
+        )
     };
+    let key_hint = key_hint_owned.as_str();
     let config_path_display = if is_compact_editor {
         let path_budget = panel.width.saturating_sub(9) as usize;
         truncate_device_name(&editor.config_path, path_budget)
@@ -3592,7 +3611,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
         )));
     }
     lines.push(Line::from(Span::styled(
-        key_hint,
+        key_hint.to_string(),
         Style::default().fg(Color::DarkGray),
     )));
 
@@ -3719,12 +3738,16 @@ fn capture_device_picker_lines(
         .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
     let choices = capture_device_picker_choices(editor);
     let visible_choices = visible_capture_device_picker_choices(editor);
+    let capture_picker_hint = if is_compact_editor {
+        " Device picker: type filter, F2 selects".to_string()
+    } else {
+        format!(
+            " Capture device picker: type to search, {} selects next",
+            render_f2_or_ctrl_d(detect_key_os())
+        )
+    };
     let mut lines = vec![Line::from(Span::styled(
-        if is_compact_editor {
-            " Device picker: type filter, F2 selects"
-        } else {
-            " Capture device picker: type to search, F2/Ctrl+D selects next"
-        },
+        capture_picker_hint,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
@@ -3853,12 +3876,16 @@ fn config_choice_picker_lines(
         .saturating_sub(5)
         .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
     let current = editor.field_value(field).trim();
+    let choice_list_hint = if is_compact_editor {
+        " Choice list: F2 selects".to_string()
+    } else {
+        format!(
+            " Choice list: {} selects next option; type to override only when needed",
+            render_f2_or_ctrl_d(detect_key_os())
+        )
+    };
     let mut lines = vec![Line::from(Span::styled(
-        if is_compact_editor {
-            " Choice list: F2 selects"
-        } else {
-            " Choice list: F2/Ctrl+D selects next option; type to override only when needed"
-        },
+        choice_list_hint,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
@@ -4015,12 +4042,16 @@ fn virtual_mic_device_picker_lines(
         .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
     let choices = virtual_mic_device_picker_choices(editor);
     let visible_choices = visible_virtual_mic_device_picker_choices(editor);
+    let vmic_picker_hint = if is_compact_editor {
+        " Virtual mic picker: F2 selects".to_string()
+    } else {
+        format!(
+            " Virtual microphone picker: {} selects detected endpoint",
+            render_f2_or_ctrl_d(detect_key_os())
+        )
+    };
     let mut lines = vec![Line::from(Span::styled(
-        if is_compact_editor {
-            " Virtual mic picker: F2 selects"
-        } else {
-            " Virtual microphone picker: F2/Ctrl+D selects detected endpoint"
-        },
+        vmic_picker_hint,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
@@ -4412,6 +4443,7 @@ pub fn format_storage_bytes(bytes: u64) -> String {
 mod tests {
     use super::*;
     use ratatui::layout::Rect;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
     use std::thread;
 
     // ── UX-01: LayoutProfile adaptive breakpoints (issue #479) ───────────────
@@ -4516,6 +4548,45 @@ mod tests {
                     "chunk[{idx}] {c:?} escapes frame {area:?} at {w}x{h} ({profile:?})"
                 );
             }
+        }
+    }
+
+    // ── UX-02: TUI_KEY_OS_OVERRIDE env-var helpers (issue #480) ──────────────
+
+    /// Serialises tests that mutate the `TUI_KEY_OS_OVERRIDE` environment
+    /// variable so concurrent `cargo test` workers don't race on the
+    /// global process env.
+    fn key_os_env_mutex() -> &'static Mutex<()> {
+        static M: OnceLock<Mutex<()>> = OnceLock::new();
+        M.get_or_init(|| Mutex::new(()))
+    }
+
+    /// RAII guard that sets `TUI_KEY_OS_OVERRIDE` while held and restores
+    /// the previous value on drop.  Tests use this to pin the rendered
+    /// shortcut convention regardless of host OS.
+    struct KeyOsOverrideGuard {
+        _lock: MutexGuard<'static, ()>,
+        previous: Option<String>,
+    }
+
+    impl Drop for KeyOsOverrideGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(prev) => std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, prev),
+                None => std::env::remove_var(key_hint::KEY_OS_OVERRIDE_ENV),
+            }
+        }
+    }
+
+    fn with_key_os_override(value: &str) -> KeyOsOverrideGuard {
+        let lock = key_os_env_mutex()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = std::env::var(key_hint::KEY_OS_OVERRIDE_ENV).ok();
+        std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, value);
+        KeyOsOverrideGuard {
+            _lock: lock,
+            previous,
         }
     }
 
@@ -4933,6 +5004,8 @@ mod tests {
     #[test]
     fn help_overlay_lists_settings_shortcut() {
         use ratatui::{backend::TestBackend, Terminal};
+        // Pin the OS so the assertion is stable on every host CI runner.
+        let _guard = with_key_os_override("windows");
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
 
@@ -4959,6 +5032,76 @@ mod tests {
         assert!(
             normalized.contains("F2/Ctrl+D"),
             "help overlay should mention settings value cycling; row: {settings_line:?}"
+        );
+    }
+
+    #[test]
+    fn help_overlay_renders_macos_control_glyph() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let _guard = with_key_os_override("macos");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows = (0..24)
+            .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let settings_line = rows
+            .iter()
+            .find(|line| line.contains("Settings"))
+            .unwrap_or_else(|| panic!("help overlay should list Settings; rows:\n{rows:#?}"));
+        let quit_line = rows
+            .iter()
+            .find(|line| line.contains("Quit"))
+            .unwrap_or_else(|| panic!("help overlay should list Quit; rows:\n{rows:#?}"));
+
+        assert!(
+            settings_line.contains("F2/\u{2303}D"),
+            "macOS help overlay should render F2 plus the ⌃D glyph for the \
+             settings cycle hint; got: {settings_line:?}"
+        );
+        assert!(
+            !settings_line.contains("Ctrl+D"),
+            "macOS help overlay should not contain the Windows-style Ctrl+D label; \
+             got: {settings_line:?}"
+        );
+        assert!(
+            quit_line.contains("\u{2303}C"),
+            "macOS help overlay should render ⌃C for the quit shortcut; \
+             got: {quit_line:?}"
+        );
+    }
+
+    #[test]
+    fn help_overlay_renders_linux_ctrl_label() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let _guard = with_key_os_override("linux");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows = (0..24)
+            .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let settings_line = rows
+            .iter()
+            .find(|line| line.contains("Settings"))
+            .unwrap_or_else(|| panic!("help overlay should list Settings; rows:\n{rows:#?}"));
+
+        assert!(
+            settings_line.contains("F2/Ctrl+D"),
+            "Linux help overlay should keep the Ctrl+D label; got: {settings_line:?}"
+        );
+        assert!(
+            !settings_line.contains("\u{2303}"),
+            "Linux help overlay should not include the macOS control glyph; \
+             got: {settings_line:?}"
         );
     }
 
