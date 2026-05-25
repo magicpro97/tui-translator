@@ -6,4 +6,5 @@
 //!
 //! See [`routing`] for the full API.
 
+pub mod router;
 pub mod routing;
