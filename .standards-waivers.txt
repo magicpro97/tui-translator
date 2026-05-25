@@ -1,0 +1,45 @@
+# Engineering-standards LOC waivers (issue #483)
+#
+# Format: one path per line, optional `# reason` comment.
+# Files listed here are EXEMPT from the 600 LOC/file gate.
+# New files must NOT be added here; refactor instead.
+#
+# Each waiver should reference a tracking issue describing the
+# planned refactor. Lines starting with `#` are ignored.
+#
+# Baseline established from origin/main at the time #483 landed.
+# To shrink the list, split modules and open a follow-up issue.
+src/main.rs                         # baseline: split into submodules (tracked: #483)
+src/tui/mod.rs                      # baseline: split TUI views (tracked: #483)
+src/pipeline/mod.rs                 # baseline: split pipeline stages (tracked: #483)
+src/config/mod.rs                   # baseline: split config schema (tracked: #483)
+src/bin/eval_session.rs             # baseline: eval harness (tracked: #483)
+tests/snapshot.rs                   # baseline: snapshot tests (tracked: #483)
+tests/soak/run_soak.rs              # baseline: soak harness (tracked: #483)
+src/bin/mt_bench.rs                 # baseline: bench harness (tracked: #483)
+src/session/mod.rs                  # baseline: split session state (tracked: #483)
+src/providers/local/mod.rs          # baseline: local provider (tracked: #483)
+src/bin/quality_benchmark.rs        # baseline: bench harness (tracked: #483)
+src/providers/local/bootstrap.rs    # baseline: local bootstrap (tracked: #483)
+src/providers/local/model_download.rs # baseline: model downloader (tracked: #483)
+src/tui/onboarding.rs               # baseline: onboarding wizard (tracked: #483)
+tests/hot_config/matrix.rs          # baseline: matrix tests (tracked: #483)
+tests/local_model_bootstrap.rs      # baseline: bootstrap tests (tracked: #483)
+src/providers/local/mt.rs           # baseline: local MT (tracked: #483)
+src/audio/archive.rs                # baseline: audio archive (tracked: #483)
+src/audio/vad.rs                    # baseline: VAD (tracked: #483)
+src/pipeline/audio_sink.rs          # baseline: audio sink (tracked: #483)
+src/pipeline/playback.rs            # baseline: playback (tracked: #483)
+src/pipeline/fallback.rs            # baseline: fallback (tracked: #483)
+src/storage/mod.rs                  # baseline: storage (tracked: #483)
+src/audio/router.rs                 # baseline: router (tracked: #483)
+src/metrics/snapshot.rs             # baseline: metrics snapshot (tracked: #483)
+src/audio/wasapi_capture.rs         # baseline: WASAPI capture (tracked: #483)
+tests/integration/error_retry.rs    # baseline: retry tests (tracked: #483)
+src/bin/provider_benchmark.rs       # baseline: bench harness (tracked: #483)
+src/config/provider_supervisor.rs   # baseline: supervisor (tracked: #483)
+src/audio/mod.rs                    # baseline: audio root (tracked: #483)
+src/bin/audio_stability_proof.rs    # baseline: stability proof (tracked: #483)
+tests/mt_routing.rs                 # baseline: routing tests (tracked: #483)
+src/bin/frame_pacing_bench.rs       # baseline: bench harness (tracked: #483)
+src/pipeline/segmentation.rs        # baseline: segmentation (tracked: #483)

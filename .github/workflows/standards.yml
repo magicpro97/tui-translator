@@ -1,0 +1,121 @@
+name: Engineering Standards (STD-01)
+
+# Enforces the STD-01 engineering gates tracked by issue #483.
+# - LOC per file (600) with waiver baseline
+# - TODO/FIXME must reference an issue
+# - No unwrap/expect/panic! on NEW non-test lines
+# - Conventional Commits + DCO sign-off on PRs
+# - Coverage advisory via cargo-llvm-cov (informational only until #483 follow-up)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  loc-gate:
+    name: LOC gate (600 lines/file)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run LOC gate
+        run: python scripts/standards/check_loc.py --root . --max-lines 600
+
+  todo-refs:
+    name: TODO/FIXME issue refs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run TODO/FIXME ref gate
+        run: python scripts/standards/check_todo_refs.py src tests scripts
+
+  unwrap-gate:
+    name: unwrap/expect/panic! on new code
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build added-lines list
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          : > added.txt
+          git diff --unified=0 --diff-filter=AM "$BASE_SHA" "$HEAD_SHA" -- '*.rs' \
+            | awk '
+              /^diff --git / { next }
+              /^\+\+\+ b\// { sub(/^\+\+\+ b\//,""); file=$0; next }
+              /^@@/ {
+                match($0, /\+[0-9]+(,[0-9]+)?/);
+                hdr=substr($0, RSTART+1, RLENGTH-1);
+                split(hdr, parts, ",");
+                cur=parts[1];
+                next
+              }
+              /^\+/ && !/^\+\+\+/ {
+                print file ":" cur;
+                cur++
+              }
+              /^[ ]/ { cur++ }
+            ' >> added.txt
+          echo "Added lines:" ; wc -l added.txt
+      - name: Run unwrap gate
+        run: python scripts/standards/check_unwrap.py --root . --added-lines-file added.txt
+
+  commit-policy:
+    name: Conventional Commits + DCO
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate commits in PR range
+        run: |
+          python scripts/standards/check_commits.py \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"
+
+  standards-scripts-tests:
+    name: Standards script unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unit tests
+        run: python -m unittest scripts.standards.tests.test_standards -v
+
+  coverage-advisory:
+    name: Coverage (advisory)
+    runs-on: ubuntu-latest
+    # reason: coverage targets (75%/90%) are policy goals tracked in #483.
+    # The job currently only echoes a notice; promoting to a hard gate
+    # requires a baseline run (separate PR) before failures can be acted on.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Note
+        run: |
+          echo "Coverage thresholds (75% overall / 90% new modules) are tracked"
+          echo "as a follow-up; cargo-llvm-cov pipeline will be wired in a"
+          echo "separate PR. See docs/engineering-standards.md for the policy."

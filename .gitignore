@@ -72,3 +72,6 @@ audio-archive/
 # target/ at line 2 already covers target/eval-session/; this rule also catches
 # an eval-session/ directory placed at the project root by evaluation scripts.
 eval-session/
+
+scripts/standards/**/__pycache__/
+

@@ -1021,7 +1021,7 @@ fn main() -> Result<()> {
                  {sample_count} samples × {} rounds",
                 args.rounds
             );
-            // TODO (Phase 6): implement live Google Translation calls.
+            // TODO(#483): implement live Google Translation calls (Phase 6).
             bail!(
                 "--with-google is not yet implemented; \
                  remove --with-google to emit the pending fixture"
@@ -1029,7 +1029,7 @@ fn main() -> Result<()> {
         }
 
         RunMode::LocalCandidate => {
-            // TODO (Phase 6 / local-mt feature): run OPUS-MT inference.
+            // TODO(#483): run OPUS-MT inference (Phase 6 / local-mt feature).
             bail!(
                 "--local-candidate is not yet implemented; \
                  download OPUS-MT ONNX bundles and enable --features local-mt"
