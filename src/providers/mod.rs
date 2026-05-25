@@ -51,6 +51,7 @@ pub trait CostReporter: Send + Sync + std::fmt::Debug {
     fn record_synthesized_characters(&self, count: usize);
 }
 
+pub mod backend_selection;
 pub mod google;
 pub mod local;
 pub mod mt;

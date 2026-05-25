@@ -454,7 +454,18 @@ enum RuntimeSttProvider {
 
 enum RuntimeMtProvider {
     Google(providers::google::mt::GoogleMtProvider),
-    Local(providers::local::LocalOpusMtProvider),
+    /// Local primary with explicit, consent-gated Google cloud fallback
+    /// (JV-12, issue #420).  The wrapped router resolves each language pair
+    /// at call time and only dispatches to Google when
+    /// `mt_cloud_fallback = "google"` was set in config **and** an API key
+    /// is available.  See `providers::mt::router::MtRouter` for the
+    /// no-silent-cloud invariant.
+    LocalRouted(
+        providers::mt::router::MtRouter<
+            providers::local::LocalOpusMtProvider,
+            providers::google::mt::GoogleMtProvider,
+        >,
+    ),
 }
 
 impl providers::MtProvider for RuntimeMtProvider {
@@ -470,7 +481,7 @@ impl providers::MtProvider for RuntimeMtProvider {
                 providers::MtProvider::translate(provider, text, source_language, target_language)
                     .await
             }
-            Self::Local(provider) => {
+            Self::LocalRouted(provider) => {
                 providers::MtProvider::translate(provider, text, source_language, target_language)
                     .await
             }
@@ -726,9 +737,18 @@ fn build_slot_stt_provider(
 
 /// Build the runtime MT provider for a single slot using `mt_provider` from the
 /// slot config and the shared `google_api_key` (DM-03, issue #379).
+///
+/// When `mt_provider == "local"` and `mt_cloud_fallback == Some("google")`
+/// **and** a key is available, the local provider is wrapped in an
+/// [`providers::mt::router::MtRouter`] so unsupported language pairs route
+/// to Google (JV-12, issue #420).  Without explicit consent the local
+/// provider is returned as-is; in that case any pair the local model does
+/// not cover surfaces a visible `InvalidInput` error and **never** triggers
+/// a silent cloud call.
 fn build_slot_mt_provider(
     mt_provider: &str,
     google_api_key: Option<&str>,
+    mt_cloud_fallback: Option<&str>,
     cost_reporter: Arc<dyn providers::CostReporter>,
 ) -> std::result::Result<RuntimeMtProvider, providers::ProviderError> {
     match mt_provider {
@@ -742,8 +762,22 @@ fn build_slot_mt_provider(
                 .map(|p| p.with_cost_reporter(cost_reporter))
                 .map(RuntimeMtProvider::Google)
         }
-        "local" => providers::local::LocalOpusMtProvider::new_japanese_to_vietnamese()
-            .map(RuntimeMtProvider::Local),
+        "local" => {
+            let local = providers::local::LocalOpusMtProvider::new_japanese_to_vietnamese()?;
+            // Build an explicit cloud fallback only when consent + key are
+            // both present.  Key presence alone is NOT enough — this is the
+            // MODEL-01 / JV-12 no-silent-cloud invariant.
+            let cloud_fallback = match (mt_cloud_fallback, google_api_key) {
+                (Some("google"), Some(key)) if !key.trim().is_empty() => Some(
+                    providers::google::mt::GoogleMtProvider::new(key)?
+                        .with_cost_reporter(Arc::clone(&cost_reporter)),
+                ),
+                _ => None,
+            };
+            Ok(RuntimeMtProvider::LocalRouted(
+                providers::mt::router::MtRouter::new(local, cloud_fallback),
+            ))
+        }
         other => Err(providers::ProviderError::InvalidInput(format!(
             "unsupported MT provider {other:?}"
         ))),
@@ -2478,6 +2512,7 @@ fn main() -> Result<()> {
                 let mt_provider = match build_slot_mt_provider(
                     &slot_a_cfg.mt_provider,
                     google_api_key,
+                    cfg_snapshot.mt_cloud_fallback.as_deref(),
                     Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
                 ) {
                     Ok(p) => p,
@@ -2705,6 +2740,7 @@ fn main() -> Result<()> {
                         let mt_b = build_slot_mt_provider(
                             &slot_b_cfg.mt_provider,
                             google_api_key_b,
+                            cfg_snapshot.mt_cloud_fallback.as_deref(),
                             Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
                         );
 
