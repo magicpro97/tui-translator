@@ -54,7 +54,16 @@ this release or block the release.
 
 ## 3. Build & packaging dry-run
 
-- [ ] `cargo build --release --features local-tts` succeeds on Windows.
+> **Planned feature flag.** `local-tts` is the proposed name for the
+> Supertonic build flavour, mirroring the existing `local-stt` and
+> `local-mt` cargo features in `Cargo.toml`. As of this DRAFT, the
+> `local-tts` cargo feature does **not** yet exist. The implementation
+> PR (#493) is expected to add it; the final name may differ. Replace
+> `local-tts` below with the actual feature name introduced by that
+> PR before running this checklist.
+
+- [ ] `cargo build --release --features local-tts` succeeds on Windows
+      (using whichever cargo feature name the implementation PR landed).
 - [ ] The resulting `.exe` ships **zero model weights** (verify by
       inspecting binary size and any embedded resources).
 - [ ] Release archive (ZIP) opens cleanly and contains, at minimum:

@@ -102,7 +102,7 @@ gates_required:
   - docs:       [#497]
 hardware_classes_required: 2
 repeated_runs_required: 3
-existing_explicit_config_overrides: preserved   # see §5.3
+existing_explicit_config_overrides: preserved   # see §3.4 ("No migration code")
 ```
 
 The current verdict is `default_ready = false`.

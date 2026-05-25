@@ -54,9 +54,20 @@ matter more than absolute minimum latency.
 
 ## 4. First-time setup
 
+> **Note (config schema, current build).** As of this DRAFT, the live
+> `config.json` schema (`src/config/mod.rs`, `config.example.json`)
+> exposes `tts_enabled` and `tts_routing` but does **not** yet define
+> a `tts_provider` field; runtime TTS today is always Google when
+> enabled. The `tts_provider` key referenced below is a **planned**
+> setting that the implementation PRs (#490 / #491 / #493) will add.
+> The exact key name may change before release; this user guide will
+> be revised in lockstep with the implementation PR that introduces
+> the field.
+
 1. Open the settings editor in TUI Translator (`S` key).
 2. Set `tts_enabled` to `true`.
-3. Change `tts_provider` from `google` to `supertonic`.
+3. Change `tts_provider` (planned; see note above) from `google` to
+   `supertonic`.
 4. The first time you do this, TUI Translator shows a **consent
    dialog** containing:
    - the model name and revision,
@@ -94,7 +105,11 @@ This section is a plain-English summary. The binding text lives in
   file was deleted or is corrupted), TUI Translator does **not**
   silently fall back to Google Cloud TTS. It shows a visible error.
   Cloud fallback only happens if you have explicitly set
-  `tts_cloud_fallback = "google"` in `config.json`.
+  `tts_cloud_fallback = "google"` in `config.json`. (Planned config
+  key; not yet present in the current schema. Exact name TBD by the
+  implementation PRs #490 / #491 / #493. Until that field exists, no
+  silent cloud fallback is possible because there is no Supertonic
+  provider to fall back from.)
 - **No voice cloning by default.** The OpenRAIL-M licence restricts
   using AI voice generation to deceive or impersonate. v1 ships only
   the official voice presets to keep this clearly out of reach. If a

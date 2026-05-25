@@ -43,13 +43,19 @@ All citations are by URL; nothing was downloaded or vendored into this
 repo. The implementation PR must re-confirm each fact at PR time and
 record the upstream commit SHA / HF revision in an addendum.
 
-| Ref | Source | Fact |
-|-----|--------|------|
-| L-1 | Upstream `supertone-inc/supertonic` repository `LICENSE` file | Code is **MIT-licensed**. |
-| L-2 | Hugging Face model card `supertone-inc/supertonic-3` | Weights are **OpenRAIL-M** (Responsible AI License — Model) with use-based restrictions. |
-| L-3 | OpenRAIL-M reference text (BigScience) | Imposes **downstream propagation** of use restrictions to any redistributed model and to derived models/services. |
-| L-4 | This repo `LICENSE` | Project itself is MIT (Copyright 2026 magicpro97). |
-| L-5 | This repo `PRIVACY.md` | Local-first by default; cloud egress is opt-in per provider toggle. Pattern precedent for any new provider. |
+| Ref | Source (URL) | Fact |
+|-----|--------------|------|
+| L-1 | Upstream `supertone-inc/supertonic` repository `LICENSE` file — https://github.com/supertone-inc/supertonic/blob/main/LICENSE | Code is **MIT-licensed**. |
+| L-2 | Hugging Face model card `supertone-inc/supertonic` — https://huggingface.co/supertone-inc/supertonic | Weights are **OpenRAIL-M** (Responsible AI License — Model) with use-based restrictions. |
+| L-3 | OpenRAIL-M reference text (BigScience) — https://www.licenses.ai/ai-licenses (canonical RAIL hub) and https://huggingface.co/spaces/bigscience/license (BigScience OpenRAIL-M reference) | Imposes **downstream propagation** of use restrictions to any redistributed model and to derived models/services. |
+| L-4 | This repo `LICENSE` — https://github.com/magicpro97/tui-translator/blob/main/LICENSE | Project itself is MIT (Copyright 2026 magicpro97). |
+| L-5 | This repo `PRIVACY.md` — https://github.com/magicpro97/tui-translator/blob/main/PRIVACY.md | Local-first by default; cloud egress is opt-in per provider toggle. Pattern precedent for any new provider. |
+
+> URLs above are non-authoritative pointers for reviewer convenience.
+> The implementation PR must re-resolve each URL at PR time, pin the
+> exact upstream commit SHA / HF revision, and record the resolved
+> license text in `verification-evidence/supertonic/` as a binding
+> addendum to this memo (see §8 B-1).
 
 > The two licenses (MIT for code, OpenRAIL-M for weights) live at
 > different layers and must be treated separately. The MIT license does
