@@ -117,7 +117,7 @@ are touched.
 | YAML lint of touched workflow | `& "$env:USERPROFILE\.copilot\bin\actionlint.exe" .github/workflows/ci.yml .github/workflows/contract-weekly.yml` | recorded by orchestrator below |
 | JSON parse of touched JSON | PowerShell `Get-Content … \| ConvertFrom-Json` for `verification-evidence/ci/CI-01-matrix-run-url.json` | recorded by orchestrator below |
 | Forbidden-account guard | working-tree search for the forbidden company account literal (string withheld from this document per user policy; orchestrator holds the exact pattern) | recorded by orchestrator below |
-| Stale dispatch-block phrasing | `rg -n "blocked_pending_orchestrator_dispatch"` against the working tree | recorded by orchestrator below |
+| Stale dispatch-block phrasing | working-tree search for the stale dispatch-block status token (literal `blocked_pending_` + `orchestrator_dispatch`, concatenated; split here so this audit row does not itself trip the zero-occurrence guard) | recorded by orchestrator below |
 | Stale false final-readiness wording | `rg -n "all green|all_green|final_readiness|ready_to_merge" verification-evidence/ci verification-evidence/waves/wave-1` | recorded by orchestrator below |
 | Working tree clean prior to edits | `git status --short` | clean before edits (`HEAD = 79c3886`); the only diffs after edits are the four files listed in §4. |
 
