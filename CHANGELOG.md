@@ -9,6 +9,53 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### DM-08 / JV-17 — Dual-mode and local-MT user docs (issues #384, #425)
+
+Documentation-only release that brings end-user docs in line with the
+shipped DM-01..DM-07 dual-slot pipeline and the local-MT (LF-04) opt-in,
+without changing runtime behaviour.
+
+#### Added
+
+- **`README.md`**
+  - New "Dual-slot mode (DM-01 … DM-08)" section with an ASCII A/B layout,
+    a minimal `slots` config snippet, per-slot halt semantics, and a
+    dual-mode troubleshooting table (covers `tts_source`, halted slots,
+    duplicate target languages).
+  - New "Local MT setup (opt-in)" subsection with model bundle path
+    (`%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\`),
+    `onnxruntime.dll` placement, `mt_cloud_fallback` consent note, and a
+    pointer to the JV-08 default-eligibility ADR.
+  - Extra troubleshooting rows for unsupported language pair, missing
+    `onnxruntime.dll`, and `mt_bench` gate failure.
+- **`USAGE.md`**
+  - New "Local machine translation (`mt_provider = "local"`)" chapter with
+    install steps, fallback-consent table, benchmark interpretation, and
+    a local-MT troubleshooting table.
+  - New "Dual-slot mode (two languages side by side)" chapter with visual
+    layout, quickstart JSON, per-slot halt status indicators, and a
+    dual-mode troubleshooting table.
+  - Extra troubleshooting rows for unsupported pair, missing
+    `onnxruntime.dll`, and `mt_bench` RTF failure.
+- **`PRIVACY.md`**
+  - New §2 callout: "API key presence is NOT consent to send data to the
+    network", with a configuration matrix for `mt_cloud_fallback` and a
+    pointer to the JV-08 ADR.
+- **`config.example.json`**
+  - `_comment.tts_source` description added covering the DM-04 dual-slot
+    routing field (`off` / `a` / `b`) and its no-op behaviour in
+    single-slot mode.
+
+#### Notes
+
+- Local MT is **not** the shipped default in this release; docs continue
+  to state `mt_provider = "google"` as the default until JV-13 lands.
+- No source code or config-schema changes; `cargo test` is not exercised
+  by this release. JSON validity of `config.example.json` was confirmed
+  with `ConvertFrom-Json`.
+
+---
+
 ### LF-07 — Docs and config example release gate for local-first defaults (issue #375)
 
 This release gates the LF-01..LF-06 local-first capability track: all user-visible

@@ -72,6 +72,29 @@ no internet connection.
 is available (LF-04); set `mt_provider: "local"` and install the OPUS-MT ONNX
 bundle to run completely without a network connection.
 
+### Cloud fallback consent (`mt_cloud_fallback`)
+
+> ⚠️ **API key presence is NOT consent to send data to the network.**
+> Setting `google_api_key` enables Google STT/MT only when the matching
+> provider field (`stt_provider = "google"` or `mt_provider = "google"`)
+> is also set, **or** when `stt_provider = "local"` combined with the
+> default `stt_fallback_policy = "google-when-keyed"` triggers a Google
+> STT fallback after a permanent local-STT error.  Set
+> `stt_fallback_policy = "none"` to disable that fallback.  In local-MT
+> mode, an *unsupported language pair* will **never** be translated by
+> Google unless you also opt in via `mt_cloud_fallback: "google"`.
+
+| Configuration | Behaviour on unsupported pair (local MT) |
+|---------------|-------------------------------------------|
+| `mt_provider: "local"`, `mt_cloud_fallback` absent | Visible error in the status bar. Transcript text is **not** sent to Google. |
+| `mt_provider: "local"`, `mt_cloud_fallback: "google"` (+ `google_api_key`) | Transcript text for the unsupported pair is sent to Google Cloud Translation, exactly as if `mt_provider = "google"` were configured for that pair. |
+| `mt_provider: "google"` (default) | Every transcript is sent to Google Cloud Translation. |
+
+`mt_cloud_fallback` accepts only the value `"google"` (or absent).  Changing
+it requires restarting the application.  See
+`docs/adr/jv-08-default-eligibility-decision.md` for the decision record
+behind the default.
+
 ---
 
 ## 3. Session transcript recording
