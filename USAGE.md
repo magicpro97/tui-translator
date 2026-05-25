@@ -829,11 +829,166 @@ This requires the OPUS-MT ONNX bundle to be installed separately.  By default,
 | Very high CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to `70.0` or `80.0` |
 | RAM warning in the status bar | Model + Zoom are using too much RAM | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or use `stt_provider: "google"` |
 | No translation output | No translation provider is available | Keep `mt_provider: "google"` and supply a valid Google API key, or install the OPUS-MT bundle and set `mt_provider: "local"` |
+| `unsupported language pair` (local MT) | Pair has no installed bundle | Install the bundle, or opt in to cloud fallback with `mt_cloud_fallback: "google"` (see Local MT section below) |
+| `onnxruntime.dll not found` (local MT) | ONNX Runtime missing | Place `onnxruntime.dll` (1.20.x) next to `tui-translator.exe` or in the model folder, or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
+| `mt_bench` reports realtime-factor > 1.0 | Host cannot meet the JV-08 latency budget | Keep `mt_provider: "google"` and re-run the benchmark on a faster CPU; see `docs/11-google-local-benchmark.md` |
 
 > **Model license note:** The GGML Whisper files are downloaded from the
 > external whisper.cpp/Hugging Face source, not from this repository. Review the
 > model license and Hugging Face terms before downloading, sharing, or
 > redistributing model files.
+
+---
+
+## Local machine translation (`mt_provider = "local"`)
+
+> ⚠️ **This is opt-in and not the default.** Translation defaults to
+> `mt_provider = "google"`; local MT is available only on `local-mt`
+> builds.  Until JV-13 lands, local MT is **not** the shipped default
+> even when the bundle is installed.
+
+Local MT runs the [Helsinki-NLP/opus-mt-ja-vi](https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi)
+OPUS-MT model on your CPU via ONNX Runtime. Currently the Japanese →
+Vietnamese pair is the only shipped bundle (LF-04, issue #372).
+
+### Install steps (no Rust tooling required)
+
+1. **Download a `local-mt` release build.** The standard release does
+   not include the ONNX Runtime linkage; check the release notes for
+   "local-mt" in the artifact name.
+2. **Place the OPUS-MT bundle** in
+   `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\`. The folder
+   should contain the exported ONNX encoder/decoder files plus the
+   SentencePiece vocabulary.  Disk: ~250–300 MB. Peak RAM during
+   inference: ~400–600 MB.
+3. **Place `onnxruntime.dll` (version 1.20.x)** next to
+   `tui-translator.exe`, inside the model folder, or set
+   `TUI_TRANSLATOR_ONNXRUNTIME_DLL=<full path>`.
+4. **Edit `config.json`** (or use the in-app settings editor):
+   ```jsonc
+   {
+     "mt_provider": "local",
+     // optional — see "Fallback consent" below
+     // "mt_cloud_fallback": "google"
+   }
+   ```
+5. Restart the application. The status bar should show local MT instead
+   of an `mt_provider` error.
+
+### Privacy and fallback consent
+
+| Setting | Effect |
+|---------|--------|
+| `mt_provider: "local"` only | Translation stays on your CPU. Unsupported language pairs surface a visible error and **never** call Google. |
+| `mt_provider: "local"` + `mt_cloud_fallback: "google"` | Unsupported pairs are translated by Google Cloud Translation. Requires `google_api_key`. |
+| `mt_provider: "google"` (default) | Every transcript goes to Google Cloud Translation. |
+
+> **Key presence is not consent.** Having `google_api_key` set does
+> **not** by itself enable any cloud fallback — `mt_cloud_fallback`
+> must be set explicitly to `"google"`. Until then, an unsupported pair
+> is treated as an error rather than a silent network call.
+
+### Benchmark interpretation
+
+- `cargo run --bin mt_bench -- --fixture <ja-vi-fixture>` runs the
+  fixture-based gate. It reports per-utterance latency and a
+  realtime-factor (RTF) summary; RTF < 1.0 is the JV-08 gate target.
+- A failed benchmark is not a runtime crash. It tells you the host is
+  not fast enough for live local MT; keep `mt_provider = "google"`.
+- See `docs/11-google-local-benchmark.md` for the methodology and
+  `docs/adr/jv-08-default-eligibility-decision.md` for the
+  default-eligibility decision.
+
+### Local MT troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `mt_provider error: feature not available` | Build was not compiled with `local-mt` | Download a `local-mt` release |
+| `model not found` for `opus-mt-ja-vi` | Bundle missing or in the wrong folder | Verify the path `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` |
+| `onnxruntime.dll could not be loaded` | ONNX Runtime not on the search path | Place `onnxruntime.dll` (1.20.x) next to the exe or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
+| `unsupported language pair` | Requested pair has no installed bundle | Install the pair's bundle, or set `mt_cloud_fallback: "google"` (this is an explicit network opt-in) |
+| Translation is very slow / RTF above 1.0 | CPU cannot keep up with OPUS-MT | Switch back to `mt_provider: "google"` or use a faster machine; do not raise `cpu_budget_pct` past safe limits while in a call |
+| Subtitles stop after a model bundle update | Update failed mid-replace | Re-extract the bundle, verify file integrity, and restart the app |
+
+---
+
+## Dual-slot mode (two languages side by side)
+
+Dual-slot mode shows two translations of the same meeting audio at once
+— for example Japanese → Vietnamese in slot A and Japanese → English in
+slot B. Both slots share the same captured audio and Google API key but
+choose their own `stt_provider`, `mt_provider`, and `target_language`.
+
+### Visual layout
+
+```
+┌─ Slot A (ja → vi) ───────────────┬─ Slot B (ja → en) ───────────────┐
+│  ja:   日本語の原文              │  ja:   日本語の原文              │
+│  vi:   Tiếng Việt phụ đề         │  en:   English subtitles         │
+│  prov: local / google            │  prov: google / google           │
+└──────────────────────────────────┴──────────────────────────────────┘
+[A ▶]   [B ▶]   tts_source: off   ram: 1.4 GB   cpu: 35%
+```
+
+### Enabling dual mode
+
+Add a `slots` block to `config.json`. Single-slot mode resumes when the
+field is removed or set to `null`.
+
+```jsonc
+{
+  "source_language": "ja-JP",
+  "google_api_key": "AIza…",
+  "tts_enabled": false,
+  // "tts_source" routes spoken playback in dual mode: "off" | "a" | "b"
+  "tts_source": "off",
+  "slots": {
+    "slot_a": {
+      "stt_provider": "local",
+      "mt_provider":  "google",
+      "target_language": "vi"
+    },
+    "slot_b": {
+      "stt_provider": "google",
+      "mt_provider":  "google",
+      "target_language": "en"
+    }
+  }
+}
+```
+
+Notes:
+
+- Both `slot_a` and `slot_b` are required when `slots` is present.
+- Equal target languages are accepted (each pane still renders independently).
+- `tts_source` is only meaningful in dual mode. It selects which slot has
+  its translation spoken aloud; `"off"` (the default) silences TTS for
+  both slots even if `tts_enabled` is `true`.
+- In single-slot mode (`slots` omitted) the application warns if
+  `tts_source` is set to `"a"` or `"b"` and ignores it at runtime.
+
+### Per-slot halt behaviour
+
+A provider error in one slot halts **only that slot**. The other slot
+keeps producing subtitles. The global "pipeline halted" status only
+fires when **both** slots are halted.
+
+| Status strip excerpt | Meaning |
+|----------------------|---------|
+| `[A ▶] [B ▶]` | Both slots running |
+| `[A ⏸ halted: <reason>] [B ▶]` | Slot A halted (e.g. local model missing); slot B continues |
+| `[A ▶] [B ⏸ halted: <reason>]` | Slot B halted; slot A continues |
+| Global `pipeline halted` banner | Both slots halted simultaneously |
+
+### Dual-mode troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Only one pane renders subtitles | The other slot is halted | Read the per-slot reason and fix the provider (`google_api_key`, model file, `onnxruntime.dll`) for that slot |
+| Warning: `tts_source` has no effect in single-slot mode | `slots` is omitted but `tts_source = "a"`/`"b"` | Either restore the `slots` block or remove `tts_source` |
+| TTS plays nothing in dual mode | `tts_source = "off"` | Set `tts_source` to `"a"` or `"b"`; keep `tts_enabled: true` |
+| Both panes show identical text | Slots share the same `target_language` | Set different target languages or remove one slot |
+| App fails to start with `slots` block | `slot_a` or `slot_b` missing | Both slots must be present when `slots` is configured |
 
 ---
 

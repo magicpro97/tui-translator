@@ -239,6 +239,40 @@ internet after the model is downloaded; translation uses Google Cloud by default
 > Set `mt_provider = "local"` and install the OPUS-MT ONNX bundle to run
 > translation entirely on your CPU.  Without that configuration, translation
 > uses `mt_provider = "google"` and requires a Google API key.
+>
+> The default machine-translation provider is still `"google"`; see
+> JV-08 (`docs/adr/jv-08-default-eligibility-decision.md`) for the
+> eligibility-gate decision that controls when local MT may become the
+> shipped default.
+
+### Local MT setup (opt-in)
+
+`mt_provider = "local"` is supported on builds that include the `local-mt`
+feature flag.  To run translation fully on your CPU:
+
+1. **Install the OPUS-MT ONNX bundle** into
+   `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\`.  The current
+   release ships the Japanese → Vietnamese pair only
+   (Helsinki-NLP/opus-mt-ja-vi, CC-BY-4.0; verify the model card before
+   redistribution).  Approximate on-disk size: ~250–300 MB; peak RAM
+   ~400–600 MB during inference.
+2. **Provide ONNX Runtime 1.20.x**.  Place `onnxruntime.dll` either next to
+   `tui-translator.exe`, inside the model folder above, or point the
+   `TUI_TRANSLATOR_ONNXRUNTIME_DLL` environment variable at it.
+3. **Set the field**: `"mt_provider": "local"` in `config.json`.
+4. (Optional) **Allow cloud fallback for unsupported pairs**:
+   `"mt_cloud_fallback": "google"`.  This field is **absent by default**.
+   Having `google_api_key` present is **not** consent on its own — without
+   `mt_cloud_fallback`, unsupported pairs surface a visible error instead of
+   silently routing traffic to Google.
+
+> **Benchmark interpretation.**  Quality and real-time-factor numbers in
+> `docs/09-cpu-model-benchmark.md` and `docs/11-google-local-benchmark.md`
+> come from a single reference host.  Always re-run on your target machine
+> (`cargo run --bin mt_bench` for the experimental fixture-based gate) —
+> RTF below 1.0 is required to keep up with live audio.  A benchmark
+> failure is not a runtime crash; it means the host did not meet the
+> documented latency target and you should keep `mt_provider = "google"`.
 
 ### Recommended model tier
 
@@ -335,6 +369,75 @@ they are not selected by the app today.
 | RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or switch back to Google STT |
 | "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
 | No translation output | No translation provider is available | Use `mt_provider = "google"` with a valid Google API key, or install the OPUS-MT bundle and set `mt_provider = "local"` |
+| `unsupported language pair` (local MT) | Requested pair has no installed OPUS-MT bundle | Install the bundle for the pair under `%LOCALAPPDATA%\tui-translator\models\mt\`, or set `mt_cloud_fallback = "google"` to opt in to Google for unsupported pairs |
+| `onnxruntime.dll not found` / DLL load error | ONNX Runtime missing for `local-mt` builds | Place `onnxruntime.dll` (v1.20.x) next to `tui-translator.exe` or in the model folder, or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
+| `mt_bench` fails the gate | Host CPU cannot meet the JV-08 latency budget | Keep `mt_provider = "google"`; see `docs/11-google-local-benchmark.md` for the gate definition |
+
+---
+
+## Dual-slot mode (DM-01 … DM-08)
+
+Dual-slot mode renders two independent translation pipelines side by side
+— useful when one audience needs Vietnamese subtitles and another needs
+English from the same meeting audio.  Both slots share the captured audio,
+`google_api_key`, and audio/pipeline/TTS settings; each slot picks its own
+`stt_provider`, `mt_provider`, and `target_language`.
+
+```
+┌─ Slot A (ja → vi) ──────────────┬─ Slot B (ja → en) ──────────────┐
+│  日本語の原文                    │  日本語の原文                    │
+│  → Tiếng Việt phụ đề            │  → English subtitles             │
+│  [provider: local / google]     │  [provider: google / google]     │
+└─────────────────────────────────┴──────────────────────────────────┘
+status: [A ▶] [B ▶]   tts_source: off
+```
+
+### Quickstart
+
+Add a `slots` block to `config.json` (omit the field entirely to keep the
+single-slot legacy behaviour):
+
+```json
+{
+  "source_language": "ja-JP",
+  "google_api_key": "…",
+  "slots": {
+    "slot_a": { "stt_provider": "local",  "mt_provider": "google", "target_language": "vi" },
+    "slot_b": { "stt_provider": "google", "mt_provider": "google", "target_language": "en" }
+  },
+  "tts_source": "off"
+}
+```
+
+- `tts_source`: `"off"` (default) | `"a"` | `"b"` — chooses which slot, if any,
+  has its translation spoken aloud.  Only meaningful when `slots` is set; in
+  single-slot mode the value is ignored with a warning.
+- Equal `target_language` values across slots are accepted (e.g. both `"vi"`)
+  but produce duplicate output.
+
+### Per-slot halting and tts_source
+
+Provider auth errors and unsupported-pair errors halt **only the failing
+slot**.  The global "pipeline halted" banner appears in dual mode only when
+**both** slots are halted; if slot A is halted but slot B is still
+producing subtitles, the application keeps running.
+
+| Indicator | Meaning |
+|-----------|---------|
+| `[A ⏸ halted: <reason>] [B ▶]` | Slot A's provider chain halted; slot B continues |
+| `[A ▶] [B ⏸ halted: <reason>]` | Slot B halted; slot A continues |
+| Global `pipeline halted` banner | Both slots halted (or the only configured slot in single mode) |
+| `tts_source: off` shown in status | TTS is disabled regardless of `tts_enabled` while in dual mode unless `tts_source` is `"a"` or `"b"` |
+
+### Dual-mode troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Only one pane shows subtitles | The other slot is `halted` due to a provider error | Read the slot banner; fix the provider config (API key, model file) and reload with `R` or restart |
+| Global halted banner with both slots dark | Both slots failed to start providers | Verify `google_api_key`, local model files, and DLLs as for single mode |
+| TTS plays nothing in dual mode | `tts_source = "off"` (default) | Set `tts_source` to `"a"` or `"b"` and keep `tts_enabled = true` |
+| Warning "`tts_source` is set but has no effect in single-slot mode" | `slots` is omitted but `tts_source` is `"a"` or `"b"` | Remove `tts_source` (or restore the `slots` block) |
+| Both panes render the same language | Slots share the same `target_language` | Set different `target_language` per slot |
 
 ---
 
