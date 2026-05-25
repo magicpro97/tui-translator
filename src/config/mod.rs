@@ -479,6 +479,35 @@ impl TtsSource {
             Self::B => !slot_is_a,
         }
     }
+
+    /// Returns the number of slots that synthesise TTS audio (CTRL-03, #456).
+    ///
+    /// The invariant guaranteed by the single-active-voice contract is
+    /// `active_slot_count(..) <= 1` for every legal `(TtsSource, is_dual)`
+    /// pair.  This function exists as the typed witness of that invariant —
+    /// callers (and tests) should prefer it over recomputing the count from
+    /// two [`Self::is_active_for_slot`] calls.
+    ///
+    /// | tts_source | is_dual | active_slot_count |
+    /// |------------|---------|-------------------|
+    /// | Off        | true    | 0                 |
+    /// | A          | true    | 1                 |
+    /// | B          | true    | 1                 |
+    /// | _          | false   | 1                 |
+    ///
+    /// In single-slot mode the result is always `1` because TTS is gated
+    /// entirely by `tts_enabled`; the single orchestrator is the only
+    /// possible synthesiser.
+    #[allow(dead_code)]
+    pub fn active_slot_count(self, is_dual: bool) -> u8 {
+        if !is_dual {
+            return 1;
+        }
+        match self {
+            Self::Off => 0,
+            Self::A | Self::B => 1,
+        }
+    }
 }
 
 /// `skip_serializing_if` predicate: omit `tts_source` when it holds the
