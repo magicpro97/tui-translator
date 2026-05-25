@@ -890,9 +890,16 @@ Vietnamese pair is the only shipped bundle (LF-04, issue #372).
 
 ### Benchmark interpretation
 
-- `cargo run --bin mt_bench -- --fixture <ja-vi-fixture>` runs the
-  fixture-based gate. It reports per-utterance latency and a
-  realtime-factor (RTF) summary; RTF < 1.0 is the JV-08 gate target.
+- `cargo run --bin mt_bench` (no flags) only writes a *pending* fixture
+  — it does not run inference. To actually measure latency and
+  realtime-factor (RTF) you need a `local-mt` build and the
+  local-candidate mode, e.g.
+  `cargo run --features local-mt --bin mt_bench -- --local-candidate
+  --output docs/evidence/lf-04-benchmark.json`. The artifact reports
+  per-utterance latency and an RTF summary; RTF < 1.0 is the JV-08 gate
+  target. Use `--with-google --google-api-key <key>` to additionally
+  compare against Google Cloud Translation, or `--validate-artifact
+  <path>` to re-check an existing benchmark JSON.
 - A failed benchmark is not a runtime crash. It tells you the host is
   not fast enough for live local MT; keep `mt_provider = "google"`.
 - See `docs/11-google-local-benchmark.md` for the methodology and
@@ -903,7 +910,7 @@ Vietnamese pair is the only shipped bundle (LF-04, issue #372).
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `mt_provider error: feature not available` | Build was not compiled with `local-mt` | Download a `local-mt` release |
+| `local OPUS-MT requires a build compiled with --features local-mt` | Build was not compiled with `local-mt` | Download a `local-mt` release, or rebuild from source with `cargo build --features local-mt` |
 | `model not found` for `opus-mt-ja-vi` | Bundle missing or in the wrong folder | Verify the path `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` |
 | `onnxruntime.dll could not be loaded` | ONNX Runtime not on the search path | Place `onnxruntime.dll` (1.20.x) next to the exe or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
 | `unsupported language pair` | Requested pair has no installed bundle | Install the pair's bundle, or set `mt_cloud_fallback: "google"` (this is an explicit network opt-in) |

@@ -77,9 +77,12 @@ bundle to run completely without a network connection.
 > ⚠️ **API key presence is NOT consent to send data to the network.**
 > Setting `google_api_key` enables Google STT/MT only when the matching
 > provider field (`stt_provider = "google"` or `mt_provider = "google"`)
-> is also set.  In local-MT mode, an *unsupported language pair* will
-> **never** be translated by Google unless you also opt in via
-> `mt_cloud_fallback: "google"`.
+> is also set, **or** when `stt_provider = "local"` combined with the
+> default `stt_fallback_policy = "google-when-keyed"` triggers a Google
+> STT fallback after a permanent local-STT error.  Set
+> `stt_fallback_policy = "none"` to disable that fallback.  In local-MT
+> mode, an *unsupported language pair* will **never** be translated by
+> Google unless you also opt in via `mt_cloud_fallback: "google"`.
 
 | Configuration | Behaviour on unsupported pair (local MT) |
 |---------------|-------------------------------------------|

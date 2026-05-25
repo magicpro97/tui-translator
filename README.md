@@ -268,11 +268,15 @@ feature flag.  To run translation fully on your CPU:
 
 > **Benchmark interpretation.**  Quality and real-time-factor numbers in
 > `docs/09-cpu-model-benchmark.md` and `docs/11-google-local-benchmark.md`
-> come from a single reference host.  Always re-run on your target machine
-> (`cargo run --bin mt_bench` for the experimental fixture-based gate) —
-> RTF below 1.0 is required to keep up with live audio.  A benchmark
-> failure is not a runtime crash; it means the host did not meet the
-> documented latency target and you should keep `mt_provider = "google"`.
+> come from a single reference host.  Always re-run on your target
+> machine: the default `cargo run --bin mt_bench` only writes a *pending*
+> fixture (no inference, no network); to actually measure RTF you need a
+> `local-mt` build and the local-candidate mode, e.g.
+> `cargo run --features local-mt --bin mt_bench -- --local-candidate
+> --output docs/evidence/lf-04-benchmark.json`.  RTF below 1.0 is
+> required to keep up with live audio.  A benchmark failure is not a
+> runtime crash; it means the host did not meet the documented latency
+> target and you should keep `mt_provider = "google"`.
 
 ### Recommended model tier
 
