@@ -175,3 +175,42 @@ The successor issue must:
 - `verification-evidence/waves/wave-1/semgrep-plan.md` (file_source.rs is
   semgrep-scanned).
 - `tests/soak/README.md` (soak-fixture provenance and regeneration).
+
+---
+
+## 9. Wave 5 update — L2/L3/L4 harness landed (issue #460)
+
+The L2–L4 ladder is no longer deferred. Wave 5 lands an in-tree,
+test-only harness under `tests/sim/` that satisfies the L2–L4 contract
+of this plan without modifying the wave-1 evidence schema or breaking
+any wave-1 test:
+
+| Level | Wave 5 module | What it proves |
+|-------|---------------|----------------|
+| L2 | `tests/sim/fakes.rs` (`FakeSttProvider` / `FakeMtProvider` / `FakeTtsProvider`) plus `tests/sim/clock.rs` (`FakeClock`) | Provider trait impls returning scripted `Ok` / 429 / 503 / auth-failure responses with virtual latency; `with_retry` is exercised against transient + permanent error scripts. |
+| L3 | `tests/sim/recorder.rs` (`FrameRecorder`) | In-memory `vt100`-backed recorder that consumes either raw PTY bytes or a `ratatui::buffer::Buffer` and emits deterministic golden-frame screen strings — no real OS PTY required. |
+| L4 | `tests/sim/feeder.rs` (`ScriptedAudioFeeder`, `AudioScript::{Silence,Tone,Samples}`) feeding into the L2 fakes | Headless audio fixture replayer with monotonic `PcmChunk` sequence numbers, deterministic across runs (see `tone_is_deterministic_across_invocations`). |
+| All  | `tests/sim/evidence.rs` (`EvidenceBuilder`) | Builds JSON conforming to `TEST-01-evidence-schema.json` for any `HarnessLevel ∈ {L1,L2,L3,L4}`. The integration test asserts every required schema field is present in L2/L3/L4 documents. |
+
+Reusability: the harness API is intentionally minimal — `FakeClock`,
+`ScriptedAudioFeeder`, three provider fakes (with `Outcome` builders
+for 429/503/auth), `FrameRecorder`, and `EvidenceBuilder`. Successor
+issues (#474 long-soak, #507 PTY golden-frame matrix, #503 provider
+chaos) can consume it directly without modification.
+
+Constraints preserved from wave 1:
+
+- No new runtime crate dependencies (all consumers use existing dev
+  deps: `vt100`, `tokio` + `test-util`, `serde_json`, `ratatui`).
+- No `unwrap`/`expect` outside test bodies; harness public APIs
+  return `Result` or panic only on caller-controlled invariants
+  (e.g. zero-dimensional `FrameRecorder`).
+- No real WASAPI / Google API / OS PTY / file I/O outside the
+  committed evidence-schema read in the integration test.
+- The wave-1 L1 evidence schema is unchanged; `schema_version`
+  remains `"1"`.
+
+The wave-1 acceptance criteria for #460 ("L1–L4 can run without a
+live meeting except explicitly marked hardware tests") are now
+satisfied end-to-end.
+
