@@ -1598,6 +1598,26 @@ fn snapshot_full_ui_zero_state_60x10() {
 }
 
 #[test]
+fn snapshot_full_ui_zero_state_60x20() {
+    // UX-01 (issue #479) canonical compact snapshot: 60x20 must classify as
+    // LayoutProfile::Compact and render the standard chrome (no dual pane).
+    let rendered = render_full_ui(60, 20);
+    assert!(
+        rendered.contains("Lang:vi"),
+        "60x20 compact UI must keep the target language readable; got:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("no charges"),
+        "60x20 compact UI must show the zero-cost wording; got:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains(" A │") && !rendered.contains(" B │"),
+        "60x20 compact UI must NOT render the dual A/B pane; got:\n{rendered}"
+    );
+    insta::assert_snapshot!("full_ui_zero_state_60x20", rendered);
+}
+
+#[test]
 fn snapshot_full_ui_zero_state_80x24() {
     let rendered = render_full_ui(80, 24);
     assert!(

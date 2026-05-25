@@ -173,6 +173,83 @@ const MIN_USABLE_COLS: u16 = 20;
 /// an A/B indicator in the block title.
 const DUAL_PANE_MIN_WIDTH: u16 = 120;
 
+/// Width threshold above which the layout enters [`LayoutProfile::Normal`]:
+/// at or above 80 columns the full hint and metrics text fits without
+/// truncation. Below this the renderer must use compact label variants.
+///
+/// See `docs/adr/ux-01-adaptive-tui-layout.md` for the breakpoint rationale.
+pub const NORMAL_LAYOUT_MIN_WIDTH: u16 = 80;
+
+/// Width threshold above which the layout enters [`LayoutProfile::Wide`].
+/// Currently aliased to [`DUAL_PANE_MIN_WIDTH`] so the dual-pane split and
+/// the wide profile remain in lockstep.
+pub const WIDE_LAYOUT_MIN_WIDTH: u16 = DUAL_PANE_MIN_WIDTH;
+
+/// Adaptive layout profile derived from the terminal frame size.
+///
+/// The TUI selects one of four render paths per frame so widgets can collapse
+/// or hide non-critical content on small terminals and expand on wide ones,
+/// without each widget re-implementing breakpoint logic.
+///
+/// Breakpoints (see `docs/adr/ux-01-adaptive-tui-layout.md`):
+///
+/// | Profile          | Width × Height                          |
+/// |------------------|-----------------------------------------|
+/// | [`TooSmall`]     | width < 20 OR height < 10               |
+/// | [`Compact`]      | 20 ≤ width < 80, height ≥ 10            |
+/// | [`Normal`]       | 80 ≤ width < 120, height ≥ 10           |
+/// | [`Wide`]         | width ≥ 120, height ≥ 10                |
+///
+/// `detect` is monotone: growing `width` or `height` never returns a *smaller*
+/// profile, which is enforced by [`tests::layout_profile_is_monotone`].
+///
+/// [`TooSmall`]: LayoutProfile::TooSmall
+/// [`Compact`]: LayoutProfile::Compact
+/// [`Normal`]: LayoutProfile::Normal
+/// [`Wide`]: LayoutProfile::Wide
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LayoutProfile {
+    /// Terminal cannot fit the minimum chrome; only a "resize terminal"
+    /// banner is rendered.
+    TooSmall,
+    /// Single-pane mode with collapsed hints and shortened device labels.
+    Compact,
+    /// Single-pane mode with the full hint text and standard metrics strip.
+    Normal,
+    /// Side-by-side A/B subtitle panes plus the standard chrome.
+    Wide,
+}
+
+impl LayoutProfile {
+    /// Classify a frame rectangle into an adaptive layout profile.
+    ///
+    /// Only `width` and `height` are inspected; the `x`/`y` origin is ignored.
+    pub fn detect(area: ratatui::layout::Rect) -> Self {
+        if area.width < MIN_USABLE_COLS || area.height < MIN_USABLE_ROWS {
+            LayoutProfile::TooSmall
+        } else if area.width >= WIDE_LAYOUT_MIN_WIDTH {
+            LayoutProfile::Wide
+        } else if area.width >= NORMAL_LAYOUT_MIN_WIDTH {
+            LayoutProfile::Normal
+        } else {
+            LayoutProfile::Compact
+        }
+    }
+
+    /// Whether the renderer should split the subtitle area into two panes.
+    ///
+    /// True only for [`LayoutProfile::Wide`].
+    pub fn is_dual_pane(self) -> bool {
+        matches!(self, LayoutProfile::Wide)
+    }
+
+    /// Whether the renderer should refuse to draw the full UI and instead
+    /// surface the "resize terminal" fallback.
+    pub fn is_renderable(self) -> bool {
+        !matches!(self, LayoutProfile::TooSmall)
+    }
+}
+
 /// Minimum terminal height (rows) for the full UI to render meaningfully.
 ///
 /// Derived from the compact-mode fixed-row budget so this threshold stays
@@ -2713,9 +2790,10 @@ pub fn draw_ui_with_route(
     tts_route: TtsRouteStatus,
 ) {
     let area = frame.area();
+    let profile = LayoutProfile::detect(area);
 
-    // Fallback for terminals that are too small to show the full UI (#185).
-    if area.width < MIN_USABLE_COLS || area.height < MIN_USABLE_ROWS {
+    // Fallback for terminals that are too small to show the full UI (#185, #479).
+    if !profile.is_renderable() {
         let msg = if area.width < MIN_USABLE_COLS {
             "Resize terminal"
         } else {
@@ -2908,7 +2986,7 @@ pub fn draw_ui_with_route(
                 .unwrap_or_else(|p| p.into_inner())
                 .clone();
 
-            if chunks[2].width >= DUAL_PANE_MIN_WIDTH {
+            if profile.is_dual_pane() && chunks[2].width >= DUAL_PANE_MIN_WIDTH {
                 // Wide: side-by-side A | B split.
                 let pane_chunks = Layout::default()
                     .direction(Direction::Horizontal)
@@ -4333,7 +4411,115 @@ pub fn format_storage_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::layout::Rect;
     use std::thread;
+
+    // ── UX-01: LayoutProfile adaptive breakpoints (issue #479) ───────────────
+
+    fn rect(w: u16, h: u16) -> Rect {
+        Rect::new(0, 0, w, h)
+    }
+
+    #[test]
+    fn layout_profile_detects_too_small() {
+        assert_eq!(LayoutProfile::detect(rect(0, 0)), LayoutProfile::TooSmall);
+        assert_eq!(LayoutProfile::detect(rect(19, 30)), LayoutProfile::TooSmall);
+        assert_eq!(LayoutProfile::detect(rect(80, 9)), LayoutProfile::TooSmall);
+        assert!(!LayoutProfile::detect(rect(15, 5)).is_renderable());
+    }
+
+    #[test]
+    fn layout_profile_detects_compact() {
+        // 60x20 — the canonical compact size from UX-01 acceptance criteria.
+        assert_eq!(LayoutProfile::detect(rect(60, 20)), LayoutProfile::Compact);
+        assert_eq!(LayoutProfile::detect(rect(20, 10)), LayoutProfile::Compact);
+        assert_eq!(LayoutProfile::detect(rect(79, 50)), LayoutProfile::Compact);
+        assert!(!LayoutProfile::detect(rect(60, 20)).is_dual_pane());
+    }
+
+    #[test]
+    fn layout_profile_detects_normal() {
+        // 80x24 — the canonical normal size.
+        assert_eq!(LayoutProfile::detect(rect(80, 24)), LayoutProfile::Normal);
+        assert_eq!(LayoutProfile::detect(rect(119, 40)), LayoutProfile::Normal);
+        assert!(!LayoutProfile::detect(rect(80, 24)).is_dual_pane());
+    }
+
+    #[test]
+    fn layout_profile_detects_wide() {
+        // 120x40 — the canonical wide size.
+        assert_eq!(LayoutProfile::detect(rect(120, 40)), LayoutProfile::Wide);
+        assert_eq!(LayoutProfile::detect(rect(200, 50)), LayoutProfile::Wide);
+        assert!(LayoutProfile::detect(rect(120, 40)).is_dual_pane());
+    }
+
+    #[test]
+    fn layout_profile_is_monotone() {
+        // Property: growing either dimension never returns a *smaller* profile.
+        // (TooSmall < Compact < Normal < Wide via derived Ord.)
+        let widths: [u16; 10] = [0, 10, 19, 20, 40, 79, 80, 100, 119, 120];
+        let heights: [u16; 6] = [0, 5, 9, 10, 24, 50];
+        for &w1 in &widths {
+            for &w2 in &widths {
+                for &h1 in &heights {
+                    for &h2 in &heights {
+                        if w1 <= w2 && h1 <= h2 {
+                            let p1 = LayoutProfile::detect(rect(w1, h1));
+                            let p2 = LayoutProfile::detect(rect(w2, h2));
+                            assert!(
+                                p1 <= p2,
+                                "monotonicity violated: detect({w1}x{h1})={p1:?} > detect({w2}x{h2})={p2:?}",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn layout_profile_chunks_stay_within_frame() {
+        // Property: for every renderable profile the fixed vertical layout
+        // produces chunks that are fully contained inside the frame rect.
+        // This guards against the #185-style off-by-one panics on resize.
+        use ratatui::layout::{Constraint, Direction, Layout};
+
+        let sizes: [(u16, u16); 6] = [
+            (60, 20),  // compact (UX-01 canonical)
+            (80, 24),  // normal (UX-01 canonical)
+            (120, 40), // wide (UX-01 canonical)
+            (200, 50), // very wide
+            (20, 10),  // minimum renderable
+            (240, 80), // extreme widescreen
+        ];
+        for &(w, h) in &sizes {
+            let area = rect(w, h);
+            let profile = LayoutProfile::detect(area);
+            assert!(
+                profile.is_renderable(),
+                "{w}x{h} should be renderable but classified as {profile:?}"
+            );
+            let metrics_h = expanded_metrics_height(false, false);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                    Constraint::Length(metrics_h),
+                    Constraint::Length(1),
+                ])
+                .split(area);
+            for (idx, c) in chunks.iter().enumerate() {
+                assert!(
+                    c.x + c.width <= area.x + area.width && c.y + c.height <= area.y + area.height,
+                    "chunk[{idx}] {c:?} escapes frame {area:?} at {w}x{h} ({profile:?})"
+                );
+            }
+        }
+    }
+
+    // ── existing tests below ────────────────────────────────────────────────
 
     fn overflowing_pane() -> SubtitlePane {
         let mut pane = SubtitlePane::new();
