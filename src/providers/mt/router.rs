@@ -94,11 +94,16 @@ impl<L: MtProvider, C: MtProvider> MtProvider for MtRouter<L, C> {
             ResolvedRoute::CloudFallback => {
                 // `has_cloud_fallback()` guarantees `cloud_fallback` is Some,
                 // so this branch is reachable only when consent + key are
-                // present at construction time.
-                let cloud = self.cloud_fallback.as_ref().expect(
-                    "ResolvedRoute::CloudFallback requires cloud provider to be Some; \
-                     this is an MtRouter contract bug",
-                );
+                // present at construction time.  Defend against a future
+                // contract bug by returning a typed error rather than
+                // panicking in a production code path.
+                let Some(cloud) = self.cloud_fallback.as_ref() else {
+                    return Err(ProviderError::InvalidInput(
+                        "MtRouter resolved to CloudFallback but no cloud provider \
+                         is wired in; this is a router contract bug"
+                            .to_string(),
+                    ));
+                };
                 tracing::warn!(
                     source = %pair.source,
                     target = %pair.target,

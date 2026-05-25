@@ -27,14 +27,17 @@
 //! [`BackendSelection::from_fields`] takes the raw strings/options directly
 //! so this module compiles in unit-test contexts that pull
 //! `src/providers/mod.rs` via `#[path]` without the surrounding config
-//! crate.  The thin convenience method `AppConfig::backend_selection`
-//! lives in `src/config/mod.rs`.
+//! crate.  Call sites in `main.rs` invoke `from_fields` directly with the
+//! relevant `AppConfig` fields — no convenience method on `AppConfig` is
+//! provided.
 
 /// Which family of backend implementation a stage is currently pointed at.
 ///
-/// String parsing is forgiving: leading/trailing whitespace is ignored and
-/// matching is case-insensitive so the typed view tracks the same surface
-/// that `AppConfig::validate` accepts.  Unknown values map to
+/// String parsing is forgiving (leading/trailing whitespace is ignored and
+/// matching is case-insensitive) so the typed view can survive defensive
+/// callers; the canonical config surface validated by `AppConfig::validate`
+/// is stricter and only accepts the exact lower-case strings (e.g.
+/// `"google"`, `"local"`).  Unknown values map to
 /// [`BackendKind::Unknown`] so callers can surface a typed error instead of
 /// silently treating a typo as a known backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

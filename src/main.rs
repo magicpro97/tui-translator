@@ -738,13 +738,14 @@ fn build_slot_stt_provider(
 /// Build the runtime MT provider for a single slot using `mt_provider` from the
 /// slot config and the shared `google_api_key` (DM-03, issue #379).
 ///
-/// When `mt_provider == "local"` and `mt_cloud_fallback == Some("google")`
-/// **and** a key is available, the local provider is wrapped in an
-/// [`providers::mt::router::MtRouter`] so unsupported language pairs route
-/// to Google (JV-12, issue #420).  Without explicit consent the local
-/// provider is returned as-is; in that case any pair the local model does
-/// not cover surfaces a visible `InvalidInput` error and **never** triggers
-/// a silent cloud call.
+/// When `mt_provider == "local"`, the provider is always wrapped in an
+/// [`providers::mt::router::MtRouter`] so unsupported language pairs go
+/// through a single, auditable decision point (JV-12, issue #420).  The
+/// router's cloud leg is only populated when **both**
+/// `mt_cloud_fallback == Some("google")` and a non-empty API key are
+/// present; otherwise the cloud slot stays `None` and any pair the local
+/// model does not cover surfaces a visible `InvalidInput` error and
+/// **never** triggers a silent cloud call.
 fn build_slot_mt_provider(
     mt_provider: &str,
     google_api_key: Option<&str>,

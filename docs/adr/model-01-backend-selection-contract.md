@@ -95,9 +95,11 @@ This is asserted by:
 * The router wrapper adds one branch per MT call.  Cost is one
   language-tag normalisation plus a table lookup; negligible compared with
   the translation request itself.
-* `RuntimeMtProvider` gains a third variant (`LocalRouted`).  Existing
-  `Local` and `Google` variants are unchanged so callers that bypass the
-  builder (tests, benches) keep working.
+* `RuntimeMtProvider`'s previous `Local(LocalOpusMtProvider)` variant is
+  replaced by `LocalRouted(MtRouter<Local, Google>)`.  The `Google`
+  variant is unchanged.  Callers that bypass the builder (tests, benches)
+  must construct the router directly; this is intentional so the routing
+  decision is centralised.
 * `build_slot_mt_provider` gains a `mt_cloud_fallback: Option<&str>`
   parameter.  Both call sites (slot A, slot B) were updated.
 * No behaviour change for the default `mt_provider = "google"`
