@@ -1,0 +1,11 @@
+{
+  "_comment": "QA8-02 synthetic evidence — cpu category fails (mean CPU over budget).",
+  "crash": { "count": 0 },
+  "frame": { "p99_ms": 28.4 },
+  "rss":   { "slope_mb_per_hour": 1.2 },
+  "cpu":   { "mean_percent": 72.4 },
+  "queue": { "overflow_count": 0 },
+  "audio": { "dropped_chunks": 0 },
+  "provider": { "error_rate": 0.002 },
+  "virtual_mic": { "sink_healthy": true }
+}

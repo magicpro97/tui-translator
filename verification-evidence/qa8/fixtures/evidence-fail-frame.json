@@ -1,0 +1,11 @@
+{
+  "_comment": "QA8-02 synthetic evidence — frame category fails (p99 over budget).",
+  "crash": { "count": 0 },
+  "frame": { "p99_ms": 92.3 },
+  "rss":   { "slope_mb_per_hour": 1.2 },
+  "cpu":   { "mean_percent": 11.7 },
+  "queue": { "overflow_count": 0 },
+  "audio": { "dropped_chunks": 0 },
+  "provider": { "error_rate": 0.002 },
+  "virtual_mic": { "sink_healthy": true }
+}

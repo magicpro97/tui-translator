@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/magicpro97/tui-translator/blob/main/verification-evidence/qa8/QA8-02-slo-schema.json",
   "title": "tui-translator SLO Specification (QA8-02)",
-  "description": "Machine-readable Service Level Objective (SLO) contract consumed by the QA8-02b gate checker. Each gate declares a category, the metric path the checker must extract from soak/release evidence, a comparator, a threshold value, and a severity. A blocker gate failure must cause the checker to exit non-zero. This schema is the wave-1 deliverable for issue #500 (DOWNGRADED): schema only, no checker binary.",
+  "description": "Machine-readable Service Level Objective (SLO) contract consumed by the QA8-02 gate checker (`src/bin/qa8_slo_gate_checker.rs`, binary `qa8_slo_gate_checker`). Each gate declares a category, the metric path the checker must extract from soak/release evidence, a comparator, a threshold value, and a severity. A blocker gate failure must cause the checker to exit non-zero.",
   "type": "object",
   "additionalProperties": false,
   "required": [
