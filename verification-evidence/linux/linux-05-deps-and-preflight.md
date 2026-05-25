@@ -101,7 +101,9 @@ remediation block on stderr. The TUI is never drawn in failure mode.
      "tui-translator: missing required runtime library <soname>.
       Install hint (<distro>): <install_hint>
       Details: <missing_remediation>
-      See: docs/linux-fallback.md"
+      See: docs/linux-fallback.md (added by the LINUX-02 implementation
+           issue; until then refer to
+           verification-evidence/linux/linux-03-fallback-strategy.md)"
 ```
 
 ### 3.4 No silent fallback

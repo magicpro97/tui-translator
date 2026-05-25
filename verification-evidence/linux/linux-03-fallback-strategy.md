@@ -56,6 +56,10 @@ and (b) push the support burden onto user-facing bug reports.
    `Audio: ALSA-only (no system mix; see docs/linux-fallback.md)`. The
    banner is structured (`tracing::warn!` with
    `backend.linux.degraded = "alsa-only"`) so soak harnesses can assert.
+   The `docs/linux-fallback.md` user-facing handbook does not exist yet
+   in this PR — it is created by the LINUX-02 implementation issue
+   referenced in §4. Until then, readers can consult this design doc and
+   `verification-evidence/linux/linux-05-deps-and-preflight.md`.
 5. **No silent fallback.** Selection of ALSA-only is logged at `WARN` with
    the reason chain (`pipewire=missing, portal=missing, pulse=missing`).
    The Linux QA plan (#476) requires this log line to appear in evidence.
@@ -70,7 +74,8 @@ and (b) push the support burden onto user-facing bug reports.
    `SelectSources(types=AUDIO)` → `Start`. The portal returns a PipeWire
    remote FD; the app then uses the PipeWire client against that FD.
 3. **Denial UX.** If the user denies the portal dialog, the app exits
-   non-zero with a single, plain-English remediation line on stdout and a
+   non-zero with a single, plain-English remediation line on **stderr**
+   (matching the LX03-T2 test case in §5) and a
    matching `tracing::error!` record carrying
    `backend.linux.portal = "denied"`. No retry loop, no silent downgrade
    to PulseAudio (because that would let a malicious Flatpak bypass the
@@ -187,5 +192,5 @@ a portal-specific follow-up.
 - LINUX-01 ADR — `verification-evidence/linux/linux-01-spike-decision.md`
 - xdg-desktop-portal — <https://flatpak.github.io/xdg-desktop-portal/>
 - PipeWire portal protocol — <https://docs.pipewire.org/page_portal.html>
-- ALSA `snd-aloop` — `kernel.org/doc/html/latest/sound/cards/snd-aloop.html`
+- ALSA `snd-aloop` — <https://kernel.org/doc/html/latest/sound/cards/snd-aloop.html>
 - Roadmap ledger — `.github/steps/linux-cross-platform-quality-roadmap.md`
