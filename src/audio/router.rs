@@ -3,7 +3,7 @@
 //! # Design
 //!
 //! The orchestrator holds a single **fixed** `mpsc::Receiver<AudioChunk>` for
-//! its entire lifetime.  [`CaptureRouter`] sits between the active capture stream
+//! its entire lifetime.  `CaptureRouter` sits between the active capture stream
 //! and the orchestrator as a channel-indirection layer that can be hot-swapped
 //! without restarting the orchestrator:
 //!
@@ -16,7 +16,7 @@
 //!
 //! # Swap protocol
 //!
-//! 1. Open the new source via [`open_source`] while keeping the old receiver
+//! 1. Open the new source via `open_source` while keeping the old receiver
 //!    attached.  If opening fails, forwarding continues from the old stream.
 //! 2. After the new source is ready, drain the old upstream with a
 //!    `DRAIN_TIMEOUT_MS` bounded timeout using non-blocking `try_recv`.  Chunks
@@ -28,7 +28,7 @@
 //!
 //! # Borrow-safety note
 //!
-//! The forwarding loop uses a [`poll_action`] helper that takes separate `&mut`
+//! The forwarding loop uses a `poll_action` helper that takes separate `&mut`
 //! references to the swap-command receiver and the current audio receiver,
 //! encapsulating the `tokio::select!` call.  This pattern ensures all borrows
 //! inside the helper are fully released when it returns, allowing the caller to

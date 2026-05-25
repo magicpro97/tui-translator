@@ -18,7 +18,7 @@
 //!   via an `std::sync::mpsc` channel so the event loop is decoupled from raw
 //!   key scanning.
 //! - Issue #61: a background `tokio::spawn` task publishes updated
-//!   [`SessionMetrics`] to a `tokio::sync::watch` channel every second.
+//!   `SessionMetrics` to a `tokio::sync::watch` channel every second.
 //! - Issue #64: all required commands are implemented (Space, L, R, Esc, Q).
 //! - Issue #65: the control hints bar is always rendered, one row high.
 //!
@@ -1728,7 +1728,7 @@ where
 
 /// Run the TUI in session-replay mode.
 ///
-/// Reads `args.path`, loads all [`TranscriptSegment`]s via
+/// Reads `args.path`, loads all `TranscriptSegment`s via
 /// [`session::SessionReplayer`] (malformed lines are skipped with a warning),
 /// populates the subtitle pane one segment at a time, and shows the normal TUI.
 /// Audio capture, STT, MT, and TTS providers are **not started**.

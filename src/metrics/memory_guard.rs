@@ -113,12 +113,10 @@ impl MemoryGuard {
     /// # API symmetry
     ///
     /// `update_budget_bytes` is the RAM-side counterpart to
-    /// [`CpuGate::update_budget_pct`] (HC-04, issue #389).  Both setters are
+    /// `CpuGate::update_budget_pct` (HC-04, issue #389).  Both setters are
     /// called from the same 1 Hz metrics-publisher loop on config hot-reload,
     /// giving operators sub-2-second latency for budget adjustments on either
     /// resource dimension without a process restart.
-    ///
-    /// [`CpuGate::update_budget_pct`]: crate::pipeline::cpu_gate::CpuGate::update_budget_pct
     pub fn update_budget_bytes(&self, ram_budget_bytes: u64) {
         self.ram_budget_bytes
             .store(ram_budget_bytes, Ordering::Relaxed);

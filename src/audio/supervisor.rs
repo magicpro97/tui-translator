@@ -2,7 +2,7 @@
 //!
 //! Manages the lifecycle of a [`CaptureStream`] and records device-switch
 //! metrics.  Config-change *classification* is handled by
-//! [`crate::config::capture_supervisor`] so that audio types are not pulled
+//! `crate::config::capture_supervisor` so that audio types are not pulled
 //! into the config module.
 //!
 //! # BLOCKED / SPLIT_REQUIRED — orchestrator wiring

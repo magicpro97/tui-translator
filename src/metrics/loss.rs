@@ -62,11 +62,11 @@ impl LossMetrics {
 
     /// Record one dropped chunk (increments `dropped_chunks`).
     ///
-    /// Call this after [`record_chunk`] when a chunk is discarded. The caller
+    /// Call this after [`Self::record_chunk`] when a chunk is discarded. The caller
     /// decides the bookkeeping contract:
     /// * If `record_chunk` is called first (on receive) and then `record_drop`
     ///   is called later (on discard), both counters must be incremented.
-    /// * If the chunk is counted only at drop time, call [`record_chunk`] and
+    /// * If the chunk is counted only at drop time, call [`Self::record_chunk`] and
     ///   then `record_drop` together in the drop handler.
     ///
     /// This method increments only `dropped_chunks`.  If the caller has not

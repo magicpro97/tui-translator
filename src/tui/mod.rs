@@ -204,7 +204,7 @@ pub const WIDE_LAYOUT_MIN_WIDTH: u16 = DUAL_PANE_MIN_WIDTH;
 /// | [`Wide`]         | width ≥ 120, height ≥ 10                |
 ///
 /// `detect` is monotone: growing `width` or `height` never returns a *smaller*
-/// profile, which is enforced by [`tests::layout_profile_is_monotone`].
+/// profile, which is enforced by `tests::layout_profile_is_monotone`.
 ///
 /// [`TooSmall`]: LayoutProfile::TooSmall
 /// [`Compact`]: LayoutProfile::Compact
@@ -1047,7 +1047,7 @@ impl SubtitlePane {
     /// Returns `true` when the new source text is a display regression: it
     /// does not start with the previous partial's source text (non-monotonic /
     /// shrinking STT update).  The caller should record a flicker event in
-    /// [`SessionMetrics`](crate::metrics::SessionMetrics) when this returns
+    /// [`SessionMetrics`] when this returns
     /// `true`.  Returns `false` on the first partial or when the new text is a
     /// monotonic extension.
     pub fn set_partial(&mut self, pair: SubtitlePair) -> bool {
@@ -1688,7 +1688,7 @@ pub struct AppState {
 
     /// Operator-facing recovery hint for audio capture startup failures.
     ///
-    /// This is intentionally separate from [`pipeline_error_msg`] because
+    /// This is intentionally separate from `pipeline_error_msg` because
     /// capture startup happens before the STT/MT/TTS pipeline exists.
     pub capture_error_msg: Arc<Mutex<Option<String>>>,
 

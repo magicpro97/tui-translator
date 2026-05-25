@@ -9,7 +9,7 @@
 //!
 //! WASAPI's event-driven capture API must run on a dedicated OS thread —
 //! the Windows audio engine delivers notifications via `SetEvent`, and the
-//! capture loop must call `WaitForSingleObject` (via [`Handle::wait_for_event`])
+//! capture loop must call `WaitForSingleObject` (via `Handle::wait_for_event`)
 //! which blocks the current thread.  A regular `tokio::spawn` task would
 //! starve the executor, so we use `std::thread::spawn` instead and communicate
 //! back to async consumers via `tokio::sync::mpsc::Sender::blocking_send`.

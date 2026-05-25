@@ -49,7 +49,7 @@ pub fn default_config_path() -> Result<PathBuf> {
 ///
 /// **LF-06 canonical path**: `%LOCALAPPDATA%\tui-translator\sessions`.  This
 /// migrates away from the pre-LF-06 `%APPDATA%` location; the one-shot move
-/// is handled by [`crate::storage::try_migrate_legacy_storage`].
+/// is handled by `crate::storage::try_migrate_legacy_storage`.
 #[allow(dead_code)]
 pub fn default_sessions_dir() -> Result<PathBuf> {
     Ok(local_data_dir()?.join("sessions"))
@@ -78,7 +78,7 @@ pub fn legacy_audio_archive_dir() -> Result<PathBuf> {
 }
 
 /// Return the LF-06 storage migration marker path under the canonical local
-/// data root.  See [`crate::storage::try_migrate_legacy_storage`].
+/// data root.  See `crate::storage::try_migrate_legacy_storage`.
 #[allow(dead_code)]
 pub fn lf06_migration_marker_path() -> Result<PathBuf> {
     Ok(local_data_dir()?.join(".lf06-migrated"))

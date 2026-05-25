@@ -1,7 +1,7 @@
 //! File-based audio source for soak testing (issue #110 / WP-18.02).
 //!
 //! [`WavFileSource`] reads a 16 kHz mono 16-bit PCM WAV file and delivers
-//! fixed-size audio chunks via the [`AudioSource`] trait, looping the file
+//! fixed-size audio chunks via the `AudioSource` trait, looping the file
 //! indefinitely.  A 30-second fixture can drive a 4-hour soak run without
 //! committing a multi-gigabyte audio file.
 //!
