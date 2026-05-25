@@ -156,3 +156,47 @@ at `conclusion=success` may the PR be considered ready.
 - Workflow source: `.github/workflows/ci.yml` (see `NOTE (PR #512 queue-
   mitigation…)` block above each affected matrix).
 - Closed allow-list: `verification-evidence/waves/wave-1/files_allowed.txt`.
+
+
+---
+
+## 8. Post-mitigation test-only follow-up (continuity, 2026-05-25)
+
+After this matrix-narrowing landed at `43b2f5a` and the resulting CI run
+went 46/46 green, a single **test-only** follow-up commit was applied on
+`wave-1/t0-batch` to defuse a Windows PTY flake observed during
+onboarding configuration persistence:
+
+- **Parent:** `43b2f5ae097b71db9bd8396edc681a430ff54311`
+- **Current head:** `922eab59b24828d2fd995fd688e356fb1de0d175`
+- **Subject:** `test(pty): wait for onboarding config persistence`
+- **Scope:** `tests/pty/onboarding_test.rs` (test source only — no
+  production code, no workflow, no required-check name changes).
+
+Continuity check against the honesty boundary in §6:
+
+- The §2.6 macOS-13 narrowing in `CI-01-required-checks.md` is
+  unchanged; the three `macos-13` contexts are still removed and not
+  reintroduced.
+- The full §2.1 – §2.4 required-check surface is unchanged.
+- `CI-01-matrix-run-url.json.head_sha` is now
+  `922eab59b24828d2fd995fd688e356fb1de0d175` with canonical
+  `pull_request` run
+  [`actions/runs/26381963965`](https://github.com/magicpro97/tui-translator/actions/runs/26381963965)
+  (conclusion `success`) and parallel `push` run
+  [`actions/runs/26381963199`](https://github.com/magicpro97/tui-translator/actions/runs/26381963199)
+  (conclusion `success`); both runs are on the narrowed matrix and
+  together report **46 / 46 success, 0 pending, 0 failed** on head
+  `922eab5`.
+- The prior 46/46 green runs on parent head `43b2f5a`
+  ([`26380090087`](https://github.com/magicpro97/tui-translator/actions/runs/26380090087)
+  pull_request,
+  [`26380089328`](https://github.com/magicpro97/tui-translator/actions/runs/26380089328)
+  push) are retained in
+  `CI-01-matrix-run-url.json.prior_head_runs_for_continuity` for
+  audit lineage.
+
+This entry exists so the chain `43b2f5a → 922eab5` is documented end
+to end; it does **not** change the queue-mitigation decision, the
+required-check contract, or the maintainer authorisation recorded
+above.

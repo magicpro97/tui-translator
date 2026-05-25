@@ -3,42 +3,45 @@
 > Issue: [#461 — CI-01 CI matrix expansion for Windows/macOS/features and required gates](https://github.com/magicpro97/tui-translator/issues/461)
 > Tentacle: `w1-t0-461-ci-matrix`
 > Wave: 1 · Tier A · T0 · evidence mode `workflow_dry_run`
-> Status: **ALL GREEN ON HEAD `43b2f5a` (narrowed matrix)** — PR #512
-> head `43b2f5ae097b71db9bd8396edc681a430ff54311` after the prerequisite
+> Status: **ALL GREEN ON HEAD `922eab5` (narrowed matrix; test-only follow-up to `43b2f5a`)** — PR #512
+> head `922eab59b24828d2fd995fd688e356fb1de0d175` after the prerequisite
 > PRs **#515 (UX-01 frame_pacer)**, **#516 (MSRV / Cargo.lock format
 > alignment)**, **#517 (timing / scheduler hardening)**, and **#518
 > (pre-A3 macOS-14 hot-reload config watcher with canonicalised paths)**
-> merged, and after commit `43b2f5a` removed the three queue-blocked
-> macOS-13 matrix permutations (see §2.6). CI on head `43b2f5a` is
+> merged, after commit `43b2f5a` removed the three queue-blocked
+> macOS-13 matrix permutations (see §2.6), and after the **test-only
+> follow-up commit `922eab5` — `test(pty): wait for onboarding config
+> persistence`** addressed a Windows PTY flake without touching any
+> production source or workflow (see §2.7). CI on head `922eab5` is
 > all-green: **46 / 46 check-runs success, 0 pending, 0 failed** across
 > the parallel `pull_request` and `push` CI runs on this head
-> ([`actions/runs/26380090087`](https://github.com/magicpro97/tui-translator/actions/runs/26380090087)
+> ([`actions/runs/26381963965`](https://github.com/magicpro97/tui-translator/actions/runs/26381963965)
 > — pull_request, conclusion `success`; and
-> [`actions/runs/26380089328`](https://github.com/magicpro97/tui-translator/actions/runs/26380089328)
+> [`actions/runs/26381963199`](https://github.com/magicpro97/tui-translator/actions/runs/26381963199)
 > — push, conclusion `success`). The PR-event run is the canonical
 > evidence for branch-protection contexts and is enumerated in
 > [`CI-01-matrix-run-url.json`](./CI-01-matrix-run-url.json). The
 > previously-blocking gates and the full required-check surface are all
-> green on `43b2f5a`:
+> green on `922eab5`:
 >
-> - `MSRV (Rust 1.86) build` — ✅ success ([job 77647528051](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528051))
-> - `Cross-platform build (windows-latest, default)` — ✅ success ([job 77647528054](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528054))
-> - `Cross-platform build (macos-14, default)` — ✅ success ([job 77647528073](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528073))
-> - `Feature matrix (windows-latest, audio-integration)` — ✅ success ([job 77647528079](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528079))
-> - `Feature matrix (windows-latest, production-audio)` — ✅ success ([job 77647528076](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528076))
-> - `Feature matrix (macos-14, audio-integration)` — ✅ success ([job 77647528092](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528092))
-> - `Feature matrix (macos-14, production-audio)` — ✅ success ([job 77647528094](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528094))
-> - `Packaging verification (MSVC static exe)` — ✅ success ([job 77647528030](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528030))
-> - `Contract tests (mock-only)` — ✅ success ([job 77647528057](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528057))
-> - `Soak fixture validation (issue #109)` — ✅ success ([job 77647528070](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528070))
-> - `Hot-config matrix (issue #391)` — ✅ success ([job 77647528056](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528056))
-> - `PTY tests (Windows ConPTY)` — ✅ success ([job 77647527996](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647527996))
-> - `Linux build smoke test` — ✅ success ([job 77647528072](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528072))
-> - `VMIC-A6 virtual-cable integration` — ✅ success ([job 77647528004](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528004))
-> - `VMIC-B4 production sink round-trip` — ✅ success ([job 77647528015](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528015))
-> - `VMIC-A8 MVP readiness` — ✅ success ([job 77648024717](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77648024717))
-> - `VMIC-B5 production readiness` — ✅ success ([job 77648562224](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77648562224))
-> - `Beta toolchain (allowed-fail)` — ✅ success ([job 77647528098](https://github.com/magicpro97/tui-translator/actions/runs/26380090087/job/77647528098)) — informational only, not branch-protection-required.
+> - `MSRV (Rust 1.86) build` — ✅ success ([job 77652873543](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873543))
+> - `Cross-platform build (windows-latest, default)` — ✅ success ([job 77652873512](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873512))
+> - `Cross-platform build (macos-14, default)` — ✅ success ([job 77652873521](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873521))
+> - `Feature matrix (windows-latest, audio-integration)` — ✅ success ([job 77652873523](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873523))
+> - `Feature matrix (windows-latest, production-audio)` — ✅ success ([job 77652873524](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873524))
+> - `Feature matrix (macos-14, audio-integration)` — ✅ success ([job 77652873540](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873540))
+> - `Feature matrix (macos-14, production-audio)` — ✅ success ([job 77652873532](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873532))
+> - `Packaging verification (MSVC static exe)` — ✅ success ([job 77652873495](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873495))
+> - `Contract tests (mock-only)` — ✅ success ([job 77652873489](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873489))
+> - `Soak fixture validation (issue #109)` — ✅ success ([job 77652873518](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873518))
+> - `Hot-config matrix (issue #391)` — ✅ success ([job 77652873506](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873506))
+> - `PTY tests (Windows ConPTY)` — ✅ success ([job 77652873503](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873503)) — validates the §2.7 test-only follow-up.
+> - `Linux build smoke test` — ✅ success ([job 77652873500](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873500))
+> - `VMIC-A6 virtual-cable integration` — ✅ success ([job 77652873484](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873484))
+> - `VMIC-B4 production sink round-trip` — ✅ success ([job 77652873502](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873502))
+> - `VMIC-A8 MVP readiness` — ✅ success ([job 77653313026](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77653313026))
+> - `VMIC-B5 production readiness` — ✅ success ([job 77653884074](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77653884074))
+> - `Beta toolchain (allowed-fail)` — ✅ success ([job 77652873522](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873522)) — informational only, not branch-protection-required.
 >
 > The three `macos-13` matrix permutations (`Cross-platform build
 > (macos-13, default)`, `Feature matrix (macos-13, audio-integration)`,
@@ -48,9 +51,10 @@
 > queue-mitigation decision authorised by the maintainer (`fix hết`) on
 > 2026-05-25. This is **NOT a claim that macOS-13 passed** — it is an
 > explicit narrowing of the required-check contract. The 46/46 all-green
-> result above is on this narrowed matrix. Apple-silicon macOS coverage
-> is preserved via `macos-14`; no Windows, Linux, MSRV, VMIC, or feature
-> gate is weakened. Full audit trail and rationale:
+> result above is on this narrowed matrix and is preserved unchanged on
+> the test-only follow-up head `922eab5` (see §2.7). Apple-silicon macOS
+> coverage is preserved via `macos-14`; no Windows, Linux, MSRV, VMIC, or
+> feature gate is weakened. Full audit trail and rationale:
 > [`verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md`](../waves/wave-1/pr512-ci-macos13-queue-mitigation.md).
 
 ## 1. Purpose
@@ -176,6 +180,34 @@ What changes for #461 acceptance:
   runner or self-hosted strategy is adopted. That trade-off is the
   explicit cost of unblocking PR #512 and is recorded in the queue-
   mitigation doc above so it can be revisited.
+
+### 2.7 Test-only follow-up commit `922eab5` (PR #512, 2026-05-25)
+
+After the §2.6 macOS-13 narrowing landed on `43b2f5a` with a 46/46 green
+CI, a single test-only follow-up commit was applied on top:
+
+- **Parent:** `43b2f5ae097b71db9bd8396edc681a430ff54311`
+- **Current head:** `922eab59b24828d2fd995fd688e356fb1de0d175`
+- **Subject:** `test(pty): wait for onboarding config persistence`
+- **Scope:** `tests/pty/onboarding_test.rs` (test file only).
+- **Rationale:** wait for onboarding config persistence to defuse a
+  Windows PTY flake; no production source, no workflow, no
+  required-check surface changed.
+
+The required-check contract in §2.1 – §2.4 is **unchanged** by this
+commit, the §2.6 macOS-13 narrowing is **unchanged**, and the 46/46
+green CI total is reproduced on the new head:
+
+- `pull_request` run on `922eab5`:
+  [`actions/runs/26381963965`](https://github.com/magicpro97/tui-translator/actions/runs/26381963965)
+  — conclusion `success`.
+- `push` run on `922eab5`:
+  [`actions/runs/26381963199`](https://github.com/magicpro97/tui-translator/actions/runs/26381963199)
+  — conclusion `success`.
+
+This subsection exists so the audit trail between the §2.6 mitigation
+head `43b2f5a` and the current PR head `922eab5` is explicit and
+continuous; no branch-protection change is implied or required by it.
 
 ## 3. Test-case mapping (acceptance criteria → checks)
 
