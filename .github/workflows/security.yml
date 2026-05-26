@@ -1,0 +1,137 @@
+name: SEC-01 Supply-chain & security gates
+
+# Enforces the SEC-01 supply-chain and security gates tracked by issue #462.
+# - cargo-deny (advisories + licenses + bans + sources) — REQUIRED
+# - cargo-audit (RustSec advisory DB) — ADVISORY (continue-on-error)
+# - gitleaks secret scanning on PR diff — ADVISORY (continue-on-error)
+# - CycloneDX SBOM generation + upload as workflow artifact — REQUIRED
+#
+# Notes on policy decisions (see docs/security/supply-chain.md for rationale):
+# * cargo-deny is the REQUIRED gate because the repo ships a maintained
+#   `deny.toml` and the action is stable across hosted runners.
+# * cargo-audit and gitleaks are intentionally advisory in PR until a noise
+#   baseline is established (mirrors the standards.yml `coverage-advisory`
+#   pattern). They still publish logs and SARIF where applicable so they can
+#   be promoted to required without further code changes.
+# * SBOM generation runs on every PR so artefacts can be inspected before
+#   release; release-time signing/provenance is a documented next step in
+#   `docs/security/signing-policy.md`, not implemented here because it
+#   requires credentials/identities (REL-01 scope).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    name: cargo-deny (advisories + licenses + bans + sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # `deny.toml` already scopes targets to Windows; the action picks it
+          # up from the repo root. `all` runs every check group.
+          command: check all
+          arguments: --all-features
+
+  cargo-audit:
+    name: cargo-audit (RustSec, advisory)
+    runs-on: ubuntu-latest
+    # reason: advisory until a noise baseline is established in a follow-up
+    # PR. Promoting to required without a baseline would create flaky red
+    # builds whenever upstream publishes a new advisory.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo-audit binary
+        id: cache-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: ${{ runner.os }}-cargo-audit-bin-v1
+      - name: Install cargo-audit
+        if: steps.cache-audit.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked
+      - name: Run cargo-audit
+        run: cargo audit --deny warnings
+
+  secret-scan:
+    name: Secret scan (gitleaks, advisory)
+    runs-on: ubuntu-latest
+    # reason: advisory until the repo has a published `.gitleaks.toml`
+    # allowlist for fixtures (`config.example.json`, evidence JSON). The hook
+    # at `.github/hooks/secret-detector.py` is the local equivalent gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No GITLEAKS_LICENSE — only required for org-level scans.
+
+  sbom:
+    name: SBOM (CycloneDX, all features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo-cyclonedx binary
+        id: cache-cdx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-cyclonedx
+          key: ${{ runner.os }}-cargo-cyclonedx-bin-v1
+      - name: Install cargo-cyclonedx
+        if: steps.cache-cdx.outputs.cache-hit != 'true'
+        run: cargo install cargo-cyclonedx --locked
+      - name: Generate CycloneDX SBOM (JSON, all features)
+        run: |
+          set -euo pipefail
+          cargo cyclonedx --format json --all --spec-version 1.5
+          # cargo-cyclonedx 0.5.x writes either `bom.json` or
+          # `<crate>_<version>.cdx.json` next to each Cargo.toml depending on
+          # version. Collect both shapes so the gate is robust across upgrades.
+          mkdir -p sbom-out
+          find . -maxdepth 4 \( -name 'bom.json' -o -name '*.cdx.json' \) \
+            -not -path './sbom-out/*' -not -path './target/*' \
+            -print -exec cp {} sbom-out/ \;
+          echo "--- sbom-out contents ---"
+          ls -la sbom-out/
+          if [ -z "$(ls -A sbom-out/ 2>/dev/null)" ]; then
+            echo "::error::cargo-cyclonedx produced no SBOM files"
+            exit 1
+          fi
+      - name: Validate SBOM is non-empty CycloneDX
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(sbom-out/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no SBOM JSON files found in sbom-out/"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "Validating $f"
+            python3 -c "import json,sys; d=json.load(open('$f')); \
+              assert d.get('bomFormat') == 'CycloneDX', 'bomFormat missing'; \
+              assert d.get('specVersion'), 'specVersion missing'; \
+              assert isinstance(d.get('components'), list) and len(d['components']) > 0, 'no components'; \
+              print('ok:', d['bomFormat'], d['specVersion'], 'components=', len(d['components']))"
+          done
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx-json
+          path: sbom-out/*.json
+          if-no-files-found: error
