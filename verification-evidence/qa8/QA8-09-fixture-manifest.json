@@ -1,0 +1,58 @@
+{
+  "schema_version": "qa8-09.v1",
+  "related_issues": ["#507", "#503", "#505", "#498", "#460"],
+  "fixtures": [
+    {
+      "id": "soak_audio_30s",
+      "path": "tests/soak/soak_audio.wav",
+      "kind": "wav_pcm_s16le",
+      "sha256": "225a51debcea2378de177d4844f9703df7dcdd2ff7a35a7593f5782f28f83f94",
+      "byte_size": 960044,
+      "format": {
+        "sample_rate_hz": 16000,
+        "channels": 1,
+        "bit_depth": 16,
+        "total_samples": 480000,
+        "duration_seconds": 30.0
+      },
+      "segments": [
+        { "label": "silence_lead",          "start_sample": 0,      "end_sample": 32000  },
+        { "label": "ja_speech_female",      "start_sample": 32000,  "end_sample": 83840  },
+        { "label": "silence_gap_1",         "start_sample": 83840,  "end_sample": 96000  },
+        { "label": "ja_speech_male",        "start_sample": 96000,  "end_sample": 148224 },
+        { "label": "silence_gap_2",         "start_sample": 148224, "end_sample": 160000 },
+        { "label": "ja_speech_noisy",       "start_sample": 160000, "end_sample": 213760 },
+        { "label": "noise_ambient_1",       "start_sample": 213760, "end_sample": 240000 },
+        { "label": "en_speech_hello",       "start_sample": 240000, "end_sample": 342800 },
+        { "label": "loud_transient_880hz",  "start_sample": 342800, "end_sample": 374800 },
+        { "label": "noise_ambient_2",       "start_sample": 374800, "end_sample": 448000 },
+        { "label": "silence_trail",         "start_sample": 448000, "end_sample": 480000 }
+      ],
+      "generator": "tests/soak/gen_fixture.py"
+    }
+  ],
+  "determinism_budget": {
+    "min_identical_runs": 10,
+    "sim_events_target": 1000000,
+    "sim_events_max_wall_seconds": 30.0,
+    "long_replay_drift_max_ms": 100
+  },
+  "platforms": {
+    "windows": {
+      "fixture_id": "soak_audio_30s",
+      "loopback_path": "WASAPI loopback (production); WavFileSource (deterministic sim)",
+      "adr": "docs/adr/xplat-01-cross-platform-audio-hal.md"
+    },
+    "macos": {
+      "fixture_id": "soak_audio_30s",
+      "loopback_path": "CoreAudio + ScreenCaptureKit (production, post-v1); BlackHole virtual device (developer fallback); WavFileSource (deterministic sim)",
+      "adr": "docs/adr/qa8-09-cross-platform-loopback-strategy.md"
+    },
+    "linux": {
+      "fixture_id": "soak_audio_30s",
+      "loopback_path": "PipeWire null sink / PulseAudio monitor source (production, post-v1); WavFileSource (deterministic sim)",
+      "adr": "docs/adr/qa8-09-cross-platform-loopback-strategy.md"
+    }
+  },
+  "notes": "QA8-09 deterministic sim parity. The on-disk WAV is the byte-pinned source on every platform; QA8-05 (#503) consumes this manifest to validate the soak fixture before driving the soak runner v2. The production capture path differs per OS (see `platforms.*.loopback_path`) and is owned by the linked ADR. Schema parity with QA8-07 telemetry (#505) is achieved by mirroring the `schema_version` / `related_issues` conventions; QA8-05 readers can rely on identical key shapes across both manifests."
+}
