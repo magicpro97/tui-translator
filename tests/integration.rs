@@ -23,6 +23,9 @@
 //! - [`error_retry`] — configurable mock MT provider → retry count assertions;
 //!   exhaustion discards chunk and continues; no crash on any error variant
 //!   (Issue #102 / WP-16.04).
+//! - [`error_retry_orchestrator`] — real `run_orchestrator` boundary tests for
+//!   MT retry exhaustion, discard-and-continue, and subtitle production
+//!   (Issue #102 / WP-16.04).
 
 #[path = "../src/providers/mod.rs"]
 mod providers;
@@ -62,6 +65,9 @@ mod translation_roundtrip;
 
 #[path = "integration/error_retry.rs"]
 mod error_retry;
+
+#[path = "integration/error_retry_orchestrator.rs"]
+mod error_retry_orchestrator;
 
 #[path = "integration/memory_guard.rs"]
 mod memory_guard;
