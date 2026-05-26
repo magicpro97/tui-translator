@@ -434,7 +434,7 @@ pub fn validate_invariants(report: &SchemaV2Report) -> Result<()> {
     let mut names: BTreeSet<&str> = BTreeSet::new();
     for e in &report.fault_injection.events {
         anyhow::ensure!(
-            names.insert(e.name.as_str()) || e.kind != "custom",
+            names.insert(e.name.as_str()) || e.kind == "custom",
             "duplicate fault event name not allowed for non-custom kinds: {}",
             e.name
         );
@@ -555,5 +555,56 @@ mod tests {
         let mut report = build_smoke_report(smoke_cfg(&[], None)).unwrap();
         report.schema_version = "qa8-05.v0".to_string();
         assert!(validate_invariants(&report).is_err());
+    }
+
+    fn fault_record(name: &str, kind: &str, t_start: u64) -> FaultEventRecord {
+        FaultEventRecord {
+            name: name.to_string(),
+            kind: kind.to_string(),
+            t_start_secs: t_start,
+            t_end_secs: None,
+            expected_recovery_ms: None,
+            observed_recovery_ms: None,
+            recovered_within_budget: None,
+            simulated: true,
+        }
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_non_custom_names() {
+        let mut report = build_smoke_report(smoke_cfg(&[], None)).unwrap();
+        report.fault_injection.enabled = true;
+        report.fault_injection.events = vec![
+            fault_record("network_outage", "network_outage", 60),
+            fault_record("network_outage", "network_outage", 180),
+        ];
+        let err =
+            validate_invariants(&report).expect_err("duplicate non-custom names must be rejected");
+        assert!(
+            err.to_string().contains("duplicate fault event name"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_allows_duplicate_custom_names() {
+        let mut report = build_smoke_report(smoke_cfg(&[], None)).unwrap();
+        report.fault_injection.enabled = true;
+        report.fault_injection.events = vec![
+            fault_record("my_custom_fault", "custom", 60),
+            fault_record("my_custom_fault", "custom", 180),
+        ];
+        validate_invariants(&report).expect("duplicate custom-kind events must be permitted");
+    }
+
+    #[test]
+    fn validate_accepts_unique_non_custom_names() {
+        let mut report = build_smoke_report(smoke_cfg(&[], None)).unwrap();
+        report.fault_injection.enabled = true;
+        report.fault_injection.events = vec![
+            fault_record("network_outage", "network_outage", 60),
+            fault_record("provider_rate_limit", "provider_rate_limit", 180),
+        ];
+        validate_invariants(&report).expect("unique non-custom events must pass validation");
     }
 }
