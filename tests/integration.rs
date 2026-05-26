@@ -42,6 +42,9 @@ mod metrics;
 #[path = "../src/config/mod.rs"]
 mod config;
 
+#[path = "../src/i18n/mod.rs"]
+mod i18n;
+
 #[path = "../src/session/mod.rs"]
 mod session;
 

@@ -1,0 +1,32 @@
+# I18N-01 (issue #481): missing-key gate for tui-translator locales.
+#
+# Runs on every push and pull request that touches the i18n surface so a
+# new Rust call site or a renamed Fluent key cannot ship with a silently
+# missing translation.  The script itself lives in scripts/i18n-check.ps1
+# and is also runnable locally — see docs/adr/i18n.md.
+
+name: i18n-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'locales/**'
+      - 'src/**/*.rs'
+      - 'scripts/i18n-check.ps1'
+      - '.github/workflows/i18n-check.yml'
+  pull_request:
+    paths:
+      - 'locales/**'
+      - 'src/**/*.rs'
+      - 'scripts/i18n-check.ps1'
+      - '.github/workflows/i18n-check.yml'
+
+jobs:
+  i18n-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify locales/*.ftl cover every i18n key referenced from Rust
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/i18n-check.ps1
