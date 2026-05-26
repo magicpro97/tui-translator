@@ -1,0 +1,180 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/magicpro97/tui-translator/blob/main/verification-evidence/qa8/QA8-09-fixture-manifest.schema.json",
+  "title": "tui-translator QA8-09 Fixture Manifest Schema v1",
+  "description": "Machine-readable contract for deterministic cross-platform audio/provider simulation fixtures consumed by the QA8-09 sim-harness parity tests and the QA8-05 soak runner v2. The manifest is the single source of truth for the on-disk fixtures (path, sha256, format, total_samples, duration) and the determinism budgets the harness MUST hold. Schema v1 is the QA8-09 baseline; subsequent revisions MUST bump `schema_version`. The manifest is strictly additive over QA8-03's `audio_fixture` field and is referenced by QA8-07 telemetry consumers (issue #503 / QA8-05) via the `related_issues` array so the same artefact can be linked from soak evidence without re-validating the underlying WAV.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "related_issues",
+    "fixtures",
+    "determinism_budget",
+    "platforms"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "qa8-09.v1",
+      "description": "Fixture-manifest schema version. v1 is the QA8-09 baseline; subsequent revisions MUST bump this string."
+    },
+    "related_issues": {
+      "type": "array",
+      "description": "GitHub issues this manifest is evidence for. Always contains '#507' for QA8-09; consumers (QA8-05 / #503, QA8-07 / #505) may be listed here so the manifest doubles as the cross-link between sim parity and live soak.",
+      "items": { "type": "string", "pattern": "^#[0-9]+$" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "fixtures": {
+      "type": "array",
+      "description": "Ordered list of on-disk fixtures the deterministic simulation harness depends on. Every fixture is byte-pinned via `sha256` so cross-platform CI runs can detect drift without re-decoding the WAV.",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/fixture" }
+    },
+    "determinism_budget": { "$ref": "#/definitions/determinism_budget" },
+    "platforms": { "$ref": "#/definitions/platforms" },
+    "notes": {
+      "type": "string",
+      "description": "Free-form human-readable notes (ADR pointer, generator script, etc.)."
+    }
+  },
+  "definitions": {
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "kind",
+        "sha256",
+        "byte_size",
+        "format"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable identifier consumers reference (e.g. 'soak_audio_30s').",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "description": "Repo-relative POSIX path (forward slashes) to the fixture.",
+          "pattern": "^[A-Za-z0-9_./-]+$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["wav_pcm_s16le"],
+          "description": "Fixture kind. v1 only defines the 16-bit signed little-endian PCM WAV kind used by the soak runner; future revisions may add OGG/FLAC."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lower-case hex SHA-256 of the entire file on disk."
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Size of the file in bytes."
+        },
+        "format": { "$ref": "#/definitions/wav_format" },
+        "segments": {
+          "type": "array",
+          "description": "Optional per-segment annotations matching `tests/soak/gen_fixture.py`. Each segment is a half-open [start_sample, end_sample) range with a label.",
+          "items": { "$ref": "#/definitions/segment" }
+        },
+        "generator": {
+          "type": "string",
+          "description": "Optional repo-relative path to the generator script.",
+          "pattern": "^[A-Za-z0-9_./-]+$"
+        }
+      }
+    },
+    "wav_format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_rate_hz", "channels", "bit_depth", "total_samples", "duration_seconds"],
+      "properties": {
+        "sample_rate_hz": { "type": "integer", "enum": [16000] },
+        "channels": { "type": "integer", "enum": [1] },
+        "bit_depth": { "type": "integer", "enum": [16] },
+        "total_samples": { "type": "integer", "minimum": 1 },
+        "duration_seconds": { "type": "number", "minimum": 0 }
+      }
+    },
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "start_sample", "end_sample"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "start_sample": { "type": "integer", "minimum": 0 },
+        "end_sample": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "determinism_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min_identical_runs",
+        "sim_events_target",
+        "sim_events_max_wall_seconds",
+        "long_replay_drift_max_ms"
+      ],
+      "description": "Determinism / performance guarantees the QA8-09 parity tests enforce on every CI run. QA8-05 (#503) reads these so PR-tier soak runs do not regress the sim harness.",
+      "properties": {
+        "min_identical_runs": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Replayer + scripted-feeder must yield byte-identical traces across at least this many independent runs over the same seed."
+        },
+        "sim_events_target": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Target event count the synthetic 1M-event simulator must process within `sim_events_max_wall_seconds`."
+        },
+        "sim_events_max_wall_seconds": {
+          "type": "number",
+          "minimum": 0.1,
+          "description": "Wall-clock ceiling for the 1M-event simulator run on PR-tier CI hardware."
+        },
+        "long_replay_drift_max_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum allowed sample-clock drift, in milliseconds, when the WAV fixture is looped for long replays (planner target: 100ms)."
+        }
+      }
+    },
+    "platforms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windows", "macos", "linux"],
+      "description": "Per-OS loopback / fixture-source strategy. The same WAV fixture is the byte-pinned input on every platform; the production capture path is documented here for the QA8-09 ADR cross-reference.",
+      "properties": {
+        "windows": { "$ref": "#/definitions/platform_entry" },
+        "macos": { "$ref": "#/definitions/platform_entry" },
+        "linux": { "$ref": "#/definitions/platform_entry" }
+      }
+    },
+    "platform_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture_id", "loopback_path", "adr"],
+      "properties": {
+        "fixture_id": {
+          "type": "string",
+          "description": "ID of the fixture (from `fixtures[].id`) used as the deterministic audio source on this platform."
+        },
+        "loopback_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable description of the production capture path this platform uses outside of sim (e.g. 'WASAPI loopback', 'CoreAudio + ScreenCaptureKit', 'PipeWire')."
+        },
+        "adr": {
+          "type": "string",
+          "description": "Repo-relative path to the ADR that owns the licensing/TCC/permission decision for this platform.",
+          "pattern": "^[A-Za-z0-9_./-]+\\.md$"
+        }
+      }
+    }
+  }
+}
