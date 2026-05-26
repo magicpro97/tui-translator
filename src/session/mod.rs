@@ -1331,5 +1331,9 @@ where
 }
 
 #[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;
+#[path = "recorder_tests.rs"]
+mod recorder_tests;
+
+#[cfg(test)]
+#[path = "replayer_slot_tests.rs"]
+mod replayer_slot_tests;
