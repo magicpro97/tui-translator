@@ -1,9 +1,7 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1626
 expression: "render_help(80, 24, 0)"
 ---
-                                                                                
                                                                                 
                                                                                 
             ┌ Help — press ? or Esc to close ──────────────────────┐            
@@ -21,5 +19,7 @@ expression: "render_help(80, 24, 0)"
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            
             │  Tab        Switch A/B pane focus (dual-slot mode)   │            
+            │  [ / ]      Mic gain  -1/+1 dB    { / } TTS vol  -1/+│            
+            │  0          Reset mic gain and TTS volume to 0 dB (CT│            
             │  q / Ctrl+C Quit — shows session summary             │            
             └──────────────────────────────────────────────────────┘
