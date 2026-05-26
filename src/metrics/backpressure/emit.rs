@@ -1,7 +1,7 @@
 //! Live emission registry for QA8-07 backpressure telemetry (issue #505).
 //!
 //! Production code paths (WASAPI capture, fanout, audio sink, provider
-//! dispatch via [`with_retry`]) call the thin no-arg helpers in this
+//! dispatch via `with_retry`) call the thin no-arg helpers in this
 //! module. When a [`BackpressureTelemetry`] instance has been installed
 //! into the global slot, the helper forwards to its counters; otherwise
 //! every call is a cheap atomic load and an early return.
@@ -21,7 +21,9 @@
 //! consumption that close #505 are explicit follow-ups tracked in the
 //! schema's `calibration_pending` field.
 //!
-//! [`with_retry`]: crate::providers::with_retry
+//! Note: the `src/bin/*` benchmarks `#[path]`-include subsets of the
+//! source tree and do not have `crate::providers` in scope, so we
+//! intentionally do not use an intra-doc link for `with_retry` above.
 
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Instant;

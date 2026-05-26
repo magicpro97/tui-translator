@@ -1,0 +1,94 @@
+{
+  "audio_capture": {
+    "chunks_seen": 3,
+    "jitter": {
+      "count": 2,
+      "max_us": 32015,
+      "mean_us": 32008.0,
+      "p50_us": 32015,
+      "p95_us": 32015,
+      "p999_us": 32015,
+      "p99_us": 32015
+    },
+    "stall_count": 1,
+    "stall_threshold_ns": 250000000
+  },
+  "breach_threshold_map": {
+    "capture_stalls": "max_capture_stalls",
+    "fanout_drops": "max_fanout_drops",
+    "provider_permanent_errors": "provider_max_permanent_errors",
+    "sink_underruns": "max_sink_underruns"
+  },
+  "breaches": [
+    "capture_stalls",
+    "provider_permanent_errors",
+    "sink_underruns",
+    "fanout_drops"
+  ],
+  "calibration": {
+    "calibration_pending": true,
+    "follow_up": "Live wiring into wasapi_capture/audio_sink/pipeline + QA8-05 runner consumption + 30-min calibration soak — see PR #540 follow-up plan.",
+    "notes": {
+      "max_sink_underruns": "Strict baseline 0; live WASAPI virtual-mic path may require a small bounded budget after 30-min soak.",
+      "provider_max_permanent_errors": "Strict baseline 0; cloud STT/MT may produce rare benign exhaustions under throttling.",
+      "sink_write_p99_ms": "10 ms matches audio frame cadence; relax to ≤20 ms only with evidence."
+    }
+  },
+  "cancellation": {
+    "issued": 0,
+    "latency": {
+      "count": 0,
+      "max_us": 0,
+      "mean_us": 0.0,
+      "p50_us": 0,
+      "p95_us": 0,
+      "p999_us": 0,
+      "p99_us": 0
+    },
+    "observed": 0
+  },
+  "ok": false,
+  "provider": {
+    "completed_total": 2,
+    "dequeued_total": 2,
+    "enqueued_total": 2,
+    "inflight": 0,
+    "inflight_high_water": 1,
+    "permanent_errors": 1,
+    "queue_depth": 0,
+    "queue_high_water": 1,
+    "recovered_errors": 0
+  },
+  "related_issues": [
+    "#505"
+  ],
+  "sample_index": 0,
+  "sample_unix_ms": 1779783126241,
+  "schema_version": "qa8-07.v1",
+  "sink": {
+    "bytes_written": 3072,
+    "fanout_drops": 1,
+    "underruns": 1,
+    "write_latency": {
+      "count": 2,
+      "max_us": 620,
+      "mean_us": 510.0,
+      "p50_us": 400,
+      "p95_us": 620,
+      "p999_us": 620,
+      "p99_us": 620
+    },
+    "writes": 2
+  },
+  "thresholds": {
+    "audio_jitter_p99_ms": 100,
+    "cancel_p99_ms": 500,
+    "max_capture_stalls": 0,
+    "max_fanout_drops": 0,
+    "max_sink_underruns": 0,
+    "provider_max_inflight": 8,
+    "provider_max_permanent_errors": 0,
+    "provider_max_queue_depth": 32,
+    "sink_write_p99_ms": 10
+  }
+}

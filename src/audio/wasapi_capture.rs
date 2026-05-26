@@ -224,19 +224,18 @@ fn capture_loop(
                 .collect();
 
             let chunk = AudioChunk::new(samples_i16);
-            if silence_detector.process(&chunk) {
-                // QA8-07 (#505): record inter-chunk arrival on the live
-                // capture path so jitter and stall counters reflect the
-                // production WASAPI stream. No-op when no telemetry
-                // sink is installed.
-                super::backpressure_hook::audio_chunk_at(
-                    super::backpressure_hook::monotonic_now_ns(),
-                );
-                if !send_audio_chunk(&tx, chunk) {
-                    // Receiver was dropped — the application is shutting down.
-                    tracing::info!("WASAPI capture: channel closed, exiting thread");
-                    return Ok(());
-                }
+            // QA8-07 (#505): record inter-chunk arrival on the live
+            // capture path for every produced chunk so jitter and
+            // stall counters reflect the true WASAPI cadence. Doing
+            // this BEFORE the silence gate means natural meeting
+            // silence is not mis-classified as a capture stall. The
+            // silence detector still gates downstream send below.
+            // No-op when no telemetry sink is installed.
+            super::backpressure_hook::audio_chunk_at(super::backpressure_hook::monotonic_now_ns());
+            if silence_detector.process(&chunk) && !send_audio_chunk(&tx, chunk) {
+                // Receiver was dropped — the application is shutting down.
+                tracing::info!("WASAPI capture: channel closed, exiting thread");
+                return Ok(());
             }
         }
 

@@ -192,7 +192,7 @@ pub fn is_transient(err: &ProviderError) -> bool {
 ///
 /// QA8-07 (#505): every call here also drives the global backpressure
 /// telemetry (enqueue → dequeue → complete, plus recovered/permanent
-/// error counters) via [`crate::metrics::backpressure::emit`]. When no
+/// error counters) via `crate::metrics::backpressure::emit`. When no
 /// telemetry has been installed the helpers are cheap no-ops.
 #[tracing::instrument(level = "trace", skip_all)]
 pub async fn with_retry<F, Fut, T>(op: F) -> Result<T, ProviderError>
