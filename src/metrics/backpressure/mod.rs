@@ -34,6 +34,7 @@
 pub mod audio;
 pub mod cancellation;
 pub mod clock;
+pub mod emit;
 pub mod histogram;
 pub mod provider;
 pub mod sink;

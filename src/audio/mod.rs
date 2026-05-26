@@ -36,6 +36,10 @@ use tokio::sync::mpsc;
 #[cfg(windows)]
 mod wasapi_capture;
 
+/// QA8-07 (#505) hook indirection so the audio module stays decoupled
+/// from `crate::metrics::backpressure::emit`.
+pub mod backpressure_hook;
+
 pub mod audio_gain;
 
 // File-based audio source for soak testing (issue #110)

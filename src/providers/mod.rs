@@ -56,6 +56,9 @@ pub mod google;
 pub mod local;
 pub mod mt;
 
+/// QA8-07 (#505) hook indirection for `with_retry` provider lifecycle.
+pub mod backpressure_hook;
+
 // ── Error type ───────────────────────────────────────────────────────────────
 
 /// Errors that any provider can return.
@@ -186,19 +189,42 @@ pub fn is_transient(err: &ProviderError) -> bool {
 /// Permanent errors are returned immediately without retry.
 /// Returns `Ok(T)` on the first success or the final `Err` once all attempts
 /// are exhausted.
+///
+/// QA8-07 (#505): every call here also drives the global backpressure
+/// telemetry (enqueue → dequeue → complete, plus recovered/permanent
+/// error counters) via `crate::metrics::backpressure::emit`. When no
+/// telemetry has been installed the helpers are cheap no-ops.
+#[tracing::instrument(level = "trace", skip_all)]
 pub async fn with_retry<F, Fut, T>(op: F) -> Result<T, ProviderError>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, ProviderError>>,
 {
+    use crate::providers::backpressure_hook as bp;
+
     let mut delay_ms = INITIAL_RETRY_DELAY_MS;
     let mut last_err: Option<ProviderError> = None;
+    let mut transient_seen = false;
+
+    bp::enqueue();
+    bp::dequeue_start();
 
     for attempt in 0..MAX_RETRY_ATTEMPTS {
         match op().await {
-            Ok(value) => return Ok(value),
-            Err(err) if !is_transient(&err) => return Err(err),
+            Ok(value) => {
+                if transient_seen {
+                    bp::recovered_error();
+                }
+                bp::complete();
+                return Ok(value);
+            }
+            Err(err) if !is_transient(&err) => {
+                bp::permanent_error();
+                bp::complete();
+                return Err(err);
+            }
             Err(err) => {
+                transient_seen = true;
                 tracing::warn!(
                     attempt = attempt + 1,
                     max = MAX_RETRY_ATTEMPTS,
@@ -214,6 +240,8 @@ where
         }
     }
 
+    bp::permanent_error();
+    bp::complete();
     match last_err {
         Some(err) => Err(err),
         None => Err(ProviderError::Unknown(

@@ -25,6 +25,8 @@
 #![allow(dead_code)]
 
 pub mod audio_sink;
+/// QA8-07 (#505) hook indirection for the sink writer.
+pub mod backpressure_hook;
 pub mod cpu_gate;
 pub mod fallback;
 pub mod playback;
