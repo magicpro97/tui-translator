@@ -58,13 +58,45 @@ Forbidden / known-invalid configurations:
   representative of release).
 * Synthetic / silent input. The audio-capture jitter histogram only
   carries signal when real chunks arrive at the WASAPI cadence.
-* Runs shorter than 30 minutes. The p99 buckets in
-  `HistogramUs` need approximately 1 800 samples (1 Hz snapshot
-  publisher × 30 min) before recalibration is meaningful; shorter
-  runs leave `calibration_pending` true.
+* Runs shorter than 30 minutes. The continuous-flow histograms
+  (audio inter-chunk jitter, provider queue, sink write latency)
+  are fed by the 1 Hz snapshot publisher × ~1 800 ticks plus the
+  per-chunk hooks, which accumulate thousands of samples over the
+  30 minutes. Cancellation latency is a separate, **event-driven**
+  signal (see "Cancellation sample budget" below) and may remain
+  `calibration_pending` until multiple soaks are aggregated.
 * Mixed-hardware runs averaged together. Calibrate per platform
   bucket (e.g. "Win11 Intel laptop loopback") and store the bucket
   identifier in the snapshot's `calibration_notes`.
+
+## Cancellation sample budget
+
+Unlike the continuous histograms above, the cancellation-latency
+histogram is **event-driven**: it records exactly one sample per
+orchestrator-slot observed exit, and the production handshake fires
+the cancellation issuance exactly once per process lifetime
+(`orchestrator_shutdown` is a one-shot flag). With slot A and
+slot B both observing the flag, a single 30-minute soak produces
+**≤ 2 cancellation latency samples** — not ~1 800. Do not treat
+the 1 Hz snapshot cadence as a sample-rate multiplier for the
+cancellation section; the publisher merely re-serialises the same
+counters.
+
+Consequences for calibration:
+
+* A single 30-minute soak is **insufficient** to set p95/p99
+  thresholds on the cancellation latency histogram. Its
+  `calibration_pending` flag remains `true` after one run.
+* Threshold recalibration for the cancellation section requires
+  **multi-run aggregation** — concatenate the final-line histograms
+  from ≥ 50 independent soak shutdowns on the same hardware bucket
+  before computing percentiles, or accept that the cancellation
+  thresholds stay at their conservative defaults and document the
+  decision in `calibration_notes`.
+* The other sections (audio jitter, provider queue, sink) can be
+  calibrated from a single soak because they collect thousands of
+  per-chunk samples; do not block their recalibration on the
+  cancellation budget.
 
 ## Recipe
 
@@ -103,15 +135,26 @@ Forbidden / known-invalid configurations:
 
 ## Threshold recalibration procedure
 
-After a valid soak (no `calibration_pending: true`):
+After a valid soak (continuous-flow sections only — see
+"Cancellation sample budget" above for the cancellation section,
+which requires multi-run aggregation or remains
+`calibration_pending`):
 
-1. For each key in `BREACH_THRESHOLD_KEYS` extract the corresponding
-   histogram from the captured snapshot and compute p50/p95/p99.
+1. For each key in `BREACH_THRESHOLD_KEYS` whose histogram is fed by
+   per-chunk hooks (audio jitter, provider queue, sink write
+   latency) extract the corresponding histogram from the captured
+   snapshot and compute p50/p95/p99.
 2. Compare against the current constants in
    `src/metrics/backpressure/thresholds.rs`. A change is warranted
    only if observed p99 is outside ±20 % of the constant or if the
    QA8-05 runner has flagged a section as chronically green/red.
-3. Open a follow-up PR (kept separate from #505 so review is focused)
+3. For the cancellation section, either (a) aggregate the
+   final-line cancellation histograms from ≥ 50 independent soak
+   shutdowns on the same hardware bucket and compute percentiles
+   from the merged histogram, or (b) keep the cancellation
+   thresholds at their conservative defaults and record the
+   decision in `calibration_notes`.
+4. Open a follow-up PR (kept separate from #505 so review is focused)
    that:
    * Updates the constants.
    * Embeds the calibration snapshot identifier in

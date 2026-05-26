@@ -167,3 +167,85 @@ fn second_issuance_resets_latency_baseline() {
     cancellation_hook::__reset_for_tests();
     drop(emit_guard);
 }
+
+/// Regression test for the ordering race between `issue()` and the
+/// `orchestrator_shutdown` publication in `main::finish_main`.
+///
+/// Models the production handshake: a "main" thread invokes
+/// `cancellation_hook::issue()` *before* publishing the shutdown
+/// flag; concurrent "orchestrator" observer threads spin on the
+/// shutdown flag and call `cancellation_hook::exit()` as soon as
+/// they see it. If `issue()` were performed *after* the shutdown
+/// store (the original bug), an observer could see `shutdown=true`
+/// while still loading a stale `ISSUE_AT_NS == 0`, causing `exit()`
+/// to short-circuit and dropping the latency sample.
+///
+/// Deterministic Rust cannot prove the absence of a race; instead we
+/// assert the strong invariant — every observer that wakes on
+/// `shutdown=true` must record an exit — across many iterations and
+/// multiple observers per iteration. With the correct
+/// `issue()`-before-publish order plus `Release`/`Acquire` ordering
+/// on `ISSUE_AT_NS`, the invariant holds deterministically; any
+/// regression of the order would flake on at least some platforms.
+#[test]
+fn issue_publishes_before_shutdown_is_observed() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+
+    let _g = serial_lock().lock().unwrap_or_else(|p| p.into_inner());
+    install_production_delegates();
+
+    let emit_guard = emit::test_lock().lock().unwrap_or_else(|p| p.into_inner());
+
+    const ITERS: u64 = 32;
+    const OBSERVERS_PER_ITER: u64 = 2;
+
+    let telemetry = Arc::new(BackpressureTelemetry::new());
+    emit::install(Arc::clone(&telemetry));
+
+    for _ in 0..ITERS {
+        cancellation_hook::__reset_for_tests();
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        let mut joins = Vec::with_capacity(OBSERVERS_PER_ITER as usize);
+        for _ in 0..OBSERVERS_PER_ITER {
+            let shutdown = Arc::clone(&shutdown);
+            joins.push(thread::spawn(move || {
+                while !shutdown.load(Ordering::Acquire) {
+                    std::hint::spin_loop();
+                }
+                cancellation_hook::exit();
+            }));
+        }
+
+        // Production order: issue() FIRST, then publish shutdown.
+        cancellation_hook::issue();
+        shutdown.store(true, Ordering::Release);
+
+        for j in joins {
+            j.join().expect("observer thread panicked");
+        }
+    }
+
+    let expected_observed = ITERS * OBSERVERS_PER_ITER;
+    assert_eq!(
+        telemetry.cancellation.issued(),
+        ITERS,
+        "every issuance must increment the issued counter"
+    );
+    assert_eq!(
+        telemetry.cancellation.observed(),
+        expected_observed,
+        "every observer that wakes on shutdown=true must record an exit \
+         (race regression: issue() must publish ISSUE_AT_NS before shutdown becomes visible)"
+    );
+    assert_eq!(
+        telemetry.cancellation.histogram().count(),
+        expected_observed,
+        "histogram count must match observed exits"
+    );
+
+    emit::uninstall();
+    cancellation_hook::__reset_for_tests();
+    drop(emit_guard);
+}

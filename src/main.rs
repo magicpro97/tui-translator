@@ -3480,11 +3480,18 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     let result = run_tui(state, &tui_context, &keyboard_shutdown, key_rx);
 
     // ── Issue #87 — graceful orchestrator shutdown ────────────────────────────
+    // QA8-07 (#505): record the cancellation issuance **before**
+    // publishing the shutdown flag. The `Release` store inside
+    // `cancellation_hook::issue()` (on `ISSUE_AT_NS`) must
+    // happens-before any orchestrator observer that subsequently
+    // reads `shutdown=true` and calls `cancellation_hook::exit()`.
+    // Reversing this order races: an observer can wake on
+    // `shutdown=true`, load `ISSUE_AT_NS=0`, and short-circuit
+    // `exit()`, dropping the cancellation-latency sample QA8-07
+    // exists to capture.
+    pipeline::cancellation_hook::issue();
     // Signal the orchestrator to stop processing new chunks.
     orchestrator_shutdown.store(true, Ordering::Relaxed);
-    // QA8-07 (#505): record the cancellation issuance so the
-    // orchestrator-side `exit()` calls can compute observed latency.
-    pipeline::cancellation_hook::issue();
     // Wait up to 2 seconds for any in-progress STT/MT/TTS call to finish.
     // DM-03: both slot A and slot B orchestrators are drained concurrently.
     rt.block_on(async {

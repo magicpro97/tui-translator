@@ -59,10 +59,19 @@ pub fn install_monotonic_now_ns(f: fn() -> u64) {
 
 /// Record that a cancellation/shutdown signal was issued. Safe to
 /// call when no delegate has been installed (no-op fallback).
+///
+/// Callers in `main.rs` MUST invoke `issue()` *before* publishing
+/// `orchestrator_shutdown = true`. The `Release` store on
+/// `ISSUE_AT_NS` is paired with the `Acquire` load in `exit()` so
+/// that any orchestrator observer which subsequently sees the
+/// shutdown flag is guaranteed to also see the issuance timestamp.
+/// Reversing the order races: an observer can see `shutdown=true`
+/// but still load `ISSUE_AT_NS=0` and short-circuit `exit()`,
+/// dropping a cancellation latency sample.
 #[inline]
 pub fn issue() {
     if let Some(now) = MONO_NS.get() {
-        ISSUE_AT_NS.store(now(), Ordering::Relaxed);
+        ISSUE_AT_NS.store(now(), Ordering::Release);
     }
     if let Some(f) = ISSUE.get() {
         f();
@@ -76,7 +85,7 @@ pub fn issue() {
 /// latency for natural channel-close exits.
 #[inline]
 pub fn exit() {
-    let t0 = ISSUE_AT_NS.load(Ordering::Relaxed);
+    let t0 = ISSUE_AT_NS.load(Ordering::Acquire);
     if t0 == 0 {
         return;
     }
@@ -94,7 +103,7 @@ pub fn exit() {
 /// the cancellation handshake completes.
 #[doc(hidden)]
 pub fn __reset_for_tests() {
-    ISSUE_AT_NS.store(0, Ordering::Relaxed);
+    ISSUE_AT_NS.store(0, Ordering::Release);
 }
 
 // Note: integration coverage for this module lives in
