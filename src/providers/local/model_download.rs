@@ -105,6 +105,28 @@ impl ModelBundleManifest {
         self.files.iter().map(|file| file.size_bytes).sum()
     }
 
+    /// Build the [`super::ModelConsentManifest`] used to persist a consent
+    /// record for this bundle.
+    ///
+    /// The bundle's [`Self::source_url`] becomes the consent `license_url`
+    /// (recording the licence/provenance URL operators were shown) and the
+    /// `license` field is used as the consent `license_text`. Returns
+    /// [`ModelDownloadError::InvalidManifest`] when the bundle fails the
+    /// underlying [`super::ModelConsentManifest::validate`] check (for
+    /// example, an empty licence text).
+    pub fn consent_manifest(&self) -> Result<super::ModelConsentManifest, ModelDownloadError> {
+        let consent = super::ModelConsentManifest {
+            name: self.id.clone(),
+            version: self.version.clone(),
+            license_url: self.source_url.clone(),
+            license_text: self.license.clone(),
+        };
+        consent
+            .validate()
+            .map_err(|e| ModelDownloadError::InvalidManifest(e.to_string()))?;
+        Ok(consent)
+    }
+
     /// Human-readable operator preview shown before any network request.
     pub fn preview_text(&self) -> String {
         format!(

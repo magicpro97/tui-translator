@@ -1,0 +1,22 @@
+{
+  "$schema": "./model-bundle-manifest.schema.json",
+  "id": "tt-fixture-mt-ja-vi",
+  "display_name": "tui-translator JV-09 fixture (ja->vi)",
+  "version": "0.0.0-fixture",
+  "license": "Apache-2.0 (fixture; no real model weights bundled with this manifest).",
+  "source_url": "https://github.com/magicpro97/tui-translator/blob/main/docs/specs/jv-09/example-mt-bundle-manifest.json",
+  "files": [
+    {
+      "relative_path": "encoder_model.onnx",
+      "download_url": "https://example.invalid/tui-translator/jv-09/encoder_model.onnx",
+      "size_bytes": 11,
+      "sha256": "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+    },
+    {
+      "relative_path": "tokenizer.json",
+      "download_url": "https://example.invalid/tui-translator/jv-09/tokenizer.json",
+      "size_bytes": 5,
+      "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    }
+  ]
+}
