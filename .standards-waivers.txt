@@ -32,12 +32,13 @@ src/pipeline/audio_sink.rs          # baseline: audio sink (tracked: #483)
 src/pipeline/playback.rs            # baseline: playback (tracked: #483)
 src/pipeline/fallback.rs            # baseline: fallback (tracked: #483)
 src/storage/mod.rs                  # baseline: storage (tracked: #483)
-src/audio/router.rs                 # baseline: router (tracked: #483)
-src/metrics/snapshot.rs             # baseline: metrics snapshot (tracked: #483)
-src/audio/wasapi_capture.rs         # baseline: WASAPI capture (tracked: #483)
+# Removed by STD-02 slice (#484) — tests extracted into sibling *_tests.rs files:
+#   src/audio/router.rs               -> router_tests.rs
+#   src/metrics/snapshot.rs           -> snapshot_tests.rs
+#   src/audio/wasapi_capture.rs       -> wasapi_capture_tests.rs
+#   src/config/provider_supervisor.rs -> provider_supervisor_tests.rs
 tests/integration/error_retry.rs    # baseline: retry tests (tracked: #483)
 src/bin/provider_benchmark.rs       # baseline: bench harness (tracked: #483)
-src/config/provider_supervisor.rs   # baseline: supervisor (tracked: #483)
 src/audio/mod.rs                    # baseline: audio root (tracked: #483)
 src/bin/audio_stability_proof.rs    # baseline: stability proof (tracked: #483)
 tests/mt_routing.rs                 # baseline: routing tests (tracked: #483)
