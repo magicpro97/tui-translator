@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1731
 expression: "render_help(80, 24, 0)"
 ---
                                                                                 
@@ -12,6 +13,7 @@ expression: "render_help(80, 24, 0)"
             │  End        Scroll to bottom / auto-follow           │            
             │  Space      Pause / resume translation               │            
             │  T          Toggle TTS audio output                  │            
+            │  V          Cycle TTS voice (CTRL-02)                │            
             │  M          Toggle metrics panel (compact/expanded)  │            
             │  L          Change target language                   │            
             │  S          Settings (F2/Ctrl+D cycles field values) │            

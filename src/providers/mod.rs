@@ -251,6 +251,56 @@ pub trait MtProvider: Send + Sync {
     ) -> Result<MtResult, ProviderError>;
 }
 
+// ── Voice selection (CTRL-02, issue #455) ────────────────────────────────────
+
+/// Gender hint reported by a TTS voice.
+///
+/// Mirrors the Google Text-to-Speech `SsmlVoiceGender` enum so the value can
+/// be serialised on the wire without extra mapping.  Providers that do not
+/// expose gender metadata MUST report [`VoiceGender::Unspecified`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VoiceGender {
+    /// Gender is not provided or not applicable.
+    Unspecified,
+    /// Voice presents as male.
+    Male,
+    /// Voice presents as female.
+    Female,
+    /// Voice that is intentionally gender-neutral.
+    Neutral,
+}
+
+impl VoiceGender {
+    /// Wire string used by Google Text-to-Speech `SsmlVoiceGender`.
+    pub fn as_google_str(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SSML_VOICE_GENDER_UNSPECIFIED",
+            Self::Male => "MALE",
+            Self::Female => "FEMALE",
+            Self::Neutral => "NEUTRAL",
+        }
+    }
+}
+
+/// A selectable TTS voice.
+///
+/// `name` is the unique provider-scoped identifier (e.g. Google's
+/// `"vi-VN-Standard-A"`); `language` is the BCP-47 language tag the voice
+/// speaks (e.g. `"vi-VN"`); `gender` is a hint for display purposes only.
+///
+/// The pipeline keeps voice swaps cheap by holding only this small,
+/// `Clone`-able value at runtime — providers stash the catalog internally and
+/// look up additional metadata when constructing synthesis requests.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VoiceSelection {
+    /// Provider-unique voice identifier.
+    pub name: String,
+    /// BCP-47 language tag the voice speaks.
+    pub language: String,
+    /// Display-only gender hint.
+    pub gender: VoiceGender,
+}
+
 /// Text-to-speech provider (optional feature).
 ///
 /// Accepts a string and returns synthesised audio as a [`TtsResult`].
@@ -262,10 +312,61 @@ pub trait MtProvider: Send + Sync {
 /// bounded channel; see
 /// `docs/adr/supertonic-05-tts-streaming-contract.md` for the full
 /// rationale and migration plan.
+///
+/// # Voice catalog & hot-swap (CTRL-02, issue #455)
+/// Providers MAY expose a list of selectable voices via [`list_voices`] and
+/// honour a runtime-active voice via [`set_active_voice`].  Hot-swap
+/// semantics: when [`set_active_voice`] is called, any in-flight
+/// [`synthesise`] call finishes with the previously-selected voice — the new
+/// voice applies on the **next** call only.  This keeps the CTRL-03 single
+/// active-voice invariant intact (no concurrent second voice is ever
+/// introduced by a swap).
+///
+/// Providers without a catalog accept the empty default implementations and
+/// continue to synthesise with their built-in voice.
+///
+/// [`list_voices`]: TtsProvider::list_voices
+/// [`set_active_voice`]: TtsProvider::set_active_voice
+/// [`synthesise`]: TtsProvider::synthesise
 pub trait TtsProvider: Send + Sync {
     /// Synthesise speech for `text` in `language_code` (BCP-47).
     async fn synthesise(&self, text: &str, language_code: &str)
         -> Result<TtsResult, ProviderError>;
+
+    /// Return the catalog of selectable voices this provider offers.
+    ///
+    /// Providers may cache the catalog in-memory so this call does not have
+    /// to hit the network on every invocation; tests MUST be able to drive
+    /// it without real credentials.  The default implementation returns an
+    /// empty list so existing providers do not need to change.
+    async fn list_voices(&self) -> Result<Vec<VoiceSelection>, ProviderError> {
+        Ok(Vec::new())
+    }
+
+    /// Update the runtime-active voice (CTRL-02).
+    ///
+    /// `Some(voice)` selects the named voice; `None` reverts to the
+    /// provider's default.  Returns [`ProviderError::InvalidInput`] when the
+    /// named voice is not present in the catalog so callers can surface a
+    /// visible error rather than silently falling back to another voice.
+    ///
+    /// The default implementation rejects any non-`None` value with
+    /// [`ProviderError::Unimplemented`] and accepts `None` as a no-op so
+    /// providers without voice support never crash the pipeline.
+    fn set_active_voice(&self, voice: Option<VoiceSelection>) -> Result<(), ProviderError> {
+        if voice.is_some() {
+            Err(ProviderError::Unimplemented(
+                "this provider does not support runtime voice selection".to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Currently selected voice, if any.  Default: `None`.
+    fn active_voice(&self) -> Option<VoiceSelection> {
+        None
+    }
 }
 
 // ── Streaming/non-blocking TTS contract (SUPERTONIC-05, issue #490) ──────────

@@ -913,6 +913,22 @@ pub struct AppConfig {
     /// [`audio_gain::OUTPUT_VOLUME_MAX_DB`]: crate::audio::audio_gain::OUTPUT_VOLUME_MAX_DB
     #[serde(default, skip_serializing_if = "is_default_f32")]
     pub output_volume_db: f32,
+
+    /// Active TTS voice name (CTRL-02, issue #455).
+    ///
+    /// Provider-scoped voice identifier (e.g. Google's
+    /// `"vi-VN-Standard-A"`). `None` lets the TTS provider pick a default
+    /// voice for the target language.
+    ///
+    /// **Hot field:** changes apply on the next synthesis call.  Any
+    /// in-flight utterance finishes with the previously-selected voice so
+    /// the CTRL-03 single active-voice invariant is preserved.
+    ///
+    /// Invalid voice names (not present in the provider's catalog) are
+    /// rejected by the runtime with a visible error rather than silently
+    /// falling back to another voice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tts_voice: Option<String>,
 }
 
 fn is_default_f32(value: &f32) -> bool {
@@ -965,6 +981,7 @@ impl Default for AppConfig {
             tts_source: TtsSource::default(),
             input_gain_db: 0.0,
             output_volume_db: 0.0,
+            tts_voice: None,
         }
     }
 }
@@ -1002,6 +1019,7 @@ impl std::fmt::Debug for AppConfig {
             .field("tts_source", &self.tts_source)
             .field("input_gain_db", &self.input_gain_db)
             .field("output_volume_db", &self.output_volume_db)
+            .field("tts_voice", &self.tts_voice)
             .finish()
     }
 }
