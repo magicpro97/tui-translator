@@ -1,0 +1,14 @@
+# QA8-05 deterministic 10-minute soak fault-injection schedule.
+#
+# Replayed by `cargo run --bin run_soak -- --smoke --hours 0.16667 \
+#   --sample-secs 30 --fault-script tests/soak/fixtures/qa8_05_smoke_10min.faults \
+#   --crash-watch --schema-v2-output verification-evidence/qa8/QA8-05-smoke-10min.json`
+#
+# DSL: `@<t_start_secs> <name> [duration=<secs>] [recovery_ms=<ms>]`
+# Recognised names: network_outage, provider_rate_limit, device_hot_swap,
+# cpu_pressure (any other name is captured as kind="custom").
+
+@60   network_outage       duration=30 recovery_ms=10000
+@180  provider_rate_limit  duration=20 recovery_ms=5000
+@360  device_hot_swap      duration=5  recovery_ms=2000
+@480  cpu_pressure         duration=30 recovery_ms=0
