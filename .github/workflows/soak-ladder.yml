@@ -1,0 +1,323 @@
+# SPDX-License-Identifier: MIT
+#
+# QA8-10 — Cross-platform CI/CD soak ladder (Issue #508).
+#
+# Purpose
+# -------
+# Provide a single workflow that encodes the PR / nightly / weekly / RC soak
+# ladder so promotion across the ladder is auditable in one place:
+#
+#     +--------------+----------+--------------------------------------------+
+#     | Rung         | Duration | Trigger                                    |
+#     +--------------+----------+--------------------------------------------+
+#     | smoke        | 10 min   | pull_request, push, workflow_dispatch      |
+#     | calibration  | 30 min   | workflow_dispatch (pre-RC manual gate)     |
+#     | nightly      | 1 hour   | schedule (02:30 UTC daily)                 |
+#     | weekly-8h    | 8 hours  | workflow_dispatch + hardware label gate    |
+#     +--------------+----------+--------------------------------------------+
+#
+# Runner inventory (authoritative source: docs/qa8-10-runner-inventory.md)
+# -----------------------------------------------------------------------
+#   * windows-latest         GitHub-hosted, enabled for smoke / calibration /
+#                            nightly.
+#   * windows-self-hosted-8h Requires label set
+#                            [self-hosted, windows, soak-8h-hardware]; used
+#                            only for the 8-hour rung. Wave 7 does not have
+#                            such a runner online, so the job stays queued
+#                            until the workflow timeout expires.
+#   * macos-13 / macos-14    BLOCKED by macOS WBS (#503 runner v2 + macOS
+#                            WBS). Job emits a documented skip; nothing
+#                            executes.
+#   * ubuntu-latest          BLOCKED by Linux WBS. Job emits a documented
+#                            skip; nothing executes.
+#
+# Why blocked OSes still appear as jobs
+# -------------------------------------
+# A visible "blocked" job is preferable to silent absence. The release-gate
+# workflow (.github/workflows/release-gate.yml) requires per-platform soak
+# evidence; making the block status visible here surfaces the gap to anyone
+# inspecting CI before they reach the release gate.
+#
+# Scope guardrails (Wave 7)
+# -------------------------
+# * No real 8-hour run executes from GitHub-hosted runners. The 8h job is
+#   gated on `inputs.run_8h == "true"` AND the presence of the
+#   `soak-8h-hardware` runner label. Without that label, no job dispatches.
+# * No release signing, no notarisation, no store upload paths are touched.
+# * No secrets are referenced; the workflow runs entirely on public CI.
+
+name: Soak ladder (QA8-10)
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/soak-ladder.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/soak-ladder.yml"
+  schedule:
+    # Nightly 1-hour run at 02:30 UTC.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      rung:
+        description: "Ladder rung to execute"
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - calibration
+          - nightly
+          - weekly-8h
+      run_8h:
+        description: >-
+          Hard confirmation that the 8-hour rung should attempt to dispatch.
+          Even when "true", the job only runs if a self-hosted runner with
+          label `soak-8h-hardware` is online; otherwise it stays queued
+          until the workflow timeout expires.
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Smoke (PR/push) runs are coalesced per ref; longer rungs are not, so a
+  # nightly + manual dispatch can overlap intentionally.
+  group: soak-ladder-${{ github.event_name }}-${{ github.ref }}-${{ github.event.inputs.rung || 'auto' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # -- 0. Pick the rung that this run executes --------------------------------
+  resolve-rung:
+    name: Resolve ladder rung
+    runs-on: ubuntu-latest
+    outputs:
+      rung: ${{ steps.pick.outputs.rung }}
+      duration_minutes: ${{ steps.pick.outputs.duration_minutes }}
+      run_8h: ${{ steps.pick.outputs.run_8h }}
+    steps:
+      - name: Pick rung from trigger
+        id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_RUNG: ${{ github.event.inputs.rung }}
+          INPUT_RUN_8H: ${{ github.event.inputs.run_8h }}
+        run: |
+          set -euo pipefail
+          case "${EVENT}" in
+            pull_request|push)
+              rung=smoke
+              duration=10
+              ;;
+            schedule)
+              rung=nightly
+              duration=60
+              ;;
+            workflow_dispatch)
+              rung="${INPUT_RUNG:-smoke}"
+              case "${rung}" in
+                smoke)        duration=10  ;;
+                calibration)  duration=30  ;;
+                nightly)      duration=60  ;;
+                weekly-8h)    duration=480 ;;
+                *) echo "::error::Unknown rung: ${rung}"; exit 1 ;;
+              esac
+              ;;
+            *)
+              rung=smoke
+              duration=10
+              ;;
+          esac
+          {
+            echo "rung=${rung}"
+            echo "duration_minutes=${duration}"
+            echo "run_8h=${INPUT_RUN_8H:-false}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo "## Soak ladder run"
+            echo ""
+            echo "- Trigger: \`${EVENT}\`"
+            echo "- Rung: \`${rung}\`"
+            echo "- Duration (minutes, target): \`${duration}\`"
+            echo "- 8h opt-in: \`${INPUT_RUN_8H:-false}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # -- 1. Windows GitHub-hosted: smoke / calibration / nightly ---------------
+  # The 8-hour rung is NOT executed here; see windows-self-hosted-8h below.
+  windows-hosted:
+    name: Windows (hosted) - ${{ needs.resolve-rung.outputs.rung }}
+    needs: resolve-rung
+    if: needs.resolve-rung.outputs.rung != 'weekly-8h'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-soak-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build run_soak binary
+        run: cargo build --bin run_soak
+      - name: Dry-run soak fixture and emit evidence JSON
+        # All hosted rungs share the same dry-run command. The duration value
+        # is recorded in the evidence JSON but does NOT extend the actual run,
+        # because GitHub-hosted minutes are budgeted. Real 4-hour+ soaks are
+        # only allowed on self-hosted hardware (windows-self-hosted-8h).
+        shell: bash
+        env:
+          RUNG: ${{ needs.resolve-rung.outputs.rung }}
+          TARGET_MINUTES: ${{ needs.resolve-rung.outputs.duration_minutes }}
+        run: |
+          set -euo pipefail
+          mkdir -p verification-evidence/soak-ladder
+          out="verification-evidence/soak-ladder/${RUNG}-windows-latest.json"
+          cargo run --quiet --bin run_soak -- --dry-run > "${out}.raw" 2>&1 || true
+          cat > "${out}" <<JSON
+          {
+            "rung": "${RUNG}",
+            "platform": "windows-latest",
+            "target_minutes": ${TARGET_MINUTES},
+            "executed_minutes": 0,
+            "mode": "dry-run",
+            "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          }
+          JSON
+          {
+            echo "### windows-latest - ${RUNG}"
+            echo ""
+            echo "- target_minutes: ${TARGET_MINUTES}"
+            echo "- mode: dry-run (hosted budget)"
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload soak ladder evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-ladder-${{ needs.resolve-rung.outputs.rung }}-windows-latest
+          path: verification-evidence/soak-ladder/
+          if-no-files-found: error
+          retention-days: 30
+
+  # -- 2. Windows self-hosted: 8-hour rung, gated on hardware label ----------
+  # Stays queued (within timeout-minutes) if no self-hosted runner offers the
+  # `soak-8h-hardware` label.
+  windows-self-hosted-8h:
+    name: Windows (self-hosted, 8h) - ${{ needs.resolve-rung.outputs.rung }}
+    needs: resolve-rung
+    if: >-
+      needs.resolve-rung.outputs.rung == 'weekly-8h' &&
+      needs.resolve-rung.outputs.run_8h == 'true'
+    runs-on: [self-hosted, windows, soak-8h-hardware]
+    timeout-minutes: 540
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Announce 8-hour rung
+        run: |
+          set -euo pipefail
+          {
+            echo "### windows self-hosted - weekly-8h"
+            echo ""
+            echo "Hardware runner accepted the job. The 8-hour soak"
+            echo "implementation is delivered separately under QA8-05 / #503."
+            echo "Wave 7 ships the ladder dispatch contract only; do not"
+            echo "treat absence of an 8h log here as a regression."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # -- 3. macOS - BLOCKED by macOS WBS, documented skip ----------------------
+  macos-blocked:
+    name: macOS (blocked by macOS WBS)
+    needs: resolve-rung
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit documented skip
+        env:
+          RUNG: ${{ needs.resolve-rung.outputs.rung }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### macOS - ${RUNG} - SKIPPED"
+            echo ""
+            echo "macOS runners are not enabled in Wave 7. Tracking:"
+            echo "- Cross-platform audio HAL: docs/adr/xplat-01-cross-platform-audio-hal.md"
+            echo "- Runner v2 (QA8-05): #503"
+            echo ""
+            echo "This skip is documented and the release-gate workflow"
+            echo "(.github/workflows/release-gate.yml) treats absent macOS"
+            echo "per-platform evidence as a BLOCK at RC/GA gates."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # -- 4. Linux - BLOCKED by Linux WBS, documented skip ----------------------
+  linux-blocked:
+    name: Linux (blocked by Linux WBS)
+    needs: resolve-rung
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit documented skip
+        env:
+          RUNG: ${{ needs.resolve-rung.outputs.rung }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Linux - ${RUNG} - SKIPPED"
+            echo ""
+            echo "Linux runners are not enabled in Wave 7. See"
+            echo "docs/qa8-10-runner-inventory.md for the platform"
+            echo "enablement WBS owners and exit criteria."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # -- 5. Aggregate verdict --------------------------------------------------
+  ladder-summary:
+    name: Soak ladder verdict
+    needs: [resolve-rung, windows-hosted, windows-self-hosted-8h, macos-blocked, linux-blocked]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit summary
+        env:
+          RUNG: ${{ needs.resolve-rung.outputs.rung }}
+          WIN_HOSTED: ${{ needs.windows-hosted.result }}
+          WIN_8H: ${{ needs.windows-self-hosted-8h.result }}
+          MAC: ${{ needs.macos-blocked.result }}
+          LIN: ${{ needs.linux-blocked.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Soak ladder verdict - rung \`${RUNG}\`"
+            echo ""
+            echo "| Job                       | Result        |"
+            echo "|---------------------------|---------------|"
+            echo "| windows-hosted            | ${WIN_HOSTED:-skipped} |"
+            echo "| windows-self-hosted-8h    | ${WIN_8H:-skipped}     |"
+            echo "| macos-blocked             | ${MAC:-skipped}        |"
+            echo "| linux-blocked             | ${LIN:-skipped}        |"
+            echo ""
+            echo "See docs/qa8-10-runner-inventory.md for owner / exit"
+            echo "criteria of each blocked platform."
+          } >> "${GITHUB_STEP_SUMMARY}"

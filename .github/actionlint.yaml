@@ -1,0 +1,9 @@
+# actionlint configuration for the tui-translator workflows.
+#
+# self-hosted-runner labels
+#   These are custom labels advertised by self-hosted runners. They are
+#   declared here so that actionlint does not flag them as unknown.
+#   See docs/qa8-10-runner-inventory.md for the runner inventory ADR.
+self-hosted-runner:
+  labels:
+    - soak-8h-hardware
