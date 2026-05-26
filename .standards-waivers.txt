@@ -21,7 +21,6 @@ src/session/mod.rs                  # baseline: split session state (tracked: #4
 src/providers/local/mod.rs          # baseline: local provider (tracked: #483)
 src/bin/quality_benchmark.rs        # baseline: bench harness (tracked: #483)
 src/providers/local/bootstrap.rs    # baseline: local bootstrap (tracked: #483)
-src/providers/local/model_download.rs # baseline: model downloader (tracked: #483)
 # Removed by STD-02 slice (#484) — tests extracted into sibling *_tests.rs files:
 #   src/providers/local/mt.rs       -> mt_ort.rs + mt_tests.rs (issue #484)
 #   src/audio/router.rs               -> router_tests.rs
@@ -43,3 +42,4 @@ src/providers/local/model_download.rs # baseline: model downloader (tracked: #48
 #   src/bin/frame_pacing_bench.rs     -> output helpers extracted into frame_pacing_bench_output.rs (wave 12)
 #   src/pipeline/playback.rs          -> routing types/helpers extracted into playback_routing.rs (wave 13)
 #   src/pipeline/audio_sink.rs        -> roundtrip evidence helpers extracted into audio_sink_roundtrip.rs (wave 13)
+#   src/providers/local/model_download.rs -> model_download_transfer.rs + model_download_tests.rs (issue #484)
