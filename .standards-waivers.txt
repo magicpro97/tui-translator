@@ -24,7 +24,6 @@ src/providers/local/bootstrap.rs    # baseline: local bootstrap (tracked: #483)
 src/providers/local/model_download.rs # baseline: model downloader (tracked: #483)
 src/providers/local/mt.rs           # baseline: local MT (tracked: #483)
 src/pipeline/audio_sink.rs          # baseline: audio sink (tracked: #483)
-src/pipeline/playback.rs            # baseline: playback (tracked: #483)
 # Removed by STD-02 slice (#484) — tests extracted into sibling *_tests.rs files:
 #   src/audio/router.rs               -> router_tests.rs
 #   src/metrics/snapshot.rs           -> snapshot_tests.rs
@@ -43,3 +42,4 @@ src/pipeline/playback.rs            # baseline: playback (tracked: #483)
 #   src/bin/provider_benchmark.rs     -> provider_benchmark/{wav,text_metrics,stats}.rs (issue #484)
 #   tests/integration/error_retry.rs  -> tests/integration/error_retry_orchestrator.rs (wave 12)
 #   src/bin/frame_pacing_bench.rs     -> output helpers extracted into frame_pacing_bench_output.rs (wave 12)
+#   src/pipeline/playback.rs          -> routing types/helpers extracted into playback_routing.rs (wave 13)

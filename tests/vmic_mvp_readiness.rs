@@ -99,7 +99,7 @@ fn vmic_mvp_architecture_seams_are_present() {
         assert_contains("src/config/mod.rs", &config, term);
     }
 
-    let playback = read_file("src/pipeline/playback.rs");
+    let playback_routing = read_file("src/pipeline/playback_routing.rs");
     for term in [
         "pub enum PlaybackSinkTarget",
         "pub struct PlaybackRoutePlan",
@@ -107,7 +107,7 @@ fn vmic_mvp_architecture_seams_are_present() {
         "fn play_to_audio_sinks",
         "Self::both",
     ] {
-        assert_contains("src/pipeline/playback.rs", &playback, term);
+        assert_contains("src/pipeline/playback_routing.rs", &playback_routing, term);
     }
 
     let virtual_device = read_file("src/audio/virtual_device.rs");
