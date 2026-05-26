@@ -2140,6 +2140,15 @@ fn main() -> Result<()> {
     );
     pipeline::backpressure_hook::install_sink_write(metrics::backpressure::emit::sink_write);
     pipeline::backpressure_hook::install_sink_underrun(metrics::backpressure::emit::sink_underrun);
+    // QA8-07 (#505): cancellation/shutdown latency wiring. The
+    // `issue()` callsite lives in `finish_main` (where
+    // `orchestrator_shutdown` is set); each orchestrator loop calls
+    // `exit()` when it observes the flag and is about to break.
+    pipeline::cancellation_hook::install_issue(metrics::backpressure::emit::cancellation_issue);
+    pipeline::cancellation_hook::install_exit(metrics::backpressure::emit::cancellation_exit);
+    pipeline::cancellation_hook::install_monotonic_now_ns(
+        metrics::backpressure::emit::monotonic_now_ns,
+    );
 
     // I18N-01 (issue #481): build the i18n catalog before the first
     // frame so help-overlay strings resolve without lazy init in the
@@ -3473,6 +3482,9 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     // ── Issue #87 — graceful orchestrator shutdown ────────────────────────────
     // Signal the orchestrator to stop processing new chunks.
     orchestrator_shutdown.store(true, Ordering::Relaxed);
+    // QA8-07 (#505): record the cancellation issuance so the
+    // orchestrator-side `exit()` calls can compute observed latency.
+    pipeline::cancellation_hook::issue();
     // Wait up to 2 seconds for any in-progress STT/MT/TTS call to finish.
     // DM-03: both slot A and slot B orchestrators are drained concurrently.
     rt.block_on(async {

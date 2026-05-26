@@ -27,6 +27,8 @@
 pub mod audio_sink;
 /// QA8-07 (#505) hook indirection for the sink writer.
 pub mod backpressure_hook;
+/// QA8-07 (#505) hook indirection for cancellation/shutdown latency.
+pub mod cancellation_hook;
 pub mod cpu_gate;
 pub mod fallback;
 pub mod playback;
@@ -526,6 +528,10 @@ pub async fn run_orchestrator<S, M, T>(
         if ctx.shutdown.load(Ordering::Relaxed) {
             tracing::info!("orchestrator: shutdown requested — exiting loop");
             flush_speech_window(&mut pending_speech, &mut seq, &stt, &mt, &tts, &ctx).await;
+            // QA8-07 (#505): emit cancellation-exit telemetry. No-op
+            // unless `cancellation_hook::issue()` was called first, so
+            // natural channel-close exits do not pollute the histogram.
+            crate::pipeline::cancellation_hook::exit();
             break;
         }
 
