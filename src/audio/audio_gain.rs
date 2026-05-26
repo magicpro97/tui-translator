@@ -114,7 +114,7 @@ pub fn reset_to_unity() {
 
 // ── Smoothed application ─────────────────────────────────────────────────────
 
-/// Per-thread ramp state for [`apply_input_gain_inplace`].  Keeps the last
+/// Per-thread ramp state for [`InputGainRamp::apply_in_place`].  Keeps the last
 /// applied linear gain so step changes interpolate across one chunk instead
 /// of producing a click.
 #[derive(Debug, Clone, Copy)]
