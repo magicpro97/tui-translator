@@ -69,6 +69,12 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
+// QA8-05 (#503) partial runner v2 modules. Each is a sibling file under
+// `tests/soak/` and is consumed only by this binary; no library crate
+// export is required.
+mod fault_script;
+mod schema_v2;
+
 // ── Pass/fail thresholds (issue #111 / WP-18.03) ─────────────────────────────
 //
 // These constants encode every threshold from docs/04-verification-plan.md §6
@@ -135,6 +141,24 @@ Options:
                         target/release/tui-translator[.exe])
   --dry-run            Fast CI smoke mode: no subprocess spawned, 5 mock
                        samples taken 1 second apart, report written
+
+QA8-05 (#503) partial runner v2 flags:
+  --sample-secs <N>    Per-sample interval in seconds (overrides --sample-mins
+                       when provided).  Used by the schema-v2 / smoke path.
+  --fault-script <p>   Path to a deterministic fault-injection DSL file.
+                       Parsed by `tests/soak/fault_script.rs`; events are
+                       recorded into the schema-v2 artifact.
+  --crash-watch        Enable the (partial) crash watcher; records panic/OOM
+                       state in the schema-v2 artifact.  Real signal/minidump
+                       capture is part of full #503 closure.
+  --schema-v2-output <p>
+                       Path for the schema-v2 evidence artifact.  Defaults to
+                       `verification-evidence/qa8/QA8-05-soak-report.json`.
+  --smoke              Produce a deterministic schema-v2 smoke artifact
+                       without sleeping or spawning a subprocess.  Combined
+                       with --hours / --sample-secs / --fault-script /
+                       --crash-watch to shape the artifact.  Tagged
+                       `synthetic=true, smoke=true` for downstream gates.
   --help, -h           Print this message and exit
 ";
 
@@ -145,6 +169,12 @@ struct Args {
     bin_path: Option<PathBuf>,
     dry_run: bool,
     hot_swap_every_mins: Option<f64>,
+    // QA8-05 (#503) partial runner v2 flags.
+    sample_secs: Option<f64>,
+    fault_script: Option<PathBuf>,
+    crash_watch: bool,
+    schema_v2_output: PathBuf,
+    smoke: bool,
 }
 
 impl Args {
@@ -160,6 +190,12 @@ impl Args {
         let mut bin_path: Option<PathBuf> = None;
         let mut dry_run = false;
         let mut hot_swap_every_mins = Some(5.0f64);
+        let mut sample_secs: Option<f64> = None;
+        let mut fault_script: Option<PathBuf> = None;
+        let mut crash_watch = false;
+        let mut schema_v2_output =
+            PathBuf::from("verification-evidence/qa8/QA8-05-soak-report.json");
+        let mut smoke = false;
 
         let mut i = 0;
         while i < raw.len() {
@@ -215,6 +251,35 @@ impl Args {
                 "--no-hot-swap" => {
                     hot_swap_every_mins = None;
                 }
+                "--sample-secs" => {
+                    i += 1;
+                    let v: f64 = raw
+                        .get(i)
+                        .ok_or_else(|| anyhow::anyhow!("--sample-secs requires a value"))?
+                        .parse()
+                        .context("--sample-secs must be a number")?;
+                    sample_secs = Some(v);
+                }
+                "--fault-script" => {
+                    i += 1;
+                    fault_script =
+                        Some(PathBuf::from(raw.get(i).ok_or_else(|| {
+                            anyhow::anyhow!("--fault-script requires a value")
+                        })?));
+                }
+                "--crash-watch" => {
+                    crash_watch = true;
+                }
+                "--schema-v2-output" => {
+                    i += 1;
+                    schema_v2_output =
+                        PathBuf::from(raw.get(i).ok_or_else(|| {
+                            anyhow::anyhow!("--schema-v2-output requires a value")
+                        })?);
+                }
+                "--smoke" => {
+                    smoke = true;
+                }
                 unknown => {
                     bail!("unknown argument: {unknown}\nRun with --help for usage.");
                 }
@@ -228,6 +293,9 @@ impl Args {
         if let Some(mins) = hot_swap_every_mins {
             validate_positive_finite(mins, "--hot-swap-every-mins")?;
         }
+        if let Some(secs) = sample_secs {
+            validate_positive_finite(secs, "--sample-secs")?;
+        }
 
         Ok(Args {
             hours,
@@ -236,6 +304,11 @@ impl Args {
             bin_path,
             dry_run,
             hot_swap_every_mins,
+            sample_secs,
+            fault_script,
+            crash_watch,
+            schema_v2_output,
+            smoke,
         })
     }
 }
@@ -1333,11 +1406,85 @@ fn simulate_network_disconnect(
 
 fn main() -> Result<()> {
     let args = Args::parse()?;
-    if args.dry_run {
+    if args.smoke {
+        run_smoke(args)
+    } else if args.dry_run {
         run_dry_run(args)
     } else {
         run_full_soak(args)
     }
+}
+
+/// QA8-05 (#503) partial runner v2 — deterministic schema-v2 smoke.
+///
+/// Produces a fully-formed v2 evidence artifact without sleeping or
+/// spawning the application binary, suitable for CI verification of the
+/// runner contract.  All metric / backpressure values are synthetic and
+/// the artifact tags itself with `synthetic = true, smoke = true` so
+/// downstream gates can refuse to count it as real soak evidence.
+///
+/// Inputs honoured:
+/// - `--hours`               → `duration_secs`
+/// - `--sample-secs`         → `sample_interval_secs` (default 30s)
+/// - `--fault-script <path>` → parsed by `fault_script::load`
+/// - `--crash-watch`         → recorded into `crash_watch.enabled`
+/// - `--schema-v2-output`    → artifact path
+fn run_smoke(args: Args) -> Result<()> {
+    println!("[run_soak] QA8-05 smoke mode — synthetic deterministic v2 artifact");
+
+    let duration_secs = (args.hours * 3600.0).max(1.0).round() as u64;
+    let sample_interval_secs = args
+        .sample_secs
+        .map(|s| s.max(1.0).round() as u64)
+        .unwrap_or(30);
+    let window_secs: u64 = 60;
+
+    let events = if let Some(ref p) = args.fault_script {
+        let parsed = fault_script::load(p)
+            .with_context(|| format!("failed to load --fault-script {}", p.display()))?;
+        println!(
+            "[run_soak] fault-script: {} ({} event(s))",
+            p.display(),
+            parsed.len()
+        );
+        parsed
+    } else {
+        Vec::new()
+    };
+
+    // Smoke artifacts are checked into the repository, so the timestamps
+    // and run_id must be deterministic. We derive a stable run_id from
+    // the input shape; both `started_at_utc` and `finished_at_utc` use
+    // the UNIX epoch so the JSON is byte-stable across machines. The
+    // actual soak duration lives in the `duration_secs` field.
+    let run_id = format!(
+        "qa8-05-smoke-{duration_secs}s-{sample_interval_secs}s-{}events",
+        events.len()
+    );
+    let started_at = "1970-01-01T00:00:00Z".to_string();
+    let finished_at = "1970-01-01T00:00:00Z".to_string();
+
+    let cfg = schema_v2::SmokeConfig {
+        run_id,
+        started_at_utc: started_at,
+        finished_at_utc: finished_at,
+        duration_secs,
+        sample_interval_secs,
+        window_secs,
+        fault_script_path: args.fault_script.as_deref(),
+        fault_events: &events,
+        crash_watch_enabled: args.crash_watch,
+    };
+    let report = schema_v2::build_smoke_report(cfg)?;
+    schema_v2::validate_invariants(&report)?;
+    let path = schema_v2::write_report(&args.schema_v2_output, &report)?;
+    println!(
+        "[run_soak] smoke v2 artifact written: {} ({} window(s), {} fault event(s))",
+        path.display(),
+        report.sample_windows.len(),
+        report.fault_injection.events.len()
+    );
+    Ok(())
 }
 
 /// Dry-run: demonstrate the metric-sampling loop and report structure without

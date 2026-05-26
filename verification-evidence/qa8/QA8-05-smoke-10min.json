@@ -1,0 +1,339 @@
+{
+  "schema_version": "qa8-05.v2",
+  "run_id": "qa8-05-smoke-600s-30s-4events",
+  "synthetic": true,
+  "smoke": true,
+  "started_at_utc": "1970-01-01T00:00:00Z",
+  "finished_at_utc": "1970-01-01T00:00:00Z",
+  "duration_secs": 600,
+  "sample_interval_secs": 30,
+  "run_metadata": {
+    "issue": "#503",
+    "related_issues": [
+      "#505",
+      "#540",
+      "#545"
+    ],
+    "runner": "run_soak",
+    "runner_version": "qa8-05.v2-partial",
+    "partial": true
+  },
+  "sample_windows": [
+    {
+      "window_index": 0,
+      "t_start_secs": 0,
+      "t_end_secs": 60,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 1,
+      "t_start_secs": 60,
+      "t_end_secs": 120,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 2,
+      "t_start_secs": 120,
+      "t_end_secs": 180,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 3,
+      "t_start_secs": 180,
+      "t_end_secs": 240,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 4,
+      "t_start_secs": 240,
+      "t_end_secs": 300,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 5,
+      "t_start_secs": 300,
+      "t_end_secs": 360,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 6,
+      "t_start_secs": 360,
+      "t_end_secs": 420,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 7,
+      "t_start_secs": 420,
+      "t_end_secs": 480,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 8,
+      "t_start_secs": 480,
+      "t_end_secs": 540,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 9,
+      "t_start_secs": 540,
+      "t_end_secs": 600,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    }
+  ],
+  "fault_injection": {
+    "enabled": true,
+    "script_path": "tests\\soak\\fixtures\\qa8_05_smoke_10min.faults",
+    "events": [
+      {
+        "name": "network_outage",
+        "kind": "network_outage",
+        "t_start_secs": 60,
+        "t_end_secs": 90,
+        "expected_recovery_ms": 10000,
+        "observed_recovery_ms": 10000,
+        "recovered_within_budget": true,
+        "simulated": true
+      },
+      {
+        "name": "provider_rate_limit",
+        "kind": "provider_rate_limit",
+        "t_start_secs": 180,
+        "t_end_secs": 200,
+        "expected_recovery_ms": 5000,
+        "observed_recovery_ms": 5000,
+        "recovered_within_budget": true,
+        "simulated": true
+      },
+      {
+        "name": "device_hot_swap",
+        "kind": "device_hot_swap",
+        "t_start_secs": 360,
+        "t_end_secs": 365,
+        "expected_recovery_ms": 2000,
+        "observed_recovery_ms": 2000,
+        "recovered_within_budget": true,
+        "simulated": true
+      },
+      {
+        "name": "cpu_pressure",
+        "kind": "cpu_pressure",
+        "t_start_secs": 480,
+        "t_end_secs": 510,
+        "expected_recovery_ms": 0,
+        "observed_recovery_ms": 0,
+        "recovered_within_budget": true,
+        "simulated": true
+      }
+    ]
+  },
+  "crash_watch": {
+    "enabled": true,
+    "panic_count": 0,
+    "oom_count": 0,
+    "last_event": null,
+    "watcher": "stdio-panic-sniffer"
+  },
+  "backpressure_snapshots": [
+    {
+      "audio_capture": {
+        "chunk_count": 0,
+        "jitter_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "stall_count": 0
+      },
+      "breach_threshold_map": {},
+      "breaches": [],
+      "calibration": {
+        "calibration_pending": true,
+        "notes": "Pre-calibration baseline. QA8-05 runner v2 partial slice does not recalibrate (#505 follow-up)."
+      },
+      "cancellation": {
+        "exit_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "issued": 0,
+        "observed": 0
+      },
+      "ok": true,
+      "provenance": {
+        "note": "Placeholder snapshot. Real values are filled in by the live tui-translator process once #505 metrics IPC lands. See QA8-07 schema for the wire format.",
+        "source": "qa8-05.runner.partial",
+        "synthetic": true
+      },
+      "provider": {
+        "cas_saturated_decrements": 0,
+        "inflight": 0,
+        "inflight_high_water": 0,
+        "permanent_errors": 0,
+        "queue_depth": 0,
+        "queue_high_water": 0,
+        "recovered_errors": 0
+      },
+      "related_issues": [
+        "#505"
+      ],
+      "sample_index": 0,
+      "sample_unix_ms": 0,
+      "schema_version": "qa8-07.v1",
+      "sink": {
+        "fanout_drops": 0,
+        "underruns": 0,
+        "write_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "writes": 0
+      },
+      "thresholds": {
+        "audio_jitter_p99_ms": 200,
+        "calibration_pending": true,
+        "cancel_p99_ms": 250,
+        "max_capture_stalls": 0,
+        "max_fanout_drops": 0,
+        "max_sink_underruns": 0,
+        "provider_max_inflight": 32,
+        "provider_max_permanent_errors": 0,
+        "provider_max_queue_depth": 64,
+        "sink_write_p99_ms": 50
+      }
+    },
+    {
+      "audio_capture": {
+        "chunk_count": 0,
+        "jitter_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "stall_count": 0
+      },
+      "breach_threshold_map": {},
+      "breaches": [],
+      "calibration": {
+        "calibration_pending": true,
+        "notes": "Pre-calibration baseline. QA8-05 runner v2 partial slice does not recalibrate (#505 follow-up)."
+      },
+      "cancellation": {
+        "exit_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "issued": 0,
+        "observed": 0
+      },
+      "ok": true,
+      "provenance": {
+        "note": "Placeholder snapshot. Real values are filled in by the live tui-translator process once #505 metrics IPC lands. See QA8-07 schema for the wire format.",
+        "source": "qa8-05.runner.partial",
+        "synthetic": true
+      },
+      "provider": {
+        "cas_saturated_decrements": 0,
+        "inflight": 0,
+        "inflight_high_water": 0,
+        "permanent_errors": 0,
+        "queue_depth": 0,
+        "queue_high_water": 0,
+        "recovered_errors": 0
+      },
+      "related_issues": [
+        "#505"
+      ],
+      "sample_index": 1,
+      "sample_unix_ms": 0,
+      "schema_version": "qa8-07.v1",
+      "sink": {
+        "fanout_drops": 0,
+        "underruns": 0,
+        "write_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "writes": 0
+      },
+      "thresholds": {
+        "audio_jitter_p99_ms": 200,
+        "calibration_pending": true,
+        "cancel_p99_ms": 250,
+        "max_capture_stalls": 0,
+        "max_fanout_drops": 0,
+        "max_sink_underruns": 0,
+        "provider_max_inflight": 32,
+        "provider_max_permanent_errors": 0,
+        "provider_max_queue_depth": 64,
+        "sink_write_p99_ms": 50
+      }
+    }
+  ],
+  "limitations": [
+    "synthetic_snapshots: backpressure_snapshots are clean placeholders; real values arrive when #505 live wiring is consumed by the runner.",
+    "no_subprocess: smoke mode does not spawn tui-translator; no real audio, STT, MT or TTS traffic was exercised.",
+    "fault_injection_simulated: events are recorded as simulated; real fault actuators (netsh, provider 429 mock, hot-swap, CPU pressure) require admin/hardware and live in #503 full closure.",
+    "crash_watch_partial: crash watcher reports only state from this run; signal handler and minidump capture are part of #503 full closure.",
+    "ten_minute_smoke_only: the deterministic schedule represents a 10-minute soak shape; the 8-hour real-hardware run is hardware/time-gated."
+  ],
+  "blocked_gates": [
+    {
+      "gate": "8h_green_soak",
+      "reason": "Layer-5 hardware + 8 hours of wall-clock per platform are required. Not feasible inside CI; tracked under #503 acceptance criteria."
+    },
+    {
+      "gate": "live_backpressure_consumption",
+      "reason": "Runner consumption of #505 live telemetry (PR #540 / PR #545) is a separate follow-up; this slice ships the schema contract only."
+    },
+    {
+      "gate": "threshold_recalibration",
+      "reason": "Calibration soak (#505) must run before tightening QA8-07 thresholds. Out of scope for this partial slice."
+    }
+  ]
+}

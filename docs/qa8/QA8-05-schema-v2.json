@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/magicpro97/tui-translator/blob/main/docs/qa8/QA8-05-schema-v2.json",
+  "title": "tui-translator QA8-05 Soak Runner v2 Artifact Schema (partial)",
+  "description": "Schema for the QA8-05 (issue #503) partial 8-hour soak runner v2 evidence artifact emitted by `cargo run --bin run_soak -- --smoke ...` and (in the full closure of #503) by the live 8-hour run. This schema is strictly additive over `verification-evidence/qa8/QA8-03-soak-schema-v2.json`: every field documented there for v2 evidence remains readable, and this schema codifies the QA8-05-owned blocks (fault_injection, crash_watch, sample_windows, backpressure_snapshots). Each entry in `backpressure_snapshots` MUST itself validate against `verification-evidence/qa8/QA8-07-backpressure-telemetry.schema.json` (`qa8-07.v1`). The full 8-hour green soak per platform remains hardware/time-gated and is recorded under `blocked_gates` until #503 is closed.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "run_id",
+    "started_at_utc",
+    "duration_secs",
+    "sample_interval_secs",
+    "run_metadata",
+    "sample_windows",
+    "fault_injection",
+    "crash_watch",
+    "backpressure_snapshots",
+    "limitations",
+    "blocked_gates"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "qa8-05.v2",
+      "description": "QA8-05 evidence-schema version. v2 = QA8-03-compatible base + QA8-05 runner-owned blocks."
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for this soak run. Smoke artifacts use a deterministic id derived from the inputs (e.g. `qa8-05-smoke-600s-30s-4events`); live 8-hour runs use a unix-epoch or UUID string."
+    },
+    "synthetic": {
+      "type": "boolean",
+      "description": "True when the artifact was assembled without spawning the real `tui-translator` binary. All smoke artifacts are synthetic; live 8-hour runs MUST report false."
+    },
+    "smoke": {
+      "type": "boolean",
+      "description": "True when produced via `--smoke` (deterministic schedule, no real wall-clock soak)."
+    },
+    "started_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 UTC start timestamp. Smoke artifacts pin this to the UNIX epoch for byte-stable check-in."
+    },
+    "finished_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 UTC finish timestamp. Smoke artifacts equal `started_at_utc`; `duration_secs` is authoritative."
+    },
+    "duration_secs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Soak wall-clock duration in seconds. Smoke 10-minute artifact: 600."
+    },
+    "sample_interval_secs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Per-sample interval in seconds. Driven by `--sample-secs`."
+    },
+    "run_metadata": { "$ref": "#/definitions/run_metadata" },
+    "sample_windows": {
+      "type": "array",
+      "description": "Rolling-window aggregates of per-sample metrics. Each window covers `window_secs` seconds (default 60s) and partitions `[0, duration_secs)`.",
+      "items": { "$ref": "#/definitions/sample_window" }
+    },
+    "fault_injection": { "$ref": "#/definitions/fault_injection_summary" },
+    "crash_watch": { "$ref": "#/definitions/crash_watch_summary" },
+    "backpressure_snapshots": {
+      "type": "array",
+      "description": "Sequence of backpressure-telemetry snapshots consumed from the runtime (#505 / PR #540 / PR #545). Each entry MUST conform to `qa8-07.v1` and SHOULD set `provenance.synthetic = true` when produced by the partial runner.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["schema_version", "ok"],
+        "properties": {
+          "schema_version": { "type": "string", "const": "qa8-07.v1" },
+          "ok": { "type": "boolean" }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "description": "Explicit machine-readable list of what this artifact does NOT prove. Smoke artifacts MUST include at least one entry; downstream gates SHOULD refuse to count smoke evidence as 8-hour green-soak proof.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "blocked_gates": {
+      "type": "array",
+      "description": "Gates that block full #503 closure. The `8h_green_soak` entry MUST remain until a real 8-hour run per platform is recorded.",
+      "items": { "$ref": "#/definitions/blocked_gate" }
+    }
+  },
+  "definitions": {
+    "run_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["issue", "related_issues", "runner", "partial"],
+      "properties": {
+        "issue": { "type": "string", "pattern": "^#[0-9]+$" },
+        "related_issues": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^#[0-9]+$" }
+        },
+        "runner": { "type": "string", "minLength": 1 },
+        "runner_version": { "type": "string", "minLength": 1 },
+        "partial": {
+          "type": "boolean",
+          "description": "True when the artifact represents a partial slice of #503; false only when the full 8-hour run has been recorded."
+        }
+      }
+    },
+    "sample_window": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "window_index",
+        "t_start_secs",
+        "t_end_secs",
+        "sample_count",
+        "contains_fault"
+      ],
+      "properties": {
+        "window_index": { "type": "integer", "minimum": 0 },
+        "t_start_secs": { "type": "integer", "minimum": 0 },
+        "t_end_secs": { "type": "integer", "minimum": 0 },
+        "sample_count": { "type": "integer", "minimum": 0 },
+        "mean_cpu_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "max_memory_mb": { "type": ["number", "null"], "minimum": 0 },
+        "contains_fault": {
+          "type": "boolean",
+          "description": "True when at least one fault-injection event overlaps this window."
+        }
+      }
+    },
+    "fault_injection_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "events"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "script_path": { "type": ["string", "null"] },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/fault_event" }
+        }
+      }
+    },
+    "fault_event": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "kind", "t_start_secs", "simulated"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "network_outage",
+            "provider_rate_limit",
+            "device_hot_swap",
+            "cpu_pressure",
+            "custom"
+          ]
+        },
+        "t_start_secs": { "type": "integer", "minimum": 0 },
+        "t_end_secs": { "type": ["integer", "null"], "minimum": 0 },
+        "expected_recovery_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "observed_recovery_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "recovered_within_budget": { "type": ["boolean", "null"] },
+        "simulated": {
+          "type": "boolean",
+          "description": "True when the event was recorded without real actuation (smoke mode)."
+        }
+      }
+    },
+    "crash_watch_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["enabled", "panic_count", "oom_count", "watcher"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "panic_count": { "type": "integer", "minimum": 0 },
+        "oom_count": { "type": "integer", "minimum": 0 },
+        "watcher": { "type": "string", "minLength": 1 },
+        "last_event": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "required": ["kind", "elapsed_secs", "message"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["panic", "oom", "abort", "signal"] },
+            "elapsed_secs": { "type": "integer", "minimum": 0 },
+            "message": { "type": "string" }
+          }
+        }
+      }
+    },
+    "blocked_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "reason"],
+      "properties": {
+        "gate": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
