@@ -887,6 +887,49 @@ pub struct AppConfig {
     /// ```
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slots: Option<DualSlotConfig>,
+
+    /// Input capture gain, in dB (CTRL-01, issue #454).
+    ///
+    /// Applied to mono f32 PCM samples on the WASAPI capture path after
+    /// resampling and before quantising to i16.  Default `0.0` (unity).
+    /// Range:
+    /// [`audio_gain::INPUT_GAIN_MIN_DB`]..=[`audio_gain::INPUT_GAIN_MAX_DB`].
+    /// Out-of-range or `NaN` values are clamped at load and on every hotkey
+    /// change so the audio path never silences or saturates the limiter.
+    ///
+    /// [`audio_gain::INPUT_GAIN_MIN_DB`]: crate::audio::audio_gain::INPUT_GAIN_MIN_DB
+    /// [`audio_gain::INPUT_GAIN_MAX_DB`]: crate::audio::audio_gain::INPUT_GAIN_MAX_DB
+    #[serde(default, skip_serializing_if = "is_default_f32")]
+    pub input_gain_db: f32,
+
+    /// TTS playback (output) volume, in dB (CTRL-01, issue #454).
+    ///
+    /// Applied to the rodio playback sink via `Sink::set_volume`.  Default
+    /// `0.0` (unity).  Range:
+    /// [`audio_gain::OUTPUT_VOLUME_MIN_DB`]..=[`audio_gain::OUTPUT_VOLUME_MAX_DB`].
+    /// `NaN` and out-of-range values are clamped at load.
+    ///
+    /// [`audio_gain::OUTPUT_VOLUME_MIN_DB`]: crate::audio::audio_gain::OUTPUT_VOLUME_MIN_DB
+    /// [`audio_gain::OUTPUT_VOLUME_MAX_DB`]: crate::audio::audio_gain::OUTPUT_VOLUME_MAX_DB
+    #[serde(default, skip_serializing_if = "is_default_f32")]
+    pub output_volume_db: f32,
+}
+
+fn is_default_f32(value: &f32) -> bool {
+    *value == 0.0
+}
+
+fn validate_gain_db(field: &str, value: f32, min_db: f32, max_db: f32) -> Result<()> {
+    if value.is_nan() {
+        bail!("`{field}` must be a finite number, got NaN");
+    }
+    if !(min_db..=max_db).contains(&value) {
+        bail!(
+            "`{field}` = {value} dB is outside the supported range \
+             [{min_db}..={max_db}] dB"
+        );
+    }
+    Ok(())
 }
 
 impl Default for AppConfig {
@@ -920,6 +963,8 @@ impl Default for AppConfig {
             audio_archive: AudioArchiveConfig::default(),
             slots: None,
             tts_source: TtsSource::default(),
+            input_gain_db: 0.0,
+            output_volume_db: 0.0,
         }
     }
 }
@@ -955,6 +1000,8 @@ impl std::fmt::Debug for AppConfig {
             .field("audio_archive", &self.audio_archive)
             .field("slots", &self.slots)
             .field("tts_source", &self.tts_source)
+            .field("input_gain_db", &self.input_gain_db)
+            .field("output_volume_db", &self.output_volume_db)
             .finish()
     }
 }
@@ -1125,6 +1172,19 @@ impl AppConfig {
                 "`session_store.max_sessions` must be greater than zero when session recording is enabled"
             );
         }
+        // CTRL-01: real-time volume/gain controls.
+        validate_gain_db(
+            "input_gain_db",
+            self.input_gain_db,
+            crate::audio::audio_gain::INPUT_GAIN_MIN_DB,
+            crate::audio::audio_gain::INPUT_GAIN_MAX_DB,
+        )?;
+        validate_gain_db(
+            "output_volume_db",
+            self.output_volume_db,
+            crate::audio::audio_gain::OUTPUT_VOLUME_MIN_DB,
+            crate::audio::audio_gain::OUTPUT_VOLUME_MAX_DB,
+        )?;
         match self.audio_source.as_str() {
             "wasapi" => {}
             "file" => {

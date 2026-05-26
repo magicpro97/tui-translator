@@ -2111,6 +2111,10 @@ fn main() -> Result<()> {
         };
     let license_review_required = !pending_consent_manifests.is_empty();
     let current_config = Arc::new(Mutex::new(cfg.clone()));
+    // CTRL-01: seed runtime gain controllers from persisted config so the
+    // first audio chunk processed after startup honours the saved values.
+    audio::audio_gain::set_input_gain_db(cfg.input_gain_db);
+    audio::audio_gain::set_output_volume_db(cfg.output_volume_db);
     let restart_required = Arc::new(AtomicBool::new(false));
     let state = AppState::new();
     let pending_restart_reason = Arc::new(Mutex::new(None::<String>));
@@ -3896,6 +3900,11 @@ fn apply_runtime_config(
         sync_playback_service_state(playback_service, &effective_cfg, effective_cfg.tts_enabled);
     tts_enabled.store(effective_cfg.tts_enabled && service_ok, Ordering::Relaxed);
     audio_consent.store(effective_cfg.audio_archive.consent_given, Ordering::Relaxed);
+    // CTRL-01: mirror persisted gain/volume into the runtime controllers so
+    // a hot-reloaded config.json takes effect without restarting the audio
+    // capture or playback threads.
+    audio::audio_gain::set_input_gain_db(effective_cfg.input_gain_db);
+    audio::audio_gain::set_output_volume_db(effective_cfg.output_volume_db);
     (apply_requires_restart, actually_changed)
 }
 
@@ -4396,6 +4405,9 @@ impl TuiInteractionMode {
                     | UserAction::ConfigCycleCaptureDevice
                     | UserAction::ReloadConfig
                     | UserAction::ToggleTts
+                    | UserAction::AdjustInputGainDb(_)
+                    | UserAction::AdjustOutputVolumeDb(_)
+                    | UserAction::ResetVolumeAndGain
             )
     }
 }
@@ -4666,6 +4678,20 @@ fn key_to_action(
         KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
         KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
         KeyCode::Char('?') => Some(UserAction::ToggleHelp),
+        // CTRL-01 — real-time gain/volume controls (issue #454).
+        KeyCode::Char('[') => Some(UserAction::AdjustInputGainDb(
+            -(crate::audio::audio_gain::DB_STEP as i32 * 100),
+        )),
+        KeyCode::Char(']') => Some(UserAction::AdjustInputGainDb(
+            crate::audio::audio_gain::DB_STEP as i32 * 100,
+        )),
+        KeyCode::Char('{') => Some(UserAction::AdjustOutputVolumeDb(
+            -(crate::audio::audio_gain::DB_STEP as i32 * 100),
+        )),
+        KeyCode::Char('}') => Some(UserAction::AdjustOutputVolumeDb(
+            crate::audio::audio_gain::DB_STEP as i32 * 100,
+        )),
+        KeyCode::Char('0') => Some(UserAction::ResetVolumeAndGain),
         // Tab — toggle A/B pane focus (DM-04, issue #380).
         // Config editor handles its own Tab (ConfigNextField) in the branch
         // above, so this only fires in normal mode.
@@ -4900,6 +4926,35 @@ fn apply_wizard_patch_to_config(
     state.record_config_apply(apply_status);
     tracing::info!(branch = ?patch.branch, "first-run wizard config applied");
     Ok(())
+}
+
+/// Persist a CTRL-01 gain/volume change to the in-memory `current_config`
+/// snapshot and to disk.  `input_db` and `output_db`, when `Some`, replace
+/// the corresponding field; `None` leaves the value untouched so the helper
+/// can be reused by all three hotkeys (input / output / reset).
+///
+/// Write failures are logged but never panic — the runtime gain stays in
+/// effect because it lives in [`audio::audio_gain`] and the in-memory
+/// `AppConfig` is updated regardless.
+fn persist_gain_changes(
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    input_db: Option<f32>,
+    output_db: Option<f32>,
+) {
+    let next_cfg = {
+        let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(v) = input_db {
+            current.input_gain_db = v;
+        }
+        if let Some(v) = output_db {
+            current.output_volume_db = v;
+        }
+        current.clone()
+    };
+    if let Err(err) = config::write_config(cfg_path, &next_cfg) {
+        tracing::warn!("CTRL-01: failed to persist gain change to config.json: {err:#}");
+    }
 }
 
 /// Execute a [`UserAction`] against the shared application state.
@@ -5174,6 +5229,29 @@ fn handle_action(
         // Tab — DM-04 dual-pane focus toggle.
         UserAction::TogglePaneFocus => {
             state.toggle_pane_focus();
+        }
+
+        // CTRL-01 — real-time input gain (issue #454).
+        UserAction::AdjustInputGainDb(delta_centi_db) => {
+            let delta_db = (*delta_centi_db as f32) / 100.0;
+            let current = audio::audio_gain::input_gain_db();
+            let new_db = audio::audio_gain::set_input_gain_db(current + delta_db);
+            persist_gain_changes(cfg_path, current_config, Some(new_db), None);
+            tracing::info!(input_gain_db = new_db, "input gain adjusted");
+        }
+        // CTRL-01 — real-time TTS playback volume (issue #454).
+        UserAction::AdjustOutputVolumeDb(delta_centi_db) => {
+            let delta_db = (*delta_centi_db as f32) / 100.0;
+            let current = audio::audio_gain::output_volume_db();
+            let new_db = audio::audio_gain::set_output_volume_db(current + delta_db);
+            persist_gain_changes(cfg_path, current_config, None, Some(new_db));
+            tracing::info!(output_volume_db = new_db, "output volume adjusted");
+        }
+        // CTRL-01 — reset both controllers to unity.
+        UserAction::ResetVolumeAndGain => {
+            audio::audio_gain::reset_to_unity();
+            persist_gain_changes(cfg_path, current_config, Some(0.0), Some(0.0));
+            tracing::info!("input gain and output volume reset to 0 dB");
         }
 
         UserAction::WizardKey(event) => {

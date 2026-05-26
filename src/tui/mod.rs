@@ -350,6 +350,15 @@ pub enum UserAction {
     /// Only has visible effect when slot B is wired to [`AppState`]; silently
     /// ignored in single-slot mode.
     TogglePaneFocus,
+    /// `[` / `]` — adjust input capture gain by `delta_centi_db` (CTRL-01).
+    ///
+    /// Encoded in centi-dB (hundredths of a dB) so the action keeps `Eq`.
+    /// The handler converts back to dB before applying.
+    AdjustInputGainDb(i32),
+    /// `{` / `}` — adjust TTS playback volume by `delta_centi_db` (CTRL-01).
+    AdjustOutputVolumeDb(i32),
+    /// `0` — reset both input gain and output volume to 0 dB (CTRL-01).
+    ResetVolumeAndGain,
 }
 
 /// Mode for the shared config editor overlay.
@@ -1587,9 +1596,9 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
 }
 
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
-const HELP_OVERLAY_IDEAL_H: u16 = 17;
+const HELP_OVERLAY_IDEAL_H: u16 = 19;
 const HELP_OVERLAY_MIN_H: u16 = 4;
-const HELP_OVERLAY_CONTENT_LINES: u16 = 15;
+const HELP_OVERLAY_CONTENT_LINES: u16 = 17;
 
 /// Return the maximum valid scroll offset for the help overlay at `area`.
 pub fn help_overlay_max_scroll(area: Rect) -> u16 {
@@ -2734,16 +2743,28 @@ impl Widget for &ControlHintsBar {
         // Adaptive label width (issue #60):
         //   < 80  cols → abbreviated
         //  ≥ 80  cols → standard hints including all required controls (issue #64/#65)
+        // CTRL-01: the live `Mic ±N dB / TTS ±N dB` readout is only inlined at
+        // ≥ 120 cols.  Narrower terminals keep the pre-PR hint text verbatim so
+        // existing PTY snapshots (80×24, 110×30) still see "Q quit" at the end
+        // of the row.
         let text = if area.width < 80 {
             " ?  Spc  T  L  S  M  R  Tab  Q ".to_string()
         } else if area.width < 96 {
             let _ = self.tts_on;
             " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit "
                 .to_string()
-        } else {
+        } else if area.width < 120 {
             let _ = self.tts_on;
             " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Tab pane  Q quit "
                 .to_string()
+        } else {
+            let _ = self.tts_on;
+            format!(
+                " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  \
+                 [/] mic {:+.0}dB  {{/}} tts {:+.0}dB  Tab pane  Q quit ",
+                crate::audio::audio_gain::input_gain_db(),
+                crate::audio::audio_gain::output_volume_db(),
+            )
         };
 
         buf.set_stringn(
@@ -3286,6 +3307,8 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from("  ?          Show / hide this help"),
         Line::from("  Esc        Dismiss this overlay"),
         Line::from("  Tab        Switch A/B pane focus (dual-slot mode)"),
+        Line::from("  [ / ]      Mic gain  -1/+1 dB    { / } TTS vol  -1/+1 dB"),
+        Line::from("  0          Reset mic gain and TTS volume to 0 dB (CTRL-01)"),
         Line::from(quit_line),
     ];
 

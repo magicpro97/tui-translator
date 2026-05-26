@@ -36,6 +36,8 @@ use tokio::sync::mpsc;
 #[cfg(windows)]
 mod wasapi_capture;
 
+pub mod audio_gain;
+
 // File-based audio source for soak testing (issue #110)
 pub mod file_source;
 pub use file_source::WavFileSource;
