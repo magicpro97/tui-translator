@@ -81,7 +81,7 @@ Assert-FileContains "CODE-TtsRouting" "src\config\mod.rs" @(
     "Both",
     "pub virtual_mic_device"
 )
-Assert-FileContains "CODE-MultiSink" "src\pipeline\playback.rs" @(
+Assert-FileContains "CODE-MultiSink" "src\pipeline\playback_routing.rs" @(
     "pub struct PlaybackRoutePlan",
     "PlaybackSinkTarget::VirtualMic",
     "fn play_to_audio_sinks"
