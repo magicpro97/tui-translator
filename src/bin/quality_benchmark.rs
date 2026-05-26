@@ -42,6 +42,10 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 
+#[path = "qa8_13/thresholds.rs"]
+mod qa8_13_thresholds;
+use qa8_13_thresholds::{evaluate, ModeObservation, ThresholdConfig};
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_FIXTURE_WAV: &str = "tests/fixtures/ja_sentences_16k_mono.wav";
@@ -87,6 +91,10 @@ struct Args {
     mode: Mode,
     output_dir: PathBuf,
     gen_fixtures: bool,
+    /// Optional QA8-13 thresholds JSON. When set, observed metrics are
+    /// evaluated and a regression report is emitted; the process exits
+    /// non-zero if any threshold gate is breached.
+    thresholds: Option<PathBuf>,
     help: bool,
 }
 
@@ -98,6 +106,7 @@ impl Default for Args {
             mode: Mode::Both,
             output_dir: PathBuf::from(DEFAULT_OUTPUT_DIR),
             gen_fixtures: false,
+            thresholds: None,
             help: false,
         }
     }
@@ -123,6 +132,11 @@ fn parse_args() -> Result<Args> {
                 args.output_dir =
                     PathBuf::from(iter.next().context("missing value for --output-dir")?);
             }
+            "--thresholds" => {
+                args.thresholds = Some(PathBuf::from(
+                    iter.next().context("missing value for --thresholds")?,
+                ));
+            }
             other => bail!("unknown argument {:?}; run with --help for usage", other),
         }
     }
@@ -141,12 +155,17 @@ OPTIONS:
   --truth <path>       Ground-truth TSV file              [default: {DEFAULT_FIXTURE_TSV}]
   --mode <mode>        baseline | ep-i | both             [default: both]
   --output-dir <path>  Output directory                   [default: {DEFAULT_OUTPUT_DIR}]
+  --thresholds <path>  Optional QA8-13 regression thresholds JSON.
+                       Emits quality-regression.json under --output-dir and
+                       exits non-zero if any threshold is breached. See
+                       docs/adr/qa8-13-quality-corpus.md.
   --gen-fixtures       Generate default fixture files and exit
   --help               Show this help message
 
 OUTPUT (under --output-dir):
   quality-benchmark.csv
   quality-benchmark.md
+  quality-regression.json  (only when --thresholds is supplied)
 
 MODES:
   baseline  Fixed {BASELINE_WINDOW_MS} ms window — utterances clipped at window boundaries.
@@ -886,7 +905,40 @@ fn main() -> Result<()> {
     println!("\nOutputs written:");
     println!("  CSV:      {}", csv_path.display());
     println!("  Markdown: {}", md_path.display());
+
+    if let Some(thresholds_path) = args.thresholds.as_deref() {
+        let cfg = ThresholdConfig::load_json(thresholds_path)
+            .with_context(|| format!("loading thresholds: {}", thresholds_path.display()))?;
+        let observations: Vec<ModeObservation> = rows.iter().map(row_to_observation).collect();
+        let report = evaluate(&observations, &cfg);
+        let report_path = args.output_dir.join("quality-regression.json");
+        let json = serde_json::to_string_pretty(&report)
+            .context("serializing QA8-13 regression report")?;
+        std::fs::write(&report_path, json)
+            .with_context(|| format!("writing regression report: {}", report_path.display()))?;
+        println!("  Regression: {}", report_path.display());
+        if report.regressed() {
+            bail!(
+                "QA8-13 regression detected: {} breach(es) — see {}",
+                report.breaches.len(),
+                report_path.display()
+            );
+        }
+    }
     Ok(())
+}
+
+fn row_to_observation(r: &BenchmarkRow) -> ModeObservation {
+    ModeObservation {
+        mode: r.mode.clone(),
+        wer: r.wer,
+        cer: r.cer,
+        bleu: r.bleu,
+        chrf: r.chrf,
+        latency_ms: r.latency_ms,
+        truncation_rate: r.truncation_rate,
+        flicker: r.flicker,
+    }
 }
 
 fn run_modes(mode: &Mode, utterances: &[Utterance]) -> Vec<BenchmarkRow> {
