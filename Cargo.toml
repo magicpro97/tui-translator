@@ -11,6 +11,7 @@ description = "Real-time bilingual subtitles for Zoom meetings — terminal-base
 license = "MIT"
 repository = "https://github.com/magicpro97/tui-translator"
 readme = "README.md"
+autobins = false
 
 [[bin]]
 name = "tui-translator"
