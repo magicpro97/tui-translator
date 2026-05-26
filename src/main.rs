@@ -4876,7 +4876,7 @@ fn apply_wizard_patch_to_config(
 /// can be reused by all three hotkeys (input / output / reset).
 ///
 /// Write failures are logged but never panic — the runtime gain stays in
-/// effect because it lives in [`pipeline::audio_gain`] and the in-memory
+/// effect because it lives in [`audio::audio_gain`] and the in-memory
 /// `AppConfig` is updated regardless.
 fn persist_gain_changes(
     cfg_path: &Path,

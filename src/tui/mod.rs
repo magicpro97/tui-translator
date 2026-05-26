@@ -2743,16 +2743,20 @@ impl Widget for &ControlHintsBar {
         // Adaptive label width (issue #60):
         //   < 80  cols → abbreviated
         //  ≥ 80  cols → standard hints including all required controls (issue #64/#65)
+        // CTRL-01: the live `Mic ±N dB / TTS ±N dB` readout is only inlined at
+        // ≥ 120 cols.  Narrower terminals keep the pre-PR hint text verbatim so
+        // existing PTY snapshots (80×24, 110×30) still see "Q quit" at the end
+        // of the row.
         let text = if area.width < 80 {
-            " ?  Spc  T  L  S  M  R  [ ] { }  Tab  Q ".to_string()
+            " ?  Spc  T  L  S  M  R  Tab  Q ".to_string()
         } else if area.width < 96 {
             let _ = self.tts_on;
-            format!(
-                " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  \
-                 Mic {:+.0}dB  TTS {:+.0}dB  Q quit ",
-                crate::audio::audio_gain::input_gain_db(),
-                crate::audio::audio_gain::output_volume_db(),
-            )
+            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit "
+                .to_string()
+        } else if area.width < 120 {
+            let _ = self.tts_on;
+            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Tab pane  Q quit "
+                .to_string()
         } else {
             let _ = self.tts_on;
             format!(

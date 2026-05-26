@@ -175,6 +175,23 @@ impl InputGainRamp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialise every test in this module: the controllers are process-wide
+    /// atomics, so when cargo runs the tests in parallel (default), one test
+    /// can race the gain set by another and observe a perturbed value.  A
+    /// single mutex around every test body restores determinism without
+    /// needing the `serial_test` dependency.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Take the test mutex; on a poisoned lock (a prior panic in another test)
+    /// recover the inner guard so the current test can still run.
+    fn lock_tests() -> std::sync::MutexGuard<'static, ()> {
+        match TEST_LOCK.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        }
+    }
 
     /// Each test resets to a known state to avoid order-dependency on the
     /// process-wide controllers.
@@ -185,6 +202,7 @@ mod tests {
 
     #[test]
     fn clamp_db_rejects_nan_and_clamps() {
+        let _g = lock_tests();
         assert_eq!(clamp_db(f32::NAN, -24.0, 24.0), 0.0);
         assert_eq!(clamp_db(-100.0, -24.0, 24.0), -24.0);
         assert_eq!(clamp_db(100.0, -24.0, 24.0), 24.0);
@@ -193,6 +211,7 @@ mod tests {
 
     #[test]
     fn db_to_linear_known_values() {
+        let _g = lock_tests();
         assert!((db_to_linear(0.0) - 1.0).abs() < 1e-6);
         // -6.0206 dB is exactly 0.5; 1 dB tolerance gives wider band.
         assert!((db_to_linear(-6.0206) - 0.5).abs() < 1e-3);
@@ -201,6 +220,7 @@ mod tests {
 
     #[test]
     fn set_input_gain_clamps_to_limits() {
+        let _g = lock_tests();
         reset();
         assert_eq!(set_input_gain_db(1000.0), INPUT_GAIN_MAX_DB);
         assert_eq!(input_gain_db(), INPUT_GAIN_MAX_DB);
@@ -212,6 +232,7 @@ mod tests {
 
     #[test]
     fn set_output_volume_clamps_to_limits() {
+        let _g = lock_tests();
         reset();
         assert_eq!(set_output_volume_db(1000.0), OUTPUT_VOLUME_MAX_DB);
         assert_eq!(set_output_volume_db(-1000.0), OUTPUT_VOLUME_MIN_DB);
@@ -226,6 +247,7 @@ mod tests {
     /// settles to a steady -6.0206 dB linear gain.
     #[test]
     fn half_gain_halves_rms_within_two_percent() {
+        let _g = lock_tests();
         reset();
         // Generate one-second of 1 kHz at 16 kHz, amplitude 0.5 to leave
         // headroom for clamp.
@@ -259,6 +281,7 @@ mod tests {
     /// raising the gain from unity to 2x.
     #[test]
     fn ramp_interpolates_without_clipping() {
+        let _g = lock_tests();
         reset();
         set_input_gain_db(6.0206); // ~2x
         let mut ramp = InputGainRamp { last_linear: 1.0 };
@@ -275,6 +298,7 @@ mod tests {
 
     #[test]
     fn clamp_prevents_post_gain_overflow() {
+        let _g = lock_tests();
         reset();
         set_input_gain_db(INPUT_GAIN_MAX_DB);
         let mut ramp = InputGainRamp::new();
@@ -287,6 +311,7 @@ mod tests {
 
     #[test]
     fn reset_to_unity_restores_zero_db() {
+        let _g = lock_tests();
         set_input_gain_db(10.0);
         set_output_volume_db(-12.0);
         reset_to_unity();
