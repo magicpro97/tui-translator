@@ -63,6 +63,8 @@ pub mod bootstrap;
 mod inference_priority;
 mod model_download;
 mod mt;
+#[cfg(feature = "local-mt")]
+mod mt_ort;
 pub mod runtime_caps;
 
 #[allow(unused_imports)]
