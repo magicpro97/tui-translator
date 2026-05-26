@@ -2112,6 +2112,35 @@ fn main() -> Result<()> {
 
     tracing::info!("tui-translator starting");
 
+    // QA8-07 (#505): install the global backpressure telemetry sink
+    // before any audio capture, fanout, sink, or provider dispatch
+    // path runs. Wiring sites call thin hooks in the audio /
+    // providers / pipeline modules; here we install delegates that
+    // forward into `metrics::backpressure::emit::*`. With no
+    // installation the wiring is a cheap no-op (tests).
+    metrics::backpressure::emit::install(std::sync::Arc::new(
+        metrics::backpressure::BackpressureTelemetry::new(),
+    ));
+    audio::backpressure_hook::install_fanout_drop(metrics::backpressure::emit::fanout_drop);
+    audio::backpressure_hook::install_audio_chunk_at(metrics::backpressure::emit::audio_chunk_at);
+    audio::backpressure_hook::install_audio_stall(metrics::backpressure::emit::audio_capture_stall);
+    audio::backpressure_hook::install_monotonic_now_ns(
+        metrics::backpressure::emit::monotonic_now_ns,
+    );
+    providers::backpressure_hook::install_enqueue(metrics::backpressure::emit::provider_enqueue);
+    providers::backpressure_hook::install_dequeue_start(
+        metrics::backpressure::emit::provider_dequeue_start,
+    );
+    providers::backpressure_hook::install_complete(metrics::backpressure::emit::provider_complete);
+    providers::backpressure_hook::install_recovered_error(
+        metrics::backpressure::emit::provider_recovered_error,
+    );
+    providers::backpressure_hook::install_permanent_error(
+        metrics::backpressure::emit::provider_permanent_error,
+    );
+    pipeline::backpressure_hook::install_sink_write(metrics::backpressure::emit::sink_write);
+    pipeline::backpressure_hook::install_sink_underrun(metrics::backpressure::emit::sink_underrun);
+
     // I18N-01 (issue #481): build the i18n catalog before the first
     // frame so help-overlay strings resolve without lazy init in the
     // render path.  The active locale is set from AppConfig once the

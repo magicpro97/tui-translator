@@ -224,10 +224,19 @@ fn capture_loop(
                 .collect();
 
             let chunk = AudioChunk::new(samples_i16);
-            if silence_detector.process(&chunk) && !send_audio_chunk(&tx, chunk) {
-                // Receiver was dropped — the application is shutting down.
-                tracing::info!("WASAPI capture: channel closed, exiting thread");
-                return Ok(());
+            if silence_detector.process(&chunk) {
+                // QA8-07 (#505): record inter-chunk arrival on the live
+                // capture path so jitter and stall counters reflect the
+                // production WASAPI stream. No-op when no telemetry
+                // sink is installed.
+                super::backpressure_hook::audio_chunk_at(
+                    super::backpressure_hook::monotonic_now_ns(),
+                );
+                if !send_audio_chunk(&tx, chunk) {
+                    // Receiver was dropped — the application is shutting down.
+                    tracing::info!("WASAPI capture: channel closed, exiting thread");
+                    return Ok(());
+                }
             }
         }
 
@@ -248,6 +257,9 @@ fn capture_loop(
         // Wait for the next buffer event (or timeout after 1 s).
         if h_event.wait_for_event(EVENT_TIMEOUT_MS).is_err() {
             tracing::warn!("WASAPI event wait timeout — stream stalled?");
+            // QA8-07 (#505): an event-wait timeout is an explicit
+            // capture stall (lost device, sleep, driver freeze).
+            super::backpressure_hook::audio_capture_stall();
         }
     }
 }

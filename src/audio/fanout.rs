@@ -202,6 +202,10 @@ fn try_send_slot(
         Err(mpsc::error::TrySendError::Full(_)) => {
             tracing::debug!("fanout: slot {label} full — dropping chunk");
             counters.increment(slot);
+            // QA8-07 (#505): mirror fanout drops into the global
+            // backpressure telemetry so the QA8-05 runner reads a
+            // single object. No-op when telemetry is not installed.
+            super::backpressure_hook::fanout_drop(slot);
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
             tracing::debug!("fanout: slot {label} closed permanently");

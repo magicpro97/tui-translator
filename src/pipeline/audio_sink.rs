@@ -214,6 +214,20 @@ impl OemCableSink {
         let summary = self
             .writer
             .write_pcm(&self.device_name, self.target_format, &converted)?;
+        let elapsed = started.elapsed();
+        // QA8-07 (#505): mirror sink write latency + bytes into the
+        // global backpressure telemetry; dropped frames reported by
+        // the writer are recorded as underruns so QA8-05 / soak
+        // evidence captures virtual-mic starvation. No-op when no
+        // telemetry sink is installed.
+        crate::pipeline::backpressure_hook::sink_write(
+            // 16-bit samples → 2 bytes each.
+            summary.sample_count.saturating_mul(2),
+            elapsed.as_nanos() as u64,
+        );
+        if summary.dropped_frames > 0 {
+            crate::pipeline::backpressure_hook::sink_underrun();
+        }
         Ok(OemCableWriteEvidence {
             device_name: self.device_name.clone(),
             source_format: decoded.format,
@@ -223,7 +237,7 @@ impl OemCableSink {
             written_sample_count: summary.sample_count,
             dropped_frames: summary.dropped_frames,
             rms: pcm_rms_i16(&converted),
-            latency_ms: started.elapsed().as_secs_f64() * 1_000.0,
+            latency_ms: elapsed.as_secs_f64() * 1_000.0,
         })
     }
 }
