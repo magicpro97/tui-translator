@@ -1,0 +1,218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/magicpro97/tui-translator/blob/main/verification-evidence/qa8/QA8-07-backpressure-telemetry.schema.json",
+  "title": "tui-translator Backpressure Telemetry Schema v1 (QA8-07)",
+  "description": "Machine-readable contract for the audio-capture / provider / cancellation / virtual-mic backpressure telemetry snapshot emitted by `crate::metrics::backpressure::BackpressureTelemetry::snapshot_json`. Schema v1 is the contract QA8-05 (issue #503) consumes to enforce backpressure thresholds during the 8-hour soak. The snapshot is strictly additive over QA8-03's audio_summary/provider_summary/virtual_mic_summary: those fields remain authoritative for SLO comparisons but lack jitter distribution, provider queue depth, error-recovery counts, cancellation latency, and sink write latency, which this schema fills in. All histogram values are reported in microseconds (`*_us`). The `breaches` array enumerates any threshold that was exceeded at snapshot time; `ok` is `true` iff `breaches` is empty.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "audio_capture",
+    "provider",
+    "cancellation",
+    "sink",
+    "thresholds",
+    "breaches",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "qa8-07.v1",
+      "description": "Backpressure-telemetry schema version. v1 is the QA8-07 baseline; subsequent revisions MUST bump this string."
+    },
+    "issue": {
+      "type": "string",
+      "pattern": "^#[0-9]+$",
+      "description": "DEPRECATED in v1.1+ — use `related_issues` instead. Retained as optional for forward compatibility; readers SHOULD ignore."
+    },
+    "related_issues": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^#[0-9]+$" },
+      "description": "GitHub issues this telemetry is evidence for. Always contains '#505' for QA8-07; QA8-05 (issue #503) may reuse the same telemetry, so this is an array rather than a single value."
+    },
+    "sample_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically-increasing snapshot ordinal so soak readers can order samples without wall-clock dependence."
+    },
+    "sample_unix_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock timestamp (ms since UNIX epoch) of the snapshot. May be 0 if the system clock is not available."
+    },
+    "audio_capture": { "$ref": "#/definitions/audio_capture" },
+    "provider": { "$ref": "#/definitions/provider" },
+    "cancellation": { "$ref": "#/definitions/cancellation" },
+    "sink": { "$ref": "#/definitions/sink" },
+    "thresholds": { "$ref": "#/definitions/thresholds" },
+    "breaches": {
+      "type": "array",
+      "description": "Identifiers of any threshold whose value was exceeded at snapshot time. Each identifier is mapped to a threshold-object key via `breach_threshold_map`.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "audio_jitter_p99_ms",
+          "capture_stalls",
+          "provider_queue_high_water",
+          "provider_inflight_high_water",
+          "provider_permanent_errors",
+          "cancel_p99_ms",
+          "sink_underruns",
+          "sink_write_p99_ms",
+          "fanout_drops"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "breach_threshold_map": {
+      "type": "object",
+      "description": "Mapping from each breach identifier present in `breaches` to the key under `thresholds` it derives from. Provides a deterministic mapping when names diverge (e.g. `capture_stalls` -> `max_capture_stalls`).",
+      "additionalProperties": { "type": "string" }
+    },
+    "calibration": {
+      "type": "object",
+      "description": "Calibration metadata noting which thresholds are advisory pending a 30-minute soak + QA8-05 evidence loop.",
+      "properties": {
+        "calibration_pending": { "type": "boolean" },
+        "notes": { "type": "object" },
+        "follow_up": { "type": "string" }
+      }
+    },
+    "ok": {
+      "type": "boolean",
+      "description": "True iff `breaches` is empty."
+    }
+  },
+  "definitions": {
+    "histogram_us": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "mean_us", "p50_us", "p95_us", "p99_us", "p999_us", "max_us"],
+      "description": "HDR-histogram percentile envelope expressed in microseconds.",
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "mean_us": { "type": "number", "minimum": 0 },
+        "p50_us": { "type": "integer", "minimum": 0 },
+        "p95_us": { "type": "integer", "minimum": 0 },
+        "p99_us": { "type": "integer", "minimum": 0 },
+        "p999_us": { "type": "integer", "minimum": 0 },
+        "max_us": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "audio_capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunks_seen", "stall_count", "stall_threshold_ns", "jitter"],
+      "properties": {
+        "chunks_seen": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total audio chunks delivered into the fanout / pipeline."
+        },
+        "stall_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of inter-chunk gaps that exceeded `stall_threshold_ns`, plus any explicit `record_stall()` calls."
+        },
+        "stall_threshold_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Configured stall threshold in nanoseconds; gaps strictly greater than this count toward `stall_count`."
+        },
+        "jitter": { "$ref": "#/definitions/histogram_us" }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queue_depth",
+        "queue_high_water",
+        "inflight",
+        "inflight_high_water",
+        "enqueued_total",
+        "dequeued_total",
+        "completed_total",
+        "recovered_errors",
+        "permanent_errors"
+      ],
+      "properties": {
+        "queue_depth": { "type": "integer", "minimum": 0, "description": "Current provider queue depth (gauge)." },
+        "queue_high_water": { "type": "integer", "minimum": 0, "description": "All-time maximum queue depth." },
+        "inflight": { "type": "integer", "minimum": 0, "description": "Current in-flight provider request count." },
+        "inflight_high_water": { "type": "integer", "minimum": 0, "description": "All-time maximum in-flight count." },
+        "enqueued_total": { "type": "integer", "minimum": 0 },
+        "dequeued_total": { "type": "integer", "minimum": 0 },
+        "completed_total": { "type": "integer", "minimum": 0 },
+        "recovered_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Transient (429/503/network) errors that were retried and eventually succeeded."
+        },
+        "permanent_errors": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Errors that exhausted retries or were non-transient (auth, invalid input)."
+        }
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issued", "observed", "latency"],
+      "properties": {
+        "issued": { "type": "integer", "minimum": 0, "description": "Cancellation signals raised." },
+        "observed": { "type": "integer", "minimum": 0, "description": "Cancelled tasks observed to have exited." },
+        "latency": { "$ref": "#/definitions/histogram_us" }
+      }
+    },
+    "sink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writes", "bytes_written", "underruns", "fanout_drops", "write_latency"],
+      "properties": {
+        "writes": { "type": "integer", "minimum": 0 },
+        "bytes_written": { "type": "integer", "minimum": 0 },
+        "underruns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sink ran out of data before the next write arrived."
+        },
+        "fanout_drops": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Mirror of `FanoutDropCounters` (DM-02, issue #378) summed across slots for QA8-05 convenience."
+        },
+        "write_latency": { "$ref": "#/definitions/histogram_us" }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "audio_jitter_p99_ms",
+        "max_capture_stalls",
+        "provider_max_queue_depth",
+        "provider_max_inflight",
+        "provider_max_permanent_errors",
+        "cancel_p99_ms",
+        "max_sink_underruns",
+        "sink_write_p99_ms",
+        "max_fanout_drops"
+      ],
+      "description": "Threshold envelope embedded in the snapshot so QA8-05 can flag breaches without re-reading its own config.",
+      "properties": {
+        "audio_jitter_p99_ms": { "type": "integer", "minimum": 0 },
+        "max_capture_stalls": { "type": "integer", "minimum": 0 },
+        "provider_max_queue_depth": { "type": "integer", "minimum": 0 },
+        "provider_max_inflight": { "type": "integer", "minimum": 0 },
+        "provider_max_permanent_errors": { "type": "integer", "minimum": 0 },
+        "cancel_p99_ms": { "type": "integer", "minimum": 0 },
+        "max_sink_underruns": { "type": "integer", "minimum": 0 },
+        "sink_write_p99_ms": { "type": "integer", "minimum": 0 },
+        "max_fanout_drops": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

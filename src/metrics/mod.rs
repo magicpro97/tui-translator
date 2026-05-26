@@ -15,6 +15,7 @@
 // Metrics types are used in Phase 4; suppress dead-code lint for now.
 #![allow(dead_code)]
 
+pub mod backpressure;
 pub mod cost;
 pub mod latency;
 pub mod loss;
@@ -24,6 +25,11 @@ pub mod probe;
 pub mod process;
 pub mod snapshot;
 
+#[allow(unused_imports)]
+pub use backpressure::{
+    AudioCaptureBackpressure, BackpressureTelemetry, BackpressureThresholds, CancellationLatency,
+    HistogramUs, ProviderBackpressure, SinkBackpressure,
+};
 pub use cost::{format_cost_or_zero_state, CostCounter};
 #[allow(unused_imports)]
 pub use latency::LatencyHistogram;
