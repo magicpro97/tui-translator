@@ -87,6 +87,65 @@ struct CaptureHotSwapRuntime {
 
 static CAPTURE_HOT_SWAP_RUNTIME: OnceLock<Arc<CaptureHotSwapRuntime>> = OnceLock::new();
 
+// ── CTRL-02: TTS voice catalog and hot-swap (issue #455) ─────────────────────
+
+/// Process-wide TTS voice runtime: a clone of the provider's active-voice
+/// handle plus its voice catalog, so that the TUI / hot-reload paths can
+/// swap voices without holding a reference to the provider that was moved
+/// into the orchestrator task.
+struct TtsVoiceRuntime {
+    active_voice: Arc<std::sync::RwLock<Option<providers::VoiceSelection>>>,
+    catalog: Arc<std::sync::RwLock<Vec<providers::VoiceSelection>>>,
+}
+
+static TTS_VOICE_RUNTIME: OnceLock<Arc<TtsVoiceRuntime>> = OnceLock::new();
+
+/// Resolve a voice name against the active catalog without applying it.
+/// Returns `Ok(None)` for an absent name, `Ok(Some(voice))` when found, and
+/// `Err(InvalidInput)` for an unknown name — the caller surfaces the error.
+fn resolve_voice_by_name(
+    name: Option<&str>,
+) -> std::result::Result<Option<providers::VoiceSelection>, providers::ProviderError> {
+    let Some(name) = name else { return Ok(None) };
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let Some(rt) = TTS_VOICE_RUNTIME.get() else {
+        return Err(providers::ProviderError::Unimplemented(
+            "TTS voice runtime is not initialised (TTS provider is not active)".to_string(),
+        ));
+    };
+    let catalog = rt.catalog.read().map_err(|_| {
+        providers::ProviderError::Unknown("TTS voice catalog lock was poisoned".to_string())
+    })?;
+    catalog
+        .iter()
+        .find(|v| v.name == trimmed)
+        .cloned()
+        .map(Some)
+        .ok_or_else(|| {
+            providers::ProviderError::InvalidInput(format!(
+                "voice {trimmed:?} is not in the TTS voice catalog"
+            ))
+        })
+}
+
+/// Apply a `tts_voice` config value to the live provider (CTRL-02 hot field).
+///
+/// Errors are returned for the caller to route to `pipeline_error_msg` or
+/// log; absence of the runtime (TTS not initialised) is treated as success
+/// so dual-slot / disabled-TTS sessions do not generate spurious errors.
+fn apply_tts_voice_from_config(
+    voice_name: Option<&str>,
+) -> std::result::Result<(), providers::ProviderError> {
+    let Some(rt) = TTS_VOICE_RUNTIME.get() else {
+        return Ok(());
+    };
+    let selection = resolve_voice_by_name(voice_name)?;
+    providers::google::tts::apply_voice_selection(&rt.active_voice, &rt.catalog, selection)
+}
+
 struct SlotAUiArcs {
     pipeline_halted: Arc<AtomicBool>,
     pipeline_error_msg: Arc<Mutex<Option<String>>>,
@@ -511,6 +570,42 @@ impl providers::TtsProvider for RuntimeTtsProvider {
             }
         }
     }
+
+    async fn list_voices(
+        &self,
+    ) -> std::result::Result<Vec<providers::VoiceSelection>, providers::ProviderError> {
+        match self {
+            Self::Google(provider) => providers::TtsProvider::list_voices(provider).await,
+            Self::Disabled(_) => Ok(Vec::new()),
+        }
+    }
+
+    fn set_active_voice(
+        &self,
+        voice: Option<providers::VoiceSelection>,
+    ) -> std::result::Result<(), providers::ProviderError> {
+        match self {
+            Self::Google(provider) => providers::TtsProvider::set_active_voice(provider, voice),
+            Self::Disabled(_) => {
+                if voice.is_some() {
+                    Err(providers::ProviderError::InvalidInput(
+                        "cannot select a TTS voice while TTS is disabled \
+                         (configure google_api_key and tts_enabled first)"
+                            .to_string(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    fn active_voice(&self) -> Option<providers::VoiceSelection> {
+        match self {
+            Self::Google(provider) => providers::TtsProvider::active_voice(provider),
+            Self::Disabled(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -803,6 +898,27 @@ fn build_runtime_tts_provider(
 
     providers::google::tts::GoogleTtsProvider::new(key)
         .map(|p| p.with_cost_reporter(cost_reporter))
+        .inspect(|provider| {
+            // CTRL-02 (issue #455): expose the active-voice handle to the
+            // process-wide voice runtime so the TUI and hot-reload paths can
+            // swap voices after the provider has been moved into the
+            // orchestrator task.  `OnceLock::set` is a no-op after the first
+            // call; that is intentional — a session uses one TTS provider
+            // and its handle is stable across hot-reloads.
+            let _ = TTS_VOICE_RUNTIME.set(Arc::new(TtsVoiceRuntime {
+                active_voice: provider.active_voice_handle(),
+                catalog: provider.voice_catalog_handle(),
+            }));
+            // Apply any persisted tts_voice from config at startup.  Errors
+            // are logged but do not block provider construction — the user
+            // can fix the value via the V key without restarting.
+            if let Err(err) = apply_tts_voice_from_config(cfg.tts_voice.as_deref()) {
+                tracing::warn!(
+                    error = %err,
+                    "configured tts_voice could not be applied; using provider default"
+                );
+            }
+        })
         .map(RuntimeTtsProvider::Google)
 }
 
@@ -3905,6 +4021,17 @@ fn apply_runtime_config(
     // capture or playback threads.
     audio::audio_gain::set_input_gain_db(effective_cfg.input_gain_db);
     audio::audio_gain::set_output_volume_db(effective_cfg.output_volume_db);
+
+    // CTRL-02 (issue #455): tts_voice is a hot field.  Apply it through the
+    // shared runtime handle so any later utterance picks up the new voice on
+    // its next synthesise call.  Errors are logged here; the V key surfaces
+    // user-initiated swap errors visibly via pipeline_error_msg.
+    if let Err(err) = apply_tts_voice_from_config(effective_cfg.tts_voice.as_deref()) {
+        tracing::warn!(
+            error = %err,
+            "could not apply tts_voice from reloaded config; keeping previous voice"
+        );
+    }
     (apply_requires_restart, actually_changed)
 }
 
@@ -4405,6 +4532,7 @@ impl TuiInteractionMode {
                     | UserAction::ConfigCycleCaptureDevice
                     | UserAction::ReloadConfig
                     | UserAction::ToggleTts
+                    | UserAction::CycleTtsVoice
                     | UserAction::AdjustInputGainDb(_)
                     | UserAction::AdjustOutputVolumeDb(_)
                     | UserAction::ResetVolumeAndGain
@@ -4673,6 +4801,8 @@ fn key_to_action(
         // Commands (issue #64)
         KeyCode::Char(' ') => Some(UserAction::TogglePause),
         KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::ToggleTts),
+        // CTRL-02 — cycle active TTS voice (issue #455).
+        KeyCode::Char('v') | KeyCode::Char('V') => Some(UserAction::CycleTtsVoice),
         KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::ToggleMetrics),
         KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::PromptLanguage),
         KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
@@ -5071,6 +5201,105 @@ fn handle_action(
         // M — expand / collapse metrics (issue #41)
         UserAction::ToggleMetrics => {
             state.toggle_metrics();
+        }
+
+        // V — cycle TTS voice (CTRL-02, issue #455).
+        //
+        // Cycles through voices in the catalog whose `language` field
+        // matches the user's current target language (case-insensitive
+        // prefix match so `vi` matches `vi-VN`, etc.).  If no voices match
+        // the target language, falls back to the entire catalog.  The
+        // cycle order is: `None → first → second → ... → last → None`.
+        UserAction::CycleTtsVoice => {
+            let Some(rt) = TTS_VOICE_RUNTIME.get() else {
+                if let Ok(mut slot) = state.pipeline_error_msg.lock() {
+                    *slot = Some("TTS voice is unavailable (TTS provider is not active)".into());
+                }
+                return;
+            };
+            let catalog_snapshot = match rt.catalog.read() {
+                Ok(guard) => guard.clone(),
+                Err(_) => {
+                    if let Ok(mut slot) = state.pipeline_error_msg.lock() {
+                        *slot = Some("TTS voice catalog is unavailable".into());
+                    }
+                    return;
+                }
+            };
+            if catalog_snapshot.is_empty() {
+                if let Ok(mut slot) = state.pipeline_error_msg.lock() {
+                    *slot = Some("TTS voice catalog is empty".into());
+                }
+                return;
+            }
+            let target_lang = state
+                .target_language
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default();
+            let target_prefix = target_lang
+                .split(['-', '_'])
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let filtered: Vec<providers::VoiceSelection> = if target_prefix.is_empty() {
+                catalog_snapshot.clone()
+            } else {
+                let f: Vec<_> = catalog_snapshot
+                    .iter()
+                    .filter(|v| {
+                        v.language
+                            .split(['-', '_'])
+                            .next()
+                            .map(|p| p.eq_ignore_ascii_case(&target_prefix))
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+                    .collect();
+                if f.is_empty() {
+                    catalog_snapshot.clone()
+                } else {
+                    f
+                }
+            };
+            let current_voice_name: Option<String> = rt
+                .active_voice
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|v| v.name.clone()));
+            let next_voice: Option<providers::VoiceSelection> = match current_voice_name {
+                None => filtered.first().cloned(),
+                Some(name) => {
+                    let pos = filtered.iter().position(|v| v.name == name);
+                    match pos {
+                        Some(i) if i + 1 < filtered.len() => Some(filtered[i + 1].clone()),
+                        Some(_) => None,
+                        None => filtered.first().cloned(),
+                    }
+                }
+            };
+            match providers::google::tts::apply_voice_selection(
+                &rt.active_voice,
+                &rt.catalog,
+                next_voice.clone(),
+            ) {
+                Ok(()) => {
+                    let voice_label = next_voice
+                        .as_ref()
+                        .map(|v| v.name.clone())
+                        .unwrap_or_else(|| "default".to_string());
+                    tracing::info!(voice = %voice_label, "TTS voice swapped (CTRL-02)");
+                    if let Ok(mut cfg) = current_config.lock() {
+                        cfg.tts_voice = next_voice.as_ref().map(|v| v.name.clone());
+                    }
+                }
+                Err(err) => {
+                    if let Ok(mut slot) = state.pipeline_error_msg.lock() {
+                        *slot = Some(format!("TTS voice swap failed: {err}"));
+                    }
+                    tracing::warn!(error = %err, "TTS voice swap rejected by provider");
+                }
+            }
         }
 
         // ? — show / hide help (issue #66, #191)

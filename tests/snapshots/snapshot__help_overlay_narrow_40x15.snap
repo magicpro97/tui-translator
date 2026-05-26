@@ -1,5 +1,6 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1474
 expression: rendered
 ---
 ┌ Help [0/4] — ↑↓ scroll · Esc close ──┐
@@ -10,10 +11,10 @@ expression: rendered
 │  End        Scroll to bottom / auto-f│
 │  Space      Pause / resume translatio│
 │  T          Toggle TTS audio output  │
+│  V          Cycle TTS voice (CTRL-02)│
 │  M          Toggle metrics panel (com│
 │  L          Change target language   │
 │  S          Settings (F2/Ctrl+D cycle│
 │  R          Reload config from disk  │
 │  ?          Show / hide this help    │
-│  Esc        Dismiss this overlay     │
 └──────────────────────────────────────┘

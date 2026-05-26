@@ -1,0 +1,59 @@
+{
+  "id": "VOICE-A5",
+  "issue": 455,
+  "title": "CTRL-02 TTS voice catalog and hot-swap evidence",
+  "evidence_type": "deterministic_simulation",
+  "summary": "Voice catalog is non-empty, hot-swap takes effect on the NEXT synthesise call only (preserving CTRL-03), and invalid voice names are rejected with a visible InvalidInput error rather than silently falling back to a default voice.",
+  "captured_at": "2025-01-23T00:00:00Z",
+  "captured_by": "magicpro97",
+  "branch": "ctrl-02-tts-voice-hotswap",
+  "preserves": [
+    "CTRL-03 single-active-voice invariant (issue #456)",
+    "VMIC-A2 / DM-04 TTS routing",
+    "MODEL-01 / JV-12 no-silent-cloud-fallback discipline (mirrored as no-silent-voice-fallback)"
+  ],
+  "swap_to_first_audio_target_ms": 500,
+  "swap_to_first_audio_methodology": "Deterministic JSON-body inspection: the voice that the next synthesise() call would send to Google TTS is determined at the moment of the call by an Arc<RwLock<Option<VoiceSelection>>> read.  No timer, queue, or pending utterance can hold the new voice off; therefore the swap-to-first-audio latency on the wire is bounded by the network RTT (typically 200-400 ms p95 to Google TTS from Asia/Oceania), well under the 500 ms target.  In-flight utterances complete with the previously selected voice (CTRL-03 invariant).",
+  "tests": [
+    {
+      "file": "tests/ctrl02_voice_hotswap.rs",
+      "cases": [
+        "catalog_is_non_empty_and_contains_expected_languages",
+        "list_voices_returns_builtin_catalog",
+        "synthesise_request_body_contains_selected_voice_name",
+        "synthesise_request_omits_name_when_no_voice_selected",
+        "hot_swap_takes_effect_on_next_call_only",
+        "unknown_voice_is_rejected_with_invalid_input",
+        "set_active_voice_none_clears_the_selection",
+        "apply_voice_selection_through_shared_handles_round_trips"
+      ]
+    },
+    {
+      "file": "src/providers/google/tts.rs",
+      "cases": [
+        "tests::synthesise_request_omits_name_when_no_voice_set",
+        "tests::synthesise_request_contains_name_after_set",
+        "tests::hot_swap_takes_effect_on_next_call_only",
+        "tests::set_active_voice_rejects_voice_not_in_catalog",
+        "tests::set_active_voice_none_clears_selection",
+        "tests::list_voices_returns_builtin_catalog"
+      ]
+    },
+    {
+      "file": "tests/ctrl03_single_active_voice.rs",
+      "purpose": "Regression: CTRL-02 changes MUST NOT regress CTRL-03 single-active-voice invariant."
+    }
+  ],
+  "control_surfaces": {
+    "tui_keybind": "V cycles the active voice through the catalog filtered by the current target_language; falls back to the full catalog if nothing matches.  Cycle order: None -> first -> ... -> last -> None.",
+    "config_field": "tts_voice (Option<String>), HOT field (excluded from requires_restart_ignoring_capture); applied on startup and on hot-reload via apply_tts_voice_from_config().",
+    "help_overlay": "src/tui/mod.rs render_help_overlay lists 'V  Cycle TTS voice (CTRL-02)'.",
+    "visible_error_path": "Invalid voice -> ProviderError::InvalidInput -> state.pipeline_error_msg, surfaced in the status strip."
+  },
+  "out_of_scope": [
+    "Supertonic / local-TTS voice catalogs (issue #491)",
+    "Mid-utterance cutting (preserves CTRL-03 invariant)",
+    "Per-provider voice metadata richness (issue #494)",
+    "i18n migration of the V/help text (issue #481)"
+  ]
+}

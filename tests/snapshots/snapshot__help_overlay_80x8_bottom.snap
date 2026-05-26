@@ -1,12 +1,13 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1773
 expression: "render_help(80, 8, 9999)"
 ---
             ┌ Help [11/11] — ↑↓ scroll · Esc close ────────────────┐            
+            │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            
             │  Tab        Switch A/B pane focus (dual-slot mode)   │            
             │  [ / ]      Mic gain  -1/+1 dB    { / } TTS vol  -1/+│            
             │  0          Reset mic gain and TTS volume to 0 dB (CT│            
-            │  q / Ctrl+C Quit — shows session summary             │            
             └──────────────────────────────────────────────────────┘

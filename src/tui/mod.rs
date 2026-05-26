@@ -359,6 +359,13 @@ pub enum UserAction {
     AdjustOutputVolumeDb(i32),
     /// `0` — reset both input gain and output volume to 0 dB (CTRL-01).
     ResetVolumeAndGain,
+    /// `V` — cycle the active TTS voice through the catalog filtered by
+    /// the current target language (CTRL-02, issue #455).
+    ///
+    /// Cycles `None → first → second → ... → None`.  Errors raised by the
+    /// provider (e.g. unknown voice) are surfaced via `pipeline_error_msg`
+    /// so the swap is never silent.
+    CycleTtsVoice,
 }
 
 /// Mode for the shared config editor overlay.
@@ -1596,7 +1603,7 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
 }
 
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
-const HELP_OVERLAY_IDEAL_H: u16 = 19;
+const HELP_OVERLAY_IDEAL_H: u16 = 20;
 const HELP_OVERLAY_MIN_H: u16 = 4;
 const HELP_OVERLAY_CONTENT_LINES: u16 = 17;
 
@@ -3300,6 +3307,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from("  End        Scroll to bottom / auto-follow"),
         Line::from("  Space      Pause / resume translation"),
         Line::from("  T          Toggle TTS audio output"),
+        Line::from("  V          Cycle TTS voice (CTRL-02)"),
         Line::from("  M          Toggle metrics panel (compact/expanded)"),
         Line::from("  L          Change target language"),
         Line::from(settings_line),

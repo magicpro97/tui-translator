@@ -10,6 +10,7 @@
 pub mod mt;
 pub mod stt;
 pub mod tts;
+mod tts_voices;
 
 const REDACTED_GOOGLE_API_KEY: &str = "[REDACTED_GOOGLE_API_KEY]";
 const MAX_ERROR_BODY_CHARS: usize = 240;
