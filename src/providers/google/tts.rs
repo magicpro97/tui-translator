@@ -180,8 +180,8 @@ pub struct GoogleTtsProvider {
     /// default voice; `Some(v)` = explicit voice for the next call.
     active_voice: Arc<RwLock<Option<VoiceSelection>>>,
     /// Catalog of selectable voices.  Seeded with [`builtin_voice_catalog`]
-    /// and may be replaced wholesale via [`with_voice_catalog`] or
-    /// [`refresh_voice_catalog`].
+    /// and may be replaced wholesale via `with_voice_catalog` or
+    /// `refresh_voice_catalog`.
     catalog: Arc<RwLock<Vec<VoiceSelection>>>,
 }
 
@@ -229,7 +229,7 @@ impl GoogleTtsProvider {
     ///
     /// Intended for tests and for refreshing the catalog from the Google
     /// `voices.list` endpoint; production builds use the catalog seeded by
-    /// [`new`] by default.
+    /// `new` by default.
     pub fn with_voice_catalog(self, voices: Vec<VoiceSelection>) -> Self {
         if let Ok(mut guard) = self.catalog.write() {
             *guard = voices;
@@ -252,7 +252,7 @@ impl GoogleTtsProvider {
     /// without holding `&self` on the provider itself — the provider is
     /// moved into the orchestrator task at startup and is no longer reachable
     /// directly.  Writers MUST go through [`apply_voice_selection`] (or this
-    /// provider's [`set_active_voice`]) so the catalog membership check is
+    /// provider's `set_active_voice`) so the catalog membership check is
     /// applied and no unknown voice name reaches the wire.
     pub fn active_voice_handle(&self) -> Arc<RwLock<Option<VoiceSelection>>> {
         Arc::clone(&self.active_voice)
@@ -263,7 +263,7 @@ impl GoogleTtsProvider {
     /// Returned for callers that need to validate or display the catalog
     /// without holding `&self` on the provider.  Mutation is intentionally
     /// not exposed; catalog refreshes happen on construction via
-    /// [`with_voice_catalog`].
+    /// `with_voice_catalog`.
     pub fn voice_catalog_handle(&self) -> Arc<RwLock<Vec<VoiceSelection>>> {
         Arc::clone(&self.catalog)
     }
@@ -430,7 +430,7 @@ impl TtsProvider for GoogleTtsProvider {
     }
 
     /// Update the runtime-active voice.  The new voice takes effect on the
-    /// next [`synthesise`] call; any in-flight call finishes with the
+    /// next `synthesise` call; any in-flight call finishes with the
     /// previously-selected voice (CTRL-02 hot-swap semantics).
     ///
     /// Returns [`ProviderError::InvalidInput`] when the named voice is not
