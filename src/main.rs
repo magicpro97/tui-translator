@@ -231,6 +231,9 @@ struct MetricsSnapshotExport {
     // value is an in-flight local-inference operation count.
     local_cpu_pct: f32,
     local_active_threads: u32,
+    // QA8 (issues #503/#505): live backpressure telemetry snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    backpressure: Option<serde_json::Value>,
 }
 
 impl From<&MetricsSnapshot> for MetricsSnapshotExport {
@@ -256,6 +259,8 @@ impl From<&MetricsSnapshot> for MetricsSnapshotExport {
             capture_swap_drops: snapshot.capture_swap_drops,
             local_cpu_pct: snapshot.local_cpu_pct,
             local_active_threads: snapshot.local_active_threads,
+            backpressure: metrics::backpressure::emit::try_clone()
+                .map(|bp| bp.snapshot_json(metrics::BackpressureThresholds::PRODUCTION)),
         }
     }
 }
@@ -5755,6 +5760,42 @@ mod tests {
         assert_eq!(value["capture_swap_drops"], 1);
         assert_eq!(value["local_cpu_pct"], 0.0);
         assert_eq!(value["local_active_threads"], 0);
+    }
+
+    /// Refs #503, Refs #505: when backpressure telemetry is installed, the
+    /// snapshot export includes a live `backpressure` JSON object; when not
+    /// installed, the field is omitted (Option::None → skip_serializing).
+    #[test]
+    fn metrics_snapshot_export_includes_backpressure_when_installed() {
+        // Guard: the global emit slot is shared across tests.
+        let _lock = metrics::backpressure::emit::test_lock().lock();
+
+        // Baseline — no telemetry installed → field absent.
+        metrics::backpressure::emit::uninstall();
+        let snapshot = MetricsSnapshot::default();
+        let value =
+            serde_json::to_value(MetricsSnapshotExport::from(&snapshot)).expect("serialize export");
+        assert_eq!(value["schema_version"], "4");
+        assert!(
+            value.get("backpressure").is_none(),
+            "backpressure field must be absent when telemetry is not installed"
+        );
+
+        // Install telemetry → field present with expected structure.
+        let bp = std::sync::Arc::new(metrics::backpressure::BackpressureTelemetry::new());
+        metrics::backpressure::emit::install(bp);
+        let value2 =
+            serde_json::to_value(MetricsSnapshotExport::from(&snapshot)).expect("serialize export");
+        let bp_val = value2
+            .get("backpressure")
+            .expect("backpressure field must be present when telemetry is installed");
+        assert!(
+            bp_val.get("schema_version").is_some(),
+            "backpressure snapshot must contain schema_version"
+        );
+
+        // Cleanup.
+        metrics::backpressure::emit::uninstall();
     }
 
     #[test]

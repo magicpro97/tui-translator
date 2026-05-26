@@ -385,6 +385,11 @@ struct AppMetricsSnapshot {
     capture_swap_count: u64,
     #[serde(default)]
     capture_swap_drops: u64,
+    /// Live backpressure telemetry snapshot (Refs #503, Refs #505).
+    /// `None` when the app was built without backpressure telemetry installed
+    /// or when reading a snapshot written by an older binary.
+    #[serde(default)]
+    backpressure: Option<serde_json::Value>,
 }
 
 /// Outcome of the 30-second network-disconnect test.
@@ -1659,6 +1664,9 @@ fn run_full_soak(args: Args) -> Result<()> {
     let mut next_hot_swap = hot_swap_interval.map(|interval| start + interval);
     let mut use_alternate_fixture = true;
     let mut disconnect_done = false;
+    // Refs #503, Refs #505: collect live backpressure snapshots from the app
+    // metrics export for later schema-v2 consumption.
+    let mut backpressure_snapshots: Vec<serde_json::Value> = Vec::new();
 
     loop {
         let now = Instant::now();
@@ -1680,6 +1688,10 @@ fn run_full_soak(args: Args) -> Result<()> {
             };
             if let Some(metrics) = app_metrics.as_ref() {
                 update_report_with_app_metrics(&mut report, metrics);
+                // Refs #503, Refs #505: collect live backpressure snapshot.
+                if let Some(bp) = &metrics.backpressure {
+                    backpressure_snapshots.push(bp.clone());
+                }
             }
             let sample = MetricSample {
                 elapsed_secs: elapsed.as_secs(),
@@ -1813,9 +1825,10 @@ fn run_full_soak(args: Args) -> Result<()> {
     report.threshold_evaluation = Some(evaluate_thresholds(&report));
     write_json(&args.output, &report)?;
     println!(
-        "[run_soak] soak run finished in {}s — report: {}",
+        "[run_soak] soak run finished in {}s — report: {} (backpressure snapshots: {})",
         total_secs,
-        args.output.display()
+        args.output.display(),
+        backpressure_snapshots.len(),
     );
     Ok(())
 }
@@ -2471,6 +2484,48 @@ mod tests {
             !ev.any_blocker_triggered,
             "advisory failure alone must not trigger any_blocker_triggered; \
              only the 60% hard ceiling is a release blocker for B-10"
+        );
+    }
+
+    // ── Backpressure snapshot consumption tests (Refs #503, Refs #505) ─────
+
+    /// `AppMetricsSnapshot` must accept a metrics export JSON that includes
+    /// the new optional `backpressure` field (backward compatible).
+    #[test]
+    fn read_app_metrics_snapshot_accepts_backpressure_field() {
+        // JSON with backpressure field present.
+        let json_with = r#"{
+            "schema_version": "4",
+            "line_pairs_shown": 10,
+            "estimated_cost_usd": 0.05,
+            "e2e_latency_ms": 200,
+            "total_chunks": 100,
+            "dropped_chunks": 2,
+            "capture_swap_count": 1,
+            "capture_swap_drops": 0,
+            "backpressure": {"schema_version": "qa8-07.v1", "status": "ok"}
+        }"#;
+        let snap: AppMetricsSnapshot =
+            serde_json::from_str(json_with).expect("must parse with backpressure field");
+        assert_eq!(snap.line_pairs_shown, 10);
+        assert!(snap.backpressure.is_some(), "backpressure must be Some");
+        let bp = snap.backpressure.as_ref().expect("checked above");
+        assert_eq!(bp["schema_version"], "qa8-07.v1");
+
+        // JSON without backpressure field (older binary).
+        let json_without = r#"{
+            "schema_version": "4",
+            "line_pairs_shown": 5,
+            "estimated_cost_usd": 0.01,
+            "total_chunks": 50,
+            "dropped_chunks": 0
+        }"#;
+        let snap2: AppMetricsSnapshot =
+            serde_json::from_str(json_without).expect("must parse without backpressure field");
+        assert_eq!(snap2.line_pairs_shown, 5);
+        assert!(
+            snap2.backpressure.is_none(),
+            "backpressure must default to None"
         );
     }
 }
