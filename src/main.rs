@@ -53,6 +53,7 @@ use tui_input::InputRequest;
 mod audio;
 mod config;
 mod diagnostics;
+mod i18n;
 mod metrics;
 mod pipeline;
 mod providers;
@@ -2111,6 +2112,12 @@ fn main() -> Result<()> {
 
     tracing::info!("tui-translator starting");
 
+    // I18N-01 (issue #481): build the i18n catalog before the first
+    // frame so help-overlay strings resolve without lazy init in the
+    // render path.  The active locale is set from AppConfig once the
+    // configuration has been loaded, below.
+    i18n::init();
+
     if should_list_audio_devices() {
         print_audio_devices_to_stdout()?;
         return Ok(());
@@ -2174,6 +2181,14 @@ fn main() -> Result<()> {
     prepare_per_user_config_dir_for_startup(&cfg_path)?;
     bootstrap_legacy_config_if_needed(&cfg_path)?;
     let (cfg, load_state, load_error) = config::load_for_startup(&cfg_path)?;
+
+    // I18N-01 (issue #481): apply the persisted locale before the first
+    // frame so migrated TUI surfaces (currently the help overlay) render
+    // in the user's preferred catalog from the very first draw.  Operator
+    // `tracing` logs stay English per the ADR migration allowlist, so
+    // this call only affects UI string lookups.  Subsequent
+    // `apply_runtime_config` calls keep this in sync on hot-reload.
+    i18n::set_locale(&cfg.locale);
 
     // LF-06: best-effort, one-shot migration of pre-LF-06 transcript + audio
     // archive directories from %APPDATA% into the canonical %LOCALAPPDATA%
@@ -4021,6 +4036,11 @@ fn apply_runtime_config(
     // capture or playback threads.
     audio::audio_gain::set_input_gain_db(effective_cfg.input_gain_db);
     audio::audio_gain::set_output_volume_db(effective_cfg.output_volume_db);
+
+    // I18N-01 (issue #481): locale is a hot field.  Update the global
+    // catalog so the next frame renders migrated TUI strings (help
+    // overlay etc.) in the new locale without a TUI restart.
+    i18n::set_locale(&effective_cfg.locale);
 
     // CTRL-02 (issue #455): tts_voice is a hot field.  Apply it through the
     // shared runtime handle so any later utterance picks up the new voice on

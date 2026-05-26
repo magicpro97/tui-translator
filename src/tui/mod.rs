@@ -3282,41 +3282,51 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
     };
 
     // ── Content lines ─────────────────────────────────────────────────────────
-    // Render Ctrl-bearing combos per host OS (issue #480 UX-02): Windows/Linux
-    // keep `Ctrl+X`, macOS shows the `⌃X` control glyph.  Function keys and
-    // plain keys are never rewritten.
+    // I18N-01 (issue #481): every user-facing string here resolves through the
+    // i18n catalog (see `src/i18n/` and `locales/*.ftl`).  Per-OS Ctrl-bearing
+    // combos (UX-02 / issue #480) are still computed in Rust and interpolated
+    // into the localised template via Fluent arguments so the catalog never
+    // contains platform-specific glyph rewriting logic.
     let os = detect_key_os();
     let settings_line = format!(
-        "  S          Settings ({} cycles field values)",
-        render_f2_or_ctrl_d(os)
+        "  S          {}",
+        crate::i18n::t_arg(
+            "help-settings",
+            "cycle",
+            render_f2_or_ctrl_d(os).to_string()
+        ),
     );
     let quit_line = format!(
-        "  {} Quit \u{2014} shows session summary",
-        render_q_or_ctrl_c(os)
+        "  {} {}",
+        render_q_or_ctrl_c(os),
+        crate::i18n::t("help-quit"),
     );
     let lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
-            " Keyboard Shortcuts",
+            format!(" {}", crate::i18n::t("help-title")),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  \u{2191} / \u{2193}     Scroll subtitles/help"),
-        Line::from("  Home       Scroll to top"),
-        Line::from("  End        Scroll to bottom / auto-follow"),
-        Line::from("  Space      Pause / resume translation"),
-        Line::from("  T          Toggle TTS audio output"),
-        Line::from("  V          Cycle TTS voice (CTRL-02)"),
-        Line::from("  M          Toggle metrics panel (compact/expanded)"),
-        Line::from("  L          Change target language"),
+        Line::from(format!(
+            "  \u{2191} / \u{2193}     {}",
+            crate::i18n::t("help-scroll")
+        )),
+        Line::from(format!("  Home       {}", crate::i18n::t("help-home"))),
+        Line::from(format!("  End        {}", crate::i18n::t("help-end"))),
+        Line::from(format!("  Space      {}", crate::i18n::t("help-pause"))),
+        Line::from(format!("  T          {}", crate::i18n::t("help-tts"))),
+        Line::from(format!("  V          {}", crate::i18n::t("help-voice"))),
+        Line::from(format!("  M          {}", crate::i18n::t("help-metrics"))),
+        Line::from(format!("  L          {}", crate::i18n::t("help-language"))),
         Line::from(settings_line),
-        Line::from("  R          Reload config from disk"),
-        Line::from("  ?          Show / hide this help"),
-        Line::from("  Esc        Dismiss this overlay"),
-        Line::from("  Tab        Switch A/B pane focus (dual-slot mode)"),
-        Line::from("  [ / ]      Mic gain  -1/+1 dB    { / } TTS vol  -1/+1 dB"),
-        Line::from("  0          Reset mic gain and TTS volume to 0 dB (CTRL-01)"),
+        Line::from(format!("  R          {}", crate::i18n::t("help-reload"))),
+        Line::from(format!("  ?          {}", crate::i18n::t("help-help"))),
+        Line::from(format!("  Esc        {}", crate::i18n::t("help-esc"))),
+        Line::from(format!("  Tab        {}", crate::i18n::t("help-tab"))),
+        Line::from(format!("  [ / ]      {}", crate::i18n::t("help-gain"))),
+        Line::from(format!("  0          {}", crate::i18n::t("help-reset"))),
         Line::from(quit_line),
     ];
 
@@ -3328,12 +3338,13 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
     let clamped = scroll_offset.min(max_scroll);
 
     let title: String = if max_scroll > 0 {
+        let position = format!("{clamped}/{max_scroll}");
         format!(
-            " Help [{}/{}] \u{2014} \u{2191}\u{2193} scroll \u{b7} Esc close ",
-            clamped, max_scroll,
+            " {} ",
+            crate::i18n::t_arg("help-bar-scrollable", "position", position)
         )
     } else {
-        " Help \u{2014} press ? or Esc to close ".to_string()
+        format!(" {} ", crate::i18n::t("help-bar-static"))
     };
 
     frame.render_widget(Clear, panel);
@@ -5036,6 +5047,10 @@ mod tests {
     #[test]
     fn help_overlay_lists_settings_shortcut() {
         use ratatui::{backend::TestBackend, Terminal};
+        // I18N-01 (issue #481): the help overlay routes its strings through
+        // the global i18n catalog.  Acquire the shared test lock so concurrent
+        // i18n tests do not toggle the active locale underneath this render.
+        let _i18n_guard = crate::i18n::lock_for_test();
         // Pin the OS so the assertion is stable on every host CI runner.
         let _guard = with_key_os_override("windows");
         let backend = TestBackend::new(80, 24);
@@ -5070,6 +5085,7 @@ mod tests {
     #[test]
     fn help_overlay_renders_macos_control_glyph() {
         use ratatui::{backend::TestBackend, Terminal};
+        let _i18n_guard = crate::i18n::lock_for_test();
         let _guard = with_key_os_override("macos");
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -5110,6 +5126,7 @@ mod tests {
     #[test]
     fn help_overlay_renders_linux_ctrl_label() {
         use ratatui::{backend::TestBackend, Terminal};
+        let _i18n_guard = crate::i18n::lock_for_test();
         let _guard = with_key_os_override("linux");
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -6877,6 +6894,7 @@ mod tests {
     #[test]
     fn help_overlay_documents_tab_shortcut() {
         use ratatui::{backend::TestBackend, Terminal};
+        let _i18n_guard = crate::i18n::lock_for_test();
         let backend = TestBackend::new(80, 30);
         let mut terminal = Terminal::new(backend).unwrap();
 
@@ -6895,6 +6913,72 @@ mod tests {
         assert!(
             rendered.contains("Tab"),
             "help overlay should document the Tab shortcut"
+        );
+    }
+
+    // ── I18N-01 (issue #481): help overlay renders the active locale ────────
+
+    /// Switching the global i18n catalog to `vi-VN` makes the help
+    /// overlay render Vietnamese strings instead of English.  This is the
+    /// minimum end-to-end proof that the i18n layer reaches the TUI.
+    #[test]
+    fn help_overlay_renders_vietnamese_when_locale_is_vi_vn() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let _i18n_guard = crate::i18n::lock_for_test();
+        crate::i18n::set_locale("vi-VN");
+        let _guard = with_key_os_override("windows");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            rendered.contains("Phím tắt"),
+            "vi-VN locale must render the Vietnamese help title; got: {rendered:?}"
+        );
+        // The cycle argument is still produced by Rust per OS, so the
+        // localised Settings line must keep `F2/Ctrl+D` verbatim.
+        assert!(
+            rendered.contains("F2/Ctrl+D"),
+            "vi-VN settings line must still surface the OS-specific cycle keybind; \
+             got: {rendered:?}"
+        );
+    }
+
+    /// Pseudo-locale (`x-pseudo`) wraps every visible string in `⟦…⟧`.
+    /// When the help overlay is rendered in this locale the title row
+    /// must contain the opening bracket so adaptive-layout truncation
+    /// reviewers can see at a glance that the overlay is wider than the
+    /// en-US baseline.
+    #[test]
+    fn help_overlay_pseudo_locale_exposes_truncation_marker() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let _i18n_guard = crate::i18n::lock_for_test();
+        crate::i18n::set_locale("x-pseudo");
+        let _guard = with_key_os_override("windows");
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect();
+        assert!(
+            rendered.contains('⟦'),
+            "pseudo-locale must surface the ⟦…⟧ marker in the help overlay; \
+             got: {rendered:?}"
         );
     }
 

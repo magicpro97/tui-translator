@@ -929,6 +929,30 @@ pub struct AppConfig {
     /// falling back to another voice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tts_voice: Option<String>,
+
+    /// I18N-01 (issue #481): preferred UI locale tag.
+    ///
+    /// BCP-47-style identifier the help overlay and (future) other
+    /// migrated TUI surfaces use for string lookup.  Accepted values are
+    /// the locales shipped in `locales/*.ftl`: currently `"en-US"`
+    /// *(default)* and `"vi-VN"`.  Tests and developers may also use
+    /// `"x-pseudo"` to expose layout truncation; that value is rejected
+    /// in production validation when a future flag enables strict mode.
+    ///
+    /// Changing this value is hot-reloadable: the config watcher and `R`
+    /// reload path call [`crate::i18n::set_locale`] so the next frame
+    /// renders in the new locale without restarting the TUI.
+    #[serde(default = "default_locale", skip_serializing_if = "is_default_locale")]
+    pub locale: String,
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+fn default_locale() -> String {
+    "en-US".to_string()
+}
+
+fn is_default_locale(value: &String) -> bool {
+    value == "en-US"
 }
 
 fn is_default_f32(value: &f32) -> bool {
@@ -982,6 +1006,7 @@ impl Default for AppConfig {
             input_gain_db: 0.0,
             output_volume_db: 0.0,
             tts_voice: None,
+            locale: default_locale(),
         }
     }
 }
@@ -1020,6 +1045,7 @@ impl std::fmt::Debug for AppConfig {
             .field("input_gain_db", &self.input_gain_db)
             .field("output_volume_db", &self.output_volume_db)
             .field("tts_voice", &self.tts_voice)
+            .field("locale", &self.locale)
             .finish()
     }
 }
@@ -1402,6 +1428,18 @@ impl AppConfig {
                 "`tts_source` is set but has no effect in single-slot mode; \
                  TTS is controlled by `tts_enabled` only"
             );
+        }
+        // ── I18N-01 (issue #481): locale validation ────────────────────────
+        // Accept the locales shipped with the binary plus the developer
+        // pseudo-locale.  Other tags are rejected so a typo cannot silently
+        // collapse to the English fallback in a release.
+        match self.locale.as_str() {
+            "en-US" | "vi-VN" | "x-pseudo" => {}
+            other => {
+                bail!(
+                    "`locale` must be one of \"en-US\", \"vi-VN\", or \"x-pseudo\", got {other:?}"
+                );
+            }
         }
         Ok(())
     }

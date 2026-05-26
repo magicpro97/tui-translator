@@ -21,6 +21,9 @@ mod audio;
 #[path = "../src/config/mod.rs"]
 mod config;
 
+#[path = "../src/i18n/mod.rs"]
+mod i18n;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
@@ -75,6 +78,11 @@ fn render_hints(bar: &ControlHintsBar, width: u16, height: u16) -> String {
 
 /// Render the help overlay on a blank terminal of the given size.
 fn render_help(width: u16, height: u16, scroll_offset: u16) -> String {
+    // I18N-01 (issue #481): the help overlay routes its strings through
+    // the global i18n catalog.  Acquire the shared test lock so other
+    // tests in this binary cannot leak a non-default locale into the
+    // captured snapshot.
+    let _i18n_guard = crate::i18n::lock_for_test();
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
