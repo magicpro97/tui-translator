@@ -26,17 +26,17 @@ src/tui/onboarding.rs               # baseline: onboarding wizard (tracked: #483
 tests/hot_config/matrix.rs          # baseline: matrix tests (tracked: #483)
 tests/local_model_bootstrap.rs      # baseline: bootstrap tests (tracked: #483)
 src/providers/local/mt.rs           # baseline: local MT (tracked: #483)
-src/audio/archive.rs                # baseline: audio archive (tracked: #483)
-src/audio/vad.rs                    # baseline: VAD (tracked: #483)
 src/pipeline/audio_sink.rs          # baseline: audio sink (tracked: #483)
 src/pipeline/playback.rs            # baseline: playback (tracked: #483)
-src/pipeline/fallback.rs            # baseline: fallback (tracked: #483)
-src/storage/mod.rs                  # baseline: storage (tracked: #483)
 # Removed by STD-02 slice (#484) — tests extracted into sibling *_tests.rs files:
 #   src/audio/router.rs               -> router_tests.rs
 #   src/metrics/snapshot.rs           -> snapshot_tests.rs
 #   src/audio/wasapi_capture.rs       -> wasapi_capture_tests.rs
 #   src/config/provider_supervisor.rs -> provider_supervisor_tests.rs
+#   src/storage/mod.rs                -> mod_tests.rs        (slice 2)
+#   src/pipeline/fallback.rs          -> fallback_tests.rs   (slice 2)
+#   src/audio/archive.rs              -> archive_tests.rs    (slice 2)
+#   src/audio/vad.rs                  -> vad_tests.rs        (slice 2)
 tests/integration/error_retry.rs    # baseline: retry tests (tracked: #483)
 src/bin/provider_benchmark.rs       # baseline: bench harness (tracked: #483)
 src/audio/mod.rs                    # baseline: audio root (tracked: #483)
