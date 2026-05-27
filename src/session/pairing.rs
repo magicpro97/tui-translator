@@ -76,7 +76,7 @@ pub enum SessionPairingError {
 ///
 /// # Pairing contract
 ///
-/// Both [`session_log_file_name`] (JSONL writer) and `session_wav_file_name`
+/// Both `session_log_file_name` (JSONL writer) and `session_wav_file_name`
 /// (WAV writer in `audio::archive`) apply an identical sanitization rule:
 /// keep ASCII alphanumeric characters, `-`, and `_`; replace every other byte
 /// with `_`.  Given the same `session_id` string, both functions produce an
