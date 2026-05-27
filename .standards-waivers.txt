@@ -18,9 +18,9 @@ tests/snapshot.rs                   # baseline: snapshot tests (tracked: #483)
 tests/soak/run_soak.rs              # baseline: soak harness (tracked: #483)
 src/bin/mt_bench.rs                 # baseline: bench harness (tracked: #483)
 src/session/mod.rs                  # baseline: split session state (tracked: #483)
-src/providers/local/mod.rs          # baseline: local provider (tracked: #483)
 src/providers/local/bootstrap.rs    # baseline: local bootstrap (tracked: #483)
 # Removed by STD-02 slice (#484) — tests extracted into sibling *_tests.rs files:
+#   src/providers/local/mod.rs      -> manifest cluster extracted into manifest.rs (issue #484, RQ-B6); mod.rs now 493 lines
 #   src/providers/local/mt.rs       -> mt_ort.rs + mt_tests.rs (issue #484)
 #   src/audio/router.rs               -> router_tests.rs
 #   src/metrics/snapshot.rs           -> snapshot_tests.rs
