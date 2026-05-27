@@ -17,8 +17,8 @@ src/bin/eval_session.rs             # baseline: eval harness (tracked: #483)
 tests/snapshot.rs                   # baseline: snapshot tests (tracked: #483)
 tests/soak/run_soak.rs              # baseline: soak harness (tracked: #483)
 src/bin/mt_bench.rs                 # baseline: bench harness (tracked: #483)
-src/session/mod.rs                  # baseline: split session state (tracked: #483)
 # Removed by STD-02 slice (#484) — tests extracted into sibling *_tests.rs files:
+#   src/session/mod.rs                -> recorder cluster extracted into recorder.rs + recorder_writer.rs (issue #484, RQ-B8); mod.rs now 206 lines, recorder.rs 390 lines, recorder_writer.rs 427 lines — all under the 600 LOC gate.
 #   src/providers/local/mod.rs      -> manifest cluster extracted into manifest.rs (issue #484, RQ-B6); mod.rs now 493 lines
 #   src/providers/local/mt.rs       -> mt_ort.rs + mt_tests.rs (issue #484)
 #   src/audio/router.rs               -> router_tests.rs
