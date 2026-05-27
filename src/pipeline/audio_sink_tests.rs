@@ -1,5 +1,10 @@
 use super::*;
 
+#[cfg(feature = "production-audio")]
+use super::roundtrip::samples_to_le_bytes;
+#[cfg(feature = "production-audio")]
+use crate::audio::vbcable_ci::MIN_EXPECTED_RMS;
+
 #[test]
 fn mock_sink_records_play_calls() {
     let sink = MockAudioSink::new();

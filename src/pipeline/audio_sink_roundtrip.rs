@@ -147,7 +147,7 @@ fn failed_roundtrip_report(
     }
 }
 
-fn samples_to_le_bytes(samples: &[i16]) -> Vec<u8> {
+pub(super) fn samples_to_le_bytes(samples: &[i16]) -> Vec<u8> {
     samples
         .iter()
         .flat_map(|sample| sample.to_le_bytes())
