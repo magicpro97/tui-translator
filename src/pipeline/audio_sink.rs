@@ -338,7 +338,20 @@ impl OemCablePcmWriter for MemoryPcmWriter {
 #[path = "audio_sink_roundtrip.rs"]
 mod roundtrip;
 #[allow(unused_imports)]
-pub use roundtrip::{run_memory_production_sink_roundtrip, ProductionSinkRoundTripReport};
+pub use roundtrip::ProductionSinkRoundTripReport;
+
+/// Hardware-free VMIC-B4 production-sink round-trip evidence helper.
+///
+/// Thin wrapper that delegates to [`roundtrip::run_memory_production_sink_roundtrip`].
+/// The wrapper is kept in this module so the VMIC-B4 source-contract scan
+/// (`tests/vmic_b4_production_sink.rs`) finds the public symbol here.
+///
+/// Related tests:
+/// - `audio_sink_contract_oem_cable_sink_writes_pcm`
+/// - `production_sink_roundtrip_memory_passes_latency_rms_gate`
+pub fn run_memory_production_sink_roundtrip() -> ProductionSinkRoundTripReport {
+    roundtrip::run_memory_production_sink_roundtrip()
+}
 
 #[cfg(windows)]
 struct RodioTtsPcmDecoder;
