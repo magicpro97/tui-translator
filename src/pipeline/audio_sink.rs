@@ -4,24 +4,17 @@
 //! implementation so alternative sinks (virtual mic, file recorder, test
 //! double) can be plugged in without changing the pipeline.
 //!
-//! # Implementations
+//! Implementations: `RodioSink` (Windows speaker output via rodio),
+//! [`OemCableSink`] (virtual-microphone render endpoint, used in Windows
+//! production and cross-platform tests), and [`MockAudioSink`] (test double
+//! that records submitted chunks).
 //!
-//! | Type | Platform | Purpose |
-//! |------|----------|---------|
-//! | `RodioSink` | Windows only | Default speaker output via rodio |
-//! | [`OemCableSink`] | Windows production / all-platform tests | Virtual microphone render endpoint |
-//! | [`MockAudioSink`] | All | Test double; records submitted chunks |
-//!
-//! ## Why `RodioSink` does not implement `AudioSink`
-//!
-//! `rodio::OutputStream` is `!Send` (CPAL marks `Stream` as non-Send on
-//! Windows due to WASAPI / COM threading constraints).  Because
-//! `AudioSink: Send + 'static` is required to move sinks into background
-//! threads, `RodioSink` cannot formally implement the trait.
-//!
-//! Instead, [`PlaybackService::new`] constructs a `RodioSink` *inside* the
-//! playback thread (so the OutputStream is always pinned to one OS thread),
-//! and calls `RodioSink::play_bytes` directly.
+//! `RodioSink` does not implement `AudioSink` because `rodio::OutputStream`
+//! is `!Send` (CPAL marks `Stream` as non-Send on Windows due to WASAPI /
+//! COM threading) and `AudioSink: Send + 'static`. Instead,
+//! [`PlaybackService::new`] constructs a `RodioSink` inside the playback
+//! thread (pinning the `OutputStream` to one OS thread) and calls
+//! `RodioSink::play_bytes` directly.
 //!
 //! [`PlaybackService::new`]: super::playback::PlaybackService::new
 
@@ -338,7 +331,17 @@ impl OemCablePcmWriter for MemoryPcmWriter {
 #[path = "audio_sink_roundtrip.rs"]
 mod roundtrip;
 #[allow(unused_imports)]
-pub use roundtrip::{run_memory_production_sink_roundtrip, ProductionSinkRoundTripReport};
+pub use roundtrip::ProductionSinkRoundTripReport;
+
+/// Hardware-free VMIC-B4 production-sink round-trip evidence helper.
+///
+/// Thin wrapper delegating to [`roundtrip::run_memory_production_sink_roundtrip`];
+/// kept here so the VMIC-B4 source-contract scan finds the public symbol.
+/// Related tests: `audio_sink_contract_oem_cable_sink_writes_pcm`,
+/// `production_sink_roundtrip_memory_passes_latency_rms_gate`.
+pub fn run_memory_production_sink_roundtrip() -> ProductionSinkRoundTripReport {
+    roundtrip::run_memory_production_sink_roundtrip()
+}
 
 #[cfg(windows)]
 struct RodioTtsPcmDecoder;
