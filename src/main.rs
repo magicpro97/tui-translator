@@ -36,14 +36,13 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use serde::Serialize;
 use std::{
     ffi::{OsStr, OsString},
     fs,
     io::{self, Write as IoWrite},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Arc, Mutex, OnceLock,
     },
     time::{Duration, SystemTime},
@@ -56,6 +55,7 @@ mod diagnostics;
 mod i18n;
 mod local_model_cli;
 mod metrics;
+mod metrics_export;
 mod pipeline;
 mod providers;
 mod session;
@@ -73,6 +73,7 @@ use metrics::{
     spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
     NetworkMetrics, ProcessSnapshot, SttSource,
 };
+use metrics_export::{write_metrics_snapshot_export, StorageMetricsHandles, METRICS_SNAPSHOT_ENV};
 use session_export_cli::{parse_session_export_args_from, run_session_export};
 use tui::frame_pacer::FramePacer;
 use tui::onboarding::{
@@ -82,8 +83,6 @@ use tui::{
     draw_session_summary, draw_ui_with_route, help_overlay_max_scroll, subtitle_inner_area,
     AppState, ConfigEditorMode, TtsRouteStatus, UserAction, AUDIO_LEVEL_SCALE,
 };
-
-const METRICS_SNAPSHOT_ENV: &str = "TUI_TRANSLATOR_METRICS_SNAPSHOT";
 
 type SharedPlaybackService = Arc<Mutex<Option<pipeline::playback::PlaybackService>>>;
 
@@ -185,121 +184,6 @@ fn format_slot_error_status(auth: Option<String>, pipeline: Option<String>) -> S
     } else {
         String::new()
     }
-}
-
-/// Shared handles from the session recorder and audio archive, used by the
-/// metrics-publisher task to populate `MetricsSnapshot` storage fields (issue #393).
-struct StorageMetricsHandles {
-    recorder_bytes: Arc<AtomicU64>,
-    recorder_path: Option<PathBuf>,
-    archive_bytes: Arc<AtomicU64>,
-    archive_sealed: Arc<AtomicBool>,
-    archive_path: Option<PathBuf>,
-}
-
-impl Default for StorageMetricsHandles {
-    fn default() -> Self {
-        Self {
-            recorder_bytes: Arc::new(AtomicU64::new(0)),
-            recorder_path: None,
-            archive_bytes: Arc::new(AtomicU64::new(0)),
-            archive_sealed: Arc::new(AtomicBool::new(false)),
-            archive_path: None,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct MetricsSnapshotExport {
-    schema_version: &'static str,
-    line_pairs_shown: u64,
-    estimated_cost_usd: f64,
-    e2e_latency_ms: Option<u64>,
-    e2e_latency_mean_ms: f64,
-    e2e_latency_p95_ms: u64,
-    loss_pct: f64,
-    total_chunks: u64,
-    dropped_chunks: u64,
-    // Issue #393: storage metrics.
-    recorder_bytes: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    recorder_path: Option<std::path::PathBuf>,
-    archive_bytes: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    archive_path: Option<std::path::PathBuf>,
-    archive_sealed: bool,
-    // DM-02 (issue #378): fanout drop counters.
-    fanout_slot_a_drops: u64,
-    fanout_slot_b_drops: u64,
-    // HC-03B (issue #436): capture-router hot-swap counters.
-    capture_swap_count: u64,
-    capture_swap_drops: u64,
-    // LF-02 (issue #370): local runtime caps observability.
-    // `local_active_threads` is retained as the schema field name, but the
-    // value is an in-flight local-inference operation count.
-    local_cpu_pct: f32,
-    local_active_threads: u32,
-    // QA8 (issues #503/#505): live backpressure telemetry snapshot.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    backpressure: Option<serde_json::Value>,
-}
-
-impl From<&MetricsSnapshot> for MetricsSnapshotExport {
-    fn from(snapshot: &MetricsSnapshot) -> Self {
-        Self {
-            schema_version: "4",
-            line_pairs_shown: snapshot.line_pairs_shown,
-            estimated_cost_usd: snapshot.estimated_cost_usd,
-            e2e_latency_ms: snapshot.e2e_latency_ms,
-            e2e_latency_mean_ms: snapshot.e2e_latency_mean_ms,
-            e2e_latency_p95_ms: snapshot.e2e_latency_p95_ms,
-            loss_pct: snapshot.loss_pct,
-            total_chunks: snapshot.total_chunks,
-            dropped_chunks: snapshot.dropped_chunks,
-            recorder_bytes: snapshot.recorder_bytes,
-            recorder_path: snapshot.recorder_path.clone(),
-            archive_bytes: snapshot.archive_bytes,
-            archive_path: snapshot.archive_path.clone(),
-            archive_sealed: snapshot.archive_sealed,
-            fanout_slot_a_drops: snapshot.fanout_slot_a_drops,
-            fanout_slot_b_drops: snapshot.fanout_slot_b_drops,
-            capture_swap_count: snapshot.capture_swap_count,
-            capture_swap_drops: snapshot.capture_swap_drops,
-            local_cpu_pct: snapshot.local_cpu_pct,
-            local_active_threads: snapshot.local_active_threads,
-            backpressure: metrics::backpressure::emit::try_clone()
-                .map(|bp| bp.snapshot_json(metrics::BackpressureThresholds::PRODUCTION)),
-        }
-    }
-}
-
-fn write_metrics_snapshot_export(path: &Path, snapshot: &MetricsSnapshot) -> Result<()> {
-    let export = MetricsSnapshotExport::from(snapshot);
-    let json = serde_json::to_vec(&export).context("failed to serialize metrics snapshot")?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create metrics snapshot directory {}",
-                parent.display()
-            )
-        })?;
-    }
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, json).with_context(|| {
-        format!(
-            "failed to write metrics snapshot temp file {}",
-            tmp_path.display()
-        )
-    })?;
-    let _ = fs::remove_file(path);
-    fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "failed to move metrics snapshot from {} to {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
-    Ok(())
 }
 
 struct FinishMainArgs<'a> {
@@ -5126,6 +5010,7 @@ mod tests {
     use crate::audio::AudioChunk;
     use crate::config::test_env::{EnvVarGuard, ENV_LOCK};
     use crate::local_model_cli::{validate_local_stt_bundle_manifest, LocalSttModelPrefetchSource};
+    use crate::metrics_export::MetricsSnapshotExport;
     use crate::session_export_cli::{SessionExportArgs, SessionExportFormat};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Rect;
