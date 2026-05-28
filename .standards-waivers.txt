@@ -9,7 +9,7 @@
 #
 # Baseline established from origin/main at the time #483 landed.
 # To shrink the list, split modules and open a follow-up issue.
-src/main.rs                         # baseline: split into submodules (tracked: #483); STD-02 slices (#484) extracted local model/session export CLI helpers, metrics snapshot export helpers, STT/MT runtime provider routing, and TTS runtime provider/voice routing
+src/main.rs                         # baseline: split into submodules (tracked: #483); STD-02 slices (#484) extracted local model/session export CLI helpers, metrics snapshot export helpers, STT/MT/TTS runtime provider routing, and runtime recording/archive helpers
 src/tui/mod.rs                      # baseline: split TUI views (tracked: #483)
 src/pipeline/mod.rs                 # baseline: split pipeline stages (tracked: #483)
 src/config/mod.rs                   # baseline: split config schema (tracked: #483)
