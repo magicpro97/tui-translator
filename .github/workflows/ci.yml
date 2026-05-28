@@ -785,15 +785,15 @@ jobs:
         run: cargo test --locked --no-run --features ${{ matrix.feature }}
 
   # ── CI-01 MSRV gate (Issue #461) ────────────────────────────────────────────
-  # Enforces the `rust-version` declared in Cargo.toml (1.86 at the time of
+  # Enforces the `rust-version` declared in Cargo.toml (1.88 as of
   # CI-01). Runs `--locked` so MSRV regressions and Cargo.lock tampering both
   # surface as a red required check.
   msrv:
-    name: MSRV (Rust 1.86) build
+    name: MSRV (Rust 1.88) build
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.88.0
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:

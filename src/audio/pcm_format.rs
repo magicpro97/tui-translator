@@ -190,7 +190,7 @@ pub fn convert_i16_pcm(
     validate_format(source)?;
     validate_format(target)?;
     let source_channels = source.channels as usize;
-    if samples.len() % source_channels != 0 {
+    if !samples.len().is_multiple_of(source_channels) {
         return Err(PcmFormatError::InvalidInterleavedSampleCount {
             sample_count: samples.len(),
             channels: source.channels,
