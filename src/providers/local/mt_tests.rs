@@ -83,6 +83,37 @@ fn marian_vocab_maps_sentencepiece_pieces_to_model_ids() {
 
 #[cfg(feature = "local-mt")]
 #[tokio::test]
+async fn local_mt_lazy_loads_so_empty_input_does_not_require_model_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = LocalOpusMtProvider::new_japanese_to_vietnamese_from_dir(dir.path())
+        .expect("constructor should not load model files eagerly");
+
+    let result = provider.translate("   ", "ja-JP", "vi").await.unwrap();
+
+    assert_eq!(result.translated_text, "");
+    assert_eq!(result.detected_source_language.as_deref(), Some("ja"));
+}
+
+#[cfg(feature = "local-mt")]
+#[tokio::test]
+async fn local_mt_missing_model_is_reported_on_first_non_empty_translate() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = LocalOpusMtProvider::new_japanese_to_vietnamese_from_dir(dir.path())
+        .expect("constructor should defer model loading");
+
+    let err = provider
+        .translate("おはようございます", "ja-JP", "vi")
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(err, ProviderError::ModelNotFound(_)),
+        "expected ModelNotFound, got {err:?}"
+    );
+}
+
+#[cfg(feature = "local-mt")]
+#[tokio::test]
 #[ignore = "requires exported OPUS-MT ja-vi ONNX files outside the repo"]
 async fn real_opus_mt_ja_vi_fixture_translates_non_empty() {
     let dir = std::env::var_os("TUI_TRANSLATOR_OPUS_MT_JA_VI_DIR")
