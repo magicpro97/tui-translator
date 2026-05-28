@@ -27,6 +27,8 @@ mod dual_pane_tests;
 pub mod frame_pacer;
 #[cfg(test)]
 mod help_overlay_locale_tests;
+#[cfg(test)]
+mod help_overlay_tests;
 pub mod key_hint;
 #[cfg(test)]
 mod layout_tests;

@@ -1,41 +1,13 @@
 use super::*;
-use std::sync::{Mutex, MutexGuard, OnceLock};
 
-// ── UX-02: TUI_KEY_OS_OVERRIDE env-var helper (duplicated for isolation) ─────
+// ── UX-02: TUI_KEY_OS_OVERRIDE env-var helper ─────────────────────────────────
 //
-// The canonical copy lives in `mod tests` in `mod.rs` alongside tests that
-// need it there; this copy is needed here because sibling `#[cfg(test)] mod`
-// files cannot access helpers defined inside another module's `mod tests` block.
+// Delegates to `key_hint::test_helpers::with_key_os_override` so that all
+// test binaries — unit tests and integration tests — share the same mutex and
+// do not race on `TUI_KEY_OS_OVERRIDE` under parallel `cargo test` execution.
 
-fn key_os_env_mutex() -> &'static Mutex<()> {
-    static M: OnceLock<Mutex<()>> = OnceLock::new();
-    M.get_or_init(|| Mutex::new(()))
-}
-
-struct KeyOsOverrideGuard {
-    _lock: MutexGuard<'static, ()>,
-    previous: Option<String>,
-}
-
-impl Drop for KeyOsOverrideGuard {
-    fn drop(&mut self) {
-        match self.previous.take() {
-            Some(prev) => std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, prev),
-            None => std::env::remove_var(key_hint::KEY_OS_OVERRIDE_ENV),
-        }
-    }
-}
-
-fn with_key_os_override(value: &str) -> KeyOsOverrideGuard {
-    let lock = key_os_env_mutex()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let previous = std::env::var(key_hint::KEY_OS_OVERRIDE_ENV).ok();
-    std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, value);
-    KeyOsOverrideGuard {
-        _lock: lock,
-        previous,
-    }
+fn with_key_os_override(value: &str) -> key_hint::test_helpers::KeyOsGuard {
+    key_hint::test_helpers::with_key_os_override(value)
 }
 
 // ── I18N-01 (issue #481): help overlay renders the active locale ──────────────
