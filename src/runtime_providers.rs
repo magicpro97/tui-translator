@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex, OnceLock, RwLock};
 
 use crate::{config, metrics::SttSource, pipeline, providers};
 
@@ -40,6 +40,26 @@ pub(crate) enum RuntimeMtProvider {
     ),
 }
 
+// ── CTRL-02: TTS voice catalog and hot-swap (issue #455) ─────────────────────
+
+/// Runtime TTS provider selected from app configuration.
+pub(crate) enum RuntimeTtsProvider {
+    Google(providers::google::tts::GoogleTtsProvider),
+    Disabled(DisabledTtsProvider),
+}
+
+/// Disabled TTS provider used when translated audio is unavailable.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DisabledTtsProvider;
+
+/// Process-wide TTS voice runtime used by TUI and hot-reload voice changes.
+struct TtsVoiceRuntime {
+    active_voice: Arc<RwLock<Option<providers::VoiceSelection>>>,
+    catalog: Arc<RwLock<Vec<providers::VoiceSelection>>>,
+}
+
+static TTS_VOICE_RUNTIME: OnceLock<Arc<TtsVoiceRuntime>> = OnceLock::new();
+
 impl providers::MtProvider for RuntimeMtProvider {
     #[tracing::instrument(skip_all, level = "trace", fields(provider = "runtime-mt"))]
     async fn translate(
@@ -58,6 +78,74 @@ impl providers::MtProvider for RuntimeMtProvider {
                     .await
             }
         }
+    }
+}
+
+impl providers::TtsProvider for RuntimeTtsProvider {
+    #[tracing::instrument(skip_all, level = "trace", fields(provider = "runtime-tts"))]
+    async fn synthesise(
+        &self,
+        text: &str,
+        language_code: &str,
+    ) -> std::result::Result<providers::TtsResult, providers::ProviderError> {
+        match self {
+            Self::Google(provider) => {
+                providers::TtsProvider::synthesise(provider, text, language_code).await
+            }
+            Self::Disabled(provider) => {
+                providers::TtsProvider::synthesise(provider, text, language_code).await
+            }
+        }
+    }
+
+    async fn list_voices(
+        &self,
+    ) -> std::result::Result<Vec<providers::VoiceSelection>, providers::ProviderError> {
+        match self {
+            Self::Google(provider) => providers::TtsProvider::list_voices(provider).await,
+            Self::Disabled(_) => Ok(Vec::new()),
+        }
+    }
+
+    fn set_active_voice(
+        &self,
+        voice: Option<providers::VoiceSelection>,
+    ) -> std::result::Result<(), providers::ProviderError> {
+        match self {
+            Self::Google(provider) => providers::TtsProvider::set_active_voice(provider, voice),
+            Self::Disabled(_) => {
+                if voice.is_some() {
+                    Err(providers::ProviderError::InvalidInput(
+                        "cannot select a TTS voice while TTS is disabled \
+                         (configure google_api_key and tts_enabled first)"
+                            .to_string(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    fn active_voice(&self) -> Option<providers::VoiceSelection> {
+        match self {
+            Self::Google(provider) => providers::TtsProvider::active_voice(provider),
+            Self::Disabled(_) => None,
+        }
+    }
+}
+
+impl providers::TtsProvider for DisabledTtsProvider {
+    #[tracing::instrument(skip_all, level = "trace", fields(provider = "disabled-tts"))]
+    async fn synthesise(
+        &self,
+        _text: &str,
+        _language_code: &str,
+    ) -> std::result::Result<providers::TtsResult, providers::ProviderError> {
+        Err(providers::ProviderError::InvalidInput(
+            "translated audio is disabled because no Google API key is configured for TTS"
+                .to_string(),
+        ))
     }
 }
 
@@ -90,6 +178,54 @@ impl providers::SttProvider for RuntimeSttProvider {
     }
 }
 
+/// Apply a `tts_voice` config value to the live provider.
+pub(crate) fn apply_tts_voice_from_config(
+    voice_name: Option<&str>,
+) -> std::result::Result<(), providers::ProviderError> {
+    let Some(rt) = TTS_VOICE_RUNTIME.get() else {
+        return Ok(());
+    };
+    let selection = resolve_voice_by_name(voice_name)?;
+    providers::google::tts::apply_voice_selection(&rt.active_voice, &rt.catalog, selection)
+}
+
+/// Cycle to the next configured TTS voice for the target language.
+pub(crate) fn cycle_tts_voice_for_language(
+    target_language: &str,
+) -> std::result::Result<Option<providers::VoiceSelection>, providers::ProviderError> {
+    let Some(rt) = TTS_VOICE_RUNTIME.get() else {
+        return Err(providers::ProviderError::Unimplemented(
+            "TTS voice is unavailable (TTS provider is not active)".to_string(),
+        ));
+    };
+    let catalog_snapshot = rt.catalog.read().map_err(|_| {
+        providers::ProviderError::Unknown("TTS voice catalog is unavailable".to_string())
+    })?;
+    if catalog_snapshot.is_empty() {
+        return Err(providers::ProviderError::InvalidInput(
+            "TTS voice catalog is empty".to_string(),
+        ));
+    }
+
+    let filtered = filtered_voice_catalog(&catalog_snapshot, target_language);
+    drop(catalog_snapshot);
+    let current_voice_name = rt
+        .active_voice
+        .read()
+        .map_err(|_| {
+            providers::ProviderError::Unknown("TTS active voice is unavailable".to_string())
+        })?
+        .as_ref()
+        .map(|v| v.name.clone());
+    let next_voice = next_voice_selection(&filtered, current_voice_name.as_deref());
+    providers::google::tts::apply_voice_selection(
+        &rt.active_voice,
+        &rt.catalog,
+        next_voice.clone(),
+    )?;
+    Ok(next_voice)
+}
+
 impl RuntimeSttProvider {
     /// Initial source label used by metrics before any fallback transition.
     pub(crate) fn initial_stt_source(&self) -> SttSource {
@@ -114,6 +250,83 @@ impl RuntimeSttProvider {
     }
 }
 
+fn resolve_voice_by_name(
+    name: Option<&str>,
+) -> std::result::Result<Option<providers::VoiceSelection>, providers::ProviderError> {
+    let Some(name) = name else { return Ok(None) };
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let Some(rt) = TTS_VOICE_RUNTIME.get() else {
+        return Err(providers::ProviderError::Unimplemented(
+            "TTS voice runtime is not initialised (TTS provider is not active)".to_string(),
+        ));
+    };
+    let catalog = rt.catalog.read().map_err(|_| {
+        providers::ProviderError::Unknown("TTS voice catalog lock was poisoned".to_string())
+    })?;
+    catalog
+        .iter()
+        .find(|v| v.name == trimmed)
+        .cloned()
+        .map(Some)
+        .ok_or_else(|| {
+            providers::ProviderError::InvalidInput(format!(
+                "voice {trimmed:?} is not in the TTS voice catalog"
+            ))
+        })
+}
+
+pub(crate) fn filtered_voice_catalog(
+    catalog: &[providers::VoiceSelection],
+    target_language: &str,
+) -> Vec<providers::VoiceSelection> {
+    let target_prefix = target_language
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if target_prefix.is_empty() {
+        return catalog.to_vec();
+    }
+
+    let filtered: Vec<_> = catalog
+        .iter()
+        .filter(|voice| {
+            voice
+                .language
+                .split(['-', '_'])
+                .next()
+                .map(|prefix| prefix.eq_ignore_ascii_case(&target_prefix))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    if filtered.is_empty() {
+        catalog.to_vec()
+    } else {
+        filtered
+    }
+}
+
+pub(crate) fn next_voice_selection(
+    voices: &[providers::VoiceSelection],
+    current_voice_name: Option<&str>,
+) -> Option<providers::VoiceSelection> {
+    match current_voice_name {
+        None => voices.first().cloned(),
+        Some(name) => {
+            let pos = voices.iter().position(|voice| voice.name == name);
+            match pos {
+                Some(index) if index + 1 < voices.len() => Some(voices[index + 1].clone()),
+                Some(_) => None,
+                None => voices.first().cloned(),
+            }
+        }
+    }
+}
+
 fn has_google_api_key(google_api_key: Option<&str>) -> bool {
     google_api_key
         .map(str::trim)
@@ -132,6 +345,39 @@ pub(crate) fn stt_local_unavailable_is_fatal_for_slot(
         ("local", "google-when-keyed") => !has_google_api_key(cfg.google_api_key.as_deref()),
         _ => false,
     }
+}
+
+/// Build the runtime TTS provider for the main slot.
+pub(crate) fn build_runtime_tts_provider(
+    cfg: &config::AppConfig,
+    google_api_key: Option<&str>,
+    cost_reporter: Arc<dyn providers::CostReporter>,
+) -> std::result::Result<RuntimeTtsProvider, providers::ProviderError> {
+    if !cfg.tts_enabled && google_api_key.is_none() {
+        return Ok(RuntimeTtsProvider::Disabled(DisabledTtsProvider));
+    }
+
+    let key = google_api_key.ok_or_else(|| {
+        providers::ProviderError::InvalidInput(
+            "Google Text-to-Speech requires google_api_key when tts_enabled=true".to_string(),
+        )
+    })?;
+
+    providers::google::tts::GoogleTtsProvider::new(key)
+        .map(|provider| provider.with_cost_reporter(cost_reporter))
+        .inspect(|provider| {
+            let _ = TTS_VOICE_RUNTIME.set(Arc::new(TtsVoiceRuntime {
+                active_voice: provider.active_voice_handle(),
+                catalog: provider.voice_catalog_handle(),
+            }));
+            if let Err(err) = apply_tts_voice_from_config(cfg.tts_voice.as_deref()) {
+                tracing::warn!(
+                    error = %err,
+                    "configured tts_voice could not be applied; using provider default"
+                );
+            }
+        })
+        .map(RuntimeTtsProvider::Google)
 }
 
 /// Build the runtime STT provider for a single slot.
