@@ -232,7 +232,7 @@ fn parse_wav_pcm(bytes: &[u8], path: &Path) -> Result<Vec<i16>> {
 
         // Advance past this chunk; WAV chunks are word-aligned.
         offset = body + chunk_len as usize;
-        if chunk_len % 2 != 0 {
+        if !chunk_len.is_multiple_of(2) {
             offset += 1;
         }
     }
@@ -252,7 +252,7 @@ fn parse_wav_pcm(bytes: &[u8], path: &Path) -> Result<Vec<i16>> {
     }
 
     let bytes_per_sample = (WAV_BIT_DEPTH / 8) as usize;
-    if data_size as usize % bytes_per_sample != 0 {
+    if !(data_size as usize).is_multiple_of(bytes_per_sample) {
         bail!(
             "WAV data chunk size {data_size} is not a multiple of bytes_per_sample \
              {bytes_per_sample} (BitsPerSample = {WAV_BIT_DEPTH}): {}",

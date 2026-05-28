@@ -326,13 +326,17 @@ mod tests {
     fn sample_overhead_is_well_under_5ms() {
         let p = default_probe();
         let _ = p.sample();
-        let elapsed = measure_sample_overhead(&*p);
+        let elapsed = (0..5)
+            .map(|_| measure_sample_overhead(&*p))
+            .min()
+            .expect("fixed-size overhead sample set is non-empty");
         // The steady-state design target is << 5 ms per sample; the assert
-        // threshold is relaxed to 50 ms to absorb shared-CI scheduling jitter
-        // without producing false-positive failures (see #504 discussion).
+        // threshold is relaxed to 50 ms and checked against the best of a few
+        // samples to absorb shared-CI scheduling jitter without false positives
+        // (see #504 discussion).
         assert!(
             elapsed < std::time::Duration::from_millis(50),
-            "probe sample took {elapsed:?}, must be < 50 ms (steady-state target: << 5 ms)"
+            "best probe sample took {elapsed:?}, must be < 50 ms (steady-state target: << 5 ms)"
         );
     }
 

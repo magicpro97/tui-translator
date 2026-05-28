@@ -88,7 +88,7 @@ fn parse_wav_chunks(bytes: &[u8], path: &Path) -> Result<usize> {
             fmt_ok = true;
         } else if chunk_id == b"data" {
             let block_align = (WAV_CHANNELS as usize) * ((WAV_BIT_DEPTH / 8) as usize);
-            if chunk_len % block_align != 0 {
+            if !chunk_len.is_multiple_of(block_align) {
                 bail!(
                     "WAV data chunk length {} is not aligned to {} bytes/sample frame: {}",
                     chunk_len,
