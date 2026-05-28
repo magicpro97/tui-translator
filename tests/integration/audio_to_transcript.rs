@@ -91,7 +91,7 @@ fn wav_to_pcm_chunk(path: &str, sequence_number: u64) -> PcmChunk {
     assert_eq!(bits_per_sample, 16, "{path}: fixture must be 16-bit PCM");
     let data = find_chunk(&wav, b"data").unwrap_or_else(|| panic!("{path}: missing data chunk"));
     assert!(
-        data.len() % 2 == 0,
+        data.len().is_multiple_of(2),
         "{path}: data chunk length {} is odd — WAV data must be a whole number of 16-bit samples",
         data.len()
     );

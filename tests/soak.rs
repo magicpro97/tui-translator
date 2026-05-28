@@ -106,7 +106,7 @@ fn soak_fixture_exists_and_is_valid_wav() {
     // Walk chunks after the fmt  chunk to locate "data".
     let mut offset = 12 + 8 + fmt_size as usize; // past "fmt " id + size field + fmt body
                                                  // Align to 2-byte boundary (WAV spec).
-    if fmt_size % 2 != 0 {
+    if !fmt_size.is_multiple_of(2) {
         offset += 1;
     }
 
@@ -121,7 +121,7 @@ fn soak_fixture_exists_and_is_valid_wav() {
             break (offset + 8, chunk_len);
         }
         offset += 8 + chunk_len as usize;
-        if chunk_len % 2 != 0 {
+        if !chunk_len.is_multiple_of(2) {
             offset += 1;
         }
     };

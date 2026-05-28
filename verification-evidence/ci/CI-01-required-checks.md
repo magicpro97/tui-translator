@@ -25,6 +25,8 @@
 > green on `922eab5`:
 >
 > - `MSRV (Rust 1.86) build` — ✅ success ([job 77652873543](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873543))
+>   Historical PR #512 evidence used Rust 1.86. Current branch-protection
+>   context has since moved to `MSRV (Rust 1.88) build`; see §2.3.
 > - `Cross-platform build (windows-latest, default)` — ✅ success ([job 77652873512](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873512))
 > - `Cross-platform build (macos-14, default)` — ✅ success ([job 77652873521](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873521))
 > - `Feature matrix (windows-latest, audio-integration)` — ✅ success ([job 77652873523](https://github.com/magicpro97/tui-translator/actions/runs/26381963965/job/77652873523))
@@ -125,7 +127,7 @@ publishes its own check name (GitHub appends ` (<matrix value>)` to the job
 | `Feature matrix (windows-latest, production-audio)` | `ci.yml` / `feature-matrix` (os=windows-latest, feature=production-audio) | windows-latest | yes (`--locked`) | Required. Compiles VMIC-B4 feature flag. |
 | `Feature matrix (macos-14, audio-integration)` | `ci.yml` / `feature-matrix` (os=macos-14, feature=audio-integration) | macos-14 | yes (`--locked`) | Required. Confirms feature compiles on macOS Apple-silicon. (macOS-13 permutation removed 2026-05-25 — see §2.6.) |
 | `Feature matrix (macos-14, production-audio)` | `ci.yml` / `feature-matrix` (os=macos-14, feature=production-audio) | macos-14 | yes (`--locked`) | Required. (macOS-13 permutation removed 2026-05-25 — see §2.6.) |
-| `MSRV (Rust 1.86) build` | `ci.yml` / `msrv` | windows-latest | yes (`--locked`) | Required. Pins to the `rust-version` declared in `Cargo.toml` (1.86). |
+| `MSRV (Rust 1.88) build` | `ci.yml` / `msrv` | windows-latest | yes (`--locked`) | Required. Pins to the `rust-version` declared in `Cargo.toml` (1.88). |
 
 ### 2.4 NEW — Allowed-fail toolchain (CI-01)
 
@@ -166,7 +168,7 @@ What is preserved:
 - All Windows gates in §2.1 and §2.2 (untouched).
 - All Linux gates in §2.1 (untouched).
 - All Apple-silicon (`macos-14`) gates in §2.3 (untouched, still `--locked`).
-- `MSRV (Rust 1.86) build` (untouched, still `--locked`).
+- `MSRV (Rust 1.88) build` (current required context, still `--locked`).
 - VMIC gates in §2.2 (untouched).
 - The `Beta toolchain (allowed-fail)` policy in §2.4 (untouched).
 
@@ -213,7 +215,7 @@ continuous; no branch-protection change is implied or required by it.
 
 | Acceptance test case (issue #461) | Enforced by |
 |---|---|
-| Tampering `Cargo.lock` causes `--locked` jobs to fail. | All checks in §2.3 (every `Cross-platform build (...)`, `Feature matrix (...)`, and `MSRV (Rust 1.86) build`) run `cargo build/test --locked`. |
+| Tampering `Cargo.lock` causes `--locked` jobs to fail. | All checks in §2.3 (every `Cross-platform build (...)`, `Feature matrix (...)`, and `MSRV (Rust 1.88) build`) run `cargo build/test --locked`. |
 | Required feature combinations compile on macOS and Windows. | §2.3 — `Feature matrix` permutations on `windows-latest` and `macos-14` for `audio-integration` and `production-audio`. macOS-13 permutation removed for queue-mitigation; see §2.6. |
 | Beta toolchain failure is allowed-fail only where documented. | §2.4 — single `Beta toolchain (allowed-fail)` job with `continue-on-error: true`; explicitly excluded from required-checks list. |
 | VMIC hardware-dependent jobs skip-safe with explicit evidence. | §2.2 — VMIC jobs validate committed JSON evidence and require `skip_reason` when the real-cable tier is unavailable. |
