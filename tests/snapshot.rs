@@ -1727,9 +1727,10 @@ fn help_overlay_80x24_no_scroll_indicator() {
         rendered.contains("Space"),
         "80×24: 'Space' shortcut not visible; got:\n{rendered}"
     );
+    // UX-02: macOS renders ⌃C; Windows/Linux render Ctrl+C
     assert!(
-        rendered.contains("Ctrl+C"),
-        "80×24: 'Ctrl+C' shortcut not visible; got:\n{rendered}"
+        rendered.contains("Ctrl+C") || rendered.contains('\u{2303}'),
+        "80×24: quit shortcut (Ctrl+C or ⌃C) not visible; got:\n{rendered}"
     );
 }
 

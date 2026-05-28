@@ -244,16 +244,31 @@ fn settings_save_defaults_blank_file_audio_path_and_closes_overlay() {
         "settings overlay should open"
     );
 
-    let clear_path = "\t\t\t\t\t".to_string()
-        + &"\x08".repeat(
-            fixture
-                .to_str()
-                .expect("fixture path must be valid UTF-8")
-                .len(),
-        )
-        + "\r";
+    // Navigate to "Audio file path" (field index 5) one Tab at a time.
+    // Sending all tabs in a single batch risks the early ones being
+    // processed before the overlay is fully interactive.  A 100 ms pause
+    // between each tab matches the pattern used by `settings_test.rs`.
+    for _ in 0..5 {
+        session.send(b"\t").expect("send Tab to advance field");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        session.wait_for_text("> Audio file path", STARTUP_TIMEOUT),
+        "Audio file path field should be active after 5 tabs; screen:\n{}",
+        session.all_rows().join("\n"),
+    );
+
+    // Clear the field.  crossterm 0.29 on Unix maps 0x7F to
+    // KeyCode::Backspace, while 0x08 maps to Ctrl+H (AnyKey in the config
+    // editor) and would not delete anything.  Use 0x7F for each character.
+    let path_char_count = fixture
+        .to_str()
+        .expect("fixture path must be valid UTF-8")
+        .chars()
+        .count();
+    let clear_and_save = "\x7f".repeat(path_char_count) + "\r";
     session
-        .send(clear_path.as_bytes())
+        .send(clear_and_save.as_bytes())
         .expect("clear audio path and save");
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);

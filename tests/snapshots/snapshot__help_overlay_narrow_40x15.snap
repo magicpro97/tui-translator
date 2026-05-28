@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1474
 expression: rendered
 ---
 ┌ Help [0/4] — ↑↓ scroll · Esc close ──┐
@@ -14,7 +13,7 @@ expression: rendered
 │  V          Cycle TTS voice (CTRL-02)│
 │  M          Toggle metrics panel (com│
 │  L          Change target language   │
-│  S          Settings (F2/Ctrl+D cycle│
+│  S          Settings (F2/⌃D cycles fi│
 │  R          Reload config from disk  │
 │  ?          Show / hide this help    │
 └──────────────────────────────────────┘
