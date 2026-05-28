@@ -1,0 +1,789 @@
+{
+  "schema_version": "qa8-05.v2",
+  "run_id": "qa8-05-smoke-3600s-30s-4events",
+  "synthetic": true,
+  "smoke": true,
+  "started_at_utc": "1970-01-01T00:00:00Z",
+  "finished_at_utc": "1970-01-01T00:00:00Z",
+  "duration_secs": 3600,
+  "sample_interval_secs": 30,
+  "run_metadata": {
+    "issue": "#503",
+    "related_issues": [
+      "#505",
+      "#540",
+      "#545"
+    ],
+    "runner": "run_soak",
+    "runner_version": "qa8-05.v2-partial",
+    "partial": true
+  },
+  "sample_windows": [
+    {
+      "window_index": 0,
+      "t_start_secs": 0,
+      "t_end_secs": 60,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 1,
+      "t_start_secs": 60,
+      "t_end_secs": 120,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 2,
+      "t_start_secs": 120,
+      "t_end_secs": 180,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 3,
+      "t_start_secs": 180,
+      "t_end_secs": 240,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 4,
+      "t_start_secs": 240,
+      "t_end_secs": 300,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 5,
+      "t_start_secs": 300,
+      "t_end_secs": 360,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 6,
+      "t_start_secs": 360,
+      "t_end_secs": 420,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 7,
+      "t_start_secs": 420,
+      "t_end_secs": 480,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 8,
+      "t_start_secs": 480,
+      "t_end_secs": 540,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": true
+    },
+    {
+      "window_index": 9,
+      "t_start_secs": 540,
+      "t_end_secs": 600,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 10,
+      "t_start_secs": 600,
+      "t_end_secs": 660,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 11,
+      "t_start_secs": 660,
+      "t_end_secs": 720,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 12,
+      "t_start_secs": 720,
+      "t_end_secs": 780,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 13,
+      "t_start_secs": 780,
+      "t_end_secs": 840,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 14,
+      "t_start_secs": 840,
+      "t_end_secs": 900,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 15,
+      "t_start_secs": 900,
+      "t_end_secs": 960,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 16,
+      "t_start_secs": 960,
+      "t_end_secs": 1020,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 17,
+      "t_start_secs": 1020,
+      "t_end_secs": 1080,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 18,
+      "t_start_secs": 1080,
+      "t_end_secs": 1140,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 19,
+      "t_start_secs": 1140,
+      "t_end_secs": 1200,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 20,
+      "t_start_secs": 1200,
+      "t_end_secs": 1260,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 21,
+      "t_start_secs": 1260,
+      "t_end_secs": 1320,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 22,
+      "t_start_secs": 1320,
+      "t_end_secs": 1380,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 23,
+      "t_start_secs": 1380,
+      "t_end_secs": 1440,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 24,
+      "t_start_secs": 1440,
+      "t_end_secs": 1500,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 25,
+      "t_start_secs": 1500,
+      "t_end_secs": 1560,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 26,
+      "t_start_secs": 1560,
+      "t_end_secs": 1620,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 27,
+      "t_start_secs": 1620,
+      "t_end_secs": 1680,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 28,
+      "t_start_secs": 1680,
+      "t_end_secs": 1740,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 29,
+      "t_start_secs": 1740,
+      "t_end_secs": 1800,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 30,
+      "t_start_secs": 1800,
+      "t_end_secs": 1860,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 31,
+      "t_start_secs": 1860,
+      "t_end_secs": 1920,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 32,
+      "t_start_secs": 1920,
+      "t_end_secs": 1980,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 33,
+      "t_start_secs": 1980,
+      "t_end_secs": 2040,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 34,
+      "t_start_secs": 2040,
+      "t_end_secs": 2100,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 35,
+      "t_start_secs": 2100,
+      "t_end_secs": 2160,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 36,
+      "t_start_secs": 2160,
+      "t_end_secs": 2220,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 37,
+      "t_start_secs": 2220,
+      "t_end_secs": 2280,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 38,
+      "t_start_secs": 2280,
+      "t_end_secs": 2340,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 39,
+      "t_start_secs": 2340,
+      "t_end_secs": 2400,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 40,
+      "t_start_secs": 2400,
+      "t_end_secs": 2460,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 41,
+      "t_start_secs": 2460,
+      "t_end_secs": 2520,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 42,
+      "t_start_secs": 2520,
+      "t_end_secs": 2580,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 43,
+      "t_start_secs": 2580,
+      "t_end_secs": 2640,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 44,
+      "t_start_secs": 2640,
+      "t_end_secs": 2700,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 45,
+      "t_start_secs": 2700,
+      "t_end_secs": 2760,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 46,
+      "t_start_secs": 2760,
+      "t_end_secs": 2820,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 47,
+      "t_start_secs": 2820,
+      "t_end_secs": 2880,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 48,
+      "t_start_secs": 2880,
+      "t_end_secs": 2940,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 49,
+      "t_start_secs": 2940,
+      "t_end_secs": 3000,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 50,
+      "t_start_secs": 3000,
+      "t_end_secs": 3060,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 51,
+      "t_start_secs": 3060,
+      "t_end_secs": 3120,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 52,
+      "t_start_secs": 3120,
+      "t_end_secs": 3180,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 53,
+      "t_start_secs": 3180,
+      "t_end_secs": 3240,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 54,
+      "t_start_secs": 3240,
+      "t_end_secs": 3300,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 55,
+      "t_start_secs": 3300,
+      "t_end_secs": 3360,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 56,
+      "t_start_secs": 3360,
+      "t_end_secs": 3420,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 57,
+      "t_start_secs": 3420,
+      "t_end_secs": 3480,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 58,
+      "t_start_secs": 3480,
+      "t_end_secs": 3540,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    },
+    {
+      "window_index": 59,
+      "t_start_secs": 3540,
+      "t_end_secs": 3600,
+      "sample_count": 2,
+      "mean_cpu_pct": null,
+      "max_memory_mb": null,
+      "contains_fault": false
+    }
+  ],
+  "fault_injection": {
+    "enabled": true,
+    "script_path": "tests/soak/fixtures/qa8_05_smoke_10min.faults",
+    "events": [
+      {
+        "name": "network_outage",
+        "kind": "network_outage",
+        "t_start_secs": 60,
+        "t_end_secs": 90,
+        "expected_recovery_ms": 10000,
+        "observed_recovery_ms": 10000,
+        "recovered_within_budget": true,
+        "simulated": true
+      },
+      {
+        "name": "provider_rate_limit",
+        "kind": "provider_rate_limit",
+        "t_start_secs": 180,
+        "t_end_secs": 200,
+        "expected_recovery_ms": 5000,
+        "observed_recovery_ms": 5000,
+        "recovered_within_budget": true,
+        "simulated": true
+      },
+      {
+        "name": "device_hot_swap",
+        "kind": "device_hot_swap",
+        "t_start_secs": 360,
+        "t_end_secs": 365,
+        "expected_recovery_ms": 2000,
+        "observed_recovery_ms": 2000,
+        "recovered_within_budget": true,
+        "simulated": true
+      },
+      {
+        "name": "cpu_pressure",
+        "kind": "cpu_pressure",
+        "t_start_secs": 480,
+        "t_end_secs": 510,
+        "expected_recovery_ms": 0,
+        "observed_recovery_ms": 0,
+        "recovered_within_budget": true,
+        "simulated": true
+      }
+    ]
+  },
+  "crash_watch": {
+    "enabled": true,
+    "panic_count": 0,
+    "oom_count": 0,
+    "last_event": null,
+    "watcher": "stdio-panic-sniffer"
+  },
+  "backpressure_snapshots": [
+    {
+      "audio_capture": {
+        "chunk_count": 0,
+        "jitter_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "stall_count": 0
+      },
+      "breach_threshold_map": {},
+      "breaches": [],
+      "calibration": {
+        "calibration_pending": true,
+        "notes": "Pre-calibration baseline. QA8-05 runner v2 partial slice does not recalibrate (#505 follow-up)."
+      },
+      "cancellation": {
+        "exit_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "issued": 0,
+        "observed": 0
+      },
+      "ok": true,
+      "provenance": {
+        "note": "Placeholder snapshot. Real values are filled in by the live tui-translator process once #505 metrics IPC lands. See QA8-07 schema for the wire format.",
+        "source": "qa8-05.runner.partial",
+        "synthetic": true
+      },
+      "provider": {
+        "cas_saturated_decrements": 0,
+        "inflight": 0,
+        "inflight_high_water": 0,
+        "permanent_errors": 0,
+        "queue_depth": 0,
+        "queue_high_water": 0,
+        "recovered_errors": 0
+      },
+      "related_issues": [
+        "#505"
+      ],
+      "sample_index": 0,
+      "sample_unix_ms": 0,
+      "schema_version": "qa8-07.v1",
+      "sink": {
+        "fanout_drops": 0,
+        "underruns": 0,
+        "write_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "writes": 0
+      },
+      "thresholds": {
+        "audio_jitter_p99_ms": 200,
+        "calibration_pending": true,
+        "cancel_p99_ms": 250,
+        "max_capture_stalls": 0,
+        "max_fanout_drops": 0,
+        "max_sink_underruns": 0,
+        "provider_max_inflight": 32,
+        "provider_max_permanent_errors": 0,
+        "provider_max_queue_depth": 64,
+        "sink_write_p99_ms": 50
+      }
+    },
+    {
+      "audio_capture": {
+        "chunk_count": 0,
+        "jitter_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "stall_count": 0
+      },
+      "breach_threshold_map": {},
+      "breaches": [],
+      "calibration": {
+        "calibration_pending": true,
+        "notes": "Pre-calibration baseline. QA8-05 runner v2 partial slice does not recalibrate (#505 follow-up)."
+      },
+      "cancellation": {
+        "exit_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "issued": 0,
+        "observed": 0
+      },
+      "ok": true,
+      "provenance": {
+        "note": "Placeholder snapshot. Real values are filled in by the live tui-translator process once #505 metrics IPC lands. See QA8-07 schema for the wire format.",
+        "source": "qa8-05.runner.partial",
+        "synthetic": true
+      },
+      "provider": {
+        "cas_saturated_decrements": 0,
+        "inflight": 0,
+        "inflight_high_water": 0,
+        "permanent_errors": 0,
+        "queue_depth": 0,
+        "queue_high_water": 0,
+        "recovered_errors": 0
+      },
+      "related_issues": [
+        "#505"
+      ],
+      "sample_index": 1,
+      "sample_unix_ms": 0,
+      "schema_version": "qa8-07.v1",
+      "sink": {
+        "fanout_drops": 0,
+        "underruns": 0,
+        "write_latency_us": {
+          "count": 0,
+          "max": 0,
+          "p50": 0,
+          "p90": 0,
+          "p99": 0
+        },
+        "writes": 0
+      },
+      "thresholds": {
+        "audio_jitter_p99_ms": 200,
+        "calibration_pending": true,
+        "cancel_p99_ms": 250,
+        "max_capture_stalls": 0,
+        "max_fanout_drops": 0,
+        "max_sink_underruns": 0,
+        "provider_max_inflight": 32,
+        "provider_max_permanent_errors": 0,
+        "provider_max_queue_depth": 64,
+        "sink_write_p99_ms": 50
+      }
+    }
+  ],
+  "limitations": [
+    "synthetic_snapshots: backpressure_snapshots are clean placeholders; real values arrive when #505 live wiring is consumed by the runner.",
+    "no_subprocess: smoke mode does not spawn tui-translator; no real audio, STT, MT or TTS traffic was exercised.",
+    "fault_injection_simulated: events are recorded as simulated; real fault actuators (netsh, provider 429 mock, hot-swap, CPU pressure) require admin/hardware and live in #503 full closure.",
+    "crash_watch_partial: crash watcher reports only state from this run; signal handler and minidump capture are part of #503 full closure.",
+    "ten_minute_smoke_only: the deterministic schedule represents a 10-minute soak shape; the 8-hour real-hardware run is hardware/time-gated."
+  ],
+  "blocked_gates": [
+    {
+      "gate": "8h_green_soak",
+      "reason": "Layer-5 hardware + 8 hours of wall-clock per platform are required. Not feasible inside CI; tracked under #503 acceptance criteria."
+    },
+    {
+      "gate": "live_backpressure_consumption",
+      "reason": "Runner consumption of #505 live telemetry (PR #540 / PR #545) is a separate follow-up; this slice ships the schema contract only."
+    },
+    {
+      "gate": "threshold_recalibration",
+      "reason": "Calibration soak (#505) must run before tightening QA8-07 thresholds. Out of scope for this partial slice."
+    }
+  ]
+}
