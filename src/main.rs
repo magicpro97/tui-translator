@@ -38,8 +38,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     ffi::{OsStr, OsString},
-    fs,
-    io::{self, Write as IoWrite},
+    fs, io,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -50,6 +49,9 @@ use std::{
 use tui_input::InputRequest;
 
 mod audio;
+mod audio_device_cli;
+#[cfg(test)]
+mod audio_device_cli_tests;
 mod config;
 mod diagnostics;
 mod i18n;
@@ -70,6 +72,7 @@ mod storage;
 mod tui;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
+use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices};
 use local_model_cli::{
     parse_local_mt_model_install_args_from, parse_local_stt_model_prefetch_args_from,
     parse_model_verify_args_from, run_local_mt_model_install, run_local_stt_model_prefetch,
@@ -308,70 +311,6 @@ fn init_tracing() {
             );
         }
     }
-}
-
-fn should_list_audio_devices() -> bool {
-    std::env::args().skip(1).any(|arg| {
-        arg == "--list-audio-devices"
-            || arg == "--list-capture-devices"
-            || arg == "list-audio-devices"
-    })
-}
-
-fn print_audio_devices_to_stdout() -> Result<()> {
-    let cfg_path = config_json_path();
-    let (cfg, _) = config::load_with_state(&cfg_path)
-        .with_context(|| format!("failed to load config for {}", cfg_path.display()))?;
-    let registry =
-        audio::VirtualDevicePatternRegistry::with_custom_patterns(&cfg.virtual_device_patterns)
-            .context("failed to load virtual_device_patterns from config")?;
-    let devices = audio::list_capture_devices().context("failed to list audio capture devices")?;
-    let mut stdout = io::stdout();
-    write_audio_devices(&mut stdout, &devices, &registry)
-        .context("failed to write audio device list")?;
-    Ok(())
-}
-
-fn write_audio_devices(
-    writer: &mut impl IoWrite,
-    devices: &[audio::CaptureDeviceInfo],
-    registry: &audio::VirtualDevicePatternRegistry,
-) -> io::Result<()> {
-    writeln!(
-        writer,
-        "Audio capture devices for WASAPI loopback (Windows playback endpoints):"
-    )?;
-    writeln!(
-        writer,
-        "  [default] Windows default playback device (leave capture_device blank)"
-    )?;
-    if devices.is_empty() {
-        writeln!(
-            writer,
-            "  No active playback devices were reported by Windows."
-        )?;
-    } else {
-        for device in devices {
-            let default_marker = if device.is_default {
-                " (current Windows default)"
-            } else {
-                ""
-            };
-            let virtual_marker =
-                if audio::classify_virtual_device_with_registry(&device.name, registry).is_some() {
-                    " [VIRTUAL]"
-                } else {
-                    ""
-                };
-            writeln!(
-                writer,
-                "  - {}{}{}",
-                device.name, virtual_marker, default_marker
-            )?;
-            writeln!(writer, "      endpoint_id: {}", device.id)?;
-        }
-    }
-    Ok(())
 }
 
 // ── Session replay (issue #226 / EP-F.3) ─────────────────────────────────────
@@ -4288,87 +4227,6 @@ mod tests {
         assert!(
             !TuiInteractionMode::ReplayReadOnly.blocks_action(&UserAction::PromptLanguage),
             "replay mode can still allow in-memory language prompt changes"
-        );
-    }
-
-    #[test]
-    fn write_audio_devices_shows_default_and_detected_devices() {
-        let registry = audio::VirtualDevicePatternRegistry::builtin().unwrap();
-        let devices = vec![
-            audio::CaptureDeviceInfo {
-                id: "{0.0.0.00000000}.{speakers}".to_string(),
-                name: "Speakers (Realtek Audio)".to_string(),
-                is_default: true,
-            },
-            audio::CaptureDeviceInfo {
-                id: "{0.0.0.00000000}.{headphones}".to_string(),
-                name: "Headphones (USB Audio)".to_string(),
-                is_default: false,
-            },
-        ];
-        let mut output = Vec::new();
-
-        write_audio_devices(&mut output, &devices, &registry).unwrap();
-        let rendered = String::from_utf8(output).unwrap();
-
-        assert!(rendered.contains("leave capture_device blank"));
-        assert!(rendered.contains("Speakers (Realtek Audio) (current Windows default)"));
-        assert!(rendered.contains("endpoint_id: {0.0.0.00000000}.{speakers}"));
-        assert!(rendered.contains("Headphones (USB Audio)"));
-        assert!(rendered.contains("endpoint_id: {0.0.0.00000000}.{headphones}"));
-    }
-
-    #[test]
-    fn write_audio_devices_marks_virtual_devices() {
-        let registry = audio::VirtualDevicePatternRegistry::builtin().unwrap();
-        let devices = vec![
-            audio::CaptureDeviceInfo {
-                id: "{0.0.0.00000000}.{cable-input}".to_string(),
-                name: "CABLE Input (VB-Audio Virtual Cable)".to_string(),
-                is_default: false,
-            },
-            audio::CaptureDeviceInfo {
-                id: "{0.0.0.00000000}.{realtek}".to_string(),
-                name: "Speakers (Realtek Audio)".to_string(),
-                is_default: true,
-            },
-        ];
-        let mut output = Vec::new();
-        write_audio_devices(&mut output, &devices, &registry).unwrap();
-        let rendered = String::from_utf8(output).unwrap();
-
-        assert!(
-            rendered.contains("CABLE Input (VB-Audio Virtual Cable) [VIRTUAL]"),
-            "virtual device must be labelled [VIRTUAL]; got:\n{rendered}"
-        );
-        assert!(
-            !rendered.contains("Speakers (Realtek Audio) [VIRTUAL]"),
-            "real device must not be labelled [VIRTUAL]"
-        );
-    }
-
-    #[test]
-    fn write_audio_devices_marks_custom_registry_devices() {
-        let registry = audio::VirtualDevicePatternRegistry::with_custom_patterns(&[
-            audio::VirtualDevicePatternConfig::new(
-                r"\bAcme Translation Cable\b",
-                audio::VirtualDeviceKind::GenericOem,
-            ),
-        ])
-        .unwrap();
-        let devices = vec![audio::CaptureDeviceInfo {
-            id: "{0.0.0.00000000}.{acme}".to_string(),
-            name: "Acme Translation Cable Input".to_string(),
-            is_default: false,
-        }];
-        let mut output = Vec::new();
-
-        write_audio_devices(&mut output, &devices, &registry).unwrap();
-        let rendered = String::from_utf8(output).unwrap();
-
-        assert!(
-            rendered.contains("Acme Translation Cable Input [VIRTUAL]"),
-            "custom registry device must be labelled [VIRTUAL]; got:\n{rendered}"
         );
     }
 
