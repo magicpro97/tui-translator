@@ -43,3 +43,4 @@ src/bin/mt_bench.rs                 # baseline: bench harness (tracked: #483)
 #   src/providers/local/model_download.rs -> model_download_transfer.rs + model_download_tests.rs (issue #484)
 #   src/bin/quality_benchmark.rs    -> quality_benchmark/{text_metrics,wav,simulation}.rs (issue #484)
 #   src/providers/local/bootstrap.rs -> bootstrap/{mod,consent,tests,consent_tests}.rs; consent cluster (ModelConsentManifest, ConsentRecord, ConsentStatus, write_consent_record, write_model_consent_record, consent_status, model_consent_status, sanitize_for_filename) extracted into bootstrap/consent.rs (issue #484, RQ-B7); bootstrap/mod.rs now 523 lines, bootstrap/consent.rs 271 lines, bootstrap/tests.rs 270 lines, bootstrap/consent_tests.rs 96 lines — all under the 600 LOC gate.
+#   src/main.rs                    -> local_model_cli_tests.rs (issue #484)
