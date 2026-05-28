@@ -37,7 +37,6 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
-    ffi::{OsStr, OsString},
     fs, io,
     path::{Path, PathBuf},
     sync::{
@@ -68,6 +67,9 @@ mod runtime_recording;
 mod runtime_recording_tests;
 mod session;
 mod session_export_cli;
+mod session_replay_cli;
+#[cfg(test)]
+mod session_replay_cli_tests;
 mod storage;
 mod tui;
 
@@ -90,6 +92,7 @@ use runtime_providers::{
 };
 use runtime_recording::{log_measurement_mode_status, start_audio_archive, start_session_recorder};
 use session_export_cli::{parse_session_export_args_from, run_session_export};
+use session_replay_cli::{parse_replay_args_from, ReplayArgs};
 use tui::frame_pacer::FramePacer;
 use tui::onboarding::{
     LocalModelLicense, OnboardingBranch, OnboardingEvent, OnboardingOutcome, OnboardingWizardState,
@@ -179,13 +182,6 @@ struct FinishMainArgs<'a> {
     // ── Capture router counters (HC-03B, issue #436) ──────────────────────
     /// Shared router metrics when live capture has started.
     capture_router_metrics: Option<Arc<audio::RouterMetrics>>,
-}
-
-/// Arguments for `--replay-session`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReplayArgs {
-    /// Path to the session JSONL file to replay.
-    pub path: PathBuf,
 }
 
 // ── Issue #88 — Windows console-control handler ───────────────────────────────
@@ -311,33 +307,6 @@ fn init_tracing() {
             );
         }
     }
-}
-
-// ── Session replay (issue #226 / EP-F.3) ─────────────────────────────────────
-
-/// Parse `--replay-session <path>` from an argument iterator.
-///
-/// Returns `Ok(None)` when no replay flag is present.  Returns an error when
-/// `--replay-session` appears without a following path value.
-fn parse_replay_args_from<I>(args: I) -> Result<Option<ReplayArgs>>
-where
-    I: IntoIterator<Item = OsString>,
-{
-    let mut iter = args.into_iter();
-    while let Some(arg) = iter.next() {
-        if arg == OsStr::new("--replay-session") {
-            let value = iter
-                .next()
-                .with_context(|| "missing value after --replay-session")?;
-            if value.to_string_lossy().starts_with("--") {
-                bail!("missing value after --replay-session");
-            }
-            return Ok(Some(ReplayArgs {
-                path: PathBuf::from(value),
-            }));
-        }
-    }
-    Ok(None)
 }
 
 /// Run the TUI in session-replay mode.
@@ -4063,6 +4032,7 @@ mod tests {
     use crate::session_export_cli::{SessionExportArgs, SessionExportFormat};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Rect;
+    use std::ffi::OsString;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
@@ -6362,63 +6332,6 @@ mod tests {
 
         assert!(result.tts_enabled);
         assert_eq!(result.stt_fallback_policy, "none");
-    }
-
-    // ── Replay CLI parsing tests (issue #226) ─────────────────────────────────
-
-    #[test]
-    fn parse_replay_args_accepts_flag_and_path() {
-        let parsed = parse_replay_args_from(vec![
-            OsString::from("--replay-session"),
-            OsString::from(r"C:\sessions\meeting.jsonl"),
-        ])
-        .unwrap()
-        .expect("replay args should be detected");
-
-        assert_eq!(parsed.path, PathBuf::from(r"C:\sessions\meeting.jsonl"));
-    }
-
-    #[test]
-    fn parse_replay_args_returns_none_when_flag_absent() {
-        let result = parse_replay_args_from(vec![
-            OsString::from("--export-session"),
-            OsString::from("meeting.jsonl"),
-        ])
-        .unwrap();
-
-        assert!(result.is_none(), "no replay flag → must return None");
-    }
-
-    #[test]
-    fn parse_replay_args_requires_path_value() {
-        // Flag without a following path value must return an error.
-        let err = parse_replay_args_from(vec![OsString::from("--replay-session")])
-            .expect_err("missing path should be rejected");
-        assert!(
-            err.to_string().contains("--replay-session"),
-            "error message must name the flag"
-        );
-    }
-
-    #[test]
-    fn parse_replay_args_rejects_another_flag_as_value() {
-        let err = parse_replay_args_from(vec![
-            OsString::from("--replay-session"),
-            OsString::from("--other-flag"),
-        ])
-        .expect_err("another flag as value must be rejected");
-        assert!(err.to_string().contains("--replay-session"));
-    }
-
-    /// Verify that `parse_replay_args_from` returns `None` for an empty
-    /// argument list, proving the bypass path is not accidentally triggered.
-    #[test]
-    fn replay_bypass_not_triggered_with_no_args() {
-        let result = parse_replay_args_from(std::iter::empty::<OsString>()).unwrap();
-        assert!(
-            result.is_none(),
-            "no args must not trigger replay mode; audio/provider startup proceeds normally"
-        );
     }
 
     // ── config_json_path / bootstrap — path lookup and migration rules (issue #182) ──
