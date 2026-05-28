@@ -12,9 +12,13 @@
 //! ORT session/tensor helpers and generation-config types live in the sibling
 //! `mt_ort` module, extracted as part of STD-02 (issue #484).
 
-#[cfg(feature = "local-mt")]
-use std::path::Path;
 use std::path::PathBuf;
+#[cfg(feature = "local-mt")]
+use std::{
+    path::Path,
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 
 use crate::providers::{MtProvider, MtResult, ProviderError};
 
@@ -27,10 +31,11 @@ use {
     },
     ort::value::Tensor,
     sentencepiece_rs::SentencePieceProcessor,
-    std::sync::Arc,
 };
 
 const JA_VI_MODEL_DIR: &str = "opus-mt-ja-vi";
+#[cfg(feature = "local-mt")]
+const LOCAL_MT_TIMEOUT: Duration = Duration::from_millis(1_200);
 
 /// Language pair supported by [`LocalOpusMtProvider`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,7 +108,11 @@ pub struct LocalOpusMtProvider {
     #[allow(dead_code)]
     model_dir: PathBuf,
     #[cfg(feature = "local-mt")]
-    engine: Arc<LocalOpusMtEngine>,
+    engine: Arc<OnceLock<Arc<LocalOpusMtEngine>>>,
+    #[cfg(feature = "local-mt")]
+    load_lock: Arc<Mutex<()>>,
+    #[cfg(feature = "local-mt")]
+    load_error: Arc<Mutex<Option<CachedProviderError>>>,
 }
 
 impl LocalOpusMtProvider {
@@ -149,11 +158,12 @@ impl LocalOpusMtProvider {
 
         #[cfg(feature = "local-mt")]
         {
-            let engine = LocalOpusMtEngine::load(pair, &model_dir)?;
             Ok(Self {
                 pair,
                 model_dir,
-                engine: Arc::new(engine),
+                engine: Arc::new(OnceLock::new()),
+                load_lock: Arc::new(Mutex::new(())),
+                load_error: Arc::new(Mutex::new(None)),
             })
         }
     }
@@ -228,27 +238,187 @@ impl MtProvider for LocalOpusMtProvider {
 
         #[cfg(feature = "local-mt")]
         {
-            let engine = Arc::clone(&self.engine);
+            let provider = self.clone_for_blocking();
             let payload = payload.to_string();
             let pair = self.pair;
-            tokio::task::spawn_blocking(move || {
-                // LF-02 (issue #370): record this blocking inference in the
-                // shared in-flight local-inference gauge.  Drops at the end
-                // of the closure when `translate_blocking` returns or errors.
-                let _active_guard =
-                    crate::providers::local::runtime_caps::ActiveLocalInference::enter();
-                let translated_text = engine.translate_blocking(&payload)?;
-                Ok(MtResult {
-                    translated_text,
-                    detected_source_language: Some(pair.source_language().to_string()),
-                })
-            })
+            let started = Instant::now();
+            let engine = tokio::task::spawn_blocking(move || provider.engine())
+                .await
+                .map_err(|e| {
+                    ProviderError::ServiceUnavailable(format!(
+                        "local OPUS-MT load task failed: {e}"
+                    ))
+                })??;
+            let load_latency_ms = started.elapsed().as_millis();
+            match tokio::time::timeout(
+                LOCAL_MT_TIMEOUT,
+                tokio::task::spawn_blocking(move || {
+                    // LF-02 (issue #370): count only active inference, not lazy
+                    // model loading, so the shared gauge reflects hot-path work.
+                    let _active_guard =
+                        crate::providers::local::runtime_caps::ActiveLocalInference::enter();
+                    let result = engine.translate_blocking(&payload)?;
+                    tracing::debug!(
+                        provider = pair.display_name(),
+                        source_tokens = result.source_tokens,
+                        generated_tokens = result.generated_tokens,
+                        load_latency_ms,
+                        inference_latency_ms = started
+                            .elapsed()
+                            .as_millis()
+                            .saturating_sub(load_latency_ms),
+                        "local OPUS-MT translation completed"
+                    );
+                    Ok(MtResult {
+                        translated_text: result.translated_text,
+                        detected_source_language: Some(pair.source_language().to_string()),
+                    })
+                }),
+            )
             .await
-            .map_err(|e| {
-                ProviderError::ServiceUnavailable(format!("local OPUS-MT task failed: {e}"))
-            })?
+            {
+                Ok(joined) => joined.map_err(|e| {
+                    ProviderError::ServiceUnavailable(format!("local OPUS-MT task failed: {e}"))
+                })?,
+                Err(_) => Err(ProviderError::ServiceUnavailable(format!(
+                    "local OPUS-MT timed out after {} ms",
+                    LOCAL_MT_TIMEOUT.as_millis()
+                ))),
+            }
         }
     }
+}
+
+#[cfg(feature = "local-mt")]
+#[derive(Debug, Clone)]
+struct LocalOpusMtProviderForBlocking {
+    pair: OpusMtLanguagePair,
+    model_dir: PathBuf,
+    engine: Arc<OnceLock<Arc<LocalOpusMtEngine>>>,
+    load_lock: Arc<Mutex<()>>,
+    load_error: Arc<Mutex<Option<CachedProviderError>>>,
+}
+
+#[cfg(feature = "local-mt")]
+impl LocalOpusMtProvider {
+    fn clone_for_blocking(&self) -> LocalOpusMtProviderForBlocking {
+        LocalOpusMtProviderForBlocking {
+            pair: self.pair,
+            model_dir: self.model_dir.clone(),
+            engine: Arc::clone(&self.engine),
+            load_lock: Arc::clone(&self.load_lock),
+            load_error: Arc::clone(&self.load_error),
+        }
+    }
+}
+
+#[cfg(feature = "local-mt")]
+impl LocalOpusMtProviderForBlocking {
+    fn engine(&self) -> Result<Arc<LocalOpusMtEngine>, ProviderError> {
+        if let Some(engine) = self.engine.get() {
+            return Ok(Arc::clone(engine));
+        }
+
+        let _load_guard = self.load_lock.lock().map_err(|_| {
+            ProviderError::ServiceUnavailable(
+                "local OPUS-MT load lock was poisoned by a previous failure".to_string(),
+            )
+        })?;
+
+        if let Some(engine) = self.engine.get() {
+            return Ok(Arc::clone(engine));
+        }
+        if let Some(err) = self
+            .load_error
+            .lock()
+            .map_err(|_| {
+                ProviderError::ServiceUnavailable(
+                    "local OPUS-MT load-error lock was poisoned by a previous failure".to_string(),
+                )
+            })?
+            .as_ref()
+        {
+            return Err(err.to_provider_error());
+        }
+
+        let started = Instant::now();
+        match LocalOpusMtEngine::load(self.pair, &self.model_dir) {
+            Ok(engine) => {
+                let engine = Arc::new(engine);
+                let _ = self.engine.set(Arc::clone(&engine));
+                tracing::info!(
+                    provider = self.pair.display_name(),
+                    model_dir = %self.model_dir.display(),
+                    load_latency_ms = started.elapsed().as_millis(),
+                    "local OPUS-MT engine lazy-loaded"
+                );
+                Ok(engine)
+            }
+            Err(err) => {
+                let cached = CachedProviderError::from_provider_error(err);
+                *self.load_error.lock().map_err(|_| {
+                    ProviderError::ServiceUnavailable(
+                        "local OPUS-MT load-error lock was poisoned by a previous failure"
+                            .to_string(),
+                    )
+                })? = Some(cached.clone());
+                Err(cached.to_provider_error())
+            }
+        }
+    }
+}
+
+#[cfg(feature = "local-mt")]
+#[derive(Debug, Clone)]
+enum CachedProviderError {
+    NetworkError(String),
+    AuthError(String),
+    RateLimitError(String),
+    InvalidInput(String),
+    Unimplemented(String),
+    ServiceUnavailable(String),
+    ModelNotFound(String),
+    ChecksumMismatch(String),
+    Unknown(String),
+}
+
+#[cfg(feature = "local-mt")]
+impl CachedProviderError {
+    fn from_provider_error(err: ProviderError) -> Self {
+        match err {
+            ProviderError::NetworkError(msg) => Self::NetworkError(msg),
+            ProviderError::AuthError(msg) => Self::AuthError(msg),
+            ProviderError::RateLimitError(msg) => Self::RateLimitError(msg),
+            ProviderError::InvalidInput(msg) => Self::InvalidInput(msg),
+            ProviderError::Unimplemented(msg) => Self::Unimplemented(msg),
+            ProviderError::ServiceUnavailable(msg) => Self::ServiceUnavailable(msg),
+            ProviderError::ModelNotFound(msg) => Self::ModelNotFound(msg),
+            ProviderError::ChecksumMismatch(msg) => Self::ChecksumMismatch(msg),
+            ProviderError::Unknown(msg) => Self::Unknown(msg),
+        }
+    }
+
+    fn to_provider_error(&self) -> ProviderError {
+        match self {
+            Self::NetworkError(msg) => ProviderError::NetworkError(msg.clone()),
+            Self::AuthError(msg) => ProviderError::AuthError(msg.clone()),
+            Self::RateLimitError(msg) => ProviderError::RateLimitError(msg.clone()),
+            Self::InvalidInput(msg) => ProviderError::InvalidInput(msg.clone()),
+            Self::Unimplemented(msg) => ProviderError::Unimplemented(msg.clone()),
+            Self::ServiceUnavailable(msg) => ProviderError::ServiceUnavailable(msg.clone()),
+            Self::ModelNotFound(msg) => ProviderError::ModelNotFound(msg.clone()),
+            Self::ChecksumMismatch(msg) => ProviderError::ChecksumMismatch(msg.clone()),
+            Self::Unknown(msg) => ProviderError::Unknown(msg.clone()),
+        }
+    }
+}
+
+#[cfg(feature = "local-mt")]
+#[derive(Debug)]
+struct LocalOpusMtTranslation {
+    translated_text: String,
+    source_tokens: usize,
+    generated_tokens: usize,
 }
 
 fn primary_language_subtag(value: &str) -> String {
@@ -305,7 +475,7 @@ impl LocalOpusMtEngine {
         })
     }
 
-    fn translate_blocking(&self, payload: &str) -> Result<String, ProviderError> {
+    fn translate_blocking(&self, payload: &str) -> Result<LocalOpusMtTranslation, ProviderError> {
         let mut source_ids = self
             .source_tokenizer
             .encode(payload)
@@ -317,9 +487,7 @@ impl LocalOpusMtEngine {
         if !source_ids.ends_with(&[self.token_ids.eos]) {
             source_ids.push(self.token_ids.eos);
         }
-        if source_ids.is_empty() {
-            return Ok(String::new());
-        }
+        let source_tokens = source_ids.len();
 
         let attention_mask = vec![1_i64; source_ids.len()];
         let (hidden_shape, hidden_data) = self.encode(&source_ids, &attention_mask)?;
@@ -335,7 +503,7 @@ impl LocalOpusMtEngine {
             decoder_ids.push(next);
         }
 
-        let decoded_pieces = decoder_ids
+        let generated_tokens = decoder_ids
             .into_iter()
             .filter(|id| {
                 *id != self.token_ids.decoder_start
@@ -347,7 +515,7 @@ impl LocalOpusMtEngine {
 
         let translated = self
             .target_tokenizer
-            .decode_pieces(&decoded_pieces)
+            .decode_pieces(&generated_tokens)
             .map_err(|e| ProviderError::ServiceUnavailable(format!("OPUS-MT decode failed: {e}")))?
             .trim()
             .to_string();
@@ -358,7 +526,11 @@ impl LocalOpusMtEngine {
             ));
         }
 
-        Ok(translated)
+        Ok(LocalOpusMtTranslation {
+            translated_text: translated,
+            source_tokens,
+            generated_tokens: generated_tokens.len(),
+        })
     }
 
     fn encode(
