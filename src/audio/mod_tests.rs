@@ -137,7 +137,13 @@ fn silent_source_device_name() {
 #[tokio::test]
 async fn non_windows_capture_emits_multiple_chunks() {
     let mut capture = start_capture(DEFAULT_SILENCE_THRESHOLD).await.unwrap();
-    assert_eq!(capture.info.device_name, "silent (stub)");
+    // Linux routing returns "silent (linux-stub)", macOS returns "silent (macos-stub)",
+    // and the generic fallback returns "silent (stub)".
+    assert!(
+        capture.info.device_name.starts_with("silent"),
+        "unexpected device name: {}",
+        capture.info.device_name
+    );
     assert_eq!(capture.info.native_sample_rate, 16_000);
 
     let first = tokio::time::timeout(std::time::Duration::from_secs(1), capture.receiver.recv())
