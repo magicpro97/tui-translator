@@ -1,0 +1,76 @@
+{
+  "schema_version": "supertonic-benchmark-v1",
+  "wbs_key": "SUPERTONIC-10",
+  "issue": 495,
+  "title": "60fps, non-blocking pipeline, and 30-minute soak gate",
+  "executed_at": "2026-05-29",
+  "status": "blocked",
+  "skipped": true,
+  "sample_count": 0,
+  "blocked_by": "BLOCKER-HARDWARE-AND-DEPENDENCIES",
+  "blocker_detail": "30-minute soak requires Supertonic model loaded and running; no model access available. Additionally depends on SUPERTONIC-03 and SUPERTONIC-04 measurements. No soak artifacts were generated. All telemetry is null — not fabricated.",
+  "dependencies": {
+    "supertonic_01_closed": false,
+    "supertonic_03_closed": false,
+    "supertonic_04_closed": false,
+    "frame_gate_383_closed": true,
+    "virtual_mic_route_active": false,
+    "model_access": "none"
+  },
+  "deferred_test_cases": [
+    {
+      "id": "tc-1",
+      "description": "Single and dual mode under idle/Google/Supertonic load",
+      "status": "deferred",
+      "reason": "No Supertonic model access"
+    },
+    {
+      "id": "tc-2",
+      "description": "30-minute soak: one utterance every 4 seconds",
+      "status": "deferred",
+      "reason": "No model loaded; hardware soak infrastructure only"
+    },
+    {
+      "id": "tc-3",
+      "description": "Voice hot-swap every 60 seconds",
+      "status": "deferred",
+      "reason": "No model loaded"
+    },
+    {
+      "id": "tc-4",
+      "description": "Local STT + local MT + Supertonic combined load",
+      "status": "deferred",
+      "reason": "Combined local mode not validated"
+    },
+    {
+      "id": "tc-5",
+      "description": "Network disabled after model install — no silent cloud",
+      "status": "deferred",
+      "reason": "Requires complete local stack"
+    }
+  ],
+  "acceptance_criteria_gate": {
+    "frame_p95_ms_single": "not measured (target: ≤20ms)",
+    "frame_p95_ms_dual": "not measured (target: ≤25ms)",
+    "dropped_frames_per_min": "not measured (target: ≤2)",
+    "queue_p95": "not measured (target: ≤3)",
+    "stale_cancellation_ms": "not measured (target: ≤50ms)",
+    "cpu_avg_combined_local": "not measured (target: ≤75%)",
+    "soak_duration_min": 0,
+    "tui_soak_monitor_verdict": "not run",
+    "nfr_gate_verdict": "not run"
+  },
+  "resolution_path": {
+    "prerequisites": [
+      "SUPERTONIC-01 closes with confidence 1.0",
+      "SUPERTONIC-03 quality benchmark completes",
+      "SUPERTONIC-04 performance numbers available",
+      "SUPERTONIC-07/08 native provider merged",
+      "Windows hardware with 30-minute runtime window"
+    ],
+    "estimated_effort": "1 day (soak run) + 1 day (verification) once prerequisites met",
+    "branch_when_ready": "supertonic10/soak-gate"
+  },
+  "shipping_blocker": false,
+  "notes": "This is the final performance gate before SUPERTONIC-11 default-readiness ADR. Cannot be executed until the full SUPERTONIC stack is functional."
+}

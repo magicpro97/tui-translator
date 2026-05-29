@@ -162,3 +162,50 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+
+# ── Linux packaging metadata (REL-02 / issue #478) ────────────────────────────
+# cargo-deb reads [package.metadata.deb] to build a .deb package
+[package.metadata.deb]
+name = "tui-translator"
+maintainer = "tui-translator contributors <noreply@github.com>"
+copyright = "2024, tui-translator contributors"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+Real-time bilingual subtitles for Zoom meetings. Captures system audio via
+PipeWire or PulseAudio, transcribes with Google Speech-to-Text, and translates
+with Google Translate — all in a terminal TUI."""
+depends = "$auto, libpipewire-0.3-0 | libpulse0, libasound2 | libasound2t64"
+section = "utils"
+priority = "optional"
+assets = [
+  ["target/x86_64-unknown-linux-gnu/release/tui-translator", "usr/bin/", "755"],
+  ["config.example.json", "usr/share/tui-translator/", "644"],
+  ["USAGE.md", "usr/share/doc/tui-translator/", "644"],
+  ["README.md", "usr/share/doc/tui-translator/", "644"],
+]
+
+# cargo-generate-rpm reads [package.metadata.generate-rpm] to build an .rpm package
+[package.metadata.generate-rpm]
+name = "tui-translator"
+license = "MIT"
+group = "Applications/Utilities"
+summary = "Real-time bilingual subtitles — terminal TUI"
+description = """\
+Real-time bilingual subtitles for Zoom meetings. Captures system audio via
+PipeWire or PulseAudio, transcribes with Google Speech-to-Text, and translates
+with Google Translate — all in a terminal TUI."""
+
+[[package.metadata.generate-rpm.assets]]
+source = "target/x86_64-unknown-linux-gnu/release/tui-translator"
+dest = "/usr/bin/tui-translator"
+mode = "755"
+
+[[package.metadata.generate-rpm.assets]]
+source = "config.example.json"
+dest = "/usr/share/tui-translator/config.example.json"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "USAGE.md"
+dest = "/usr/share/doc/tui-translator/USAGE.md"
+mode = "644"

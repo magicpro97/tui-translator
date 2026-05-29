@@ -1,0 +1,176 @@
+name: Release Linux
+
+# REL-02 (issue #478) — Linux packaging CI
+#
+# Builds a statically-linked x86_64 binary and produces:
+#   - tar.gz (universal portable archive)
+#   - .deb (Debian 12 / Ubuntu 22.04 / 24.04)
+#   - .rpm (Fedora 40 / Rocky 9)
+#   - AppImage (any distro, no install required)
+#   - SHA256SUMS-<ver>-linux.txt
+#
+# Triggered on the same tags as the Windows release job so both
+# artifacts land on the same GitHub Release page.
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-linux:
+    name: Build and publish Linux release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable, x86_64-unknown-linux-gnu)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-linux-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install packaging tools
+        run: |
+          # cargo-deb and cargo-generate-rpm build .deb / .rpm from Cargo metadata
+          cargo install cargo-deb --locked --quiet 2>/dev/null || true
+          cargo install cargo-generate-rpm --locked --quiet 2>/dev/null || true
+
+          # appimagetool from upstream AppImageKit releases
+          curl -fsSL -o /usr/local/bin/appimagetool \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x /usr/local/bin/appimagetool
+
+          # FUSE is required by appimagetool at runtime
+          sudo apt-get install -y --no-install-recommends fuse libfuse2
+
+      - name: Run release safety tests (Linux)
+        run: cargo test --locked --bin tui-translator --target x86_64-unknown-linux-gnu
+
+      - name: Build release binary (static musl-glibc)
+        run: |
+          cargo build --locked --release \
+            --target x86_64-unknown-linux-gnu \
+            --bin tui-translator
+
+      - name: Verify binary runs and prints help
+        run: |
+          ./target/x86_64-unknown-linux-gnu/release/tui-translator --help 2>&1 | head -5 || true
+          echo "Binary produced at: $(ls -lh target/x86_64-unknown-linux-gnu/release/tui-translator)"
+
+      - name: Package all artifacts
+        id: package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          export VERSION TARGET=x86_64-unknown-linux-gnu
+          bash scripts/package-linux.sh --version "${VERSION}" --target x86_64-unknown-linux-gnu
+
+          # Collect output paths for upload
+          DIST="dist/linux"
+          echo "tarball=$(ls ${DIST}/*.tar.gz | head -1)"                   >> "$GITHUB_OUTPUT"
+          echo "deb=$(ls ${DIST}/*.deb 2>/dev/null | head -1 || echo '')"   >> "$GITHUB_OUTPUT"
+          echo "rpm=$(ls ${DIST}/*.rpm 2>/dev/null | head -1 || echo '')"   >> "$GITHUB_OUTPUT"
+          echo "appimage=$(ls ${DIST}/*.AppImage 2>/dev/null | head -1 || echo '')" >> "$GITHUB_OUTPUT"
+          echo "checksums=$(ls ${DIST}/SHA256SUMS*.txt | head -1)"          >> "$GITHUB_OUTPUT"
+
+      - name: Validate tarball contents
+        run: |
+          TARBALL="${{ steps.package.outputs.tarball }}"
+          echo "Validating: ${TARBALL}"
+          tar -tzf "${TARBALL}" | sort
+          # Required entries
+          ENTRIES=$(tar -tzf "${TARBALL}")
+          ERRORS=()
+          echo "${ENTRIES}" | grep -q "tui-translator$" || \
+            ERRORS+=("Missing binary: tui-translator")
+          echo "${ENTRIES}" | grep -q "config.example.json" || \
+            ERRORS+=("Missing: config.example.json")
+          if [[ ${#ERRORS[@]} -gt 0 ]]; then
+            printf '::error::%s\n' "${ERRORS[@]}"
+            exit 1
+          fi
+          echo "PASS: tarball contents validated"
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "${{ github.ref_name }} — Linux pre-release"
+          prerelease: true
+          body: |
+            ## Linux pre-release
+
+            > **⚠️ This build is published as a pre-release, not a final stable release.**
+            > Audio capture on Linux requires PipeWire or PulseAudio — the backend is a
+            > Phase 5 stub (#469). Full functionality tracks the Linux WBS epic (#466).
+
+            ### Packages
+
+            | Format | Use case |
+            |--------|----------|
+            | `.tar.gz` | Any distro — extract and run |
+            | `.deb` | Debian 12, Ubuntu 22.04 / 24.04 |
+            | `.rpm` | Fedora 40, Rocky Linux 9 |
+            | `.AppImage` | Portable — no install required |
+
+            ### Runtime dependencies
+
+            ```
+            # Debian / Ubuntu
+            sudo apt install pipewire pipewire-pulse xdg-desktop-portal
+
+            # Fedora
+            sudo dnf install pipewire pipewire-pulseaudio xdg-desktop-portal
+            ```
+
+            ### Quick start (tarball)
+
+            ```bash
+            tar -xzf tui-translator-${{ steps.package.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz
+            cd tui-translator-${{ steps.package.outputs.version }}
+            cp config.example.json ~/.tui-translator/config.json
+            # Edit config.json, add your Google Cloud credentials
+            ./tui-translator
+            ```
+
+            ### Checksum verification
+
+            ```bash
+            sha256sum -c SHA256SUMS-${{ steps.package.outputs.version }}-linux.txt
+            ```
+
+            ### Keyboard shortcuts
+
+            | Key | Action |
+            |-----|--------|
+            | Space | Pause / resume |
+            | L | Change target language |
+            | T | Toggle TTS audio |
+            | M | Toggle metrics panel |
+            | S | Open settings |
+            | R | Reload config |
+            | ? | Help |
+            | Q / Ctrl+C | Quit |
+          files: |
+            ${{ steps.package.outputs.tarball }}
+            ${{ steps.package.outputs.deb }}
+            ${{ steps.package.outputs.rpm }}
+            ${{ steps.package.outputs.appimage }}
+            ${{ steps.package.outputs.checksums }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

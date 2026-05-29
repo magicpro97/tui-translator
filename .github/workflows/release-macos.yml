@@ -1,0 +1,142 @@
+name: Release — macOS
+
+# REL-01: Build, sign, notarize, and upload macOS release artifacts
+#
+# Triggered on version tags (v*). Produces:
+#   - tui-translator.app (inside .dmg)
+#   - tui-translator-<version>-macos-universal.dmg
+#   - SHA256SUMS
+#
+# Signing and notarization require secrets (see below). The build job always
+# runs; signing/notarization steps are skipped when secrets are absent.
+#
+# Required GitHub secrets for full signing + notarization:
+#   APPLE_DEVELOPER_ID_APP       — "Developer ID Application: Name (TEAM_ID)"
+#   APPLE_DEVELOPER_ID_CERT_P12  — base64-encoded .p12 certificate (exported from Keychain)
+#   APPLE_DEVELOPER_ID_CERT_PASS — passphrase for the .p12
+#   APPLE_TEAM_ID                — 10-character Apple Team ID
+#   APPLE_APPLE_ID               — Apple ID email for notarytool
+#   APPLE_APP_SPECIFIC_PASSWORD  — app-specific password for notarytool
+#   APPLE_BUNDLE_ID              — e.g. com.example.tui-translator
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-macos:
+    name: Build and package macOS (${{ matrix.arch }})
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    strategy:
+      matrix:
+        arch: [universal]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run release safety tests
+        run: cargo test --locked --bin tui-translator
+
+      # ── optional: import Developer ID certificate ─────────────────────────
+      - name: Import code-signing certificate
+        if: ${{ env.APPLE_DEVELOPER_ID_CERT_P12 != '' }}
+        env:
+          APPLE_DEVELOPER_ID_CERT_P12: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12 }}
+          APPLE_DEVELOPER_ID_CERT_PASS: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASS="$(openssl rand -hex 16)"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          echo "$APPLE_DEVELOPER_ID_CERT_P12" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_DEVELOPER_ID_CERT_PASS" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          rm -f /tmp/cert.p12
+
+      # ── build + package ───────────────────────────────────────────────────
+      - name: Package macOS (unsigned)
+        if: ${{ env.APPLE_DEVELOPER_ID_APP == '' }}
+        env:
+          APPLE_DEVELOPER_ID_APP: ""
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID || 'com.tui-translator.app' }}
+        run: |
+          chmod +x scripts/package-macos.sh
+          ./scripts/package-macos.sh --arch ${{ matrix.arch }}
+
+      - name: Package macOS (signed)
+        if: ${{ env.APPLE_DEVELOPER_ID_APP != '' && env.APPLE_APPLE_ID == '' }}
+        env:
+          APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+        run: |
+          chmod +x scripts/package-macos.sh
+          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --sign
+
+      - name: Package macOS (signed + notarized)
+        if: ${{ env.APPLE_DEVELOPER_ID_APP != '' && env.APPLE_APPLE_ID != '' }}
+        env:
+          APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
+          APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+          APPLE_KEYCHAIN_PROFILE: notarize-profile
+        run: |
+          # Store notarytool credentials in a keychain profile
+          xcrun notarytool store-credentials "$APPLE_KEYCHAIN_PROFILE" \
+            --apple-id "${{ secrets.APPLE_APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
+
+          chmod +x scripts/package-macos.sh
+          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --notarize
+
+      # ── upload artifacts ──────────────────────────────────────────────────
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-translator-macos-${{ matrix.arch }}
+          path: dist/macos-${{ matrix.arch }}/*.dmg
+
+      - name: Upload SHA256SUMS
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-translator-macos-${{ matrix.arch }}-checksums
+          path: dist/macos-${{ matrix.arch }}/SHA256SUMS
+
+      # ── attach to GitHub Release ──────────────────────────────────────────
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/macos-${{ matrix.arch }}/*.dmg
+            dist/macos-${{ matrix.arch }}/SHA256SUMS
+          prerelease: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

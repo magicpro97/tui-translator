@@ -1,0 +1,69 @@
+{
+  "schema_version": "model-validation-v1",
+  "wbs_key": "MODEL-03",
+  "issue": 473,
+  "title": "Linux local model runtime validation",
+  "executed_at": "2026-05-29",
+  "status": "partial",
+  "blocked_by": "BLOCKER-MODEL-AND-HARDWARE",
+  "blocker_detail": "local-stt and local-mt features compile successfully on ubuntu-22.04 in CI matrix (see ci.yml linux-local-stt and linux-local-mt allowed-fail jobs). However, runtime model loading, ldd verification of libonnxruntime.so, XDG model cache path creation, and CPU baseline benchmarks require model files and Linux hardware — not available in CI.",
+  "compilation_status": {
+    "local_stt_ubuntu2204": "CI allowed-fail job passes (linux-local-stt in ci.yml)",
+    "local_mt_ubuntu2204": "CI allowed-fail job passes (linux-local-mt in ci.yml)",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "deferred_test_cases": [
+    {
+      "id": "tc-1",
+      "description": "cargo test --features local-stt and local-mt pass on Linux",
+      "status": "partial",
+      "evidence": "Build passes; unit tests that don't require model files pass in CI"
+    },
+    {
+      "id": "tc-2",
+      "description": "RTF <= agreed baseline for tiny/base model",
+      "status": "deferred",
+      "reason": "Requires model download and CPU measurement"
+    },
+    {
+      "id": "tc-3",
+      "description": "ldd shows expected libonnxruntime.so with correct symbol version",
+      "status": "deferred",
+      "reason": "Requires runtime execution with ORT loaded"
+    },
+    {
+      "id": "tc-4",
+      "description": "Model cache under XDG_DATA_HOME created and hash-verified",
+      "status": "deferred",
+      "reason": "Requires model download and filesystem write in test environment"
+    },
+    {
+      "id": "tc-5",
+      "description": "No silent remote fallback when local model present",
+      "status": "deferred",
+      "reason": "Requires complete local stack runtime"
+    },
+    {
+      "id": "tc-6",
+      "description": "GPU acceleration (CUDA/ROCm) deferral decision documented",
+      "status": "done",
+      "evidence": "Deferred to Phase 6 per docs/adr/. CPU-only is Phase 5 baseline."
+    }
+  ],
+  "packaging_notes": {
+    "dynamic_library_recipe": "libonnxruntime.so must be bundled or required as a system package (cargo-deb recommends section); see docs/07-packaging-verification.md",
+    "whisper_cpp_so": "whisper-rs bundles libwhisper.a statically; no extra .so needed",
+    "xdg_cache_path": "~/.local/share/tui-translator/models/ (XDG_DATA_HOME fallback)"
+  },
+  "resolution_path": {
+    "prerequisites": [
+      "Linux machine (x86_64) with ONNX Runtime system library or bundled .so",
+      "Whisper tiny/base model file downloaded",
+      "OPUS-MT model file downloaded (for local-mt)"
+    ],
+    "estimated_effort": "Half day once hardware available",
+    "branch_when_ready": "model03/linux-runtime-validation"
+  },
+  "shipping_blocker": false,
+  "notes": "Compilation and unit test gates pass via CI. Runtime and packaging validation deferred to hardware access. GPU is explicitly out of scope for Phase 5."
+}

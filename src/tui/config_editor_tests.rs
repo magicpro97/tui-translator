@@ -194,8 +194,12 @@ fn config_editor_provider_fields_default_to_google() {
         ConfigEditorMode::Settings,
     );
 
-    // stt_provider defaults to "local" (issue #371), mt_provider still "google".
+    // stt_provider defaults to "local" (issue #371).
+    // mt_provider defaults to "local" when local-mt is compiled in (JV-13), otherwise "google".
     assert_eq!(editor.stt_provider, "local");
+    #[cfg(feature = "local-mt")]
+    assert_eq!(editor.mt_provider, "local");
+    #[cfg(not(feature = "local-mt"))]
     assert_eq!(editor.mt_provider, "google");
 }
 

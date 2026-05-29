@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  entitlements.plist — macOS hardened-runtime entitlements for tui-translator
+  Used during `codesign --entitlements` in scripts/package-macos.sh
+-->
+<plist version="1.0">
+<dict>
+  <!-- Required for audio capture via CoreAudio / ScreenCaptureKit -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+
+  <!-- Allow outbound network connections (Google STT/MT/TTS APIs) -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+
+  <!-- Allow reading user-selected files (config.json, model files) -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+
+  <!-- Allow writing to ~/Library/Application Support -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <false/>
+
+  <!-- Disable library validation to allow loading ONNX Runtime dylibs -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

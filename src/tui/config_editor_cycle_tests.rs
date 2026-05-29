@@ -87,10 +87,21 @@ fn config_editor_cycles_mt_provider() {
         ConfigEditorMode::Settings,
     );
     editor.selected_field = ConfigEditorField::MtProvider.index();
+
+    // Under local-mt the default is "local"; otherwise "google".
+    #[cfg(not(feature = "local-mt"))]
     assert_eq!(editor.mt_provider, "google");
+    #[cfg(feature = "local-mt")]
+    assert_eq!(editor.mt_provider, "local");
 
     editor.cycle_active_field();
+
+    // After one cycle from the default, we should be on the other option.
+    #[cfg(not(feature = "local-mt"))]
     assert_eq!(editor.mt_provider, "local");
+    #[cfg(feature = "local-mt")]
+    assert_eq!(editor.mt_provider, "google");
+
     assert!(
         editor
             .status_message

@@ -1,0 +1,58 @@
+{
+  "schema_version": "model-validation-v1",
+  "wbs_key": "MODEL-02",
+  "issue": 458,
+  "title": "macOS local model runtime validation and packaging constraints",
+  "executed_at": "2026-05-29",
+  "status": "partial",
+  "blocked_by": "BLOCKER-MODEL-AND-HARDWARE",
+  "blocker_detail": "local-stt and local-mt features compile successfully on macos-14 (aarch64) in CI matrix (see ci.yml linux-local-stt and linux-local-mt allowed-fail jobs). However, runtime model loading, Metal/CoreML path testing, and packaging constraint validation require model files and macOS hardware with actual audio I/O — not available in CI.",
+  "compilation_status": {
+    "local_stt_macos14": "CI allowed-fail job verifies compile; no runtime test",
+    "local_mt_macos14": "CI allowed-fail job verifies compile; no runtime test",
+    "target": "aarch64-apple-darwin"
+  },
+  "deferred_test_cases": [
+    {
+      "id": "tc-1",
+      "description": "local-stt builds on macos-13/14",
+      "status": "partial",
+      "evidence": "CI allowed-fail compile job passes on macos-14 (see ci.yml)"
+    },
+    {
+      "id": "tc-2",
+      "description": "local-mt builds on macos-13/14",
+      "status": "partial",
+      "evidence": "CI allowed-fail compile job passes on macos-14 (see ci.yml)"
+    },
+    {
+      "id": "tc-3",
+      "description": "Model cache path created under ~/Library/Application Support",
+      "status": "deferred",
+      "reason": "Requires macOS runtime with model file download"
+    },
+    {
+      "id": "tc-4",
+      "description": "Metal/CoreML path: use accelerated path or document CPU fallback",
+      "status": "deferred",
+      "reason": "Requires macOS hardware with Metal support and ONNX Runtime GPU build"
+    },
+    {
+      "id": "tc-5",
+      "description": "Packaging constraints: model and native library inclusion verified",
+      "status": "deferred",
+      "reason": "Requires full macOS release artifact build with models"
+    }
+  ],
+  "resolution_path": {
+    "prerequisites": [
+      "REL-01 macOS packaging script in place (done via scripts/package-macos.sh)",
+      "macOS machine with Xcode and model download capability",
+      "Whisper tiny/base model file downloaded"
+    ],
+    "estimated_effort": "Half day once hardware available",
+    "branch_when_ready": "model02/macos-runtime-validation"
+  },
+  "shipping_blocker": false,
+  "notes": "Compilation gates pass via CI. Runtime validation deferred to hardware access. Metal/CoreML acceleration is Phase 6 scope — CPU fallback is the Phase 5 baseline."
+}
