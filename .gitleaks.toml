@@ -1,0 +1,42 @@
+# .gitleaks.toml — gitleaks allowlist for tui-translator
+#
+# This file allows known false positives from fixture data, example configs,
+# and test scaffolding so that gitleaks can be promoted to a required CI gate
+# (SEC-02, issue #477).
+#
+# Rules:
+#   [[allowlists]] entries apply globally.
+#   [[rules]] entries may override built-in rules when needed.
+#
+# IMPORTANT: Never allowlist paths that contain real credentials.
+# Real keys are kept in config.json (gitignored). The paths below are either
+# documentation/examples with placeholder text or test fixtures that match
+# a key *regex* without containing actual keys.
+
+title = "tui-translator gitleaks config"
+
+[allowlist]
+description = "Known fixture and example paths with no real secrets"
+paths = [
+    # Contains human-readable *descriptions* of what each field does, not values.
+    "config.example.json",
+    # Test fixture Python script contains a regex that *matches* Google API key
+    # format but is not itself a key — it is used to detect leaks, not to hold one.
+    "tests/fixtures/jv02/verify_synthetic_seed.py",
+    # Evidence JSON files contain machine-translated text and benchmark output;
+    # no credentials are ever written to these paths.
+    "docs/evidence",
+    "verification-evidence",
+]
+
+[[rules]]
+description = "Google API key"
+id = "google-api-key"
+regex = '''AIza[0-9A-Za-z\-_]{35}'''
+# Allowlist the example config and test fixture explicitly at the rule level
+# (belt-and-suspenders with the global path allowlist above).
+[rules.allowlist]
+paths = [
+    "config.example.json",
+    "tests/fixtures/jv02/verify_synthetic_seed.py",
+]
