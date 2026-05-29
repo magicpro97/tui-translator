@@ -77,6 +77,7 @@ fn make_orch_context() -> TestCtx {
         slot_id: crate::pipeline::SlotId::A,
         audio_level: Arc::new(AtomicU32::new(0)),
         stt_state: Arc::clone(&stt_state),
+        mt_state: Arc::new(Mutex::new(crate::metrics::MtState::default())),
         subtitle_pane: Arc::clone(&subtitle_pane),
         session_metrics: Arc::new(Mutex::new(crate::metrics::SessionMetrics::default())),
         cost_counter: Arc::new(crate::metrics::CostCounter::new()),

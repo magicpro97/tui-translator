@@ -4,6 +4,7 @@ expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
 │STT: local   TTS: off   Route: Speakers                                       │
+│MT: idle                                                                      │
 │Target: vi   Pairs: 0   Cost: no charges                                      │
 │Elapsed: 0:00                                                                 │
 │CPU:0%  RAM:0MB  Net:↑0/↓0 kbps  E2E:—  Loss:0.0%                             │
