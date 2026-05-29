@@ -1601,9 +1601,11 @@ fn audio_device_title_max_cols(area_width: u16) -> usize {
 pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
     if metrics_expanded {
         if over_threshold {
-            10u16
+            // 2 borders + 8 standard rows (JV-14 adds MT state row) + 1 warning row = 11
+            11u16
         } else {
-            9u16
+            // 2 borders + 8 standard rows (JV-14 adds MT state row) = 10
+            10u16
         }
     } else {
         3u16
@@ -1611,9 +1613,9 @@ pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> 
 }
 
 pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
-    // Expanded mode: 2 border rows + 7 standard content rows (STT/TTS, metrics,
-    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters, local runtime, storage)
-    // + optional warning row = 9 or 10 total.  Compact mode keeps 3 rows.
+    // Expanded mode: 2 border rows + 8 standard content rows (STT/TTS, MT state (JV-14),
+    // metrics, elapsed, CPU/RAM/Net/E2E/Loss, quality counters, local runtime, storage)
+    // + optional warning row = 10 or 11 total.  Compact mode keeps 3 rows.
     let metrics_h = expanded_metrics_height(metrics_expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)

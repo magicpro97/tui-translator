@@ -618,7 +618,7 @@ fn snapshot_status_strip_expanded_idle() {
         config_apply_status: None,
         config_apply_count: 0,
     };
-    let rendered = render_strip(&strip, 80, 9);
+    let rendered = render_strip(&strip, 80, 10);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -666,7 +666,7 @@ fn snapshot_status_strip_expanded_listening() {
         config_apply_status: None,
         config_apply_count: 0,
     };
-    let rendered = render_strip(&strip, 80, 9);
+    let rendered = render_strip(&strip, 80, 10);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -675,7 +675,7 @@ fn snapshot_status_strip_expanded_listening() {
 }
 
 /// Expanded mode with an active cost warning: the warning row must be visible
-/// and the block must be 10 rows tall (2 borders + 7 standard rows + 1 warning).
+/// and the block must be 11 rows tall (2 borders + 8 standard rows + 1 warning).
 #[test]
 fn snapshot_status_strip_expanded_with_warning() {
     let stt = SttState::Listening;
@@ -718,8 +718,8 @@ fn snapshot_status_strip_expanded_with_warning() {
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 10,
-        "expanded_height() must be 10 when over_threshold; got {height}"
+        height, 11,
+        "expanded_height() must be 11 when over_threshold; got {height}"
     );
     insta::assert_snapshot!(
         "status_strip_expanded_with_warning",
@@ -1063,11 +1063,11 @@ fn narrow_strip_uses_abbreviated_labels() {
 /// when `cost_usd` exceeds `cost_warning_usd` (issue #74).
 ///
 /// Verifies:
-/// 1. `expanded_height()` returns 10 (not 9) when over threshold (LF-02 adds
-///    the local-runtime row and SM-02 adds the storage row).
+/// 1. `expanded_height()` returns 11 (not 10) when over threshold (JV-14 adds
+///    the MT state row, LF-02 adds local-runtime, SM-02 adds storage row).
 /// 2. `expanded_metrics_height(true, true)` matches that value.
-/// 3. The rendered text at 10 rows contains the warning.
-/// 4. The same strip at 9 rows (old, pre-combined height) does NOT show the
+/// 3. The rendered text at 11 rows contains the warning.
+/// 4. The same strip at 10 rows (old, pre-MT height) does NOT show the
 ///    warning.
 #[test]
 fn expanded_warning_renders_when_over_threshold() {
@@ -1110,21 +1110,21 @@ fn expanded_warning_renders_when_over_threshold() {
         config_apply_count: 0,
     };
 
-    // Height accounting must be 10 when warning is active.
+    // Height accounting must be 11 when warning is active.
     assert_eq!(
         strip.expanded_height(),
-        10,
-        "expanded_height() must return 10 when cost exceeds threshold"
+        11,
+        "expanded_height() must return 11 when cost exceeds threshold"
     );
     assert_eq!(
         expanded_metrics_height(true, true),
-        10,
-        "expanded_metrics_height(expanded=true, over_threshold=true) must be 10"
+        11,
+        "expanded_metrics_height(expanded=true, over_threshold=true) must be 11"
     );
     assert_eq!(
         expanded_metrics_height(true, false),
-        9,
-        "expanded_metrics_height(expanded=true, over_threshold=false) must be 9"
+        10,
+        "expanded_metrics_height(expanded=true, over_threshold=false) must be 10"
     );
     assert_eq!(
         expanded_metrics_height(false, true),
@@ -1132,22 +1132,22 @@ fn expanded_warning_renders_when_over_threshold() {
         "expanded_metrics_height(expanded=false, ...) must always be 3"
     );
 
-    // At the correct height of 10 the warning IS visible.
-    let rendered_10 = render_strip(&strip, 80, 10);
+    // At the correct height of 11 the warning IS visible.
+    let rendered_10 = render_strip(&strip, 80, 11);
     assert!(
         rendered_10.contains("Cost warning"),
-        "expanded strip at 10 rows must show cost warning; got:\n{rendered_10}"
+        "expanded strip at 11 rows must show cost warning; got:\n{rendered_10}"
     );
     assert!(
         rendered_10.contains("1.20"),
         "cost warning must include the current cost value; got:\n{rendered_10}"
     );
 
-    // At the old combined height of 9 the warning row is clipped - regression guard.
-    let rendered_clipped = render_strip(&strip, 80, 9);
+    // At the old combined height of 10 the warning row is clipped - regression guard.
+    let rendered_clipped = render_strip(&strip, 80, 10);
     assert!(
         !rendered_clipped.contains("Cost warning"),
-        "at 9 rows the warning row is clipped - confirms fix was needed; got:\n{rendered_clipped}"
+        "at 10 rows the warning row is clipped - confirms fix was needed; got:\n{rendered_clipped}"
     );
 }
 
@@ -1239,7 +1239,7 @@ fn snapshot_status_strip_zero_state_expanded() {
         config_apply_status: None,
         config_apply_count: 0,
     };
-    let rendered = render_strip(&strip, 80, 9);
+    let rendered = render_strip(&strip, 80, 10);
     assert!(
         rendered.contains("trunc:"),
         "quality row missing: {rendered:?}"
@@ -1723,7 +1723,7 @@ fn expanded_metrics_narrow_uses_lang_label() {
         config_apply_status: None,
         config_apply_count: 0,
     };
-    let rendered = render_strip(&strip, 60, 7);
+    let rendered = render_strip(&strip, 60, 9);
     assert!(
         rendered.contains("Lang:"),
         "expanded narrow strip must use 'Lang:' label; got: {rendered:?}"
@@ -2113,8 +2113,8 @@ fn snapshot_status_strip_expanded_ram_warning() {
     };
     let height = strip.expanded_height();
     assert_eq!(
-        height, 10,
-        "expanded_height() must be 10 when ram_warning is true; got {height}"
+        height, 11,
+        "expanded_height() must be 11 when ram_warning is true; got {height}"
     );
     let rendered = render_strip(&strip, 80, height);
     assert!(
@@ -2170,7 +2170,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         config_apply_status: None,
         config_apply_count: 0,
     };
-    assert_eq!(strip.expanded_height(), 10);
+    assert_eq!(strip.expanded_height(), 11);
     let rendered = render_strip(&strip, 120, strip.expanded_height());
     assert!(
         rendered.contains("Cost warning") && rendered.contains("RAM warning"),
@@ -2221,8 +2221,8 @@ fn expanded_metrics_height_is_9_without_any_warning() {
     };
     assert_eq!(
         strip.expanded_height(),
-        9,
-        "no warnings -> expanded_height() must be 9"
+        10,
+        "no warnings -> expanded_height() must be 10"
     );
 }
 
@@ -2420,7 +2420,7 @@ fn snapshot_config_apply_status_restart_required_expanded_metrics_row() {
         }),
         config_apply_count: 3,
     };
-    let rendered = render_strip(&strip, 120, 9);
+    let rendered = render_strip(&strip, 120, 10);
     assert!(
         rendered.contains("Config: 3 applies"),
         "config apply count missing from expanded metrics: {rendered:?}"
