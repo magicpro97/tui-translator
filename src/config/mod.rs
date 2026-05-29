@@ -738,9 +738,10 @@ pub struct AppConfig {
     pub stt_provider: String,
 
     /// Machine-translation provider backend.  Accepted values:
-    /// - `"google"` *(default)* — Google Cloud Translation.
-    /// - `"local"` — CPU-local OPUS-MT when built with `local-mt` and
-    ///   ONNX Runtime 1.20.x is available.
+    /// - `"local"` *(default when built with `local-mt` feature, issue #421)* —
+    ///   CPU-local OPUS-MT when built with `local-mt` and ONNX Runtime 1.20.x
+    ///   is available.
+    /// - `"google"` *(default without `local-mt` feature)* — Google Cloud Translation.
     #[serde(default = "default_mt_provider")]
     pub mt_provider: String,
 
@@ -1153,7 +1154,18 @@ fn default_stt_provider() -> String {
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_mt_provider() -> String {
-    "google".to_string()
+    // JV-13 (issue #421): when the local-mt feature is compiled in, default to the
+    // CPU-local OPUS-MT backend so new installs do not require a Google API key.
+    // Existing configs with an explicit "google" value are not affected because
+    // serde only calls this function when the field is absent from the config file.
+    #[cfg(feature = "local-mt")]
+    {
+        "local".to_string()
+    }
+    #[cfg(not(feature = "local-mt"))]
+    {
+        "google".to_string()
+    }
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -2441,9 +2453,20 @@ mod tests {
         assert_eq!(cfg.target_language, "vi");
         assert!(!cfg.tts_enabled);
         assert!(cfg.capture_device.is_none());
-        // T1: provider fields must default to "local" for STT and "google" for MT (issue #371)
+        // T1: provider fields must default to "local" for STT (issue #371)
+        // and "local" for MT when built with local-mt feature (JV-13, issue #421),
+        // or "google" when local-mt is not compiled in.
         assert_eq!(cfg.stt_provider, "local");
-        assert_eq!(cfg.mt_provider, "google");
+        #[cfg(feature = "local-mt")]
+        assert_eq!(
+            cfg.mt_provider, "local",
+            "JV-13: local-mt default must be 'local'"
+        );
+        #[cfg(not(feature = "local-mt"))]
+        assert_eq!(
+            cfg.mt_provider, "google",
+            "non-local-mt default must remain 'google'"
+        );
         assert!(cfg.session_store.enabled, "LF-06: enabled by default");
         cfg.validate()
             .expect("default config should pass validation");
@@ -2461,6 +2484,21 @@ mod tests {
             load_with_state(&missing_path).expect("should return default, not error");
         assert_eq!(cfg.source_language, "ja-JP");
         assert_eq!(state, LoadState::Missing);
+    }
+
+    #[test]
+    fn explicit_google_mt_provider_preserved_after_jv13_default_flip() {
+        // JV-13 (issue #421): configs that explicitly set mt_provider="google" must
+        // NOT be changed by the default flip — serde only calls default_mt_provider
+        // when the field is absent.
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"mt_provider":"google"}}"#).unwrap();
+        let path = f.path().to_path_buf();
+        let (cfg, _state) = load_with_state(&path).expect("explicit google config must load");
+        assert_eq!(
+            cfg.mt_provider, "google",
+            "explicit google mt_provider must be preserved regardless of local-mt feature"
+        );
     }
 
     #[test]
@@ -2507,7 +2545,8 @@ mod tests {
         assert_eq!(cfg.google_api_key.as_deref(), Some("TEST"));
     }
 
-    // T1: empty config JSON — stt_provider defaults to "local", mt_provider to "google" (issue #371)
+    // T1: empty config JSON — stt_provider defaults to "local"; mt_provider defaults to
+    // "local" when the local-mt feature is compiled in, otherwise "google" (issue #371, JV-13).
     #[test]
     fn provider_fields_default_correctly_when_absent() {
         // OK: unwrap in test
@@ -2520,9 +2559,15 @@ mod tests {
             cfg.stt_provider, "local",
             "stt_provider should default to local (issue #371)"
         );
+        #[cfg(feature = "local-mt")]
+        assert_eq!(
+            cfg.mt_provider, "local",
+            "mt_provider should default to local when local-mt is compiled in (JV-13)"
+        );
+        #[cfg(not(feature = "local-mt"))]
         assert_eq!(
             cfg.mt_provider, "google",
-            "mt_provider should default to google"
+            "mt_provider should default to google when local-mt is not compiled in"
         );
     }
 
@@ -3107,8 +3152,15 @@ mod tests {
     #[test]
     fn mt_provider_change_requires_restart() {
         let current = AppConfig::default();
+        // Under local-mt the default is "local"; switch to the opposite to verify restart detection.
+        #[cfg(not(feature = "local-mt"))]
         let next = AppConfig {
             mt_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        #[cfg(feature = "local-mt")]
+        let next = AppConfig {
+            mt_provider: "google".to_string(),
             ..AppConfig::default()
         };
 
