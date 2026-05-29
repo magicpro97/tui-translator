@@ -2545,7 +2545,8 @@ mod tests {
         assert_eq!(cfg.google_api_key.as_deref(), Some("TEST"));
     }
 
-    // T1: empty config JSON — stt_provider defaults to "local", mt_provider to "google" (issue #371)
+    // T1: empty config JSON — stt_provider defaults to "local"; mt_provider defaults to
+    // "local" when the local-mt feature is compiled in, otherwise "google" (issue #371, JV-13).
     #[test]
     fn provider_fields_default_correctly_when_absent() {
         // OK: unwrap in test
@@ -2558,9 +2559,15 @@ mod tests {
             cfg.stt_provider, "local",
             "stt_provider should default to local (issue #371)"
         );
+        #[cfg(feature = "local-mt")]
+        assert_eq!(
+            cfg.mt_provider, "local",
+            "mt_provider should default to local when local-mt is compiled in (JV-13)"
+        );
+        #[cfg(not(feature = "local-mt"))]
         assert_eq!(
             cfg.mt_provider, "google",
-            "mt_provider should default to google"
+            "mt_provider should default to google when local-mt is not compiled in"
         );
     }
 
@@ -3145,8 +3152,15 @@ mod tests {
     #[test]
     fn mt_provider_change_requires_restart() {
         let current = AppConfig::default();
+        // Under local-mt the default is "local"; switch to the opposite to verify restart detection.
+        #[cfg(not(feature = "local-mt"))]
         let next = AppConfig {
             mt_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        #[cfg(feature = "local-mt")]
+        let next = AppConfig {
+            mt_provider: "google".to_string(),
             ..AppConfig::default()
         };
 

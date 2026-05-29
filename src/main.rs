@@ -4649,7 +4649,8 @@ mod tests {
         // Pure google-only mode (no key) runs in metrics-only mode — no error.
         let mut cfg = config::AppConfig::default();
         cfg.stt_provider = "google".to_string();
-        // mt_provider defaults to "google", tts_enabled defaults to false.
+        cfg.mt_provider = "google".to_string();
+        // tts_enabled defaults to false.
         assert!(missing_google_api_key_error(&cfg).is_none());
     }
 
@@ -4657,6 +4658,7 @@ mod tests {
     fn missing_google_api_key_error_explains_local_stt_still_needs_google_mt() {
         let mut cfg = config::AppConfig::default();
         cfg.stt_provider = "local".to_string();
+        cfg.mt_provider = "google".to_string();
 
         let msg = missing_google_api_key_error(&cfg)
             .expect("local STT with Google MT/TTS should require google_api_key");
@@ -4671,6 +4673,7 @@ mod tests {
     fn missing_google_api_key_error_gives_tts_specific_action() {
         let mut cfg = config::AppConfig::default();
         cfg.stt_provider = "google".to_string();
+        cfg.mt_provider = "google".to_string();
         cfg.tts_enabled = true;
 
         let msg = missing_google_api_key_error(&cfg)
