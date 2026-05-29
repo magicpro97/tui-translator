@@ -25,7 +25,7 @@
 //!   compiled with `local-stt`; otherwise a phase-gate stub.
 //! * [`LocalOpusMtProvider`] — on-device OPUS-MT implementation when compiled
 //!   with `local-mt`; otherwise a phase-gate stub.
-//! * [`SupertonicTtsProvider`] — local Supertonic TTS provider compiled only
+//! * `SupertonicTtsProvider` — local Supertonic TTS provider compiled only
 //!   with `local-tts`; currently a phase-gate stub for SUPERTONIC-08.
 //! * [`install_model_bundle`] — resumable, checksum-verified model bundle
 //!   installer for local STT and exported ONNX MT bundles.
