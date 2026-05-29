@@ -13,7 +13,7 @@ expression: rendered
 │  V          Cycle TTS voice (CTRL-02)│
 │  M          Toggle metrics panel (com│
 │  L          Change target language   │
-│  S          Settings (F2/⌃D cycles fi│
+│  S          Settings (F2/Ctrl+D cycle│
 │  R          Reload config from disk  │
 │  ?          Show / hide this help    │
 └──────────────────────────────────────┘

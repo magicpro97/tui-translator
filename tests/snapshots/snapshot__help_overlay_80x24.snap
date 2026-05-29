@@ -15,12 +15,12 @@ expression: "render_help(80, 24, 0)"
             │  V          Cycle TTS voice (CTRL-02)                │            
             │  M          Toggle metrics panel (compact/expanded)  │            
             │  L          Change target language                   │            
-            │  S          Settings (F2/⌃D cycles field values)     │            
+            │  S          Settings (F2/Ctrl+D cycles field values) │            
             │  R          Reload config from disk                  │            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            
             │  Tab        Switch A/B pane focus (dual-slot mode)   │            
             │  [ / ]      Mic gain  -1/+1 dB    { / } TTS vol  -1/+│            
             │  0          Reset mic gain and TTS volume to 0 dB (CT│            
-            │  q / ⌃C Quit — shows session summary                 │            
+            │  q / Ctrl+C Quit — shows session summary             │            
             └──────────────────────────────────────────────────────┘
