@@ -195,7 +195,21 @@ pub(super) fn matrix_cases() -> Vec<CaseSpec> {
             &["mt_provider"],
             Scenario::RestartRequired,
             PROVIDER_RESTART,
-            || changed(|cfg| cfg.mt_provider = "local".to_string()),
+            || {
+                // JV-13: default mt_provider is "local" when local-mt feature is compiled
+                // in, and "google" otherwise. Change to the non-default value so that
+                // requires_restart sees an actual transition.
+                changed(|cfg| {
+                    #[cfg(feature = "local-mt")]
+                    {
+                        cfg.mt_provider = "google".to_string();
+                    }
+                    #[cfg(not(feature = "local-mt"))]
+                    {
+                        cfg.mt_provider = "local".to_string();
+                    }
+                })
+            },
         )
         .reason_contains(&["mt_provider"]),
         spec(
