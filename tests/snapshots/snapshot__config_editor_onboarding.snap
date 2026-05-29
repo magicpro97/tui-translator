@@ -1,6 +1,6 @@
 ---
 source: tests/snapshot.rs
-expression: "render_config_editor(&editor, 90, 20)"
+expression: result.unwrap()
 ---
        ┌ First-Run Setup ─────────────────────────────────────────────────────────┐
        │ Save your initial config: source, target, Google API key. Ctrl+C quits   │
@@ -19,6 +19,6 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  Virtual mic     : not configured                                        │
        │  STT fallback    : google-when-keyed                                     │
        │ Ready to save.                                                           │
-       │ Tab/Down next  Shift+Tab/Up prev  F2/⌃D cycle  Enter save  Esc close     │
+       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
        │                                                                          │
        └──────────────────────────────────────────────────────────────────────────┘

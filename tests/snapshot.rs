@@ -835,6 +835,10 @@ fn snapshot_hints_bar_narrow() {
 
 #[test]
 fn snapshot_config_editor_onboarding() {
+    // Force Windows key-hint style so the snapshot is platform-independent.
+    // The config path above is already Windows-style; the key hint must match.
+    // The guard holds the shared key-os mutex for the full render duration.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     let mut editor = ConfigEditorState::from_config(
         &config::AppConfig::default(),
         std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
@@ -1477,6 +1481,8 @@ fn snapshot_status_strip_very_narrow_30cols() {
 /// Help overlay at small size: fits without overflowing the terminal (#185).
 #[test]
 fn snapshot_help_overlay_narrow() {
+    // Force Windows key-hint style for platform-independent snapshot.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     let rendered = render_help(40, 15, 0);
     assert!(!rendered.is_empty(), "help overlay must render at 40×15");
     insta::assert_snapshot!("help_overlay_narrow_40x15", rendered);
@@ -1737,6 +1743,8 @@ fn help_overlay_80x24_no_scroll_indicator() {
 /// Snapshot: help overlay at 80×24, no scroll.
 #[test]
 fn snapshot_help_overlay_80x24() {
+    // Force Windows key-hint style for platform-independent snapshot.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     insta::assert_snapshot!("help_overlay_80x24", render_help(80, 24, 0));
 }
 
