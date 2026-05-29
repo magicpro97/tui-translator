@@ -40,6 +40,10 @@ mod wasapi_capture;
 #[cfg(target_os = "linux")]
 mod linux_capture;
 
+// macOS stub: CoreAudio/BlackHole capture (MACOS-02, issue #451)
+#[cfg(target_os = "macos")]
+mod macos_capture;
+
 /// QA8-07 (#505) hook indirection so the audio module stays decoupled
 /// from `crate::metrics::backpressure::emit`.
 pub mod backpressure_hook;
@@ -325,9 +329,12 @@ pub async fn start_capture_with_device(
     #[cfg(target_os = "linux")]
     let info = linux_capture::spawn(tx, capture_device, silence_threshold)?;
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    let info = macos_capture::spawn(tx, capture_device, silence_threshold)?;
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     let info = {
-        // Non-Windows, non-Linux stub (macOS CI, etc.): deliver silence at a realistic pace.
+        // Other platforms: deliver silence at a realistic pace.
         tokio::spawn(async move {
             let _ = silence_threshold;
             loop {
@@ -367,7 +374,12 @@ pub fn list_capture_devices() -> Result<Vec<CaptureDeviceInfo>> {
         linux_capture::list_loopback_devices()
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        macos_capture::list_loopback_devices()
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Ok(vec![CaptureDeviceInfo {
             id: "silent-stub".to_string(),
