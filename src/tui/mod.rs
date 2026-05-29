@@ -4511,44 +4511,14 @@ pub fn format_storage_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     // ── UX-02: TUI_KEY_OS_OVERRIDE env-var helpers (issue #480) ──────────────
 
-    /// Serialises tests that mutate the `TUI_KEY_OS_OVERRIDE` environment
-    /// variable so concurrent `cargo test` workers don't race on the
-    /// global process env.
-    fn key_os_env_mutex() -> &'static Mutex<()> {
-        static M: OnceLock<Mutex<()>> = OnceLock::new();
-        M.get_or_init(|| Mutex::new(()))
-    }
-
     /// RAII guard that sets `TUI_KEY_OS_OVERRIDE` while held and restores
-    /// the previous value on drop.  Tests use this to pin the rendered
-    /// shortcut convention regardless of host OS.
-    struct KeyOsOverrideGuard {
-        _lock: MutexGuard<'static, ()>,
-        previous: Option<String>,
-    }
-
-    impl Drop for KeyOsOverrideGuard {
-        fn drop(&mut self) {
-            match self.previous.take() {
-                Some(prev) => std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, prev),
-                None => std::env::remove_var(key_hint::KEY_OS_OVERRIDE_ENV),
-            }
-        }
-    }
-
-    fn with_key_os_override(value: &str) -> KeyOsOverrideGuard {
-        let lock = key_os_env_mutex()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let previous = std::env::var(key_hint::KEY_OS_OVERRIDE_ENV).ok();
-        std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, value);
-        KeyOsOverrideGuard {
-            _lock: lock,
-            previous,
-        }
+    /// the previous value on drop.  Uses the shared mutex from
+    /// `key_hint::test_helpers` so unit tests here and integration tests in
+    /// `tests/snapshot.rs` all serialise on the same lock.
+    fn with_key_os_override(value: &str) -> key_hint::test_helpers::KeyOsGuard {
+        key_hint::test_helpers::with_key_os_override(value)
     }
 }

@@ -98,6 +98,59 @@ pub fn render_q_or_ctrl_c(os: KeyOs) -> String {
     format!("q / {}", render_ctrl('C', os))
 }
 
+/// Cross-test mutex + RAII guard for `TUI_KEY_OS_OVERRIDE` mutations.
+///
+/// Integration tests that render platform-sensitive UI (help overlay,
+/// config-editor hints) must set a deterministic key OS *and* hold this
+/// lock for the duration of the render so that parallel `cargo test` workers
+/// don't race on the global process environment.
+#[cfg(test)]
+pub mod test_helpers {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    /// Returns the process-wide mutex that serialises env-var mutations.
+    ///
+    /// Shared between unit tests in `src/tui/mod.rs` and integration tests
+    /// in `tests/snapshot.rs` so they all serialise on the same lock.
+    pub fn key_os_env_mutex() -> &'static Mutex<()> {
+        static M: OnceLock<Mutex<()>> = OnceLock::new();
+        M.get_or_init(|| Mutex::new(()))
+    }
+
+    /// RAII guard: sets `TUI_KEY_OS_OVERRIDE` while held; restores the
+    /// previous value (or removes the variable) when dropped.
+    pub struct KeyOsGuard {
+        pub _lock: MutexGuard<'static, ()>,
+        pub previous: Option<String>,
+    }
+
+    impl Drop for KeyOsGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(prev) => std::env::set_var(super::KEY_OS_OVERRIDE_ENV, prev),
+                None => std::env::remove_var(super::KEY_OS_OVERRIDE_ENV),
+            }
+        }
+    }
+
+    /// Acquire the serialisation lock, set `TUI_KEY_OS_OVERRIDE` to `value`,
+    /// and return a guard that restores the previous state on drop.
+    ///
+    /// Hold the guard for the *entire* duration of any render call that reads
+    /// [`super::detect_key_os`] so the value is visible throughout.
+    pub fn with_key_os_override(value: &str) -> KeyOsGuard {
+        let lock = key_os_env_mutex()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = std::env::var(super::KEY_OS_OVERRIDE_ENV).ok();
+        std::env::set_var(super::KEY_OS_OVERRIDE_ENV, value);
+        KeyOsGuard {
+            _lock: lock,
+            previous,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
