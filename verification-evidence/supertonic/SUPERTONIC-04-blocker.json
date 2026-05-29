@@ -1,0 +1,78 @@
+{
+  "schema_version": "supertonic-benchmark-v1",
+  "wbs_key": "SUPERTONIC-04",
+  "issue": 489,
+  "title": "Standalone performance, first-audio, and model-footprint benchmark",
+  "executed_at": "2026-05-29",
+  "status": "blocked",
+  "skipped": true,
+  "sample_count": 0,
+  "blocked_by": "BLOCKER-HARDWARE-AND-MODEL",
+  "blocker_detail": "Supertonic ONNX assets are not available in this environment. No synthesis binary was built. Cold start, warm start, time-to-first-audio, RTF, CPU, RSS, and model cache measurements were not taken. All performance metrics are null — not fabricated.",
+  "dependencies": {
+    "supertonic_01_closed": false,
+    "supertonic_02_closed": true,
+    "model_access": "none",
+    "ort_runtime": "not loaded",
+    "benchmark_binary": null
+  },
+  "required_inputs": [
+    "Supertonic ONNX model files (not in repo)",
+    "Windows reference laptop for CPU baseline",
+    "Process CPU/RSS samplers",
+    "total_steps values 5, 8, 12 configuration",
+    "Utterance set from SUPERTONIC-03 (minimum 50 per language × 3 languages)"
+  ],
+  "deferred_test_cases": [
+    {
+      "id": "tc-1",
+      "description": "3 languages × 3 lengths × 3 step counts × ≥5 runs",
+      "status": "deferred",
+      "reason": "No model access"
+    },
+    {
+      "id": "tc-2",
+      "description": "Cold-cache first synthesis",
+      "status": "deferred",
+      "reason": "No model loaded"
+    },
+    {
+      "id": "tc-3",
+      "description": "Warm repeated synthesis",
+      "status": "deferred",
+      "reason": "No model loaded"
+    },
+    {
+      "id": "tc-4",
+      "description": "Resample 44.1 kHz to playback route",
+      "status": "deferred",
+      "reason": "No synthesis output"
+    },
+    {
+      "id": "tc-5",
+      "description": "Process exits cleanly without _exit",
+      "status": "deferred",
+      "reason": "SUPERTONIC-01 B-4 blocker (shutdown not verified)"
+    }
+  ],
+  "performance_targets": {
+    "rtf": "not measured — vendor claims <1x on CPU but conflicts with other sources (SUPERTONIC-01 §3.1)",
+    "cold_start_ms": null,
+    "warm_start_ms": null,
+    "time_to_first_audio_ms": null,
+    "rss_steady_mb": null,
+    "model_cache_mb": null,
+    "clean_shutdown": "unknown — deferred to SUPERTONIC-01 B-4"
+  },
+  "resolution_path": {
+    "prerequisites": [
+      "SUPERTONIC-01 closes with confidence 1.0",
+      "SUPERTONIC-03 utterance set available",
+      "Windows reference hardware accessible"
+    ],
+    "estimated_effort": "1-2 days once prerequisites met",
+    "branch_when_ready": "supertonic04/performance-benchmark"
+  },
+  "shipping_blocker": false,
+  "notes": "RTF and first-audio metrics are required inputs for SUPERTONIC-10 soak gate and SUPERTONIC-11 default-readiness ADR. Cannot be estimated from vendor materials alone."
+}

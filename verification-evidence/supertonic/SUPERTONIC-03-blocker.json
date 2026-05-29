@@ -1,0 +1,71 @@
+{
+  "schema_version": "supertonic-benchmark-v1",
+  "wbs_key": "SUPERTONIC-03",
+  "issue": 488,
+  "title": "Supertonic vs Google TTS quality benchmark for ja, vi, and en",
+  "executed_at": "2026-05-29",
+  "status": "blocked",
+  "skipped": true,
+  "sample_count": 0,
+  "blocked_by": "BLOCKER-HARDWARE-AND-MODEL",
+  "blocker_detail": "Supertonic ONNX model weights are not available in this environment. No synthesis was run. No audio pairs were generated. No ASR roundtrip metrics were computed. No MOS/ABX score sheets were collected. All quality metrics are null — not fabricated.",
+  "dependencies": {
+    "supertonic_01_closed": false,
+    "supertonic_02_closed": true,
+    "model_access": "none",
+    "model_weights_path": null,
+    "synthesis_binary": null
+  },
+  "required_inputs": [
+    "Supertonic ONNX model weights (several hundred MB, not in repo)",
+    "ort runtime with supertonic graph compatibility",
+    "50+ utterances per language corpus (ja, vi, en)",
+    "bilingual reviewers for MOS/ABX rating",
+    "Google STT or equivalent ASR for roundtrip CER/WER"
+  ],
+  "deferred_test_cases": [
+    {
+      "id": "tc-1",
+      "description": "Each utterance synthesized by Google and Supertonic",
+      "status": "deferred",
+      "reason": "No Supertonic model access"
+    },
+    {
+      "id": "tc-2",
+      "description": "Randomized blind ABX test",
+      "status": "deferred",
+      "reason": "No audio pairs generated, no bilingual reviewer scheduled"
+    },
+    {
+      "id": "tc-3",
+      "description": "ASR roundtrip CER/WER for both engines",
+      "status": "deferred",
+      "reason": "No synthesis output, no ASR pipeline configured"
+    },
+    {
+      "id": "tc-4",
+      "description": "Adversarial set: numerals, names, code-switching, URLs, emoji, expression tags",
+      "status": "deferred",
+      "reason": "No synthesis output"
+    }
+  ],
+  "acceptance_criteria_gate": {
+    "cer_wer_threshold": "not measured",
+    "mos_delta": "not measured",
+    "google_preferred_rate": "not measured",
+    "skip_repeat_hallucination_rate": "not measured",
+    "vietnamese_tone_regressions": "not measured",
+    "opus_review": "pending — no measurements to review"
+  },
+  "resolution_path": {
+    "prerequisites": [
+      "SUPERTONIC-01 closes with confidence 1.0 (currently 0.85, empirical blockers B-1..B-10 unresolved)",
+      "Supertonic build reproducible with model weights accessible",
+      "Bilingual (ja/vi) reviewer recruited and scheduled"
+    ],
+    "estimated_effort": "1-2 days once prerequisites met",
+    "branch_when_ready": "supertonic03/quality-benchmark"
+  },
+  "shipping_blocker": false,
+  "notes": "Supertonic is an opt-in TTS candidate (not default). This issue is not a blocker for v1 or local MT default. Quality benchmark is required before any SUPERTONIC-11 default flip."
+}
