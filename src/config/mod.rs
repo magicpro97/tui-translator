@@ -573,6 +573,74 @@ pub struct DualSlotConfig {
     pub slot_b: SlotConfig,
 }
 
+/// Release channel preference for update checks.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    /// Check stable releases only.
+    #[default]
+    Stable,
+    /// Allow prerelease builds from GitHub Releases.
+    Prerelease,
+}
+
+/// Auto-update configuration (JV-20 / #428).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AutoUpdateConfig {
+    /// Whether to check for updates at startup. Default: `false` (opt-in).
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Which release channel to follow.
+    #[serde(default)]
+    pub channel: UpdateChannel,
+
+    /// How often, in hours, to perform an update check.
+    #[serde(default = "default_update_check_interval_hours")]
+    pub check_interval_hours: u32,
+
+    /// UNIX timestamp of the last successful check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_checked_unix: Option<u64>,
+}
+
+impl AutoUpdateConfig {
+    /// Return `true` when this config can be omitted from serialized JSON.
+    pub fn is_default(&self) -> bool {
+        !self.enabled
+            && self.channel == UpdateChannel::Stable
+            && self.check_interval_hours == default_update_check_interval_hours()
+            && self.last_checked_unix.is_none()
+    }
+
+    /// Return `true` when an update check should run at `now_unix_secs`.
+    pub fn should_check_now(&self, now_unix_secs: u64) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
+        match self.last_checked_unix {
+            Some(last_checked_unix) => {
+                let interval_secs = u64::from(self.check_interval_hours) * 60 * 60;
+                now_unix_secs.saturating_sub(last_checked_unix) >= interval_secs
+            }
+            None => true,
+        }
+    }
+}
+
+impl Default for AutoUpdateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            channel: UpdateChannel::Stable,
+            check_interval_hours: default_update_check_interval_hours(),
+            last_checked_unix: None,
+        }
+    }
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -944,6 +1012,12 @@ pub struct AppConfig {
     /// renders in the new locale without restarting the TUI.
     #[serde(default = "default_locale", skip_serializing_if = "is_default_locale")]
     pub locale: String,
+
+    /// Auto-update configuration (JV-20 / #428).
+    ///
+    /// When absent from config, the updater is disabled by default.
+    #[serde(default, skip_serializing_if = "AutoUpdateConfig::is_default")]
+    pub auto_update: AutoUpdateConfig,
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -1007,6 +1081,7 @@ impl Default for AppConfig {
             output_volume_db: 0.0,
             tts_voice: None,
             locale: default_locale(),
+            auto_update: AutoUpdateConfig::default(),
         }
     }
 }
@@ -1046,8 +1121,14 @@ impl std::fmt::Debug for AppConfig {
             .field("output_volume_db", &self.output_volume_db)
             .field("tts_voice", &self.tts_voice)
             .field("locale", &self.locale)
+            .field("auto_update", &self.auto_update)
             .finish()
     }
+}
+
+#[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+fn default_update_check_interval_hours() -> u32 {
+    24
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -4532,5 +4613,51 @@ mod tests {
         } else {
             panic!("expected Rejected outcome for invalid stt_provider");
         }
+    }
+
+    #[test]
+    fn auto_update_defaults_disabled_when_absent() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"source_language":"ja-JP","target_language":"vi"}"#)
+                .expect("config should parse");
+
+        assert_eq!(cfg.auto_update, AutoUpdateConfig::default());
+        assert!(!cfg.auto_update.should_check_now(1_700_000_000));
+    }
+
+    #[test]
+    fn auto_update_default_block_is_omitted_from_serialized_config() {
+        let json = serde_json::to_string(&AppConfig::default()).expect("serialize config");
+        assert!(
+            !json.contains("\"auto_update\""),
+            "default auto_update block should be omitted; got: {json}"
+        );
+    }
+
+    #[test]
+    fn auto_update_round_trips_enabled_prerelease_channel() {
+        let cfg = AppConfig {
+            auto_update: AutoUpdateConfig {
+                enabled: true,
+                channel: UpdateChannel::Prerelease,
+                check_interval_hours: 12,
+                last_checked_unix: Some(1_700_000_000),
+            },
+            ..AppConfig::default()
+        };
+
+        let json = serde_json::to_string_pretty(&cfg).expect("serialize config");
+        let restored: AppConfig = serde_json::from_str(&json).expect("deserialize config");
+
+        assert!(restored.auto_update.enabled);
+        assert_eq!(restored.auto_update.channel, UpdateChannel::Prerelease);
+        assert_eq!(restored.auto_update.check_interval_hours, 12);
+        assert_eq!(restored.auto_update.last_checked_unix, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn auto_update_disabled_never_checks() {
+        let cfg = AutoUpdateConfig::default();
+        assert!(!cfg.should_check_now(1_700_000_000));
     }
 }

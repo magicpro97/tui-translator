@@ -74,6 +74,7 @@ mod session_replay_cli;
 mod session_replay_cli_tests;
 mod storage;
 mod tui;
+pub mod updater;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
 use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices};
