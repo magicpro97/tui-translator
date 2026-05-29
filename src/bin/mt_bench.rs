@@ -28,12 +28,17 @@
 //!
 //! # With Google (requires real API key, cost-capped at $0.10 by default):
 //! cargo run --bin mt_bench -- --with-google --google-api-key <key> --cost-cap 0.05
+//!
+//! # Local candidate failure/smoke artifact (network-free):
+//! cargo run --bin mt_bench -- --local-candidate --rounds 10 --model-dir <opus-mt-ja-vi-dir>
 //! ```
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+
+mod mt_bench_local_candidate;
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +82,7 @@ pub struct CliArgs {
     pub rounds: u32,
     pub sample_limit: Option<usize>,
     pub cost_cap_usd: f64,
+    pub model_dir: Option<PathBuf>,
 }
 
 impl Default for CliArgs {
@@ -87,6 +93,7 @@ impl Default for CliArgs {
             rounds: 1,
             sample_limit: None,
             cost_cap_usd: 0.10,
+            model_dir: None,
         }
     }
 }
@@ -153,6 +160,9 @@ pub fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<CliArgs
                 }
                 result.sample_limit = Some(n);
             }
+            "--model-dir" => {
+                result.model_dir = Some(PathBuf::from(require_value(&mut args, "--model-dir")?));
+            }
             "--cost-cap" => {
                 let val = require_value(&mut args, "--cost-cap")?;
                 let cap = val
@@ -173,7 +183,7 @@ pub fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<CliArgs
                 bail!(
                     "unknown argument: {safe}; usage: mt_bench [--output <file.json>] \
                      [--dry-run | --local-candidate | --with-google --google-api-key <key> | \
-                     --validate-artifact <file.json>]"
+                     --validate-artifact <file.json>] [--model-dir <opus-mt-ja-vi-dir>]"
                 );
             }
         }
@@ -264,6 +274,26 @@ fn ensure_json_output_path(path: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn ensure_sidecar_paths_available(output: &Path) -> Result<()> {
+    let (md_path, ndjson_path) = sidecar_paths(output);
+    for path in [&md_path, &ndjson_path] {
+        if path
+            .try_exists()
+            .with_context(|| format!("could not inspect sidecar path {}", path.display()))?
+        {
+            bail!(
+                "refusing to overwrite existing sidecar {}; choose a fresh --output path",
+                path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn sidecar_paths(output: &Path) -> (PathBuf, PathBuf) {
+    (output.with_extension("md"), output.with_extension("ndjson"))
 }
 
 /// Returns `true` if `s` looks like a CLI flag (`--foo` or `-f`) rather than a value.
@@ -1029,11 +1059,12 @@ fn main() -> Result<()> {
         }
 
         RunMode::LocalCandidate => {
-            // TODO(#483): run OPUS-MT inference (Phase 6 / local-mt feature).
-            bail!(
-                "--local-candidate is not yet implemented; \
-                 download OPUS-MT ONNX bundles and enable --features local-mt"
-            );
+            let artifact = mt_bench_local_candidate::build_local_candidate_artifact(
+                args.model_dir.as_deref(),
+                args.rounds,
+            )?;
+            write_artifact(&args.output, &artifact)?;
+            return Ok(());
         }
 
         RunMode::Pending => {
@@ -1045,6 +1076,15 @@ fn main() -> Result<()> {
 
     let artifact = build_artifact();
 
+    write_artifact(&args.output, &artifact)?;
+
+    Ok(())
+}
+
+fn write_artifact(output: &Path, artifact: &BenchmarkArtifact) -> Result<()> {
+    ensure_json_output_path(output)?;
+    ensure_sidecar_paths_available(output)?;
+
     let json = serde_json::to_string_pretty(&artifact)
         .context("failed to serialise benchmark artifact")?;
 
@@ -1053,27 +1093,27 @@ fn main() -> Result<()> {
         bail!(
             "artifact contains API keys or bearer tokens; \
              refusing to write to {}",
-            args.output.display()
+            output.display()
         );
     }
 
-    if let Some(parent) = args.output.parent() {
+    if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("could not create output directory {}", parent.display()))?;
     }
 
-    std::fs::write(&args.output, &json)
-        .with_context(|| format!("failed to write {}", args.output.display()))?;
+    std::fs::write(output, &json)
+        .with_context(|| format!("failed to write {}", output.display()))?;
     println!(
         "wrote {} (schema={}, status={})",
-        args.output.display(),
+        output.display(),
         artifact.schema_version,
         artifact.status
     );
 
     // Write Markdown summary sidecar.
-    let md_path = args.output.with_extension("md");
-    let md = artifact_to_markdown(&artifact);
+    let (md_path, ndjson_path) = sidecar_paths(output);
+    let md = artifact_to_markdown(artifact);
     if contains_secrets(&md) {
         bail!(
             "markdown sidecar contains API keys or bearer tokens; \
@@ -1081,13 +1121,12 @@ fn main() -> Result<()> {
             md_path.display()
         );
     }
-    std::fs::write(&md_path, &md)
+    write_new_file(&md_path, md.as_bytes())
         .with_context(|| format!("failed to write markdown summary {}", md_path.display()))?;
     println!("wrote markdown summary: {}", md_path.display());
 
     // Write NDJSON sidecar: one record per language-pair result.
-    let ndjson_path = args.output.with_extension("ndjson");
-    let ndjson = artifact_to_ndjson(&artifact)?;
+    let ndjson = artifact_to_ndjson(artifact)?;
     if contains_secrets(&ndjson) {
         bail!(
             "NDJSON sidecar contains API keys or bearer tokens; \
@@ -1095,10 +1134,21 @@ fn main() -> Result<()> {
             ndjson_path.display()
         );
     }
-    std::fs::write(&ndjson_path, &ndjson)
+    write_new_file(&ndjson_path, ndjson.as_bytes())
         .with_context(|| format!("failed to write NDJSON sidecar {}", ndjson_path.display()))?;
     println!("wrote NDJSON sidecar: {}", ndjson_path.display());
 
+    Ok(())
+}
+
+fn write_new_file(path: &Path, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(contents)?;
     Ok(())
 }
 
@@ -1132,6 +1182,23 @@ mod tests {
             "error should mention .json: {err:#}"
         );
         ensure_json_output_path(Path::new("OUT.JSON")).expect("json extension should pass");
+    }
+
+    #[test]
+    fn output_sidecars_must_not_already_exist() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let output = dir.path().join("bench.json");
+        std::fs::write(dir.path().join("bench.md"), "existing summary")?;
+
+        let err = ensure_sidecar_paths_available(&output)
+            .expect_err("existing markdown sidecar should be rejected");
+
+        assert!(
+            err.to_string().contains("refusing to overwrite"),
+            "unexpected: {err:#}"
+        );
+
+        Ok(())
     }
 
     #[test]
