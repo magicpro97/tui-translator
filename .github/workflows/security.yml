@@ -1,22 +1,19 @@
 name: SEC-01 Supply-chain & security gates
 
-# Enforces the SEC-01 supply-chain and security gates tracked by issue #462.
+# Enforces the SEC-01 and SEC-02 supply-chain and security gates.
 # - cargo-deny (advisories + licenses + bans + sources) — REQUIRED
-# - cargo-audit (RustSec advisory DB) — ADVISORY (continue-on-error)
-# - gitleaks secret scanning on PR diff — ADVISORY (continue-on-error)
+# - cargo-audit (RustSec advisory DB) — REQUIRED (SEC-02: promoted from advisory)
+# - gitleaks secret scanning on PR diff — REQUIRED (SEC-02: promoted from advisory)
 # - CycloneDX SBOM generation + upload as workflow artifact — REQUIRED
 #
-# Notes on policy decisions (see docs/security/supply-chain.md for rationale):
-# * cargo-deny is the REQUIRED gate because the repo ships a maintained
-#   `deny.toml` and the action is stable across hosted runners.
-# * cargo-audit and gitleaks are intentionally advisory in PR until a noise
-#   baseline is established (mirrors the standards.yml `coverage-advisory`
-#   pattern). They still publish logs and SARIF where applicable so they can
-#   be promoted to required without further code changes.
-# * SBOM generation runs on every PR so artefacts can be inspected before
-#   release; release-time signing/provenance is a documented next step in
-#   `docs/security/signing-policy.md`, not implemented here because it
-#   requires credentials/identities (REL-01 scope).
+# SEC-02 promotion rationale (issue #477):
+# * cargo-audit: baseline established — 0 vulnerabilities in 460 deps as of 2026-05-29.
+#   Promoted to required so any new RUSTSEC advisory blocks merges immediately.
+# * gitleaks: `.gitleaks.toml` allowlist committed for known false positives
+#   (config.example.json descriptions, tests/fixtures/jv02 regex scaffold).
+#   Promoted to required so accidental secret commits block PRs.
+# * Release-time signing/provenance (cosign, SLSA L3) remains a documented
+#   next step in `docs/security/signing-policy.md` (REL-01/REL-02 scope).
 
 on:
   push:
@@ -44,10 +41,8 @@ jobs:
   cargo-audit:
     name: cargo-audit (RustSec, advisory)
     runs-on: ubuntu-latest
-    # reason: advisory until a noise baseline is established in a follow-up
-    # PR. Promoting to required without a baseline would create flaky red
-    # builds whenever upstream publishes a new advisory.
-    continue-on-error: true
+    # SEC-02 (issue #477): promoted from advisory to required.
+    # Baseline: 0 vulnerabilities in 460 deps as of 2026-05-29.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -66,10 +61,8 @@ jobs:
   secret-scan:
     name: Secret scan (gitleaks, advisory)
     runs-on: ubuntu-latest
-    # reason: advisory until the repo has a published `.gitleaks.toml`
-    # allowlist for fixtures (`config.example.json`, evidence JSON). The hook
-    # at `.github/hooks/secret-detector.py` is the local equivalent gate.
-    continue-on-error: true
+    # SEC-02 (issue #477): promoted from advisory to required.
+    # .gitleaks.toml allowlist committed for known false positives.
     steps:
       - uses: actions/checkout@v4
         with:
