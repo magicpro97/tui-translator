@@ -92,6 +92,7 @@ fn make_context() -> OrchestratorContext {
         slot_id: crate::pipeline::SlotId::A,
         audio_level: Arc::new(AtomicU32::new(0)),
         stt_state: Arc::new(Mutex::new(SttState::Idle)),
+        mt_state: Arc::new(Mutex::new(crate::metrics::MtState::default())),
         subtitle_pane: Arc::new(Mutex::new(crate::tui::SubtitlePane::new())),
         session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
         cost_counter: Arc::new(CostCounter::new()),

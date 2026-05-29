@@ -64,7 +64,8 @@ use unicode_width::UnicodeWidthChar;
 use crate::config::{AppConfig, TtsRouting};
 
 pub use crate::metrics::{
-    format_cost_or_zero_state, CostCounter, MetricsSnapshot, SessionMetrics, SttSource, SttState,
+    format_cost_or_zero_state, CostCounter, MetricsSnapshot, MtState, SessionMetrics, SttSource,
+    SttState,
 };
 
 /// Auto-dismiss timeout (seconds) for transient `Ok` and `RolledBack` statuses.
@@ -1600,9 +1601,11 @@ fn audio_device_title_max_cols(area_width: u16) -> usize {
 pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> u16 {
     if metrics_expanded {
         if over_threshold {
-            10u16
+            // 2 borders + 8 standard rows (JV-14 adds MT state row) + 1 warning row = 11
+            11u16
         } else {
-            9u16
+            // 2 borders + 8 standard rows (JV-14 adds MT state row) = 10
+            10u16
         }
     } else {
         3u16
@@ -1610,9 +1613,9 @@ pub fn expanded_metrics_height(metrics_expanded: bool, over_threshold: bool) -> 
 }
 
 pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: bool) -> Rect {
-    // Expanded mode: 2 border rows + 7 standard content rows (STT/TTS, metrics,
-    // elapsed, CPU/RAM/Net/E2E/Loss, quality counters, local runtime, storage)
-    // + optional warning row = 9 or 10 total.  Compact mode keeps 3 rows.
+    // Expanded mode: 2 border rows + 8 standard content rows (STT/TTS, MT state (JV-14),
+    // metrics, elapsed, CPU/RAM/Net/E2E/Loss, quality counters, local runtime, storage)
+    // + optional warning row = 10 or 11 total.  Compact mode keeps 3 rows.
     let metrics_h = expanded_metrics_height(metrics_expanded, over_threshold);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1702,6 +1705,9 @@ pub struct AppState {
     pub capture_device_label: Arc<Mutex<String>>,
     /// Current STT engine state; updated by the pipeline.
     pub stt_state: Arc<Mutex<SttState>>,
+    /// Current MT provider state (JV-14, issue #422); updated by the pipeline
+    /// whenever the local MT engine transitions (loading → loaded, error, etc.).
+    pub mt_state: Arc<Mutex<MtState>>,
     /// Accumulated session metrics; written by the pipeline, published to
     /// [`metrics_tx`](AppState::metrics_tx) once per second (issue #61).
     pub session_metrics: Arc<Mutex<SessionMetrics>>,
@@ -1838,6 +1844,7 @@ impl AppState {
             target_language: Arc::new(Mutex::new("vi".to_string())),
             capture_device_label: Arc::new(Mutex::new("Default device".to_string())),
             stt_state: Arc::new(Mutex::new(SttState::default())),
+            mt_state: Arc::new(Mutex::new(MtState::default())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
             cost_counter: Arc::new(CostCounter::new()),
             metrics_tx: Arc::new(metrics_tx),
@@ -2053,7 +2060,14 @@ impl AppState {
             .clone()
     }
 
-    /// Return the latest metrics published via the watch channel (issue #61, #82).
+    /// Snapshot the current MT provider state for the UI render loop (JV-14, issue #422).
+    pub fn mt_state_snapshot(&self) -> MtState {
+        self.mt_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
     ///
     /// This is a lock-free borrow of the most recently sent value; it never
     /// blocks the UI thread.
@@ -2285,6 +2299,8 @@ impl Default for TtsRouteStatus {
 /// show one metric per row, styled with colour cues.
 pub struct StatusMetricsStrip<'a> {
     pub stt: &'a SttState,
+    /// Current MT provider state (JV-14, issue #422).
+    pub mt: &'a MtState,
     pub tts_on: bool,
     pub tts_route: TtsRouteStatus,
     pub target_language: String,
@@ -2417,6 +2433,10 @@ impl StatusMetricsStrip<'_> {
         format_stt_span(self.stt, self.stt_source)
     }
 
+    /// Short label for the MT provider state (JV-14, issue #422).
+    fn format_mt_span(&self) -> String {
+        self.mt.label()
+    }
     fn render_compact(&self, area: Rect, buf: &mut Buffer) {
         // Adaptive label width (issue #60):
         //   < 80  cols → minimal abbreviated labels
@@ -2618,6 +2638,11 @@ impl StatusMetricsStrip<'_> {
                 }
                 Line::from(spans)
             },
+            // JV-14 (issue #422): MT provider state row in expanded mode.
+            Line::from(vec![Span::styled(
+                self.format_mt_span(),
+                Style::default().fg(mt_state_color(self.mt)),
+            )]),
             metrics_line,
             {
                 let mut elapsed_spans = vec![
@@ -2879,6 +2904,7 @@ pub fn draw_ui_with_route(
     let source_language = state.source_language();
     let target_language = state.target_language();
     let stt = state.stt_state_snapshot();
+    let mt = state.mt_state_snapshot();
     let stt_source = state.stt_source_snapshot();
     let metrics = state.metrics_snapshot();
     let pipeline_err = state
@@ -3131,6 +3157,7 @@ pub fn draw_ui_with_route(
     // ── Status / metrics strip ───────────────────────────────────────────────
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &mt,
         tts_on,
         tts_route,
         target_language,
@@ -4468,6 +4495,18 @@ fn stt_color(state: &SttState) -> Color {
         SttState::Sending => Color::Cyan,
         SttState::Waiting => Color::Yellow,
         SttState::Error(_) => Color::Red,
+    }
+}
+
+/// Map an [`MtState`] to a status-strip foreground colour (JV-14, issue #422).
+fn mt_state_color(state: &MtState) -> Color {
+    match state {
+        MtState::Idle => Color::DarkGray,
+        MtState::Loading => Color::Yellow,
+        MtState::LocalDirect => Color::Green,
+        MtState::CloudFallback => Color::Cyan,
+        MtState::Timeout => Color::Yellow,
+        MtState::ModelNotFound | MtState::Error(_) => Color::Red,
     }
 }
 

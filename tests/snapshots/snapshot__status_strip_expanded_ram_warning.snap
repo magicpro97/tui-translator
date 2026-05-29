@@ -4,6 +4,7 @@ expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
 │● STT: local   TTS: off   Route: Speakers                                     │
+│MT: idle                                                                      │
 │Target: vi   Pairs: 10   Cost: ~$0.024                                        │
 │Elapsed: 1:00                                                                 │
 │CPU:45%  RAM:600MB  Net:↑8/↓32 kbps  E2E:420ms  Loss:0.0%                     │
