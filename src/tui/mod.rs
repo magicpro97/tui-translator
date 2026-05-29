@@ -15,9 +15,11 @@ mod app_state_tests;
 #[cfg(test)]
 mod config_apply_tests;
 #[cfg(test)]
-mod config_editor_tests;
-#[cfg(test)]
 mod config_editor_cycle_tests;
+#[cfg(test)]
+mod config_editor_render_tests;
+#[cfg(test)]
+mod config_editor_tests;
 #[cfg(test)]
 mod draw_ui_tests;
 #[cfg(test)]
@@ -4509,7 +4511,6 @@ pub fn format_storage_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::layout::Rect;
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
     // ── UX-02: TUI_KEY_OS_OVERRIDE env-var helpers (issue #480) ──────────────
