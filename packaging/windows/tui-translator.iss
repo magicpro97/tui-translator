@@ -45,6 +45,10 @@ Source: "..\..\target\x86_64-pc-windows-msvc\release\tui-translator.exe"; DestDi
 ; screen), not from a config.json placed beside the .exe.
 Source: "..\..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\USAGE.md"; DestDir: "{app}"; Flags: ignoreversion
+; Top-level project license
+Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+; Third-party model and runtime licenses (JV-18 / #426)
+Source: "..\..\assets\licenses\*"; DestDir: "{app}\LICENSES"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\TUI Translator"; Filename: "{app}\tui-translator.exe"

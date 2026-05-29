@@ -85,6 +85,11 @@ jobs:
           Copy-Item "target\x86_64-pc-windows-msvc\release\tui-translator.exe" "$stage\"
           Copy-Item "config.example.json" "$stage\"
           Copy-Item "USAGE.md" "$stage\"
+          Copy-Item "LICENSE" "$stage\"
+          # Bundle third-party model/runtime licenses so offline users have attribution
+          $licDir = "$stage\LICENSES"
+          New-Item -ItemType Directory -Force -Path $licDir | Out-Null
+          Copy-Item "assets\licenses\*" "$licDir\"
           Compress-Archive -Path "$stage\*" -DestinationPath $zipName -CompressionLevel Optimal
           $size = [math]::Round((Get-Item $zipName).Length / 1MB, 2)
           Write-Host "Packaged: $zipName  ($size MB)"
@@ -190,6 +195,94 @@ jobs:
           Write-Host "Built installer: $installerName  ($size MB)"
           echo "installer_name=installer-dist/$installerName" >> $env:GITHUB_OUTPUT
 
+      - name: Generate SHA256SUMS (JV-18 / #426)
+        id: checksums
+        shell: pwsh
+        run: |
+          # Compute SHA-256 for every release artifact and write a BSD-style
+          # SHA256SUMS file so users can verify download integrity offline.
+          $tag   = "${{ github.ref_name }}"
+          $outFile = "SHA256SUMS-${tag}.txt"
+          $artifacts = @(
+            "${{ steps.package.outputs.zip_name }}",
+            "${{ steps.installer.outputs.installer_name }}"
+          )
+          if ("${{ steps.pdb.outputs.pdb_name }}" -ne "") {
+            $artifacts += "${{ steps.pdb.outputs.pdb_name }}"
+          }
+          $lines = @()
+          foreach ($path in $artifacts) {
+            if (Test-Path $path) {
+              $hash = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLower()
+              $name = Split-Path $path -Leaf
+              $lines += "SHA256 ($name) = $hash"
+              Write-Host "  $hash  $name"
+            } else {
+              Write-Host "::warning::Artifact not found for checksum: $path"
+            }
+          }
+          $lines | Set-Content -Encoding UTF8 $outFile
+          Write-Host "Written: $outFile"
+          echo "checksums_name=$outFile" >> $env:GITHUB_OUTPUT
+
+      - name: Validate release artifacts (JV-18 / #426)
+        shell: pwsh
+        run: |
+          # Lightweight artifact gate: confirm the zip contains required files
+          # and that SHA256SUMS was generated successfully.
+          $zip  = "${{ steps.package.outputs.zip_name }}"
+          $inst = "${{ steps.installer.outputs.installer_name }}"
+          $sums = "${{ steps.checksums.outputs.checksums_name }}"
+          $errors = @()
+
+          # 1. Zip must exist and be non-empty
+          if (-not (Test-Path $zip)) {
+            $errors += "Release zip not found: $zip"
+          } elseif ((Get-Item $zip).Length -lt 500KB) {
+            $errors += "Release zip suspiciously small ($((Get-Item $zip).Length) bytes): $zip"
+          }
+
+          # 2. Installer must exist and be non-empty
+          if (-not (Test-Path $inst)) {
+            $errors += "Installer not found: $inst"
+          } elseif ((Get-Item $inst).Length -lt 500KB) {
+            $errors += "Installer suspiciously small ($((Get-Item $inst).Length) bytes): $inst"
+          }
+
+          # 3. SHA256SUMS must exist and cover at least 2 artifacts
+          if (-not (Test-Path $sums)) {
+            $errors += "SHA256SUMS file not generated: $sums"
+          } else {
+            $lineCount = (Get-Content $sums | Measure-Object -Line).Lines
+            if ($lineCount -lt 2) {
+              $errors += "SHA256SUMS has only $lineCount line(s); expected ≥ 2"
+            }
+          }
+
+          # 4. Zip must contain exe, LICENSE, USAGE.md, LICENSES/ directory
+          $zipContents = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip).Path)
+          try {
+            $entries = $zipContents.Entries | ForEach-Object { $_.FullName }
+            $required = @("tui-translator.exe", "LICENSE", "USAGE.md")
+            foreach ($req in $required) {
+              if (-not ($entries -like "*$req*")) {
+                $errors += "Zip missing required file: $req"
+              }
+            }
+            if (-not ($entries -like "LICENSES/*")) {
+              $errors += "Zip missing LICENSES/ directory with third-party attributions"
+            }
+          } finally {
+            $zipContents.Dispose()
+          }
+
+          if ($errors.Count -gt 0) {
+            Write-Host "::error::Artifact validation FAILED:"
+            $errors | ForEach-Object { Write-Host "  - $_" }
+            exit 1
+          }
+          Write-Host "PASS: all artifact validation checks passed."
+
       - name: Publish GitHub Release (pre-release)
         uses: softprops/action-gh-release@v2
         with:
@@ -221,7 +314,19 @@ jobs:
             | Item | Status |
             |------|--------|
             | Layer 5 human acceptance (issues #115–#122) | Pending named human reviewers |
-            | Final stable release promotion | Blocked on Layer 5 completion |
+            | Code signing (Authenticode) | ⚠️ **Pre-release blocker** — certificate not yet provisioned; Windows SmartScreen will warn on first launch. This is an explicit known issue for pre-release builds. Tracked in #429. |
+            | Final stable release promotion | Blocked on Layer 5 completion and code signing |
+
+            ### Checksum verification
+
+            Download `SHA256SUMS-${{ github.ref_name }}.txt` and verify the zip or installer
+            before running:
+
+            ```powershell
+            # PowerShell — verify the zip
+            (Get-FileHash "tui-translator-${{ github.ref_name }}-x86_64-pc-windows-msvc.zip" -Algorithm SHA256).Hash.ToLower()
+            # Compare the output with the SHA256 value in SHA256SUMS-${{ github.ref_name }}.txt
+            ```
 
             ### Quick start
 
@@ -257,6 +362,7 @@ jobs:
           files: |
             ${{ steps.package.outputs.zip_name }}
             ${{ steps.installer.outputs.installer_name }}
+            ${{ steps.checksums.outputs.checksums_name }}
             ${{ steps.pdb.outputs.pdb_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
