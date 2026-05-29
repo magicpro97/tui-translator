@@ -3538,37 +3538,58 @@ mod tests {
 
     #[tokio::test]
     async fn hot_reload_sets_restart_required_when_api_key_changes() {
-        let dir = tempfile::tempdir().unwrap();
+        // Use write_config (atomic rename) for both writes so the file-system
+        // watcher receives a reliable Create event on all platforms (direct
+        // std::fs::write only generates a Modify event, which some OS/backend
+        // combinations do not deliver consistently for tempdir paths).
+        //
+        // We also change target_language alongside google_api_key so that the
+        // rx receiver provides an observable "change landed" signal.  Once the
+        // new config is visible on rx we assert that restart_required was also
+        // set, proving the provider-supervisor wiring is correct.
+        let dir = tempfile::tempdir().expect("tempdir should be created");
         let path = dir.path().join("config.json");
-        std::fs::write(
-            &path,
-            r#"{"source_language":"ja-JP","target_language":"vi","google_api_key":"OLD_KEY"}"#,
-        )
-        .unwrap();
+        let initial_cfg = AppConfig {
+            source_language: "ja-JP".to_string(),
+            target_language: "vi".to_string(),
+            google_api_key: Some("OLD_KEY".to_string()),
+            ..AppConfig::default()
+        };
+        write_config(&path, &initial_cfg).expect("write initial config");
 
         let restart_required = Arc::new(AtomicBool::new(false));
-        let initial = load(&path).expect("test config should load");
-        let _rx = start_watcher(&path, initial, restart_required.clone(), None)
-            .expect("test watcher should start");
+        let rx = start_watcher(
+            &path,
+            load(&path).expect("test config should load"),
+            restart_required.clone(),
+            None,
+        )
+        .expect("test watcher should start");
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        std::fs::write(
-            &path,
-            r#"{"source_language":"ja-JP","target_language":"vi","google_api_key":"NEW_KEY"}"#,
-        )
-        .unwrap();
+        let updated_cfg = AppConfig {
+            source_language: "ja-JP".to_string(),
+            target_language: "en".to_string(), // observable change for rx signal
+            google_api_key: Some("NEW_KEY".to_string()),
+            ..AppConfig::default()
+        };
+        write_config(&path, &updated_cfg).expect("write updated config");
 
         let deadline = std::time::Instant::now() + HOT_RELOAD_TEST_TIMEOUT;
         while std::time::Instant::now() < deadline {
-            if restart_required.load(Ordering::Relaxed) {
+            if rx.borrow().target_language == "en" {
+                assert!(
+                    restart_required.load(Ordering::Relaxed),
+                    "google_api_key change must set restart_required alongside config update"
+                );
                 return;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
 
         panic!(
-            "restart_required flag was not set after google_api_key changed within {:?}",
+            "hot-reload did not propagate google_api_key change within {:?}",
             HOT_RELOAD_TEST_TIMEOUT
         );
     }
