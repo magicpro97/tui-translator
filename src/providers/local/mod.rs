@@ -49,6 +49,7 @@ mod mt;
 #[cfg(feature = "local-mt")]
 mod mt_ort;
 pub mod runtime_caps;
+pub mod supertonic_voices;
 mod whisper;
 
 #[allow(unused_imports)]
@@ -73,6 +74,11 @@ pub use model_download::{
 };
 #[allow(unused_imports)]
 pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
+#[allow(unused_imports)]
+pub use supertonic_voices::{
+    SupertonicVoiceCatalog, SupertonicVoiceId, SupertonicVoiceMeta, VoiceError, VoiceGender,
+    BUILTIN_VOICES,
+};
 
 // ── Cache-path helpers ────────────────────────────────────────────────────────
 
