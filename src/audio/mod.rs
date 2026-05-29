@@ -94,11 +94,16 @@ pub use router::{
 pub mod virtual_device;
 #[allow(unused_imports)]
 pub use virtual_device::{
-    classify_virtual_device, classify_virtual_device_with_registry, probe_virtual_audio_devices,
-    probe_virtual_audio_devices_with_registry, VirtualAudioDeviceInfo, VirtualDeviceKind,
-    VirtualDevicePatternConfig, VirtualDevicePatternError, VirtualDevicePatternMatch,
-    VirtualDevicePatternRegistry,
+    classify_virtual_device, classify_virtual_device_with_registry,
+    probe_linux_virtual_audio_devices, probe_macos_virtual_audio_devices,
+    probe_virtual_audio_devices, probe_virtual_audio_devices_with_registry, VirtualAudioDeviceInfo,
+    VirtualDeviceKind, VirtualDevicePatternConfig, VirtualDevicePatternError,
+    VirtualDevicePatternMatch, VirtualDevicePatternRegistry,
 };
+
+// ScreenCaptureKit capture backend stub — MACOS-03 (issue #452)
+#[cfg(target_os = "macos")]
+pub mod screencapturekit_capture;
 
 // ─── Core types ──────────────────────────────────────────────────────────────
 

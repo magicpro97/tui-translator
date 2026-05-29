@@ -50,6 +50,21 @@ pub enum VirtualDeviceKind {
     Voicemeeter,
     /// Generic OEM, commercial, or project-specific virtual-cable endpoint.
     GenericOem,
+    /// BlackHole virtual audio driver for macOS (MACOS-04).
+    /// Device names contain "BlackHole" (e.g. "BlackHole 2ch", "BlackHole 16ch").
+    BlackHole,
+    /// Loopback by Rogue Amoeba for macOS (MACOS-04).
+    /// Device names contain "Loopback Audio" or a user-defined pass-through.
+    LoopbackAudio,
+    /// PipeWire null-sink or loopback module for Linux (LINUX-04).
+    /// Device names contain "null-sink", "Loopback", or "pw-loopback".
+    PipeWireNullSink,
+    /// ALSA snd-aloop loopback for Linux (LINUX-04).
+    /// Device names contain "Loopback" or "ALSA loopback".
+    SndAloop,
+    /// PulseAudio null-sink for Linux (LINUX-04).
+    /// Device names contain "null" and "sink" or "Virtual Microphone".
+    PulseNullSink,
 }
 
 impl VirtualDeviceKind {
@@ -60,6 +75,11 @@ impl VirtualDeviceKind {
             VirtualDeviceKind::Vac => "VAC",
             VirtualDeviceKind::Voicemeeter => "Voicemeeter",
             VirtualDeviceKind::GenericOem => "Generic/OEM",
+            VirtualDeviceKind::BlackHole => "BlackHole",
+            VirtualDeviceKind::LoopbackAudio => "Loopback Audio",
+            VirtualDeviceKind::PipeWireNullSink => "PipeWire null-sink",
+            VirtualDeviceKind::SndAloop => "snd-aloop",
+            VirtualDeviceKind::PulseNullSink => "PulseAudio null-sink",
         }
     }
 }
@@ -287,7 +307,73 @@ fn builtin_pattern_configs() -> Vec<VirtualDevicePatternConfig> {
             VirtualDeviceKind::GenericOem,
             "Generic/OEM",
         ),
+        // ── macOS virtual mic devices (MACOS-04 / issue #453) ────────────────
+        VirtualDevicePatternConfig::labeled(
+            r"\bBlackHole(\s+\d+ch)?\b",
+            VirtualDeviceKind::BlackHole,
+            "BlackHole",
+        ),
+        VirtualDevicePatternConfig::labeled(
+            r"\bLoopback( Audio)?\b",
+            VirtualDeviceKind::LoopbackAudio,
+            "Loopback Audio",
+        ),
+        // ── Linux virtual mic devices (LINUX-04 / issue #471) ────────────────
+        VirtualDevicePatternConfig::labeled(
+            r"\b(null[-_\s]?sink|pw[-_\s]?loopback|PipeWire.*[Ll]oopback)\b",
+            VirtualDeviceKind::PipeWireNullSink,
+            "PipeWire null-sink",
+        ),
+        VirtualDevicePatternConfig::labeled(
+            r"\b(ALSA\s+[Ll]oopback|[Ll]oopback\s+PCM|snd[-_]?aloop)\b",
+            VirtualDeviceKind::SndAloop,
+            "snd-aloop",
+        ),
+        VirtualDevicePatternConfig::labeled(
+            r"\b(PulseAudio|PA)\s+(null[-_\s]?sink|[Vv]irtual\s+[Mm]ic(rophone)?)\b",
+            VirtualDeviceKind::PulseNullSink,
+            "PulseAudio null-sink",
+        ),
     ]
+}
+
+/// Enumerate macOS virtual audio devices that could serve as a TTS output route.
+///
+/// # Current status
+///
+/// **Phase 5 stub** — depends on MACOS-02 (issue #451) and MACOS-04 (issue #453)
+/// providing a real macOS device-enumeration implementation.  Returns `Ok(vec![])`
+/// until those issues are resolved.
+///
+/// # Errors
+///
+/// Currently never fails.
+pub fn probe_macos_virtual_audio_devices() -> Result<Vec<VirtualAudioDeviceInfo>> {
+    tracing::warn!(
+        "macOS virtual audio device probe not yet implemented (Phase 5 stub — issue #453)"
+    );
+    Ok(Vec::new())
+}
+
+/// Enumerate Linux virtual audio devices that could serve as a TTS output route.
+///
+/// Detects PipeWire null-sinks/loopbacks, ALSA snd-aloop devices, and PulseAudio
+/// null-sinks by name using the built-in pattern registry.
+///
+/// # Current status
+///
+/// **Phase 5 stub** — depends on LINUX-02 (issue #469) and LINUX-04 (issue #471)
+/// providing a real Linux device-enumeration implementation.  Returns `Ok(vec![])`
+/// until those issues are resolved.
+///
+/// # Errors
+///
+/// Currently never fails.
+pub fn probe_linux_virtual_audio_devices() -> Result<Vec<VirtualAudioDeviceInfo>> {
+    tracing::warn!(
+        "Linux virtual audio device probe not yet implemented (Phase 5 stub — issue #471)"
+    );
+    Ok(Vec::new())
 }
 
 // ─── VirtualAudioDeviceInfo ───────────────────────────────────────────────────
