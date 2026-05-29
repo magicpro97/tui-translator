@@ -206,9 +206,9 @@ mod tests {
 
     #[test]
     fn detect_key_os_honours_override_env() {
-        // Serialised via a single env var read; tests in this module run
-        // sequentially by default within a single binary, but we still
-        // restore the previous value to avoid leaking state.
+        // Acquire the process-wide mutex before mutating the env var so that
+        // parallel cargo test workers don't race (issue: flaky on Windows CI).
+        let _guard = test_helpers::key_os_env_mutex().lock().unwrap();
         let prev = std::env::var(KEY_OS_OVERRIDE_ENV).ok();
 
         std::env::set_var(KEY_OS_OVERRIDE_ENV, "macos");
