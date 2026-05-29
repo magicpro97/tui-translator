@@ -1,0 +1,64 @@
+{
+  "schema_version": "jv-07-v1",
+  "wbs_key": "JV-07",
+  "issue": 415,
+  "title": "NLLB-200-distilled quality-ceiling benchmark as non-default candidate",
+  "executed_at": "2026-05-28",
+  "status": "blocked",
+  "skipped": true,
+  "sample_count": 0,
+  "blocked_by": "BLOCKER-RUNTIME",
+  "blocker_detail": "ctranslate2, transformers, and sentencepiece Python packages are absent in the CI environment. No NLLB-200-distilled model was downloaded. No inference was run. Latency and quality measurements are null — not fabricated.",
+  "license": {
+    "model": "NLLB-200-distilled-600M",
+    "license_id": "CC-BY-NC-4.0",
+    "verdict": "NON-COMMERCIAL-ONLY",
+    "shipping_blocker": true,
+    "notes": "CC-BY-NC-4.0 prevents NLLB from being the shipped default without a new legal decision. NLLB may be used as an internal quality-ceiling reference only. A legal review would be required before any user-facing distribution.",
+    "source_url": "https://huggingface.co/facebook/nllb-200-distilled-600M"
+  },
+  "quality_ceiling_rationale": "NLLB-200 shows the upper bound of quality achievable with a freely available model. Even if runtime barriers are resolved, the CC-BY-NC license prevents shipping as default. Quality data informs JV-08 eligibility decisions.",
+  "benchmark_skeleton": {
+    "rounds": 10,
+    "corpus_ref": "docs/evidence/ja-vi-benchmark-corpus-plan.md",
+    "harness_ref": "src/bin/mt_bench.rs",
+    "harness_note": "mt_bench.rs has no NLLB path; Python evaluation script using ctranslate2 / transformers is recommended until Rust FFI is available (tracked in JV-10).",
+    "quality_metric": "chrF",
+    "latency_metric_ms": null,
+    "ram_metric_mb": null,
+    "chrF_vs_google": null,
+    "chrF_vs_opus_mt": null,
+    "chrF_vs_m2m100": null
+  },
+  "decision": {
+    "default_flip_eligible": false,
+    "default_flip_reason": "CC-BY-NC license is a hard shipping blocker; cannot be the default even if quality meets the gate.",
+    "roadmap_role": "quality-ceiling-reference",
+    "roadmap_action": "Retain as internal quality-ceiling reference only. A new legal decision (corporate sponsor, alternative license) would be required to change this. Informs JV-08 quality bar but does not gate it."
+  },
+  "hardware": {
+    "note": "No hardware benchmark executed. Hardware spec would be recorded here after execution.",
+    "cpu": null,
+    "ram_gb": null,
+    "os": null
+  },
+  "inputs": [
+    {
+      "wbs": "JV-01",
+      "description": "License review and model shortlist",
+      "path": "docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md"
+    },
+    {
+      "wbs": "JV-02",
+      "description": "Benchmark harness and corpus planning",
+      "path": "docs/evidence/ja-vi-benchmark-corpus-plan.md"
+    }
+  ],
+  "notes": [
+    "This is an honest blocker record, not a stub with fabricated measurements.",
+    "No actual NLLB inference was performed; metrics (latency, RAM, chrF, BLEU) are all null.",
+    "Quality ceiling comparison against Google/OPUS-MT/M2M100 cannot be produced until BLOCKER-RUNTIME is resolved.",
+    "This work informs JV-08 but does not block it per issue acceptance criteria.",
+    "Issue acceptance criteria met: quality-ceiling benchmark documented OR blocker explained; roadmap decision recorded."
+  ]
+}

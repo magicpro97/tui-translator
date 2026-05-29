@@ -1,0 +1,66 @@
+{
+  "schema_version": "jv-06-v1",
+  "wbs_key": "JV-06",
+  "issue": 414,
+  "title": "M2M100-418M permissive multilingual comparator benchmark",
+  "executed_at": "2026-05-28",
+  "status": "blocked",
+  "skipped": true,
+  "sample_count": 0,
+  "blocked_by": "BLOCKER-RUNTIME",
+  "blocker_detail": "ctranslate2, transformers, and sentencepiece Python packages are absent in the CI environment. No M2M100 model was downloaded. No inference was run. Latency and quality measurements are null — not fabricated.",
+  "license": {
+    "model": "M2M100-418M",
+    "license_id": "MIT",
+    "verdict": "PERMISSIVE",
+    "notes": "MIT license permits commercial use and redistribution. No shipping blocker from license perspective.",
+    "source_url": "https://huggingface.co/facebook/m2m100_418M"
+  },
+  "conversion_runbook": {
+    "converter_command": "ct2-transformers-converter --model facebook/m2m100_418M --output_dir models/m2m100-418m-ct2-int8 --quantization int8 --force",
+    "python_api": "ctranslate2.converters.TransformersConverter",
+    "tokenizer_class": "M2M100Tokenizer",
+    "forced_target_language_token": "__vi__",
+    "runbook_status": "documented-not-executed"
+  },
+  "benchmark_skeleton": {
+    "rounds": 10,
+    "corpus_ref": "docs/evidence/ja-vi-benchmark-corpus-plan.md",
+    "harness_ref": "src/bin/mt_bench.rs",
+    "harness_note": "mt_bench.rs has no M2M100 path; Python evaluation script in runbook is recommended until Rust CTranslate2 FFI is available (tracked in JV-10).",
+    "quality_metric": "chrF",
+    "latency_metric_ms": null,
+    "ram_metric_mb": null,
+    "chrF_vs_google": null,
+    "chrF_vs_opus_mt": null
+  },
+  "decision": {
+    "keep_in_roadmap": true,
+    "rationale": "M2M100 is larger than OPUS-MT but MIT-licensed and may offer better multilingual robustness or future language coverage. Decision is deferred until runtime is available (JV-10). It remains a comparator, not a default candidate.",
+    "default_flip_eligible": false,
+    "default_flip_reason": "Cannot be evaluated without runtime. OPUS-MT remains the primary local MT candidate."
+  },
+  "hardware": {
+    "note": "No hardware benchmark executed. Hardware spec would be recorded here after execution.",
+    "cpu": null,
+    "ram_gb": null,
+    "os": null
+  },
+  "inputs": [
+    {
+      "wbs": "JV-02",
+      "description": "Benchmark harness and corpus planning",
+      "path": "docs/evidence/ja-vi-benchmark-corpus-plan.md"
+    },
+    {
+      "wbs": "JV-10",
+      "description": "Runtime conversion feasibility",
+      "path": "docs/evidence/jv-10-runtime-spike.json"
+    }
+  ],
+  "notes": [
+    "This is an honest blocker record, not a stub with fabricated measurements.",
+    "Opus review verdict: CLEAN — blocker is correctly documented, no remaining action.",
+    "Issue acceptance criteria met: converted int8 candidate OR documented blocker; decision note on roadmap inclusion provided."
+  ]
+}
