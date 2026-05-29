@@ -49,8 +49,15 @@ fn stt_provider_change_is_detected() {
 fn mt_provider_change_is_detected() {
     let old = ProviderBundle::from_config(&base());
     let mut next = base();
-    // Default mt_provider is "google"; switch to "local".
-    next.mt_provider = "local".to_string();
+    // Under local-mt the default is "local"; switch to the opposite value to trigger a change.
+    #[cfg(not(feature = "local-mt"))]
+    {
+        next.mt_provider = "local".to_string();
+    }
+    #[cfg(feature = "local-mt")]
+    {
+        next.mt_provider = "google".to_string();
+    }
     let next_bundle = ProviderBundle::from_config(&next);
     assert!(
         old.has_provider_change(&next_bundle),
