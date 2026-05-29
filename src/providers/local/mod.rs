@@ -49,6 +49,7 @@ mod mt;
 #[cfg(feature = "local-mt")]
 mod mt_ort;
 pub mod runtime_caps;
+pub mod supertonic_manifest;
 pub mod supertonic_voices;
 mod whisper;
 
@@ -74,6 +75,11 @@ pub use model_download::{
 };
 #[allow(unused_imports)]
 pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
+#[allow(unused_imports)]
+pub use supertonic_manifest::{
+    supertonic_bundle_manifest, supertonic_consent_manifest, SupertonicManifest, SupertonicModelId,
+    SupertonicModelSpec, SUPERTONIC_LICENSE_URL, SUPERTONIC_VERSION,
+};
 #[allow(unused_imports)]
 pub use supertonic_voices::{
     SupertonicVoiceCatalog, SupertonicVoiceId, SupertonicVoiceMeta, VoiceError, VoiceGender,

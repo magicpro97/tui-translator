@@ -1,0 +1,13 @@
+Supertonic TTS Model License
+
+The Supertonic TTS model files are proprietary software owned by Supertone Inc.
+A license is required before use. Please refer to:
+  https://www.supertone.ai/
+
+This application will only install Supertonic models if you explicitly consent
+to the license terms during first-run setup.
+
+Model files are not included in the application distribution and must be
+downloaded separately during first-run setup.
+
+For license inquiries, visit: https://www.supertone.ai/products/supertonic
