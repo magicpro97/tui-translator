@@ -27,7 +27,7 @@ mod i18n;
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
-use metrics::{SttSource, SttState};
+use metrics::{MtState, SttSource, SttState};
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
     draw_ui, expanded_metrics_height, render_auth_error_banner, render_help_overlay,
@@ -315,6 +315,7 @@ fn snapshot_status_strip_compact_idle() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -357,6 +358,7 @@ fn snapshot_status_strip_compact_listening_tts_on() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: true,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -402,6 +404,7 @@ fn snapshot_status_strip_compact_restart_notice() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -449,6 +452,7 @@ fn snapshot_status_strip_compact_sending() {
     let stt = SttState::Sending;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -491,6 +495,7 @@ fn snapshot_status_strip_compact_waiting() {
     let stt = SttState::Waiting;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -533,6 +538,7 @@ fn snapshot_status_strip_compact_error() {
     let stt = SttState::Error("network timeout".to_string());
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -577,6 +583,7 @@ fn snapshot_status_strip_expanded_idle() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -624,6 +631,7 @@ fn snapshot_status_strip_expanded_listening() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: true,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -673,6 +681,7 @@ fn snapshot_status_strip_expanded_with_warning() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: true,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -726,6 +735,7 @@ fn snapshot_status_strip_narrow_abbreviated() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: true,
         tts_route: TtsRouteStatus::default(),
         target_language: "en".to_string(),
@@ -772,6 +782,7 @@ fn snapshot_status_strip_wide_full_labels() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "fr".to_string(),
@@ -951,6 +962,7 @@ fn stt_error_state_label_contains_message() {
     let stt = SttState::Error("auth failed".to_string());
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -998,6 +1010,7 @@ fn narrow_strip_uses_abbreviated_labels() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -1061,6 +1074,7 @@ fn expanded_warning_renders_when_over_threshold() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -1143,6 +1157,7 @@ fn snapshot_status_strip_zero_state_narrow() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -1189,6 +1204,7 @@ fn snapshot_status_strip_zero_state_expanded() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -1282,6 +1298,7 @@ fn narrow_compact_strip_uses_lang_label() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: true,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -1333,6 +1350,7 @@ fn narrow_compact_strip_uses_tts_label() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "en".to_string(),
@@ -1384,6 +1402,7 @@ fn compact_restart_notice_is_spelled_out() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -1435,6 +1454,7 @@ fn snapshot_status_strip_very_narrow_30cols() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: true,
         tts_route: TtsRouteStatus::default(),
         target_language: "ja".to_string(),
@@ -1668,6 +1688,7 @@ fn expanded_metrics_narrow_uses_lang_label() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "fr".to_string(),
@@ -1997,6 +2018,7 @@ fn snapshot_status_strip_compact_ram_warning() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2054,6 +2076,7 @@ fn snapshot_status_strip_expanded_ram_warning() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2112,6 +2135,7 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
     let stt = SttState::Listening;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2160,6 +2184,7 @@ fn expanded_metrics_height_is_9_without_any_warning() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2208,6 +2233,7 @@ fn snapshot_config_apply_status_ok_compact() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2257,6 +2283,7 @@ fn snapshot_config_apply_status_rolled_back_compact() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2306,6 +2333,7 @@ fn snapshot_config_apply_status_restart_required_compact() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -2355,6 +2383,7 @@ fn snapshot_config_apply_status_restart_required_expanded_metrics_row() {
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),

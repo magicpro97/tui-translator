@@ -132,6 +132,46 @@ impl SttState {
     }
 }
 
+// ── MtState ───────────────────────────────────────────────────────────────────
+
+/// Observable state of the machine-translation provider (issue #422, JV-14).
+///
+/// Updated by the pipeline whenever the MT provider state changes, and
+/// read by the TUI to surface loading / error / fallback conditions.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum MtState {
+    /// No MT call has been attempted yet in this session.
+    #[default]
+    Idle,
+    /// Local MT model is being loaded (lazy first-call initialisation).
+    Loading,
+    /// Local MT engine is loaded and serving translations directly.
+    LocalDirect,
+    /// Translation is being routed to the cloud provider (Google).
+    CloudFallback,
+    /// The last MT call timed out or was cancelled; pipeline may retry.
+    Timeout,
+    /// The local MT model was not found at the configured path.
+    ModelNotFound,
+    /// The MT provider returned a permanent error.
+    Error(String),
+}
+
+impl MtState {
+    /// Short human-readable label for the TUI status strip.
+    pub fn label(&self) -> String {
+        match self {
+            MtState::Idle => "MT: idle".to_string(),
+            MtState::Loading => "\u{25cc} MT: loading…".to_string(),
+            MtState::LocalDirect => "\u{25cf} MT: local".to_string(),
+            MtState::CloudFallback => "\u{25cb} MT: cloud".to_string(),
+            MtState::Timeout => "\u{25b3} MT: timeout".to_string(),
+            MtState::ModelNotFound => "\u{2717} MT: model missing".to_string(),
+            MtState::Error(msg) => format!("\u{2717} MT: {msg}"),
+        }
+    }
+}
+
 // ── SessionMetrics ────────────────────────────────────────────────────────────
 
 /// Accumulated session statistics shown in the status/metrics strip.
@@ -423,5 +463,21 @@ mod tests {
         let m = SessionMetrics::default();
         let s = m.format_elapsed();
         assert!(s.contains(':'), "elapsed format must contain ':' in {s:?}");
+    }
+
+    #[test]
+    fn mt_state_label_covers_all_variants() {
+        assert_eq!(MtState::Idle.label(), "MT: idle");
+        assert!(MtState::Loading.label().contains("loading"));
+        assert!(MtState::LocalDirect.label().contains("local"));
+        assert!(MtState::CloudFallback.label().contains("cloud"));
+        assert!(MtState::Timeout.label().contains("timeout"));
+        assert!(MtState::ModelNotFound.label().contains("model"));
+        assert!(MtState::Error("oops".to_string()).label().contains("oops"));
+    }
+
+    #[test]
+    fn mt_state_default_is_idle() {
+        assert_eq!(MtState::default(), MtState::Idle);
     }
 }

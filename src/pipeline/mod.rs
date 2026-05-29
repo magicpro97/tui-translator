@@ -48,8 +48,8 @@ use tokio::sync::mpsc;
 use crate::{
     audio::{AudioChunk, VadConfig, VadDecision, VadGate},
     metrics::{
-        CostCounter, LatencyHistogram, LossMetrics, NetworkMetrics, SessionMetrics, SttSource,
-        SttState,
+        CostCounter, LatencyHistogram, LossMetrics, MtState, NetworkMetrics, SessionMetrics,
+        SttSource, SttState,
     },
     pipeline::cpu_gate::CpuGate,
     providers::{MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, TtsProvider},
@@ -193,6 +193,11 @@ pub struct OrchestratorContext {
     // ── STT state ──────────────────────────────────────────────────────────
     /// Updated as the STT engine moves between idle / active / error states.
     pub stt_state: Arc<Mutex<SttState>>,
+
+    // ── MT state ───────────────────────────────────────────────────────────
+    /// Updated as the MT provider moves between idle / loading / active / error
+    /// states (JV-14, issue #422). Shared with the TUI for status display.
+    pub mt_state: Arc<Mutex<MtState>>,
 
     // ── Subtitle display ───────────────────────────────────────────────────
     /// New pairs are pushed here after a successful STT + MT round-trip.
@@ -441,6 +446,8 @@ pub struct SlotOrchestratorState {
     pub slot_id: SlotId,
     /// Current STT engine state for this slot.
     pub stt_state: Arc<Mutex<SttState>>,
+    /// Current MT provider state for this slot (JV-14, issue #422).
+    pub mt_state: Arc<Mutex<MtState>>,
     /// Subtitle display pane for this slot.
     pub subtitle_pane: Arc<Mutex<SubtitlePane>>,
     /// Accumulated session metrics for this slot.
@@ -467,6 +474,7 @@ impl SlotOrchestratorState {
         Self {
             slot_id,
             stt_state: Arc::new(Mutex::new(SttState::default())),
+            mt_state: Arc::new(Mutex::new(MtState::default())),
             subtitle_pane: Arc::new(Mutex::new(SubtitlePane::new())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
             pipeline_error_msg: Arc::new(Mutex::new(None)),
@@ -1009,9 +1017,11 @@ where
         }
 
         let mt_start = Instant::now();
+        set_mt_state(&ctx.mt_state, MtState::Loading);
         let translation =
             match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await {
                 Ok(r) => {
+                    set_mt_state(&ctx.mt_state, MtState::CloudFallback);
                     record_provider_success(ctx, ProviderStage::Mt);
                     // Track MT input chars (billing basis: source chars sent to the API,
                     // matching the count used by GoogleMtProvider::translate).
@@ -1031,6 +1041,7 @@ where
                 }
                 Err(ProviderError::AuthError(msg)) => {
                     set_stt_state(&ctx.stt_state, SttState::Listening);
+                    set_mt_state(&ctx.mt_state, MtState::Error(msg.clone()));
                     handle_auth_error(ctx, &format!("MT: {msg}"));
                     return;
                 }
@@ -1039,6 +1050,7 @@ where
                     let warn_msg = format!("⚠ Translation error: {err}");
                     tracing::warn!("{warn_msg}");
                     set_stt_state(&ctx.stt_state, SttState::Listening);
+                    set_mt_state(&ctx.mt_state, MtState::Error(err.to_string()));
                     set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
                     // Issue #81: MT failure counts as a dropped chunk.
                     ctx.loss_metrics.record_drop();
@@ -1268,9 +1280,11 @@ async fn commit_aggregated_segment<M, T>(
     }
 
     let mt_start = Instant::now();
+    set_mt_state(&ctx.mt_state, MtState::Loading);
     let translation = match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await
     {
         Ok(result) => {
+            set_mt_state(&ctx.mt_state, MtState::CloudFallback);
             record_provider_success(ctx, ProviderStage::Mt);
             {
                 let mut m = ctx
@@ -1286,6 +1300,7 @@ async fn commit_aggregated_segment<M, T>(
             result
         }
         Err(ProviderError::AuthError(msg)) => {
+            set_mt_state(&ctx.mt_state, MtState::Error(msg.clone()));
             handle_auth_error(ctx, &format!("MT: {msg}"));
             return;
         }
@@ -1293,6 +1308,7 @@ async fn commit_aggregated_segment<M, T>(
             record_provider_failure(ctx, ProviderStage::Mt, &err);
             let warn_msg = format!("⚠ Translation error: {err}");
             tracing::warn!("{warn_msg}");
+            set_mt_state(&ctx.mt_state, MtState::Error(err.to_string()));
             set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
             ctx.loss_metrics.record_drop();
             return;
@@ -1467,6 +1483,10 @@ fn transcript_segment_id(sequence_number: u64, split_index: usize) -> u64 {
 // ── State helpers ─────────────────────────────────────────────────────────────
 
 fn set_stt_state(slot: &Arc<Mutex<SttState>>, next: SttState) {
+    *slot.lock().unwrap_or_else(|p| p.into_inner()) = next;
+}
+
+fn set_mt_state(slot: &Arc<Mutex<MtState>>, next: MtState) {
     *slot.lock().unwrap_or_else(|p| p.into_inner()) = next;
 }
 
@@ -1899,6 +1919,7 @@ mod tests {
             slot_id: SlotId::A,
             audio_level: Arc::new(AtomicU32::new(0)),
             stt_state: Arc::new(Mutex::new(SttState::Idle)),
+            mt_state: Arc::new(Mutex::new(MtState::Idle)),
             subtitle_pane: Arc::new(Mutex::new(crate::tui::SubtitlePane::new())),
             session_metrics: Arc::new(Mutex::new(SessionMetrics::default())),
             cost_counter: Arc::new(CostCounter::new()),

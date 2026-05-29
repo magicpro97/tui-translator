@@ -28,6 +28,7 @@ fn render_status_strip(route: TtsRouteStatus, width: u16) -> Result<String> {
     terminal.draw(|frame| {
         let strip = StatusMetricsStrip {
             stt: &stt,
+            mt: &MtState::default(),
             tts_on: true,
             tts_route: route.clone(),
             target_language: "vi".to_string(),
@@ -76,6 +77,7 @@ fn render_expanded_slot_status(slot_b_tts_status: Option<String>) -> Result<Stri
     terminal.draw(|frame| {
         let strip = StatusMetricsStrip {
             stt: &stt,
+            mt: &MtState::default(),
             tts_on: slot_b_tts_status.is_some(),
             tts_route: TtsRouteStatus::default(),
             target_language: "vi".to_string(),

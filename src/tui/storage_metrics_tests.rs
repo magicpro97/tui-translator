@@ -15,6 +15,7 @@ fn render_expanded_storage_strip(
     let stt = SttState::Idle;
     let strip = StatusMetricsStrip {
         stt: &stt,
+        mt: &MtState::default(),
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),
@@ -49,7 +50,7 @@ fn render_expanded_storage_strip(
         config_apply_status: None,
         config_apply_count: 0,
     };
-    let backend = TestBackend::new(120, 9);
+    let backend = TestBackend::new(120, 11);
     let mut terminal = Terminal::new(backend)?;
     terminal.draw(|frame| {
         frame.render_widget(&strip, frame.area());
