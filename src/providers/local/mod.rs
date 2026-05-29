@@ -25,6 +25,8 @@
 //!   compiled with `local-stt`; otherwise a phase-gate stub.
 //! * [`LocalOpusMtProvider`] — on-device OPUS-MT implementation when compiled
 //!   with `local-mt`; otherwise a phase-gate stub.
+//! * [`SupertonicTtsProvider`] — local Supertonic TTS provider compiled only
+//!   with `local-tts`; currently a phase-gate stub for SUPERTONIC-08.
 //! * [`install_model_bundle`] — resumable, checksum-verified model bundle
 //!   installer for local STT and exported ONNX MT bundles.
 //!
@@ -49,6 +51,8 @@ mod mt;
 #[cfg(feature = "local-mt")]
 mod mt_ort;
 pub mod runtime_caps;
+#[cfg(feature = "local-tts")]
+pub mod supertonic_provider;
 pub mod supertonic_voices;
 mod whisper;
 
@@ -74,6 +78,9 @@ pub use model_download::{
 };
 #[allow(unused_imports)]
 pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
+#[cfg(feature = "local-tts")]
+#[allow(unused_imports)]
+pub use supertonic_provider::{SupertonicError, SupertonicTtsProvider};
 #[allow(unused_imports)]
 pub use supertonic_voices::{
     SupertonicVoiceCatalog, SupertonicVoiceId, SupertonicVoiceMeta, VoiceError, VoiceGender,
