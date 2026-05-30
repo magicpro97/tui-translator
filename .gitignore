@@ -76,3 +76,6 @@ eval-session/
 scripts/standards/**/__pycache__/
 
 *.orig\n*.rej
+src/audio/mod.rs.orig
+src/audio/mod.rs.rej
+verification-evidence/
