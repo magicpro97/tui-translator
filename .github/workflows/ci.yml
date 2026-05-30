@@ -559,6 +559,29 @@ jobs:
             verification-evidence\vmic\VMIC-B5-release-sha256.txt
             verification-evidence\vmic\VMIC-B5-smoke-log.txt
 
+  # ── macOS integration smoke (MACOS-12 / issue #643) ────────────────────────
+  # Verifies that all 27 PTY integration tests pass on macOS-14 with
+  # file-backed audio (no real audio hardware required).  The PTY harness uses
+  # `portable-pty` which works on both Windows (ConPTY) and Unix (openpty).
+  macos-integration-smoke:
+    name: macOS integration smoke test (file audio)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-macos-smoke-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run PTY integration tests (file-backed audio, no hardware needed)
+        run: cargo test --test pty -- --nocapture
+        env:
+          RUST_LOG: "off"
+
   # ── Linux smoke ─────────────────────────────────────────────────────────────
   # We also build on Linux so that CI does not fail if a contributor uses
   # a non-Windows machine.  Audio capture tests are excluded; they need
