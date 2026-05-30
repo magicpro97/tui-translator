@@ -46,6 +46,8 @@ virtual microphone so meeting apps can receive the AI-translated voice.
 
 ## Requirements
 
+### Windows (primary platform)
+
 - **Windows 10 or Windows 11** (64-bit)
 - A terminal emulator — Windows Terminal (recommended), PowerShell, or cmd
 - **For fully local operation (no Google account needed):** build with
@@ -54,6 +56,17 @@ virtual microphone so meeting apps can receive the AI-translated voice.
 - **For cloud translation/TTS:** a Google Cloud API key with Translation
   (and optionally TTS) enabled
 - An internet connection is only required while Google Cloud providers are active
+
+### macOS (community-maintained)
+
+macOS 12.0+ is supported via BlackHole virtual audio loopback or ScreenCaptureKit
+(macOS 13+).  See **[docs/macos-setup.md](docs/macos-setup.md)** for the full
+setup guide, including:
+
+- BlackHole installation and Multi-Output Device configuration
+- TCC microphone permission grant (macOS 14+ Terminal.app quirk)
+- ScreenCaptureKit alternative (no driver, macOS 13+ only)
+- Build instructions and common troubleshooting steps
 
 ---
 
@@ -553,6 +566,7 @@ Full details: [`docs/05-implementation-roadmap.md`](docs/05-implementation-roadm
 |----------|---------------|
 | [`USAGE.md`](USAGE.md) | End-user setup guide: download, configure, run |
 | [`PRIVACY.md`](PRIVACY.md) | Data flows, recording defaults, offline mode, and consent |
+| [`docs/macos-setup.md`](docs/macos-setup.md) | macOS BlackHole and ScreenCaptureKit audio loopback setup, TCC permissions, build instructions |
 | [`docs/12-virtual-mic-setup.md`](docs/12-virtual-mic-setup.md) | Virtual microphone setup, Zoom/Teams caveats, consent text, and VMIC evidence |
 | [`docs/01-business-requirements.md`](docs/01-business-requirements.md) | What the product does and who it is for |
 | [`docs/02-google-first-provider.md`](docs/02-google-first-provider.md) | Why Google Cloud is the first provider |
