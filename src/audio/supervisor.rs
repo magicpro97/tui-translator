@@ -140,7 +140,10 @@ mod tests {
         assert_eq!(m2.total_capture_gap_ms(), 10);
     }
 
-    #[cfg(not(windows))]
+    // macOS now uses real CoreAudio/BlackHole capture (MACOS-07, #638) which
+    // fails on CI without BlackHole.  These stub-silence tests only apply to
+    // Linux and other non-Windows/non-macOS platforms.
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[tokio::test]
     async fn supervisor_start_non_wasapi() {
         let metrics = CaptureMetrics::new();
@@ -153,7 +156,7 @@ mod tests {
         assert_eq!(metrics.device_switch_count(), 0);
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[tokio::test]
     async fn supervisor_restart_records_gap_metrics() {
         let metrics = CaptureMetrics::new();
@@ -165,7 +168,7 @@ mod tests {
         assert_eq!(metrics.total_capture_gap_ms(), gap_ms);
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[tokio::test]
     async fn supervisor_multiple_restarts_accumulate() {
         let metrics = CaptureMetrics::new();
@@ -177,7 +180,7 @@ mod tests {
         assert_eq!(metrics.total_capture_gap_ms(), g1 + g2);
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[tokio::test]
     async fn supervisor_new_stream_is_functional_after_restart() {
         use tokio::time::{timeout, Duration};
