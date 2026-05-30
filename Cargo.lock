@@ -3296,6 +3296,7 @@ version = "0.1.4"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "cpal",
  "crossterm",
  "directories",
  "fluent-bundle",
