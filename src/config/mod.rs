@@ -3013,10 +3013,12 @@ mod tests {
     /// must be reconstructed).
     #[test]
     fn tts_provider_change_requires_restart() {
-        let current = AppConfig::default();
-        // Construct `next` directly (bypasses validation) so that this
-        // restart-classification test remains meaningful regardless of
-        // which provider values are accepted by `validate()` at the time.
+        // Use explicit values so the test is not affected by which provider
+        // happens to be the compile-time default.
+        let current = AppConfig {
+            tts_provider: "google".to_string(),
+            ..AppConfig::default()
+        };
         let next = AppConfig {
             tts_provider: "local".to_string(),
             ..AppConfig::default()
