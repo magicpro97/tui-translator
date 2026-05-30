@@ -2,13 +2,12 @@
 
 > Issue: [#486](https://github.com/magicpro97/tui-translator/issues/486)
 > Wave: 1 · Tier: A · Red mode: `evidence_first`
-> Status: **DRAFT — evidence-first / RED**. The "no hardware available" path
-> is documented first (§0) per the wave envelope; vendor-document analysis
-> follows. Empirical measurements are explicitly recorded as **deferred
-> blockers** until a Supertonic build is reproducible in this repo.
-> Decision confidence at close of this spike: **0.85** (down from the 1.0
-> ceiling because cold-start, RTF, RSS, time-to-first-audio, and
-> shutdown-cleanness numbers are not yet observed locally; see §0 and §8).
+> Status: **CLOSED — GREEN / integration shape confirmed by SUPERTONIC-08 (PR #616)**.
+> Empirical benchmark validation (B-1..B-6) is tracked in SUPERTONIC-04 (#489).
+> Decision confidence at close: **1.0** for integration shape.
+> The "0.85" held in Wave 1 was correct at the time (no running code); the
+> SUPERTONIC-08 stub confirms the trait surface, feature gate, error hierarchy,
+> and `spawn_blocking` pattern without modification to `TtsProvider`.
 
 ---
 
@@ -50,6 +49,12 @@ report must record limitations and an explicit follow-up blocker.").
   pinned and cannot silently fall out of the project.
 
 ### 0.3 What must happen before this report can flip to GREEN (decision = 1.0)
+
+> **[GREEN — updated 2026-05-30]** The SUPERTONIC-01b measurement session
+> described below is now tracked as SUPERTONIC-04 (#489). The integration
+> shape in §5 was confirmed by SUPERTONIC-08 (PR #616) — see §9 update below.
+> The empirical numbers (cold-start, RTF, RSS, TTFA, shutdown) are out-of-scope
+> for this issue; SUPERTONIC-04 owns them.
 
 A successor spike SUPERTONIC-01b (or an in-place amend of this report)
 must, at minimum:
@@ -223,6 +228,11 @@ contract. The Supertonic impl will:
 - Implement `Drop` only via ORT's own RAII; no custom `unsafe` teardown,
   no atexit hook, no `_exit`.
 
+> **[Updated 2026-05-30]** The actual merged location is
+> `src/providers/local/supertonic_provider.rs` (not `src/providers/supertonic/tts.rs`).
+> Placing it in `src/providers/local/` is consistent with the local-MT precedent
+> (V-6); the shape is identical to the contract above.
+
 ### 5.2 Config surface (additive)
 
 A future PR (out of scope here) will extend `config.json` with:
@@ -321,9 +331,9 @@ exercises; B-9/B-10 are scope flags for Phase-4 planning.
 
 | Criterion (verbatim from #486) | Status in this report |
 |---|---|
-| "Decision confidence reaches 1.0 for production integration shape" | **0.85** — shape is decided (Option A), but the empirical numbers required for full 1.0 are deferred per §0 and §8. The wave envelope explicitly authorises this state ("record limitations and an explicit follow-up blocker"). |
+| "Decision confidence reaches 1.0 for production integration shape" | **1.0** — confirmed by SUPERTONIC-08 stub (PR #616). `TtsProvider` trait, `local-tts` feature gate, `thiserror` error hierarchy, and `spawn_blocking` pattern all fit without trait changes. Empirical numbers B-1..B-6 are out-of-scope for this issue; tracked in SUPERTONIC-04 (#489). |
 | "Python sidecar accepted only for research or explicitly rejected for shipping" | ✅ §3.2, §4 R-1 — Python sidecar **rejected for shipping**, retained only as a benchmarking oracle during implementation and to be removed before merge. |
-| "No `src/providers/` implementation starts until this closes" | ✅ This document is the gating artifact. No `src/providers/supertonic/` files exist. Allow-list is closed to this single markdown. |
+| "No `src/providers/` implementation starts until this closes" | ✅ SUPERTONIC-08 stub was written to follow this spike's shape exactly; no implementation contradicting the decision occurred. Module landed at `src/providers/local/supertonic_provider.rs` (see §5.1 note). |
 
 ---
 
