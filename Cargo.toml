@@ -108,6 +108,8 @@ whisper-rs = { version = "0.12", optional = true }
 # Optional so default CI/release builds stay lightweight until local MT is enabled.
 ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic"], optional = true }
 sentencepiece-rs = { version = "0.2.1", optional = true }
+# Random number generation for Gaussian noise in Supertonic diffusion inference.
+rand = { version = "0.8", optional = true }
 tui-input = { version = "0.15.3", default-features = false }
 directories = "5"
 
@@ -128,7 +130,7 @@ local-stt = ["whisper-rs"]
 local-mt = ["ort", "sentencepiece-rs"]
 # Enable the local Supertonic TTS backend (SUPERTONIC-13, issue #630).
 # Reuses the ort crate already required by local-mt; no new dep family.
-local-tts = ["ort"]
+local-tts = ["ort", "rand"]
 # Enable the VMIC-A6 automated virtual-cable integration tests. The tests are
 # skip-safe on runners without VB-CABLE/VAC and write explicit JSON evidence.
 audio-integration = []

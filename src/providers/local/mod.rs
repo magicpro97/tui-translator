@@ -51,6 +51,10 @@ mod mt;
 #[cfg(any(feature = "local-mt", feature = "local-tts"))]
 mod mt_ort;
 pub mod runtime_caps;
+#[cfg(feature = "local-tts")]
+mod supertonic_inference;
+#[cfg(feature = "local-tts")]
+mod supertonic_loaders;
 pub mod supertonic_manifest;
 #[cfg(feature = "local-tts")]
 pub mod supertonic_provider;
