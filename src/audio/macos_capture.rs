@@ -70,7 +70,7 @@ pub enum MacosCaptureError {
 
 /// Spawn the macOS loopback capture task.
 ///
-/// Returns a [`CaptureStream`] backed by BlackHole/CoreAudio or
+/// Returns a `CaptureStream` backed by BlackHole/CoreAudio or
 /// ScreenCaptureKit once MACOS-02 (issue #451) is implemented.  Until then,
 /// this function falls back to the silent CI stub so CI stays green on macOS.
 ///

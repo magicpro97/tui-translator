@@ -62,7 +62,7 @@ pub enum ScreenCaptureError {
 
 /// Spawn a ScreenCaptureKit loopback capture task.
 ///
-/// Returns a [`CaptureStream`] backed by ScreenCaptureKit once MACOS-03
+/// Returns a `CaptureStream` backed by ScreenCaptureKit once MACOS-03
 /// (issue #452) is implemented.  Until then, delivers silence so CI stays
 /// green on macOS.
 ///
