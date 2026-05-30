@@ -147,6 +147,12 @@ rodio = "0.17"
 # Windows thread-scheduling API (SetThreadPriority) for inference priority hints (#232)
 windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Media", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# CoreAudio loopback capture via BlackHole virtual device (macOS only)
+cpal = "0.15"
+# Audio resampling: native sample rate → 16 kHz mono (mirrors Windows rubato usage)
+rubato = "0.15"
+
 [dev-dependencies]
 # Snapshot testing for the TUI layouts
 insta = "1"
