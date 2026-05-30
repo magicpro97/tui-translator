@@ -114,9 +114,18 @@ cat > "$APP_CONTENTS/Info.plist" <<PLIST
 PLIST
 
 # Copy LICENSE, README, config example as Resources
+# Model binaries are NOT bundled — first-run download only (MODEL-02 packaging constraint)
 cp "$REPO_ROOT/LICENSE" "$APP_RESOURCES/LICENSE" 2>/dev/null || true
 cp "$REPO_ROOT/README.md" "$APP_RESOURCES/README.md" 2>/dev/null || true
 cp "$REPO_ROOT/config.example.json" "$APP_RESOURCES/config.example.json" 2>/dev/null || true
+# Safety check: assert no model weight files leaked into the bundle
+if find "$APP_BUNDLE" \( -name '*.onnx' -o -name '*.bin' -o -name '*.gguf' \
+  -o -name '*.pt' -o -name '*.pth' \) | grep -q .; then
+  echo "ERROR: model binary found in release artifact. Model weights must not be bundled." >&2
+  find "$APP_BUNDLE" \( -name '*.onnx' -o -name '*.bin' -o -name '*.gguf' \
+    -o -name '*.pt' -o -name '*.pth' \) >&2
+  exit 1
+fi
 
 echo "  .app bundle created: $APP_BUNDLE"
 
