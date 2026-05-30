@@ -22,7 +22,7 @@
 
 use tokio::sync::mpsc;
 
-use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, CaptureStream, CHANNEL_CAPACITY};
+use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo};
 
 /// Errors produced by the Linux capture backend.
 #[derive(Debug, thiserror::Error)]

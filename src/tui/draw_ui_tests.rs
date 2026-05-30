@@ -5,42 +5,15 @@
 
 use super::*;
 use ratatui::layout::Rect;
-use std::sync::{Mutex, MutexGuard, OnceLock};
 
 // ── with_key_os_override helper ─────────────────────────────────────────────
-// Duplicated from the parent `mod tests {}` block because sibling `#[cfg(test)]
-// mod` files resolve `super` to the production module, not the test block,
-// so the helper defined in `mod tests` is not reachable here.
+// Delegates to the canonical mutex in `key_hint::test_helpers` so all test
+// modules that mutate TUI_KEY_OS_OVERRIDE share one process-wide lock and
+// don't race each other on Windows (see fix for flaky
+// `detect_key_os_honours_override_env`).
 
-fn key_os_env_mutex() -> &'static Mutex<()> {
-    static M: OnceLock<Mutex<()>> = OnceLock::new();
-    M.get_or_init(|| Mutex::new(()))
-}
-
-struct KeyOsOverrideGuard {
-    _lock: MutexGuard<'static, ()>,
-    previous: Option<String>,
-}
-
-impl Drop for KeyOsOverrideGuard {
-    fn drop(&mut self) {
-        match self.previous.take() {
-            Some(prev) => std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, prev),
-            None => std::env::remove_var(key_hint::KEY_OS_OVERRIDE_ENV),
-        }
-    }
-}
-
-fn with_key_os_override(value: &str) -> KeyOsOverrideGuard {
-    let lock = key_os_env_mutex()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let previous = std::env::var(key_hint::KEY_OS_OVERRIDE_ENV).ok();
-    std::env::set_var(key_hint::KEY_OS_OVERRIDE_ENV, value);
-    KeyOsOverrideGuard {
-        _lock: lock,
-        previous,
-    }
+fn with_key_os_override(value: &str) -> key_hint::test_helpers::KeyOsGuard {
+    key_hint::test_helpers::with_key_os_override(value)
 }
 
 // ── draw_ui tests ────────────────────────────────────────────────────────────
