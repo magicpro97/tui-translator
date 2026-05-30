@@ -9,7 +9,9 @@
 
 use crate::audio;
 use anyhow::{bail, Context, Result};
-use notify::{recommended_watcher, RecursiveMode, Watcher};
+use notify::{RecursiveMode, Watcher};
+#[cfg(not(target_os = "macos"))]
+use notify::recommended_watcher;
 use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
@@ -1175,7 +1177,18 @@ fn default_stt_fallback_policy() -> String {
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute (SUPERTONIC-06, issue #491)
 fn default_tts_provider() -> String {
-    "google".to_string()
+    // SUPERTONIC-13 (#630): when the local-tts feature is compiled in, default to the
+    // CPU-local Supertonic-3 backend so new installs do not require a Google API key.
+    // Existing configs with an explicit "google" value are not affected because
+    // serde only calls this function when the field is absent from the config file.
+    #[cfg(feature = "local-tts")]
+    {
+        "local".to_string()
+    }
+    #[cfg(not(feature = "local-tts"))]
+    {
+        "google".to_string()
+    }
 }
 
 // VAD default helpers — referenced via #[serde(default = "...")] attributes on VadConfigJson.
@@ -1978,6 +1991,10 @@ pub type WatchApplyNotifier =
 /// changed), a `tracing::warn!` is emitted so the caller can surface it.
 ///
 /// Clone the returned receiver to share config access across tasks.
+///
+/// Returns only after the watcher thread has successfully registered its
+/// filesystem watch, so callers can immediately write config files and expect
+/// those writes to be detected.
 pub fn start_watcher(
     path: &Path,
     initial: AppConfig,
@@ -1987,10 +2004,24 @@ pub fn start_watcher(
     let (tx, rx) = watch::channel(initial);
     let config_path = path.to_path_buf();
 
+    // The ready channel delivers a single signal once the watcher thread has
+    // called `watcher.watch()`.  Blocking here until that signal arrives
+    // eliminates the race where a caller writes a file before the watcher is
+    // registered and therefore never sees the event.
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();
+
     std::thread::Builder::new()
         .name("config-watcher".to_string())
-        .spawn(move || run_watcher_loop(config_path, restart_required, tx, notifier))
+        .spawn(move || run_watcher_loop(config_path, restart_required, tx, notifier, ready_tx))
         .context("failed to spawn config-watcher thread")?;
+
+    // Wait up to 5 s for the watcher to register.  In practice this completes
+    // in < 10 ms even on a loaded CI host.
+    match ready_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return Err(e.context("config watcher failed to register filesystem watch")),
+        Err(_) => bail!("config watcher thread did not report ready within 5 seconds"),
+    }
 
     Ok(rx)
 }
@@ -2000,15 +2031,61 @@ fn run_watcher_loop(
     restart_required: Arc<AtomicBool>,
     tx: watch::Sender<AppConfig>,
     notifier: Option<WatchApplyNotifier>,
+    ready_tx: std::sync::mpsc::Sender<Result<()>>,
 ) {
     let (event_tx, event_rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
-    let mut watcher = match recommended_watcher(move |res| {
-        let _ = event_tx.send(res);
-    }) {
-        Ok(w) => w,
-        Err(e) => {
-            tracing::error!("config watcher: failed to create notify watcher: {e}");
-            return;
+
+    // On macOS, `recommended_watcher` uses FSEvents which has known reliability
+    // issues for temp-directory paths and coalesces events with a multi-second
+    // latency window.  Use the poll backend on macOS so the watcher fires
+    // reliably both in tests (tempdir paths) and in production (watched
+    // ~/.config or $XDG_DATA_HOME paths).  On all other platforms the native
+    // backend (`INotify` on Linux, `ReadDirectoryChangesWatcher` on Windows)
+    // is reliable and has lower latency than polling.
+    let mut watcher: Box<dyn Watcher> = {
+        #[cfg(target_os = "macos")]
+        {
+            // `recommended_watcher` on macOS uses FSEvents, which has two
+            // reliability problems for our use-case:
+            //
+            //   1. Multi-second latency coalescing window.
+            //   2. Reports canonical /private/var/… paths while we register
+            //      the /var/… symlink, defeating full-path equality checks.
+            //
+            // Use PollWatcher instead.  We also enable `compare_contents` so
+            // that rapid writes within the same wall-clock second are not
+            // missed: PollWatcher stores only the whole-second portion of
+            // mtime, so two writes in the same second look identical unless
+            // content hashes are compared.
+            let cfg = notify::Config::default()
+                .with_poll_interval(std::time::Duration::from_millis(100))
+                .with_compare_contents(true);
+            match notify::PollWatcher::new(
+                move |res| {
+                    let _ = event_tx.send(res);
+                },
+                cfg,
+            ) {
+                Ok(w) => Box::new(w),
+                Err(e) => {
+                    tracing::error!("config watcher: failed to create poll watcher: {e}");
+                    let _ = ready_tx.send(Err(anyhow::anyhow!("PollWatcher::new failed: {e}")));
+                    return;
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            match recommended_watcher(move |res| {
+                let _ = event_tx.send(res);
+            }) {
+                Ok(w) => Box::new(w),
+                Err(e) => {
+                    tracing::error!("config watcher: failed to create notify watcher: {e}");
+                    let _ = ready_tx.send(Err(anyhow::anyhow!("recommended_watcher failed: {e}")));
+                    return;
+                }
+            }
         }
     };
 
@@ -2023,14 +2100,19 @@ fn run_watcher_loop(
             path = %watch_dir.display(),
             "config watcher: cannot create watch directory: {err}"
         );
+        let _ = ready_tx.send(Err(anyhow::anyhow!("create_dir_all failed: {err}")));
         return;
     }
 
     if let Err(e) = watcher.watch(&watch_dir, RecursiveMode::NonRecursive) {
         tracing::error!(path = %watch_dir.display(), "config watcher: cannot watch: {e}");
+        let _ = ready_tx.send(Err(anyhow::anyhow!("watcher.watch failed: {e}")));
         return;
     }
 
+    // Signal readiness *after* the watch is registered so callers know
+    // any file write after this point will be observed by the event loop.
+    let _ = ready_tx.send(Ok(()));
     tracing::info!(path = %config_path.display(), "config watcher started");
 
     loop {
@@ -2795,9 +2877,21 @@ mod tests {
 
     // ── TTS backend contract (SUPERTONIC-06, issue #491) ─────────────────────
 
-    /// Default `tts_provider` is `"google"` and a default config validates.
+    /// Default `tts_provider` is `"local"` when built with the `local-tts` feature
+    /// (SUPERTONIC-13, #630), and `"google"` otherwise.
     #[test]
-    fn tts_provider_default_is_google() {
+    #[cfg(feature = "local-tts")]
+    fn tts_provider_default_is_local_with_local_tts_feature() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.tts_provider, "local");
+        assert!(cfg.tts_cloud_fallback.is_none());
+        cfg.validate().expect("default config must validate");
+    }
+
+    /// Default `tts_provider` is `"google"` when compiled without the `local-tts` feature.
+    #[test]
+    #[cfg(not(feature = "local-tts"))]
+    fn tts_provider_default_is_google_without_local_tts_feature() {
         let cfg = AppConfig::default();
         assert_eq!(cfg.tts_provider, "google");
         assert!(cfg.tts_cloud_fallback.is_none());
@@ -3472,9 +3566,8 @@ mod tests {
         let rx = start_watcher(&path, initial, Arc::new(AtomicBool::new(false)), None)
             .expect("test watcher should start");
 
-        // Allow the watcher thread to register the watch before we write.
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
+        // No sleep needed: start_watcher now blocks until the watcher is
+        // registered, so any write after this point is guaranteed to be seen.
         std::fs::write(
             &path,
             r#"{"source_language":"ja-JP","target_language":"en"}"#,
@@ -3513,8 +3606,7 @@ mod tests {
         )
         .expect("test watcher should start");
 
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
+        // No sleep needed: start_watcher blocks until the watcher is ready.
         let next = AppConfig {
             google_api_key: Some("NEW_KEY".to_string()),
             target_language: "en".to_string(),
@@ -3553,7 +3645,7 @@ mod tests {
         let rx = start_watcher(&path, initial, Arc::new(AtomicBool::new(false)), None)
             .expect("test watcher should start");
 
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        // No sleep needed: start_watcher blocks until the watcher is ready.
 
         // Write deliberately broken JSON.
         std::fs::write(&path, b"{ this is not valid JSON }").unwrap();
@@ -3597,8 +3689,7 @@ mod tests {
         )
         .expect("test watcher should start");
 
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
+        // No sleep needed: start_watcher blocks until the watcher is ready.
         let updated_cfg = AppConfig {
             source_language: "ja-JP".to_string(),
             target_language: "en".to_string(), // observable change for rx signal

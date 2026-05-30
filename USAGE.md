@@ -47,13 +47,13 @@ It takes about ten minutes from start to finish.
 
 - A **Windows 10 or Windows 11** computer (64-bit).
 - **Zoom** installed and working normally on that computer.
-- A **Google Cloud account** with a project that has a billing method attached,
-  unless you configure local machine translation. Speech-to-text runs locally by
-  default, but translation defaults to Google Cloud.
-- A **Google Cloud API key** for that project, unless `mt_provider = "local"` is
-  configured in a local-MT build with the OPUS-MT bundle installed. Without a
-  Google key or local MT, the app starts in metrics-only mode and shows no live
-  subtitles.
+- **For fully local operation (no Google account needed):** a release build
+  compiled with `--features local-stt,local-mt,local-tts` and the three model
+  bundles installed (Whisper tiny ~74 MB, OPUS-MT ja→vi ~280 MB,
+  Supertonic-3 ~128 MB).  See the README for download links.
+- **For Google Cloud translation/TTS:** a Google Cloud API key with Translation
+  (and optionally TTS) enabled.  Without a Google key and without local models,
+  the app starts in metrics-only mode and shows no live subtitles.
 
 ---
 
@@ -80,7 +80,10 @@ self-contained.
    |---------|-------------|---------|
    | `source_language` | The language spoken in the meeting (BCP-47 code) | `"ja-JP"` for Japanese |
    | `target_language` | The language you want to read subtitles in (BCP-47 code) | `"vi"` for Vietnamese |
-   | `google_api_key` | Your Google Cloud API key (see Step 3); required for cloud translation and TTS, not needed for local STT | `"AIzaSy…"` |
+   | `google_api_key` | **Optional** when using local providers; required for Google Cloud translation and TTS | `"AIzaSy…"` |
+   | `stt_provider` | `"local"` for CPU-local Whisper (default), or `"google"` for Google Cloud STT | `"local"` |
+   | `mt_provider` | `"local"` for CPU-local OPUS-MT (default in local builds), or `"google"` | `"local"` |
+   | `tts_provider` | `"local"` for CPU-local Supertonic-3 (default in local builds), or `"google"` | `"local"` |
    | `tts_enabled` | `false` to show text subtitles only; `true` to also hear translation | `false` |
    | `capture_device` | Leave blank for the Windows default playback device, or choose a playback device in settings | blank |
 
@@ -93,6 +96,7 @@ self-contained.
 4. Press **Enter** to save.
 
 The app writes your settings to:
+
 
 ```text
 %APPDATA%\tui-translator\config.json
@@ -617,14 +621,12 @@ When the subtitle pipeline is running with `stt_provider = "local"`, no audio is
 sent to any cloud service for transcription, and no API key is needed for speech
 recognition.
 
-> **Translation still uses Google Cloud by default.**
-> Local speech-to-text (STT) is the default (`stt_provider = "local"`).
-> Machine translation defaults to `mt_provider = "google"` and requires a
-> Google API key and an internet connection for subtitle output.  To run
-> translation fully offline, set `mt_provider = "local"` and install the
-> OPUS-MT ONNX bundle.  Without a Google API key and without local MT
-> configured, the application starts in metrics-only mode and shows no live
-> subtitles.
+> **Full local pipeline is available.** When built with
+> `--features local-stt,local-mt,local-tts`, the complete pipeline — STT,
+> translation, and TTS — runs locally with no internet connection and no Google
+> API key.  Set `stt_provider = "local"`, `mt_provider = "local"`, and
+> `tts_provider = "local"` in your config and install the three model bundles
+> (see README for download links and cache paths).
 
 ---
 
@@ -842,10 +844,10 @@ This requires the OPUS-MT ONNX bundle to be installed separately.  By default,
 
 ## Local machine translation (`mt_provider = "local"`)
 
-> ⚠️ **This is opt-in and not the default.** Translation defaults to
-> `mt_provider = "google"`; local MT is available only on `local-mt`
-> builds.  Until JV-13 lands, local MT is **not** the shipped default
-> even when the bundle is installed.
+> **Local MT is the default in `local-mt` builds.** When the executable is
+> compiled with `--features local-mt`, `mt_provider` defaults to `"local"` and
+> no Google API key is needed for translation.  On standard builds (without
+> the feature flag), `mt_provider` defaults to `"google"`.
 
 Local MT runs the [Helsinki-NLP/opus-mt-ja-vi](https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi)
 OPUS-MT model on your CPU via ONNX Runtime. Currently the Japanese →
@@ -919,7 +921,59 @@ Vietnamese pair is the only shipped bundle (LF-04, issue #372).
 
 ---
 
-## Dual-slot mode (two languages side by side)
+## Local Text-to-Speech (`tts_provider = "local"`)
+
+> **Local TTS is the default in `local-tts` builds.** When the executable is
+> compiled with `--features local-tts`, `tts_provider` defaults to `"local"` and
+> no Google API key is needed for spoken output.  On standard builds (without
+> the feature flag), `tts_provider` defaults to `"google"`.
+
+Local TTS uses the **Supertonic-3** ONNX model — a 4-stage inference pipeline
+(text encoder → duration predictor → diffusion → vocoder) running on your CPU.
+It supports Japanese, Vietnamese, and English voices.
+
+### Install steps
+
+1. **Download a `local-tts` release build.** The standard release does not
+   include the ONNX Runtime linkage; check the release notes for `local-tts`
+   in the artifact name.
+2. **Place the Supertonic-3 model bundle** in
+   `%LOCALAPPDATA%\tui-translator\models\tts\supertonic-3\`.  The folder must
+   contain seven ONNX files (text encoder, duration predictor, 8-step diffusion,
+   vocoder, plus support models) plus `tts.json`, `unicode_indexer.bin`, and
+   `voice.bin`.  Disk: ~128 MB total. Peak RAM: ~150 MB.
+3. **Edit `config.json`** (or use the in-app settings editor):
+   ```jsonc
+   {
+     "tts_provider": "local",
+     "tts_enabled": true
+   }
+   ```
+4. Restart the application. Translated lines will be spoken aloud through the
+   configured output device.
+
+### Available voices
+
+| Voice ID | Language | Gender |
+|----------|---------|--------|
+| `F1`–`F5` | Japanese, Vietnamese, English | Female |
+| `M1`–`M5` | Japanese, Vietnamese, English | Male |
+
+Set `tts_voice` in config to a voice name (e.g. `"F1"`) to pin a specific voice.
+Leave it unset for the provider default.
+
+### Local TTS troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `local TTS requires a build compiled with --features local-tts` | Build without `local-tts` | Download a `local-tts` release or rebuild from source |
+| `supertonic model not found` | Bundle missing or in wrong path | Verify `%LOCALAPPDATA%\tui-translator\models\tts\supertonic-3\` contains all 7 ONNX files |
+| `onnxruntime.dll could not be loaded` | ONNX Runtime missing | Place `onnxruntime.dll` (1.20.x) next to the exe or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
+| Audio crackles or is very slow | CPU cannot keep up with inference | Close CPU-heavy apps or switch to `tts_provider: "google"` with a key |
+| `tts_cloud_fallback: "google"` needed | Local TTS unavailable for a request | Set `tts_cloud_fallback: "google"` for transparent cloud fallback (requires `google_api_key`) |
+
+---
+
 
 Dual-slot mode shows two translations of the same meeting audio at once
 — for example Japanese → Vietnamese in slot A and Japanese → English in
