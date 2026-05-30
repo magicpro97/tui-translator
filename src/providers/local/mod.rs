@@ -48,7 +48,7 @@ mod inference_priority;
 pub mod manifest;
 mod model_download;
 mod mt;
-#[cfg(feature = "local-mt")]
+#[cfg(any(feature = "local-mt", feature = "local-tts"))]
 mod mt_ort;
 pub mod runtime_caps;
 pub mod supertonic_manifest;

@@ -1,15 +1,11 @@
 //! Built-in catalogue of Supertonic TTS model identifiers and license metadata.
 //!
-//! SUPERTONIC-07 / issue #492.
+//! SUPERTONIC-07 / issue #492; SUPERTONIC-15 / issue #632.
 //!
-//! Supertonic model URLs, checksums, and file layouts are populated once the
-//! SUPERTONIC-01 vendor spike (#486) confirms the integration shape and the
-//! model card is publicly available. Until that gate closes, each
-//! [`SupertonicModelSpec`] carries a `PENDING_SUPERTONIC_01` sentinel URL,
-//! a zeroed SHA-256, and a zero-byte expected size so
-//! [`super::install_model_bundle`] fails fast with
-//! [`super::ModelDownloadError::InvalidManifest`] instead of attempting a
-//! placeholder download.
+//! The Supertonic-3 int8 model files are distributed as a single tar.bz2 archive
+//! from the sherpa-onnx tts-models release. Individual file checksums are verified
+//! after extraction (SUPERTONIC-15). Until verified checksums are confirmed, the
+//! `Supertonic3Int8` variant uses `PENDING_CHECKSUM` sentinels.
 //!
 //! # First-run consent flow
 //!
@@ -32,23 +28,43 @@ use super::model_download::{ModelBundleFile, ModelBundleManifest};
 /// Sentinel URL that marks a Supertonic model spec as pending vendor approval.
 const PENDING_SUPERTONIC_01: &str = "https://PENDING-SUPERTONIC-01-spike-see-issue-486.invalid/";
 
+/// Sentinel SHA-256 for individual file checksums pending SUPERTONIC-15 verification.
+const PENDING_CHECKSUM: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Download base URL for the Supertonic-3 int8 archive (sherpa-onnx tts-models release).
+///
+/// The archive contains all 7 model files for the Supertonic-3 int8 model family
+/// (SUPERTONIC-15, issue #632: verify checksums after extraction).
+pub const SUPERTONIC_3_INT8_ARCHIVE_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/\
+     sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2";
+
+/// Extracted subdirectory name inside the archive.
+pub const SUPERTONIC_3_INT8_DIR: &str = "sherpa-onnx-supertonic-3-tts-int8-2026-05-11";
+
+/// Version string matching the archive date stamp.
+pub const SUPERTONIC_3_INT8_VERSION: &str = "3.0.0-int8-2026-05-11";
+
 /// Verbatim notice text for the Supertonic TTS model.
 const SUPERTONIC_NOTICE: &str = include_str!("../../../assets/licenses/supertonic-notice.txt");
 
 /// Stable version string for the Supertonic consent manifest.
-pub const SUPERTONIC_VERSION: &str = "pending-supertonic-01";
+pub const SUPERTONIC_VERSION: &str = "3.0.0-int8-2026-05-11";
 
 /// License URL for the Supertonic TTS model.
 pub const SUPERTONIC_LICENSE_URL: &str = "https://www.supertone.ai/products/supertonic";
 
 /// Identifies a Supertonic TTS voice model variant.
-///
-/// Specific variants will be added once the SUPERTONIC-01 vendor spike (#486)
-/// confirms available voices and model files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SupertonicModelId {
-    /// Placeholder variant indicating SUPERTONIC-01 is not yet complete.
+    /// Supertonic-3 int8 quantized model (ja/vi/en, 10 voices at 24 kHz).
+    ///
+    /// Files distributed as `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`.
+    /// Individual checksums are pending SUPERTONIC-15 (#632) verification.
+    Supertonic3Int8,
+
+    /// Placeholder variant kept for backwards compatibility with existing tests.
     ///
     /// Calling [`supertonic_bundle_manifest`] with this variant returns a
     /// manifest whose placeholder metadata fails validation before any network
@@ -60,6 +76,7 @@ impl SupertonicModelId {
     /// Human-readable display name for operator-facing prompts and diagnostics.
     pub fn display_name(self) -> &'static str {
         match self {
+            Self::Supertonic3Int8 => "supertonic-3-int8",
             Self::Pending => "supertonic-pending-spike",
         }
     }
@@ -67,6 +84,7 @@ impl SupertonicModelId {
     /// Stable cache subdirectory name for this model variant.
     pub fn cache_dir_name(self) -> &'static str {
         match self {
+            Self::Supertonic3Int8 => SUPERTONIC_3_INT8_DIR,
             Self::Pending => "supertonic-pending",
         }
     }
@@ -120,16 +138,43 @@ impl SupertonicManifest {
 
 /// Built-in catalogue of Supertonic model specs.
 ///
-/// This remains intentionally placeholder-only until issue #486 provides the
-/// real vendor-approved asset metadata.
-static BUILTIN_SUPERTONIC_SPECS: &[SupertonicModelSpec] = &[SupertonicModelSpec {
-    id: SupertonicModelId::Pending,
-    file_name: "supertonic-pending.onnx",
-    download_url: PENDING_SUPERTONIC_01,
-    size_bytes: 0,
-    sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-    license_url: SUPERTONIC_LICENSE_URL,
-}];
+/// The Supertonic3Int8 entry uses the archive URL as the download URL; the
+/// actual 7 model files are extracted from the tar.bz2 by the installer.
+/// Individual checksums are pending SUPERTONIC-15 (#632) verification.
+static BUILTIN_SUPERTONIC_SPECS: &[SupertonicModelSpec] = &[
+    SupertonicModelSpec {
+        id: SupertonicModelId::Supertonic3Int8,
+        file_name: "supertonic-3-int8-archive.tar.bz2",
+        download_url: SUPERTONIC_3_INT8_ARCHIVE_URL,
+        // Archive size pending SUPERTONIC-15 (#632) — set 0 to trigger InvalidManifest
+        // until verified.
+        size_bytes: 0,
+        sha256: PENDING_CHECKSUM,
+        license_url: SUPERTONIC_LICENSE_URL,
+    },
+    SupertonicModelSpec {
+        id: SupertonicModelId::Pending,
+        file_name: "supertonic-pending.onnx",
+        download_url: PENDING_SUPERTONIC_01,
+        size_bytes: 0,
+        sha256: PENDING_CHECKSUM,
+        license_url: SUPERTONIC_LICENSE_URL,
+    },
+];
+
+/// The 7 model files contained in the Supertonic-3 int8 archive.
+///
+/// File names match the extracted directory layout used by sherpa-onnx.
+/// (SUPERTONIC-15, #632: populate sha256 and size_bytes after downloading the archive.)
+pub const SUPERTONIC_3_INT8_FILES: &[(&str, &str)] = &[
+    ("duration_predictor.int8.onnx", PENDING_CHECKSUM),
+    ("text_encoder.int8.onnx", PENDING_CHECKSUM),
+    ("vector_estimator.int8.onnx", PENDING_CHECKSUM),
+    ("vocoder.int8.onnx", PENDING_CHECKSUM),
+    ("tts.json", PENDING_CHECKSUM),
+    ("unicode_indexer.bin", PENDING_CHECKSUM),
+    ("voice.bin", PENDING_CHECKSUM),
+];
 
 /// Consent manifest for the Supertonic TTS model.
 ///
@@ -146,10 +191,10 @@ pub fn supertonic_consent_manifest() -> bootstrap::ModelConsentManifest {
 
 /// Build a [`ModelBundleManifest`] for a Supertonic model variant.
 ///
-/// The returned manifest is suitable for [`super::install_model_bundle`]. Until
-/// issue #486 supplies real download metadata, the manifest intentionally fails
-/// [`ModelBundleManifest::validate`] so the installer returns
-/// [`super::ModelDownloadError::InvalidManifest`] before any network request.
+/// The returned manifest is suitable for [`super::install_model_bundle`].
+/// For `Supertonic3Int8`, individual file checksums are pending
+/// SUPERTONIC-15 (#632) verification so the manifest will fail
+/// [`ModelBundleManifest::validate`] until real checksums are filled in.
 ///
 /// Returns `None` when `id` is not present in the built-in catalogue.
 pub fn supertonic_bundle_manifest(id: SupertonicModelId) -> Option<ModelBundleManifest> {
@@ -158,7 +203,7 @@ pub fn supertonic_bundle_manifest(id: SupertonicModelId) -> Option<ModelBundleMa
         id: format!("supertonic-{}", spec.id.cache_dir_name()),
         display_name: format!("Supertonic TTS model ({})", spec.id.display_name()),
         version: SUPERTONIC_VERSION.to_string(),
-        license: "Proprietary — consent required".to_string(),
+        license: "OpenRAIL-M (weights) + MIT (code) — consent required".to_string(),
         source_url: spec.license_url.to_string(),
         files: vec![ModelBundleFile {
             relative_path: spec.file_name.to_string(),
@@ -174,10 +219,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn supertonic_builtin_has_pending_variant() {
+    fn supertonic_builtin_has_all_variants() {
         let manifest = SupertonicManifest::builtin();
+        assert!(manifest
+            .spec_for(SupertonicModelId::Supertonic3Int8)
+            .is_some());
         assert!(manifest.spec_for(SupertonicModelId::Pending).is_some());
-        assert_eq!(manifest.iter().count(), 1);
+        assert_eq!(manifest.iter().count(), 2);
+    }
+
+    #[test]
+    fn supertonic_3_int8_has_real_download_url() {
+        let spec = SupertonicManifest::builtin()
+            .spec_for(SupertonicModelId::Supertonic3Int8)
+            .expect("Supertonic3Int8 spec must exist");
+        assert!(
+            spec.download_url.contains("github.com/k2-fsa/sherpa-onnx"),
+            "should point to sherpa-onnx release; got: {}",
+            spec.download_url
+        );
+        assert!(
+            spec.download_url.contains("supertonic-3-tts-int8"),
+            "URL should identify supertonic-3-int8; got: {}",
+            spec.download_url
+        );
+    }
+
+    #[test]
+    fn supertonic_3_int8_files_has_seven_entries() {
+        assert_eq!(SUPERTONIC_3_INT8_FILES.len(), 7);
+        let names: Vec<_> = SUPERTONIC_3_INT8_FILES.iter().map(|(n, _)| *n).collect();
+        assert!(names.contains(&"duration_predictor.int8.onnx"));
+        assert!(names.contains(&"text_encoder.int8.onnx"));
+        assert!(names.contains(&"vector_estimator.int8.onnx"));
+        assert!(names.contains(&"vocoder.int8.onnx"));
+        assert!(names.contains(&"tts.json"));
+        assert!(names.contains(&"unicode_indexer.bin"));
+        assert!(names.contains(&"voice.bin"));
     }
 
     #[test]
@@ -219,8 +297,26 @@ mod tests {
     }
 
     #[test]
+    fn supertonic_3_int8_bundle_manifest_fails_validation_until_checksums_verified() {
+        // Checksums are PENDING_CHECKSUM (zeroed) until SUPERTONIC-15 (#632) lands.
+        let manifest = supertonic_bundle_manifest(SupertonicModelId::Supertonic3Int8)
+            .expect("Supertonic3Int8 manifest must exist");
+        let err = manifest
+            .validate()
+            .expect_err("manifest with zeroed checksums must be invalid until SUPERTONIC-15");
+        assert!(matches!(
+            err,
+            super::super::ModelDownloadError::InvalidManifest(_)
+        ));
+    }
+
+    #[test]
     fn supertonic_model_id_display_names_are_nonempty() {
         assert!(!SupertonicModelId::Pending.display_name().is_empty());
         assert!(!SupertonicModelId::Pending.cache_dir_name().is_empty());
+        assert!(!SupertonicModelId::Supertonic3Int8.display_name().is_empty());
+        assert!(!SupertonicModelId::Supertonic3Int8
+            .cache_dir_name()
+            .is_empty());
     }
 }
