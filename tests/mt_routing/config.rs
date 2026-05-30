@@ -20,6 +20,7 @@ fn mt_cloud_fallback_absent_by_default() {
 }
 
 #[test]
+#[cfg(not(feature = "local-mt"))]
 fn mt_provider_default_is_google() {
     let cfg = AppConfig::default();
     assert_eq!(cfg.mt_provider, "google");

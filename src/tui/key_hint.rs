@@ -208,7 +208,9 @@ mod tests {
     fn detect_key_os_honours_override_env() {
         // Acquire the process-wide mutex before mutating the env var so that
         // parallel cargo test workers don't race (issue: flaky on Windows CI).
-        let _guard = test_helpers::key_os_env_mutex().lock().unwrap();
+        let _guard = test_helpers::key_os_env_mutex()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let prev = std::env::var(KEY_OS_OVERRIDE_ENV).ok();
 
         std::env::set_var(KEY_OS_OVERRIDE_ENV, "macos");

@@ -4,6 +4,7 @@
 //! `super::benchmark_common`; `AppConfig` is reached through `super::config`.
 
 use super::benchmark_common::load_benchmark_artifact;
+#[cfg(not(feature = "local-mt"))]
 use super::config::AppConfig;
 
 #[test]
@@ -63,6 +64,7 @@ fn benchmark_artifact_distinguishes_user_routes_from_pivot_legs() {
 }
 
 #[test]
+#[cfg(not(feature = "local-mt"))]
 fn benchmark_artifact_pending_status_allows_google_default() {
     let a = load_benchmark_artifact();
     if a.status != "passed" {
