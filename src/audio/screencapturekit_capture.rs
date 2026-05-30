@@ -1,6 +1,6 @@
 //! macOS ScreenCaptureKit system-audio capture backend stub — MACOS-03 (issue #452).
 //!
-//! ScreenCaptureKit (macOS 12.3+) provides a zero-install path for system-audio
+//! ScreenCaptureKit (macOS 13.0+) provides a zero-install path for system-audio
 //! capture by leveraging the OS screen-recording permission.  It is the preferred
 //! capture backend when the user has already granted Screen Recording permission and
 //! does not want to install BlackHole or a third-party virtual audio device.
@@ -16,7 +16,7 @@
 //!
 //! Implementing this stub requires a Rust ScreenCaptureKit binding.  Two
 //! candidates are evaluated in MACOS-01 / the ADR:
-//! - `screencapturekit` crate (objc2-based, macOS 12.3+)
+//! - `screencapturekit` crate (objc2-based, macOS 13.0+)
 //! - An Objective-C/Swift trampoline called via `extern "C"` FFI
 //!
 //! The binding decision is gated on MACOS-01 evidence before any real
@@ -47,9 +47,9 @@ pub enum ScreenCaptureError {
     )]
     PermissionDenied,
 
-    /// The ScreenCaptureKit API is not available on this macOS version (requires 12.3+).
+    /// The ScreenCaptureKit API is not available on this macOS version (requires 13.0+).
     #[error(
-        "ScreenCaptureKit requires macOS 12.3 or later. \
+        "ScreenCaptureKit requires macOS 13.0 or later. \
          Current version does not support this capture method. \
          Use the CoreAudio/BlackHole backend instead."
     )]
@@ -102,23 +102,43 @@ pub fn spawn(
     })
 }
 
-/// Check whether Screen Recording permission has been granted.
+/// Returns `true` if the current macOS version is at least 13.0 (Ventura).
 ///
-/// # Returns
+/// ScreenCaptureKit audio capture via `SCStreamConfiguration.capturesAudio`
+/// requires macOS 13.0+. Calling it on older systems returns an error or crashes.
+pub(crate) fn is_macos_13_or_newer() -> bool {
+    use std::process::Command;
+    let output = Command::new("sw_vers").arg("-productVersion").output().ok();
+    if let Some(out) = output {
+        let version = String::from_utf8_lossy(&out.stdout);
+        let version = version.trim();
+        let major: u32 = version
+            .split('.')
+            .next()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        major >= 13
+    } else {
+        false
+    }
+}
+
+/// Check whether the process has Screen Recording permission via CoreGraphics.
 ///
-/// * `Ok(true)` — permission is granted.
-/// * `Ok(false)` — permission is not granted; display a remediation message.
-/// * `Err(_)` — permission check itself failed (unexpected OS error).
+/// Returns `true` if `CGPreflightScreenCaptureAccess()` indicates access.
+/// On macOS < 13.0, returns `false`.
 ///
-/// # Current status
-///
-/// Phase 5 stub — always returns `Ok(false)` with a log warning until the
-/// TCC check is implemented.
-pub fn check_screen_recording_permission() -> Result<bool> {
-    tracing::warn!(
-        "TCC screen-recording permission check not yet implemented (Phase 5 stub — issue #452)"
-    );
-    Ok(false)
+/// Does NOT trigger a permission dialog — use `CGRequestScreenCaptureAccess()` for that.
+pub(crate) fn check_screen_recording_permission() -> bool {
+    if !is_macos_13_or_newer() {
+        return false;
+    }
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+    }
+    // SAFETY: CGPreflightScreenCaptureAccess is a stable CoreGraphics API always linked on macOS, thread-safe per Apple docs.
+    unsafe { CGPreflightScreenCaptureAccess() }
 }
 
 /// List capture devices available via ScreenCaptureKit.
@@ -174,14 +194,21 @@ mod tests {
     fn screen_capture_error_unsupported_os_mentions_version() {
         let err = ScreenCaptureError::UnsupportedOsVersion;
         let msg = err.to_string();
-        assert!(msg.contains("12.3"), "must mention minimum macOS version");
+        assert!(msg.contains("13.0"), "must mention minimum macOS version");
     }
 
     #[test]
-    fn check_permission_stub_returns_false() {
-        let result = check_screen_recording_permission();
-        assert!(result.is_ok());
-        assert!(!result.unwrap(), "stub must return false until implemented");
+    fn check_screen_recording_permission_returns_bool() {
+        // On CI macos-14, Screen Recording is not granted — expect false.
+        // On a dev machine with permission granted — expect true.
+        // Either value is valid; this test only verifies no panic or crash.
+        let _ = super::check_screen_recording_permission();
+    }
+
+    #[test]
+    fn is_macos_13_or_newer_returns_bool() {
+        // Just verify it returns without panic on any macOS
+        let _ = super::is_macos_13_or_newer();
     }
 
     #[test]
