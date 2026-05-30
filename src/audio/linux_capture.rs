@@ -22,7 +22,7 @@
 
 use tokio::sync::mpsc;
 
-use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, CaptureStream, CHANNEL_CAPACITY};
+use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo};
 
 /// Errors produced by the Linux capture backend.
 #[derive(Debug, thiserror::Error)]
@@ -66,7 +66,7 @@ pub enum LinuxCaptureError {
 
 /// Spawn the Linux loopback capture task.
 ///
-/// Returns a [`CaptureStream`] backed by PipeWire or PulseAudio once
+/// Returns a `CaptureStream` backed by PipeWire or PulseAudio once
 /// LINUX-02 (issue #469) is implemented.  Until then, this function falls
 /// back to the silent CI stub so CI stays green on Linux.
 ///

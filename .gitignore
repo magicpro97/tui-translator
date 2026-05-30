@@ -75,3 +75,4 @@ eval-session/
 
 scripts/standards/**/__pycache__/
 
+*.orig\n*.rej

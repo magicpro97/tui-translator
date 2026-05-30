@@ -850,8 +850,12 @@ fn snapshot_config_editor_onboarding() {
     // The config path above is already Windows-style; the key hint must match.
     // The guard holds the shared key-os mutex for the full render duration.
     let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
+    let mut app_config = config::AppConfig::default();
+    // Pin MT provider to google so the snapshot is stable regardless of
+    // which cargo features are active (local-mt changes the compiled-in default).
+    app_config.mt_provider = "google".to_string();
     let mut editor = ConfigEditorState::from_config(
-        &config::AppConfig::default(),
+        &app_config,
         std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
         ConfigEditorMode::Onboarding,
     );
@@ -865,8 +869,10 @@ fn snapshot_config_editor_onboarding() {
 
 #[test]
 fn snapshot_config_editor_onboarding_narrow() {
+    let mut app_config = config::AppConfig::default();
+    app_config.mt_provider = "google".to_string();
     let editor = ConfigEditorState::from_config(
-        &config::AppConfig::default(),
+        &app_config,
         std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
         ConfigEditorMode::Onboarding,
     );
@@ -878,8 +884,10 @@ fn snapshot_config_editor_onboarding_narrow() {
 
 #[test]
 fn snapshot_config_editor_settings() {
+    let mut app_config = config::AppConfig::default();
+    app_config.mt_provider = "google".to_string();
     let mut editor = ConfigEditorState::from_config(
-        &config::AppConfig::default(),
+        &app_config,
         std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
         ConfigEditorMode::Settings,
     );
@@ -894,8 +902,10 @@ fn snapshot_config_editor_settings() {
 
 #[test]
 fn snapshot_config_editor_settings_narrow() {
+    let mut app_config = config::AppConfig::default();
+    app_config.mt_provider = "google".to_string();
     let mut editor = ConfigEditorState::from_config(
-        &config::AppConfig::default(),
+        &app_config,
         std::path::Path::new(r"C:\Users\demo\.tui-translator\config.json"),
         ConfigEditorMode::Settings,
     );
