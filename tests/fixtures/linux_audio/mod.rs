@@ -43,6 +43,7 @@ pub const TONE_DETECTION_TOLERANCE_HZ: f32 = 5.0;
 pub const SILENCE_RMS_THRESHOLD: f32 = 0.001;
 
 /// Maximum duration for the fixture to complete (seconds).
+#[allow(dead_code)]
 pub const FIXTURE_TIMEOUT_SECS: u64 = 90;
 
 /// Outcome of a single audio simulation run.
@@ -244,7 +245,12 @@ mod tests {
 
     #[test]
     fn evidence_schema_version_is_nonzero() {
-        assert!(LINUX_AUDIO_EVIDENCE_SCHEMA_VERSION > 0);
+        // Intentional compile-time assertion: ensures the constant never gets set to 0
+        // across schema bumps. clippy::assertions_on_constants is suppressed by design.
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(LINUX_AUDIO_EVIDENCE_SCHEMA_VERSION > 0);
+        }
     }
 
     #[test]
