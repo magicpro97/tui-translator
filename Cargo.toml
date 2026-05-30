@@ -126,8 +126,9 @@ local-stt = ["whisper-rs"]
 # Enable the local OPUS-MT backend. Model download/version management is handled
 # separately by issue #218; this feature only loads verified files already on disk.
 local-mt = ["ort", "sentencepiece-rs"]
-# Enable the local Supertonic TTS backend. Stub-only until SUPERTONIC-01 lands.
-local-tts = []
+# Enable the local Supertonic TTS backend (SUPERTONIC-13, issue #630).
+# Reuses the ort crate already required by local-mt; no new dep family.
+local-tts = ["ort"]
 # Enable the VMIC-A6 automated virtual-cable integration tests. The tests are
 # skip-safe on runners without VB-CABLE/VAC and write explicit JSON evidence.
 audio-integration = []
