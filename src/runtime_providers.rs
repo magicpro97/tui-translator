@@ -133,9 +133,7 @@ impl providers::TtsProvider for RuntimeTtsProvider {
                 }
             }
             #[cfg(feature = "local-tts")]
-            Self::Supertonic(provider) => {
-                providers::TtsProvider::set_active_voice(provider, voice)
-            }
+            Self::Supertonic(provider) => providers::TtsProvider::set_active_voice(provider, voice),
         }
     }
 

@@ -1378,9 +1378,7 @@ impl AppConfig {
             "local" => {}
             other => {
                 #[cfg(feature = "local-tts")]
-                bail!(
-                    "`tts_provider` must be \"google\" or \"local\" (got {other:?})"
-                );
+                bail!("`tts_provider` must be \"google\" or \"local\" (got {other:?})");
                 #[cfg(not(feature = "local-tts"))]
                 bail!(
                     "`tts_provider` must be \"google\" (got {other:?}); \

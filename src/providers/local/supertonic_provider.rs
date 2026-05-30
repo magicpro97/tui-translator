@@ -212,8 +212,7 @@ impl SupertonicTtsProvider {
     fn load_sessions(model_dir: &Path) -> Result<SupertonicOrtSessions, SupertonicError> {
         use super::mt_ort::ensure_ort_initialized;
 
-        ensure_ort_initialized(model_dir)
-            .map_err(|e| SupertonicError::OrtInit(e.to_string()))?;
+        ensure_ort_initialized(model_dir).map_err(|e| SupertonicError::OrtInit(e.to_string()))?;
 
         tracing::info!(
             model_dir = %model_dir.display(),
@@ -333,9 +332,12 @@ impl TtsProvider for SupertonicTtsProvider {
             .strip_prefix("supertonic-")
             .unwrap_or(&voice.name);
 
-        let id: SupertonicVoiceId = raw_name.parse().map_err(|e: super::supertonic_voices::VoiceError| {
-            ProviderError::InvalidInput(e.to_string())
-        })?;
+        let id: SupertonicVoiceId =
+            raw_name
+                .parse()
+                .map_err(|e: super::supertonic_voices::VoiceError| {
+                    ProviderError::InvalidInput(e.to_string())
+                })?;
 
         self.voices
             .lock()
@@ -350,9 +352,7 @@ impl TtsProvider for SupertonicTtsProvider {
             return None;
         };
         let id = catalog.active();
-        BUILTIN_VOICES
-            .get(id.index())
-            .map(meta_to_voice_selection)
+        BUILTIN_VOICES.get(id.index()).map(meta_to_voice_selection)
     }
 }
 
@@ -445,7 +445,10 @@ mod tests {
         let active = provider.active_voice();
         assert!(active.is_some(), "default active voice should be Some(M1)");
         let name = active.unwrap().name;
-        assert!(name.contains("M1"), "default voice should be M1; got: {name}");
+        assert!(
+            name.contains("M1"),
+            "default voice should be M1; got: {name}"
+        );
     }
 
     #[test]
@@ -484,9 +487,8 @@ mod tests {
 
     #[test]
     fn supertonic_new_returns_model_not_found_for_missing_dir() {
-        let err =
-            SupertonicTtsProvider::from_dir(PathBuf::from("/nonexistent/supertonic/dir"))
-                .expect_err("should fail with missing model dir");
+        let err = SupertonicTtsProvider::from_dir(PathBuf::from("/nonexistent/supertonic/dir"))
+            .expect_err("should fail with missing model dir");
         assert!(
             matches!(err, ProviderError::ModelNotFound(_)),
             "expected ModelNotFound, got: {err:?}"

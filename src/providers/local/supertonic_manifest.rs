@@ -29,8 +29,7 @@ use super::model_download::{ModelBundleFile, ModelBundleManifest};
 const PENDING_SUPERTONIC_01: &str = "https://PENDING-SUPERTONIC-01-spike-see-issue-486.invalid/";
 
 /// Sentinel SHA-256 for individual file checksums pending SUPERTONIC-15 verification.
-const PENDING_CHECKSUM: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
+const PENDING_CHECKSUM: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Download base URL for the Supertonic-3 int8 archive (sherpa-onnx tts-models release).
 ///
@@ -222,7 +221,9 @@ mod tests {
     #[test]
     fn supertonic_builtin_has_all_variants() {
         let manifest = SupertonicManifest::builtin();
-        assert!(manifest.spec_for(SupertonicModelId::Supertonic3Int8).is_some());
+        assert!(manifest
+            .spec_for(SupertonicModelId::Supertonic3Int8)
+            .is_some());
         assert!(manifest.spec_for(SupertonicModelId::Pending).is_some());
         assert_eq!(manifest.iter().count(), 2);
     }
@@ -314,6 +315,8 @@ mod tests {
         assert!(!SupertonicModelId::Pending.display_name().is_empty());
         assert!(!SupertonicModelId::Pending.cache_dir_name().is_empty());
         assert!(!SupertonicModelId::Supertonic3Int8.display_name().is_empty());
-        assert!(!SupertonicModelId::Supertonic3Int8.cache_dir_name().is_empty());
+        assert!(!SupertonicModelId::Supertonic3Int8
+            .cache_dir_name()
+            .is_empty());
     }
 }
