@@ -9,9 +9,9 @@
 
 use crate::audio;
 use anyhow::{bail, Context, Result};
-use notify::{RecursiveMode, Watcher};
 #[cfg(not(target_os = "macos"))]
 use notify::recommended_watcher;
+use notify::{RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write as _};
 use std::path::{Path, PathBuf};
