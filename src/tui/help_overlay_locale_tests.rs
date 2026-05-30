@@ -19,8 +19,10 @@ fn with_key_os_override(value: &str) -> key_hint::test_helpers::KeyOsGuard {
 fn help_overlay_renders_vietnamese_when_locale_is_vi_vn() {
     use ratatui::{backend::TestBackend, Terminal};
     let _i18n_guard = crate::i18n::lock_for_test();
-    crate::i18n::set_locale("vi-VN");
     let _guard = with_key_os_override("windows");
+    // Set locale AFTER acquiring both locks so the locale cannot be reset
+    // by a concurrent apply_runtime_config test while we wait for key_os.
+    crate::i18n::set_locale("vi-VN");
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -55,8 +57,10 @@ fn help_overlay_renders_vietnamese_when_locale_is_vi_vn() {
 fn help_overlay_pseudo_locale_exposes_truncation_marker() {
     use ratatui::{backend::TestBackend, Terminal};
     let _i18n_guard = crate::i18n::lock_for_test();
-    crate::i18n::set_locale("x-pseudo");
     let _guard = with_key_os_override("windows");
+    // Set locale AFTER acquiring both locks so the locale cannot be reset
+    // by a concurrent apply_runtime_config test while we wait for key_os.
+    crate::i18n::set_locale("x-pseudo");
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
