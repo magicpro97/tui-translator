@@ -133,11 +133,14 @@ fn silent_source_device_name() {
     assert_eq!(src.device_name(), "silent (stub)");
 }
 
-#[cfg(not(windows))]
+// macOS now uses a real CoreAudio/BlackHole capture path (MACOS-07, issue #638)
+// that fails on CI runners without BlackHole installed.  This stub-silence test
+// only applies to Linux (linux-stub) and the generic non-Windows/non-macOS path.
+#[cfg(not(any(windows, target_os = "macos")))]
 #[tokio::test]
 async fn non_windows_capture_emits_multiple_chunks() {
     let mut capture = start_capture(DEFAULT_SILENCE_THRESHOLD).await.unwrap();
-    // Linux routing returns "silent (linux-stub)", macOS returns "silent (macos-stub)",
+    // Linux routing returns "silent (linux-stub)",
     // and the generic fallback returns "silent (stub)".
     assert!(
         capture.info.device_name.starts_with("silent"),
