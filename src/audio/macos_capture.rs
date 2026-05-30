@@ -108,23 +108,38 @@ pub fn spawn(
     })
 }
 
-/// List available macOS audio capture devices.
+/// List available macOS audio input devices via CoreAudio (cpal).
 ///
-/// Returns CoreAudio devices (including BlackHole) once MACOS-02 (issue
-/// #451) is implemented.  Until then, returns a single stub entry.
+/// Enumerates all CoreAudio input devices using the cpal default host.
+/// Devices whose name is `"BlackHole 2ch"` are marked as the default.
 ///
 /// # Errors
 ///
-/// Currently infallible.  After Phase 5, propagates [`MacosCaptureError`].
+/// Returns [`MacosCaptureError::BlackHoleNotFound`] if no input devices are
+/// present (typically only on headless CI runners without virtual audio
+/// devices).  Propagates [`cpal::DeviceNameError`] if CoreAudio fails to
+/// return a device name.
 pub fn list_loopback_devices() -> anyhow::Result<Vec<CaptureDeviceInfo>> {
-    // Phase 5 stub: return a single placeholder entry.
-    // TODO(#451): enumerate CoreAudio devices via AudioObjectGetPropertyData.
-    Ok(vec![CaptureDeviceInfo {
-        id: "macos-stub".to_string(),
-        name: "silent (macos-stub — BlackHole/ScreenCaptureKit not yet implemented, see #451)"
-            .to_string(),
-        is_default: true,
-    }])
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = cpal::default_host();
+    let mut result: Vec<CaptureDeviceInfo> = Vec::new();
+
+    for device in host.input_devices()? {
+        let name = device.name()?;
+        let is_default = name == "BlackHole 2ch";
+        result.push(CaptureDeviceInfo {
+            id: name.clone(),
+            name,
+            is_default,
+        });
+    }
+
+    if result.is_empty() {
+        return Err(MacosCaptureError::BlackHoleNotFound.into());
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -180,10 +195,29 @@ mod tests {
     }
 
     #[test]
-    fn list_loopback_devices_returns_stub_entry() {
-        let devices = list_loopback_devices().expect("list must succeed");
-        assert_eq!(devices.len(), 1);
-        assert!(devices[0].is_default);
-        assert!(devices[0].name.contains("macos-stub"));
+    fn list_loopback_devices_excludes_stub_sentinel() {
+        // RED test: fails on stub (stub returns id="macos-stub"), passes after real impl.
+        // On CI without BlackHole, BlackHoleNotFound is acceptable.
+        match list_loopback_devices() {
+            Ok(devices) => {
+                for d in &devices {
+                    assert_ne!(
+                        d.id, "macos-stub",
+                        "stub sentinel must not appear after impl"
+                    );
+                    assert!(
+                        !d.name.contains("macos-stub"),
+                        "stub name must not appear after impl"
+                    );
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("BlackHole") || msg.contains("not found"),
+                    "error must be about missing BlackHole, not a stub; got: {msg}"
+                );
+            }
+        }
     }
 }
