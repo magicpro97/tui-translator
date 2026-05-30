@@ -40,8 +40,9 @@
     {
       "id": "tc-5",
       "description": "Packaging constraints: model and native library inclusion verified",
-      "status": "deferred",
-      "reason": "Requires full macOS release artifact build with models"
+      "status": "partial",
+      "evidence": "MODEL-PACKAGING-CONSTRAINTS.md documents the exclusion policy; scripts/package-macos.sh has an enforced find+grep assertion that fails the build if model files are found in the .app bundle. Runtime packaging smoke test (actual .dmg) deferred to hardware.",
+      "deferred_reason": "Full .dmg smoke test requires macOS hardware for codesign and notarization flow"
     }
   ],
   "resolution_path": {

@@ -64,6 +64,13 @@ cp USAGE.md                        "${TARBALL_STAGE}/" 2>/dev/null || true
 cp LICENSE                         "${TARBALL_STAGE}/" 2>/dev/null || true
 mkdir -p "${TARBALL_STAGE}/LICENSES"
 find assets/licenses -name "*.txt" -exec cp {} "${TARBALL_STAGE}/LICENSES/" \; 2>/dev/null || true
+# MODEL-03 packaging constraint: assert no model weight files leaked into the tarball stage
+# Model binaries are NOT bundled — first-run download only
+if find "${TARBALL_STAGE}" \( -name '*.onnx' -o -name '*.bin' -o -name '*.gguf' -o -name '*.pt' -o -name '*.pth' \) | grep -q .; then
+  echo "ERROR: model binary found in release artifact. Model weights must not be bundled." >&2
+  find "${TARBALL_STAGE}" \( -name '*.onnx' -o -name '*.bin' -o -name '*.gguf' -o -name '*.pt' -o -name '*.pth' \) >&2
+  exit 1
+fi
 tar -czf "${DIST}/${TARBALL_NAME}" -C "${DIST}" "tui-translator-${VERSION}"
 rm -rf "${TARBALL_STAGE}"
 echo "    => ${TARBALL_NAME}"

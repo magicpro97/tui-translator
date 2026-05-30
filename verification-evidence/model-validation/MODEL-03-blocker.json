@@ -40,8 +40,9 @@
     {
       "id": "tc-5",
       "description": "No silent remote fallback when local model present",
-      "status": "deferred",
-      "reason": "Requires complete local stack runtime"
+      "status": "partial",
+      "evidence": "MtRouter unit tests in src/providers/mt/router.rs verify the no-silent-cloud invariant: 'key_presence_alone_does_not_enable_cloud' and 'unsupported_pair_without_fallback_returns_invalid_input_no_calls'. Runtime integration with actual model files deferred to hardware.",
+      "deferred_reason": "Runtime integration path (LocalOpusMtProvider + MtRouter with real ONNX) requires model files"
     },
     {
       "id": "tc-6",
