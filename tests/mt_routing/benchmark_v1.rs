@@ -4,6 +4,7 @@
 //! `super::benchmark_common`; `AppConfig` is reached through `super::config`.
 
 use super::benchmark_common::load_benchmark_artifact;
+#[cfg(not(feature = "local-mt"))]
 use super::config::AppConfig;
 
 #[test]
