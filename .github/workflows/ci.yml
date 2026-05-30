@@ -914,3 +914,16 @@ jobs:
           Write-Host "INFO: local-mt feature build (linux-local-mt job) validates local default."
           Write-Host "INFO: full network-blocked offline smoke is a JV-21 release-candidate gate."
           Write-Host "PASS: config assertion documented."
+
+  # ── MACOS-11 / #642 — aarch64-apple-darwin cross-check ──────────────────────
+  # Runs cargo check (no tests — no audio hardware on CI) to catch macOS
+  # compilation regressions early without requiring a full build or test run.
+  macos-arch-check:
+    name: macOS aarch64 cross-check (MACOS-11)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - run: cargo check --target aarch64-apple-darwin
