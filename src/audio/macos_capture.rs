@@ -108,23 +108,71 @@ pub fn spawn(
     })
 }
 
-/// List available macOS audio capture devices.
+/// Check whether the process has microphone capture permission.
 ///
-/// Returns CoreAudio devices (including BlackHole) once MACOS-02 (issue
-/// #451) is implemented.  Until then, returns a single stub entry.
+/// On macOS 14+, unsigned CLI binaries cannot trigger a TCC permission dialog.
+/// Users must manually grant Terminal.app access in System Settings →
+/// Privacy & Security → Microphone.
+///
+/// This is a best-effort check: it uses [`cpal`] to probe whether a default
+/// input device is accessible.  If TCC blocks audio hardware, `cpal` returns
+/// no input devices.
 ///
 /// # Errors
 ///
-/// Currently infallible.  After Phase 5, propagates [`MacosCaptureError`].
+/// Returns [`MacosCaptureError::PermissionDenied`] when:
+/// - The `TUI_TEST_FORCE_TCC_DENIED` env-var is set (CI/test injection), or
+/// - No default input device is accessible at runtime (TCC blocked).
+pub(crate) fn check_tcc_permission() -> Result<(), MacosCaptureError> {
+    // CI/test injection: allow tests to verify the denial path without
+    // requiring a real macOS TCC environment.
+    if std::env::var("TUI_TEST_FORCE_TCC_DENIED").is_ok() {
+        return Err(MacosCaptureError::PermissionDenied);
+    }
+
+    // On macOS, if TCC blocks microphone access, cpal returns no input device.
+    use cpal::traits::HostTrait;
+    let host = cpal::default_host();
+    if host.default_input_device().is_none() {
+        return Err(MacosCaptureError::PermissionDenied);
+    }
+
+    Ok(())
+}
+
+/// List available macOS audio input devices via CoreAudio (cpal).
+///
+/// Enumerates all CoreAudio input devices using the cpal default host.
+/// Devices whose name starts with `"BlackHole"` are considered loopback
+/// devices.  The `BlackHole 2ch` variant is marked as the default.
+///
+/// # Errors
+///
+/// Returns [`MacosCaptureError::BlackHoleNotFound`] if no input devices are
+/// present (typically only on headless CI runners without virtual audio
+/// devices).  Propagates [`cpal::DeviceNameError`] if CoreAudio fails to
+/// return a device name.
 pub fn list_loopback_devices() -> anyhow::Result<Vec<CaptureDeviceInfo>> {
-    // Phase 5 stub: return a single placeholder entry.
-    // TODO(#451): enumerate CoreAudio devices via AudioObjectGetPropertyData.
-    Ok(vec![CaptureDeviceInfo {
-        id: "macos-stub".to_string(),
-        name: "silent (macos-stub — BlackHole/ScreenCaptureKit not yet implemented, see #451)"
-            .to_string(),
-        is_default: true,
-    }])
+    use cpal::traits::{DeviceTrait, HostTrait};
+
+    let host = cpal::default_host();
+    let mut result: Vec<CaptureDeviceInfo> = Vec::new();
+
+    for device in host.input_devices()? {
+        let name = device.name()?;
+        let is_default = name == "BlackHole 2ch";
+        result.push(CaptureDeviceInfo {
+            id: name.clone(),
+            name,
+            is_default,
+        });
+    }
+
+    if result.is_empty() {
+        return Err(MacosCaptureError::BlackHoleNotFound.into());
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -179,11 +227,47 @@ mod tests {
         );
     }
 
+    /// Mutex to prevent parallel tests from racing on the env-var.
+    static TCC_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
-    fn list_loopback_devices_returns_stub_entry() {
-        let devices = list_loopback_devices().expect("list must succeed");
-        assert_eq!(devices.len(), 1);
-        assert!(devices[0].is_default);
-        assert!(devices[0].name.contains("macos-stub"));
+    fn check_tcc_permission_denied_via_env_var() {
+        let _guard = TCC_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: single-threaded via mutex guard; env-var is removed before guard drops.
+        unsafe { std::env::set_var("TUI_TEST_FORCE_TCC_DENIED", "1") };
+        let result = check_tcc_permission();
+        // SAFETY: same guard — still holding the mutex.
+        unsafe { std::env::remove_var("TUI_TEST_FORCE_TCC_DENIED") };
+        assert!(
+            matches!(result, Err(MacosCaptureError::PermissionDenied)),
+            "env-var injection must trigger PermissionDenied"
+        );
+    }
+
+    #[test]
+    fn list_loopback_devices_excludes_stub_sentinel() {
+        // RED test: fails on stub (stub returns id="macos-stub"), passes after real impl.
+        // On CI without BlackHole, BlackHoleNotFound is acceptable.
+        match list_loopback_devices() {
+            Ok(devices) => {
+                for d in &devices {
+                    assert_ne!(
+                        d.id, "macos-stub",
+                        "stub sentinel must not appear after impl"
+                    );
+                    assert!(
+                        !d.name.contains("macos-stub"),
+                        "stub name must not appear after impl"
+                    );
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("BlackHole") || msg.contains("not found"),
+                    "error must be about missing BlackHole, not a stub; got: {msg}"
+                );
+            }
+        }
     }
 }
