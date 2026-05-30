@@ -52,6 +52,10 @@ impl SupertonicVoiceId {
     }
 
     /// Return the stable zero-based catalog index for this voice.
+    ///
+    /// This index is used for catalog lookup in `BUILTIN_VOICES`.
+    /// It does **not** match the binary speaker index in `voice.bin`.
+    /// Use [`speaker_bin_id`](Self::speaker_bin_id) for model inference.
     pub fn index(self) -> usize {
         match self {
             Self::M1 => 0,
@@ -64,6 +68,26 @@ impl SupertonicVoiceId {
             Self::F3 => 7,
             Self::F4 => 8,
             Self::F5 => 9,
+        }
+    }
+
+    /// Return the zero-based speaker index used in `voice.bin`.
+    ///
+    /// The sherpa-onnx `voice.bin` packs speakers in alphabetical filename
+    /// order: F1, F2, F3, F4, F5, M1, M2, M3, M4, M5 → indices 0–9.
+    /// This ordering is confirmed by `k2-fsa/sherpa-onnx:scripts/supertonic/generate_voices_bin.py`.
+    pub fn speaker_bin_id(self) -> usize {
+        match self {
+            Self::F1 => 0,
+            Self::F2 => 1,
+            Self::F3 => 2,
+            Self::F4 => 3,
+            Self::F5 => 4,
+            Self::M1 => 5,
+            Self::M2 => 6,
+            Self::M3 => 7,
+            Self::M4 => 8,
+            Self::M5 => 9,
         }
     }
 }

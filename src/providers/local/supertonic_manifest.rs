@@ -28,7 +28,7 @@ use super::model_download::{ModelBundleFile, ModelBundleManifest};
 /// Sentinel URL that marks a Supertonic model spec as pending vendor approval.
 const PENDING_SUPERTONIC_01: &str = "https://PENDING-SUPERTONIC-01-spike-see-issue-486.invalid/";
 
-/// Sentinel SHA-256 for individual file checksums pending SUPERTONIC-15 verification.
+/// Sentinel SHA-256 for individual file checksums — kept for the `Pending` variant test.
 const PENDING_CHECKSUM: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Download base URL for the Supertonic-3 int8 archive (sherpa-onnx tts-models release).
@@ -58,10 +58,9 @@ pub const SUPERTONIC_LICENSE_URL: &str = "https://www.supertone.ai/products/supe
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SupertonicModelId {
-    /// Supertonic-3 int8 quantized model (ja/vi/en, 10 voices at 24 kHz).
+    /// Supertonic-3 int8 quantized model (ja/vi/en, 10 voices at 44.1 kHz).
     ///
     /// Files distributed as `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`.
-    /// Individual checksums are pending SUPERTONIC-15 (#632) verification.
     Supertonic3Int8,
 
     /// Placeholder variant kept for backwards compatibility with existing tests.
@@ -146,10 +145,8 @@ static BUILTIN_SUPERTONIC_SPECS: &[SupertonicModelSpec] = &[
         id: SupertonicModelId::Supertonic3Int8,
         file_name: "supertonic-3-int8-archive.tar.bz2",
         download_url: SUPERTONIC_3_INT8_ARCHIVE_URL,
-        // Archive size pending SUPERTONIC-15 (#632) — set 0 to trigger InvalidManifest
-        // until verified.
-        size_bytes: 0,
-        sha256: PENDING_CHECKSUM,
+        size_bytes: 128_774_318,
+        sha256: "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
         license_url: SUPERTONIC_LICENSE_URL,
     },
     SupertonicModelSpec {
@@ -164,16 +161,46 @@ static BUILTIN_SUPERTONIC_SPECS: &[SupertonicModelSpec] = &[
 
 /// The 7 model files contained in the Supertonic-3 int8 archive.
 ///
+/// Tuples are `(file_name, sha256_hex, size_bytes)`.
 /// File names match the extracted directory layout used by sherpa-onnx.
-/// (SUPERTONIC-15, #632: populate sha256 and size_bytes after downloading the archive.)
-pub const SUPERTONIC_3_INT8_FILES: &[(&str, &str)] = &[
-    ("duration_predictor.int8.onnx", PENDING_CHECKSUM),
-    ("text_encoder.int8.onnx", PENDING_CHECKSUM),
-    ("vector_estimator.int8.onnx", PENDING_CHECKSUM),
-    ("vocoder.int8.onnx", PENDING_CHECKSUM),
-    ("tts.json", PENDING_CHECKSUM),
-    ("unicode_indexer.bin", PENDING_CHECKSUM),
-    ("voice.bin", PENDING_CHECKSUM),
+/// SHA-256 hashes sourced from HuggingFace LFS OIDs (dual-verified against the
+/// GitHub release checksum.txt for the archive; SUPERTONIC-15 #632).
+pub const SUPERTONIC_3_INT8_FILES: &[(&str, &str, u64)] = &[
+    (
+        "duration_predictor.int8.onnx",
+        "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db",
+        3_700_147,
+    ),
+    (
+        "text_encoder.int8.onnx",
+        "c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff",
+        36_416_150,
+    ),
+    (
+        "vector_estimator.int8.onnx",
+        "20cd86fa5c6effedfda0e7cffe5b0569ca401c440a0c3a1d72bf39286c0db3fd",
+        78_400_833,
+    ),
+    (
+        "vocoder.int8.onnx",
+        "e923d60f53f95eb1ce235f1dc33ec56d9c057823c96fa6f8acf98f32b0da6152",
+        25_991_073,
+    ),
+    (
+        "tts.json",
+        "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09",
+        8_253,
+    ),
+    (
+        "unicode_indexer.bin",
+        "8402ca48e5189a8950138580b0fff64db6f072f24ac07cd54ba8b2fbb9883b30",
+        262_144,
+    ),
+    (
+        "voice.bin",
+        "67d5209b0ee8ce6c74105ffbe12fe6a7628aea3b4ba2fcb308a4a67938a93ce8",
+        517_168,
+    ),
 ];
 
 /// Consent manifest for the Supertonic TTS model.
@@ -248,7 +275,7 @@ mod tests {
     #[test]
     fn supertonic_3_int8_files_has_seven_entries() {
         assert_eq!(SUPERTONIC_3_INT8_FILES.len(), 7);
-        let names: Vec<_> = SUPERTONIC_3_INT8_FILES.iter().map(|(n, _)| *n).collect();
+        let names: Vec<_> = SUPERTONIC_3_INT8_FILES.iter().map(|(n, _, _)| *n).collect();
         assert!(names.contains(&"duration_predictor.int8.onnx"));
         assert!(names.contains(&"text_encoder.int8.onnx"));
         assert!(names.contains(&"vector_estimator.int8.onnx"));
@@ -297,17 +324,13 @@ mod tests {
     }
 
     #[test]
-    fn supertonic_3_int8_bundle_manifest_fails_validation_until_checksums_verified() {
-        // Checksums are PENDING_CHECKSUM (zeroed) until SUPERTONIC-15 (#632) lands.
+    fn supertonic_3_int8_bundle_manifest_passes_validation_with_real_checksums() {
+        // SUPERTONIC-15 (#632): real archive SHA-256 and size are now filled in.
         let manifest = supertonic_bundle_manifest(SupertonicModelId::Supertonic3Int8)
             .expect("Supertonic3Int8 manifest must exist");
-        let err = manifest
+        manifest
             .validate()
-            .expect_err("manifest with zeroed checksums must be invalid until SUPERTONIC-15");
-        assert!(matches!(
-            err,
-            super::super::ModelDownloadError::InvalidManifest(_)
-        ));
+            .expect("manifest with real checksums must pass validation (SUPERTONIC-15 done)");
     }
 
     #[test]
