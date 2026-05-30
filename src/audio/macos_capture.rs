@@ -108,43 +108,10 @@ pub fn spawn(
     })
 }
 
-/// Check whether the process has microphone capture permission.
-///
-/// On macOS 14+, unsigned CLI binaries cannot trigger a TCC permission dialog.
-/// Users must manually grant Terminal.app access in System Settings →
-/// Privacy & Security → Microphone.
-///
-/// This is a best-effort check: it uses [`cpal`] to probe whether a default
-/// input device is accessible.  If TCC blocks audio hardware, `cpal` returns
-/// no input devices.
-///
-/// # Errors
-///
-/// Returns [`MacosCaptureError::PermissionDenied`] when:
-/// - The `TUI_TEST_FORCE_TCC_DENIED` env-var is set (CI/test injection), or
-/// - No default input device is accessible at runtime (TCC blocked).
-pub(crate) fn check_tcc_permission() -> Result<(), MacosCaptureError> {
-    // CI/test injection: allow tests to verify the denial path without
-    // requiring a real macOS TCC environment.
-    if std::env::var("TUI_TEST_FORCE_TCC_DENIED").is_ok() {
-        return Err(MacosCaptureError::PermissionDenied);
-    }
-
-    // On macOS, if TCC blocks microphone access, cpal returns no input device.
-    use cpal::traits::HostTrait;
-    let host = cpal::default_host();
-    if host.default_input_device().is_none() {
-        return Err(MacosCaptureError::PermissionDenied);
-    }
-
-    Ok(())
-}
-
 /// List available macOS audio input devices via CoreAudio (cpal).
 ///
 /// Enumerates all CoreAudio input devices using the cpal default host.
-/// Devices whose name starts with `"BlackHole"` are considered loopback
-/// devices.  The `BlackHole 2ch` variant is marked as the default.
+/// Devices whose name is `"BlackHole 2ch"` are marked as the default.
 ///
 /// # Errors
 ///
@@ -224,23 +191,6 @@ mod tests {
             chunk.samples.iter().sum::<i16>(),
             0,
             "stub must deliver silence"
-        );
-    }
-
-    /// Mutex to prevent parallel tests from racing on the env-var.
-    static TCC_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    #[test]
-    fn check_tcc_permission_denied_via_env_var() {
-        let _guard = TCC_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        // SAFETY: single-threaded via mutex guard; env-var is removed before guard drops.
-        unsafe { std::env::set_var("TUI_TEST_FORCE_TCC_DENIED", "1") };
-        let result = check_tcc_permission();
-        // SAFETY: same guard — still holding the mutex.
-        unsafe { std::env::remove_var("TUI_TEST_FORCE_TCC_DENIED") };
-        assert!(
-            matches!(result, Err(MacosCaptureError::PermissionDenied)),
-            "env-var injection must trigger PermissionDenied"
         );
     }
 
