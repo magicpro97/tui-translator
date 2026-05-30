@@ -3,20 +3,30 @@
 //! Extracted from `mt.rs` as part of STD-02 (issue #484) to keep module LOC
 //! within the 600-line engineering-standards gate.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+#[cfg(feature = "local-mt")]
+use std::collections::HashMap;
+
+#[cfg(feature = "local-mt")]
 use ort::{session::Session, value::Tensor};
+#[cfg(feature = "local-mt")]
 use serde::Deserialize;
 
 use crate::providers::ProviderError;
 
+#[cfg(feature = "local-mt")]
 pub(super) const SOURCE_SPM: &str = "source.spm";
+#[cfg(feature = "local-mt")]
 pub(super) const TARGET_SPM: &str = "target.spm";
+#[cfg(feature = "local-mt")]
 pub(super) const VOCAB_JSON: &str = "vocab.json";
+#[cfg(feature = "local-mt")]
 pub(super) const ENCODER_ONNX: &str = "encoder_model.onnx";
+#[cfg(feature = "local-mt")]
 pub(super) const DECODER_ONNX: &str = "decoder_model.onnx";
+#[cfg(feature = "local-mt")]
 pub(super) const MAX_GENERATION_TOKENS_FALLBACK: usize = 128;
 #[cfg(target_os = "windows")]
 pub(super) const ONNXRUNTIME_LIBRARY_NAME: &str = "onnxruntime.dll";
@@ -27,6 +37,7 @@ pub(super) const ONNXRUNTIME_LIBRARY_NAME: &str = "libonnxruntime.dylib";
 pub(super) const ONNXRUNTIME_DLL_ENV: &str = "TUI_TRANSLATOR_ONNXRUNTIME_DLL";
 
 /// Token IDs extracted from OPUS-MT model configuration files.
+#[cfg(feature = "local-mt")]
 #[derive(Debug)]
 pub(super) struct OpusMtTokenIds {
     pub(super) decoder_start: i64,
@@ -36,12 +47,14 @@ pub(super) struct OpusMtTokenIds {
 }
 
 /// Bidirectional Marian/OPUS-MT vocabulary mapping.
+#[cfg(feature = "local-mt")]
 #[derive(Debug)]
 pub(super) struct MarianVocab {
     token_to_id: HashMap<String, i64>,
     id_to_token: HashMap<i64, String>,
 }
 
+#[cfg(feature = "local-mt")]
 impl MarianVocab {
     pub(super) fn load(path: &Path) -> Result<Self, ProviderError> {
         let raw = std::fs::read_to_string(path).map_err(|e| {
@@ -107,6 +120,7 @@ impl MarianVocab {
     }
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn missing_model_file(path: &Path, hint: &str) -> ProviderError {
     ProviderError::ModelNotFound(format!(
         "local OPUS-MT model file not found at {}; install {hint} before setting mt_provider=\"local\"",
@@ -182,6 +196,7 @@ pub(super) fn resolve_onnxruntime_library(model_dir: &Path) -> Result<PathBuf, S
     ))
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn load_session(path: &Path, role: &str) -> Result<Session, ProviderError> {
     // LF-02 (issue #370): align onnxruntime's thread pools with the shared
     // local-inference cap.  We call the env helper here as a fallback for
@@ -214,10 +229,12 @@ pub(super) fn load_session(path: &Path, role: &str) -> Result<Session, ProviderE
         })
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn has_input(session: &Session, name: &str) -> bool {
     session.inputs.iter().any(|input| input.name == name)
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn named_i64_tensor(
     name: &str,
     shape: &[i64],
@@ -232,6 +249,7 @@ pub(super) fn named_i64_tensor(
     ))
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn named_f32_tensor(
     name: &str,
     shape: &[i64],
@@ -246,6 +264,7 @@ pub(super) fn named_f32_tensor(
     ))
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn required_file(model_dir: &Path, file_name: &str) -> Result<PathBuf, ProviderError> {
     let path = model_dir.join(file_name);
     match path.try_exists() {
@@ -261,6 +280,7 @@ pub(super) fn required_file(model_dir: &Path, file_name: &str) -> Result<PathBuf
     }
 }
 
+#[cfg(feature = "local-mt")]
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct GenerationConfig {
     pub(super) decoder_start_token_id: Option<i64>,
@@ -269,6 +289,7 @@ pub(super) struct GenerationConfig {
     pub(super) max_length: Option<usize>,
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn load_token_ids(
     model_dir: &Path,
     vocab: &MarianVocab,
@@ -304,6 +325,7 @@ pub(super) fn load_token_ids(
     })
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn read_generation_config(path: &Path) -> Result<GenerationConfig, ProviderError> {
     match std::fs::read_to_string(path) {
         Ok(raw) => serde_json::from_str(&raw).map_err(|e| {
@@ -320,6 +342,7 @@ pub(super) fn read_generation_config(path: &Path) -> Result<GenerationConfig, Pr
     }
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn next_token_id(shape: &[i64], logits: &[f32]) -> Result<i64, ProviderError> {
     if shape.len() != 3 {
         return Err(ProviderError::ServiceUnavailable(format!(
@@ -360,6 +383,7 @@ pub(super) fn next_token_id(shape: &[i64], logits: &[f32]) -> Result<i64, Provid
         .ok_or_else(|| ProviderError::ServiceUnavailable("OPUS-MT logits are empty".to_string()))
 }
 
+#[cfg(feature = "local-mt")]
 pub(super) fn map_ort_error(error: ort::Error) -> ProviderError {
     ProviderError::ServiceUnavailable(format!("ONNX Runtime error: {error}"))
 }

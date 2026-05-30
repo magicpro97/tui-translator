@@ -1366,17 +1366,25 @@ impl AppConfig {
                 }
             }
         }
-        // ── tts_provider validation (SUPERTONIC-06, issue #491) ───────────
-        // Extends the issue #457 backend-selection contract to TTS. Only
-        // "google" is accepted today; additional values (e.g. "supertonic")
-        // will be enabled when those providers land. Unknown values are
-        // rejected visibly so a typo cannot silently disable spoken output.
+        // ── tts_provider validation (SUPERTONIC-06, issue #491; SUPERTONIC-13, issue #630) ──
+        // Extends the issue #457 backend-selection contract to TTS.
+        // "google" is always accepted.
+        // "local" is accepted only when the `local-tts` Cargo feature is compiled in
+        // (SUPERTONIC-13, #630). Unknown values are rejected visibly so a typo cannot
+        // silently disable spoken output.
         match self.tts_provider.as_str() {
             "google" => {}
+            #[cfg(feature = "local-tts")]
+            "local" => {}
             other => {
+                #[cfg(feature = "local-tts")]
+                bail!(
+                    "`tts_provider` must be \"google\" or \"local\" (got {other:?})"
+                );
+                #[cfg(not(feature = "local-tts"))]
                 bail!(
                     "`tts_provider` must be \"google\" (got {other:?}); \
-                     additional providers will be enabled when their adapters ship"
+                     set \"local\" only after building with --features local-tts"
                 );
             }
         }
@@ -2798,9 +2806,36 @@ mod tests {
         cfg.validate().expect("default config must validate");
     }
 
+    /// `tts_provider = "local"` is accepted when the `local-tts` feature is enabled
+    /// (SUPERTONIC-13, issue #630).
+    #[test]
+    #[cfg(feature = "local-tts")]
+    fn tts_provider_local_accepted_with_local_tts_feature() {
+        let cfg = AppConfig {
+            tts_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("tts_provider=local must validate when local-tts feature is enabled");
+    }
+
+    /// `tts_provider = "local"` is rejected when the `local-tts` feature is NOT compiled in.
+    #[test]
+    #[cfg(not(feature = "local-tts"))]
+    fn tts_provider_local_rejected_without_local_tts_feature() {
+        let cfg = AppConfig {
+            tts_provider: "local".to_string(),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("tts_provider"),
+            "error should mention tts_provider; got: {err}"
+        );
+    }
+
     /// Unknown `tts_provider` values are rejected with a visible error;
-    /// the Supertonic provider is not yet shipped (#493) so it must not be
-    /// accepted as a silent no-op.
+    /// the raw alias "supertonic" is never a valid value — only "local" is.
     #[test]
     fn tts_provider_unknown_value_is_rejected() {
         let cfg = AppConfig {
@@ -2887,13 +2922,11 @@ mod tests {
     #[test]
     fn tts_provider_change_requires_restart() {
         let current = AppConfig::default();
-        // Only "google" is accepted by `validate()` today; this test
-        // exercises the restart-classification surface against a
-        // hand-built `AppConfig` (which bypasses validation) using a
-        // hypothetical future value so the assertion stays meaningful
-        // once additional providers ship.
+        // Construct `next` directly (bypasses validation) so that this
+        // restart-classification test remains meaningful regardless of
+        // which provider values are accepted by `validate()` at the time.
         let next = AppConfig {
-            tts_provider: "supertonic".to_string(),
+            tts_provider: "local".to_string(),
             ..AppConfig::default()
         };
         assert!(

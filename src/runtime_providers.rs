@@ -46,6 +46,8 @@ pub(crate) enum RuntimeMtProvider {
 pub(crate) enum RuntimeTtsProvider {
     Google(providers::google::tts::GoogleTtsProvider),
     Disabled(DisabledTtsProvider),
+    #[cfg(feature = "local-tts")]
+    Supertonic(providers::local::supertonic_provider::SupertonicTtsProvider),
 }
 
 /// Disabled TTS provider used when translated audio is unavailable.
@@ -95,6 +97,10 @@ impl providers::TtsProvider for RuntimeTtsProvider {
             Self::Disabled(provider) => {
                 providers::TtsProvider::synthesise(provider, text, language_code).await
             }
+            #[cfg(feature = "local-tts")]
+            Self::Supertonic(provider) => {
+                providers::TtsProvider::synthesise(provider, text, language_code).await
+            }
         }
     }
 
@@ -104,6 +110,8 @@ impl providers::TtsProvider for RuntimeTtsProvider {
         match self {
             Self::Google(provider) => providers::TtsProvider::list_voices(provider).await,
             Self::Disabled(_) => Ok(Vec::new()),
+            #[cfg(feature = "local-tts")]
+            Self::Supertonic(provider) => providers::TtsProvider::list_voices(provider).await,
         }
     }
 
@@ -124,6 +132,10 @@ impl providers::TtsProvider for RuntimeTtsProvider {
                     Ok(())
                 }
             }
+            #[cfg(feature = "local-tts")]
+            Self::Supertonic(provider) => {
+                providers::TtsProvider::set_active_voice(provider, voice)
+            }
         }
     }
 
@@ -131,6 +143,8 @@ impl providers::TtsProvider for RuntimeTtsProvider {
         match self {
             Self::Google(provider) => providers::TtsProvider::active_voice(provider),
             Self::Disabled(_) => None,
+            #[cfg(feature = "local-tts")]
+            Self::Supertonic(provider) => providers::TtsProvider::active_voice(provider),
         }
     }
 }
@@ -353,6 +367,13 @@ pub(crate) fn build_runtime_tts_provider(
     google_api_key: Option<&str>,
     cost_reporter: Arc<dyn providers::CostReporter>,
 ) -> std::result::Result<RuntimeTtsProvider, providers::ProviderError> {
+    // Local Supertonic TTS path: no API key required.
+    #[cfg(feature = "local-tts")]
+    if cfg.tts_provider == "local" {
+        return providers::local::supertonic_provider::SupertonicTtsProvider::new()
+            .map(RuntimeTtsProvider::Supertonic);
+    }
+
     if !cfg.tts_enabled && google_api_key.is_none() {
         return Ok(RuntimeTtsProvider::Disabled(DisabledTtsProvider));
     }
