@@ -74,7 +74,7 @@
     "semantic_buffering": {
       "enabled": false,
       "min_confidence_threshold": -0.6,
-      "tier3_enabled": false,
+      "wtp_judge_enabled": false,
       "wtp_model_dir": null
     }
   },
