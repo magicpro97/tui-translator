@@ -23,6 +23,9 @@
 #[path = "common/pipeline_bridge.rs"]
 mod pipeline;
 
+#[cfg(feature = "semantic-buffering-wtp")]
+pub use pipeline::providers;
+
 use pipeline::completeness::rules::RuleBasedJudge;
 use pipeline::completeness::{Completeness, CompletenessJudge};
 use pipeline::segmentation::SegmentContext;

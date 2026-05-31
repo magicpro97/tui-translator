@@ -18,6 +18,9 @@ use std::time::{Duration, Instant};
 #[path = "common/pipeline_bridge.rs"]
 mod pipeline;
 
+#[cfg(feature = "semantic-buffering-wtp")]
+pub use pipeline::providers;
+
 use pipeline::completeness::rules::RuleBasedJudge;
 use pipeline::completeness::CompletenessJudge;
 use pipeline::segmentation::SegmentContext;
