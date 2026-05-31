@@ -19,8 +19,10 @@
 //!
 //! [`SegmentStabilizer`]: crate::pipeline::segmentation::SegmentStabilizer
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::pipeline::completeness::{Completeness, CompletenessJudge};
 use crate::pipeline::segmentation::SegmentContext;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -42,6 +44,8 @@ pub enum FlushReason {
     MaxAge,
     /// The pipeline is shutting down.
     Shutdown,
+    /// A [`CompletenessJudge`] determined the held fragment is semantically complete.
+    SemanticComplete,
 }
 
 /// A sentence segment ready to be sent to machine translation.
@@ -87,6 +91,13 @@ struct HeldFragment {
 pub struct SentenceAggregator {
     held: Option<HeldFragment>,
     max_age: Duration,
+    /// Optional completeness judge injected via [`Self::with_judge`].
+    ///
+    /// When `Some`, the judge is consulted after each `push()` to determine
+    /// whether the held tail should be flushed early with
+    /// [`FlushReason::SemanticComplete`].  When `None`, behaviour is identical
+    /// to the pre-SB-03 implementation.
+    judge: Option<Arc<dyn CompletenessJudge + Send + Sync>>,
 }
 
 impl Default for SentenceAggregator {
@@ -101,6 +112,7 @@ impl SentenceAggregator {
         Self {
             held: None,
             max_age: Duration::from_millis(MAX_AGE_MS),
+            judge: None,
         }
     }
 
@@ -109,7 +121,19 @@ impl SentenceAggregator {
         Self {
             held: None,
             max_age,
+            judge: None,
         }
+    }
+
+    /// Attach a [`CompletenessJudge`] to this aggregator (builder pattern).
+    ///
+    /// After each `push()`, if a tail fragment is held, the judge is called.
+    /// A [`Completeness::Complete`] verdict causes an immediate flush with
+    /// [`FlushReason::SemanticComplete`] instead of waiting for the max-age
+    /// timer.
+    pub fn with_judge(mut self, judge: Arc<dyn CompletenessJudge + Send + Sync>) -> Self {
+        self.judge = Some(judge);
+        self
     }
 
     /// Push a new STT fragment into the aggregator.
@@ -154,7 +178,32 @@ impl SentenceAggregator {
             }
         };
 
-        self.split_and_hold(fragment)
+        let mut segments = self.split_and_hold(fragment);
+
+        // If a tail fragment is held and a judge is configured, check whether
+        // it is semantically complete.  A `Complete` verdict flushes the tail
+        // immediately rather than waiting for the max-age timer.
+        if let Some(held) = &self.held {
+            if let Some(judge) = &self.judge {
+                if judge.judge(&held.text, &held.context) == Completeness::Complete {
+                    if let Some(tail) = self.held.take() {
+                        let text = tail.text.trim().to_string();
+                        if !text.is_empty() {
+                            segments.push(AggregatedSegment {
+                                text,
+                                context: tail.context,
+                                flush_reason: FlushReason::SemanticComplete,
+                                dedup_keys: tail.dedup_keys,
+                                e2e_start: tail.held_since,
+                                split_index: tail.next_split_index,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        segments
     }
 
     /// Check whether the held fragment has exceeded the max-age limit.
@@ -490,5 +539,72 @@ mod tests {
         assert_eq!(flushed.text, "Still going");
         assert_eq!(flushed.dedup_keys, vec!["key-a".to_string()]);
         assert_eq!(flushed.split_index, 1);
+    }
+
+    // ── SB-03: CompletenessJudge wiring ───────────────────────────────────────
+
+    use crate::pipeline::completeness::{Completeness, CompletenessJudge};
+    use std::sync::Arc;
+
+    struct AlwaysComplete;
+    impl CompletenessJudge for AlwaysComplete {
+        fn judge(&self, _text: &str, _context: &SegmentContext) -> Completeness {
+            Completeness::Complete
+        }
+    }
+
+    struct AlwaysIncomplete;
+    impl CompletenessJudge for AlwaysIncomplete {
+        fn judge(&self, _text: &str, _context: &SegmentContext) -> Completeness {
+            Completeness::Incomplete
+        }
+    }
+
+    /// T-SB03-1: A fragment without a sentence boundary is flushed immediately
+    /// when the judge returns `Complete`.
+    #[test]
+    fn test_judge_flushes_complete_tail_as_semantic_complete() {
+        let mut agg = SentenceAggregator::new().with_judge(Arc::new(AlwaysComplete));
+        let now = Instant::now();
+
+        let segs = agg.push("こんにちは", ctx(), None, now);
+        assert_eq!(segs.len(), 1, "judge should flush the tail immediately");
+        assert_eq!(segs[0].text, "こんにちは");
+        assert_eq!(segs[0].flush_reason, FlushReason::SemanticComplete);
+        assert!(
+            agg.flush_shutdown().is_none(),
+            "nothing should remain held after semantic flush"
+        );
+    }
+
+    /// T-SB03-2: Without a judge the same fragment is held as before.
+    #[test]
+    fn test_no_judge_holds_tail_unchanged() {
+        let mut agg = SentenceAggregator::new();
+        let now = Instant::now();
+
+        let segs = agg.push("こんにちは", ctx(), None, now);
+        assert!(segs.is_empty(), "without a judge the tail must be held");
+        assert!(
+            agg.flush_shutdown().is_some(),
+            "held fragment must drain on shutdown"
+        );
+    }
+
+    /// T-SB03-3: A judge that returns `Incomplete` must NOT flush the tail.
+    #[test]
+    fn test_judge_incomplete_holds_tail() {
+        let mut agg = SentenceAggregator::new().with_judge(Arc::new(AlwaysIncomplete));
+        let now = Instant::now();
+
+        let segs = agg.push("こんにちは", ctx(), None, now);
+        assert!(
+            segs.is_empty(),
+            "Incomplete verdict must leave the tail held"
+        );
+        assert!(
+            agg.flush_shutdown().is_some(),
+            "held fragment must drain on shutdown"
+        );
     }
 }
