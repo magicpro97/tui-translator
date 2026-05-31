@@ -6,6 +6,7 @@
 
 use crate::pipeline::segmentation::SegmentContext;
 
+pub mod confidence;
 pub mod rules;
 
 /// Completeness signal returned by a [`CompletenessJudge`].
