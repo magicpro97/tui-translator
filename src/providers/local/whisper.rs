@@ -101,9 +101,22 @@ impl LocalWhisperSttProvider {
         // engine never sees a corrupted or partial file.
         #[cfg(feature = "local-stt")]
         let ctx = {
+            // Log which acceleration backend is compiled in so startup logs
+            // clearly identify Metal vs CPU inference (MACOS-19, issue #659).
+            // Requires both the `local-stt-metal` feature AND macOS — Metal is
+            // Apple-only; the feature is a no-op on Windows/Linux.
+            #[cfg(all(feature = "local-stt-metal", target_os = "macos"))]
             tracing::info!(
                 model = %model_id,
                 path = %path.display(),
+                backend = "Metal",
+                "loading local Whisper model (Metal GPU acceleration enabled)"
+            );
+            #[cfg(not(all(feature = "local-stt-metal", target_os = "macos")))]
+            tracing::info!(
+                model = %model_id,
+                path = %path.display(),
+                backend = "CPU",
                 "loading local Whisper model"
             );
             let path_str = path.to_string_lossy();
