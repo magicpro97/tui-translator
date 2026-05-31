@@ -6,6 +6,7 @@
 
 use crate::pipeline::segmentation::SegmentContext;
 
+pub mod confidence;
 pub mod rules;
 
 /// Completeness signal returned by a [`CompletenessJudge`].
@@ -22,7 +23,7 @@ pub enum Completeness {
 
 /// Trait implemented by all sentence-completeness heuristics.
 ///
-/// Judges are injected into [`SentenceAggregator`] via
+/// Judges are injected into `SentenceAggregator` via
 /// `SentenceAggregator::with_judge()` and consulted on each fragment before
 /// the max-age fallback fires.
 pub trait CompletenessJudge: Send + Sync {
@@ -36,7 +37,7 @@ pub trait CompletenessJudge: Send + Sync {
 /// No-op judge — always returns [`Completeness::Unknown`].
 ///
 /// Used as the default when no judge is configured so that existing
-/// [`SentenceAggregator`] behaviour is unchanged.
+/// `SentenceAggregator` behaviour is unchanged.
 #[derive(Debug, Default, Clone)]
 pub struct NoOpJudge;
 
