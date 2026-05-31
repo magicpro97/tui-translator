@@ -130,16 +130,16 @@ fn t4_partial_fragments_not_classified_complete() {
 
     // Fragments that are clearly mid-sentence — no grammatical terminator.
     let partials: &[&str] = &[
-        "会議を",
-        "始め",
-        "まず",
-        "それでは",
-        "報告書を",
-        "次の",
-        "以上で",
-        "皆様の",
-        "新しい",
-        "ただ",
+        "会議を",   // ends with を (INCOMPLETE_PARTICLES)
+        "始め",     // mid-verb, no terminator
+        "まず",     // adverb mid-sentence
+        "それでは", // ends with は (INCOMPLETE_PARTICLES)
+        "報告書を", // ends with を (INCOMPLETE_PARTICLES)
+        "次の",     // ends with の (INCOMPLETE_PARTICLES)
+        "以上で",   // ends with で (INCOMPLETE_PARTICLES)
+        "皆様の",   // ends with の (INCOMPLETE_PARTICLES)
+        "新しい",   // i-adjective in prenominal position
+        "そして",   // conjunction mid-sentence (ends with て = CONJUNCTIVE)
     ];
 
     let mut false_positives: Vec<&str> = Vec::new();
