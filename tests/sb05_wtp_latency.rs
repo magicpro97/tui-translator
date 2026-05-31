@@ -5,7 +5,7 @@
 //! WTP_MODEL_PATH=/path/to/models/wtp \
 //!   cargo test --features semantic-buffering-wtp --test sb05_wtp_latency -- --include-ignored
 //! ```
-#![allow(dead_code)]
+#![allow(dead_code, unused_macros)]
 
 #[path = "common/pipeline_bridge.rs"]
 mod pipeline;

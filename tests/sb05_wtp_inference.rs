@@ -8,13 +8,11 @@
 //! WTP_MODEL_PATH=/path/to/models/wtp \
 //!   cargo test --features semantic-buffering-wtp --test sb05_wtp_inference -- --include-ignored
 //! ```
-#![allow(dead_code)]
+#![allow(dead_code, unused_macros)]
 
 #[path = "common/pipeline_bridge.rs"]
 mod pipeline;
 
-/// Resolves the model directory from the `WTP_MODEL_PATH` env var.
-/// Skips the test when absent.
 macro_rules! require_wtp_model {
     () => {{
         match std::env::var("WTP_MODEL_PATH") {
