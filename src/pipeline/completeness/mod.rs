@@ -1,7 +1,7 @@
 //! Sentence completeness judges for semantic buffering — issue #664.
 //!
 //! Provides the [`CompletenessJudge`] trait and [`Completeness`] signal type
-//! used by [`SentenceAggregator`] to determine whether a partial STT fragment
+//! used by `SentenceAggregator` to determine whether a partial STT fragment
 //! is semantically complete before forwarding to machine translation.
 
 use crate::pipeline::segmentation::SegmentContext;
