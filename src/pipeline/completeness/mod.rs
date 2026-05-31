@@ -8,6 +8,8 @@ use crate::pipeline::segmentation::SegmentContext;
 
 pub mod confidence;
 pub mod rules;
+#[cfg(feature = "semantic-buffering-wtp")]
+pub mod wtp;
 
 /// Completeness signal returned by a [`CompletenessJudge`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

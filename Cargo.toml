@@ -110,6 +110,8 @@ ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dyn
 sentencepiece-rs = { version = "0.2.1", optional = true }
 # Random number generation for Gaussian noise in Supertonic diffusion inference.
 rand = { version = "0.8", optional = true }
+# IEEE 754 f16 type — used by wtp-bert-mini ONNX (attention_mask expects fp16).
+half = { version = "2", optional = true }
 tui-input = { version = "0.15.3", default-features = false }
 directories = "5"
 
@@ -132,10 +134,14 @@ local-stt = ["whisper-rs"]
 local-stt-metal = ["local-stt"]
 # Enable the local OPUS-MT backend. Model download/version management is handled
 # separately by issue #218; this feature only loads verified files already on disk.
-local-mt = ["ort", "sentencepiece-rs"]
+local-mt = ["dep:ort", "sentencepiece-rs"]
 # Enable the local Supertonic TTS backend (SUPERTONIC-13, issue #630).
 # Reuses the ort crate already required by local-mt; no new dep family.
-local-tts = ["ort", "rand"]
+local-tts = ["dep:ort", "rand"]
+# Enable the optional wtp-bert-mini ONNX Tier-3 sentence-completeness classifier
+# (SB-05, issue #668).  Requires placing wtp-bert-mini.onnx in the model cache dir.
+# Enables the `half` crate for fp16 attention_mask and ort's half-precision support.
+semantic-buffering-wtp = ["dep:ort", "ort/half", "dep:half"]
 # Enable the VMIC-A6 automated virtual-cable integration tests. The tests are
 # skip-safe on runners without VB-CABLE/VAC and write explicit JSON evidence.
 audio-integration = []
