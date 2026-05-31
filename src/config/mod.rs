@@ -280,19 +280,21 @@ pub struct SemanticBufferingConfig {
     /// (SB-05, issue #668, feature `semantic-buffering-wtp`).
     ///
     /// Requires the `semantic-buffering-wtp` Cargo feature AND a valid
-    /// `wtp_model_dir` path containing `wtp-bert-mini.onnx`.
-    /// When `false` (default) or the feature is not compiled, the judge is a
-    /// no-op and falls through to Tier 1 + Tier 2.
+    /// Enable the neural sentence-completeness judge (`wtp-bert-mini` ONNX).
     ///
+    /// When `true`, the pipeline loads the ONNX model from `wtp_model_dir` and
+    /// uses it as the Tier 3 completeness classifier. Falls back to Tier 1
+    /// `RuleBasedJudge` if the model cannot be loaded or the feature is absent.
+    ///
+    /// Also accepts the old key `tier3_enabled` for backward compatibility.
     /// Default: `false`.
-    #[serde(default)]
-    pub tier3_enabled: bool,
+    #[serde(default, alias = "tier3_enabled")]
+    pub wtp_judge_enabled: bool,
 
-    /// Directory containing `wtp-bert-mini.onnx` and the ONNX Runtime library.
+    /// Directory containing `wtp-bert-mini.onnx`.
     ///
-    /// Only used when `tier3_enabled = true` and the `semantic-buffering-wtp`
-    /// feature is compiled in. If `None`, Tier 3 is disabled even when
-    /// `tier3_enabled = true`.
+    /// Only used when `wtp_judge_enabled = true` and the `semantic-buffering-wtp`
+    /// feature is compiled in. Set to `null` to keep Tier 1 / Tier 2 only.
     #[serde(default)]
     pub wtp_model_dir: Option<String>,
 }
@@ -306,7 +308,7 @@ impl Default for SemanticBufferingConfig {
         Self {
             enabled: false,
             min_confidence_threshold: default_min_confidence_threshold(),
-            tier3_enabled: false,
+            wtp_judge_enabled: false,
             wtp_model_dir: None,
         }
     }
