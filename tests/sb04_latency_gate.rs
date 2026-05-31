@@ -11,6 +11,8 @@
 //! Run with:
 //!   cargo test --test sb04_latency_gate -- --nocapture
 
+#![allow(dead_code)]
+
 use std::time::{Duration, Instant};
 
 #[path = "common/pipeline_bridge.rs"]

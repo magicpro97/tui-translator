@@ -18,6 +18,8 @@
 //! Run with:
 //!   cargo test --test sb04_false_negative -- --nocapture
 
+#![allow(dead_code)]
+
 #[path = "common/pipeline_bridge.rs"]
 mod pipeline;
 

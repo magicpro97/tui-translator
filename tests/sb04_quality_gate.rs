@@ -16,6 +16,11 @@
 //! Run with:
 //!   cargo test --test sb04_quality_gate -- --nocapture
 
+// The pipeline modules included via #[path] expose items not used by this
+// focused test binary; suppress dead-code warnings that would otherwise
+// become -D warnings errors in CI.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use std::time::Instant;
 
