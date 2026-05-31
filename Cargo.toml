@@ -125,6 +125,11 @@ unic-langid = { version = "0.9", features = ["macros"] }
 # This feature gate is reserved for issue #213; issue #212 only adds the
 # model-cache infrastructure that #213 will depend on.
 local-stt = ["whisper-rs"]
+# Enable Metal GPU acceleration for the local Whisper STT backend on macOS
+# Apple Silicon (MACOS-19, issue #659).  Requires the Metal framework from
+# Xcode Command Line Tools (macOS 13+).  `local-stt` must also be enabled.
+# When Metal initialisation fails at runtime, whisper-rs falls back to CPU.
+local-stt-metal = ["local-stt"]
 # Enable the local OPUS-MT backend. Model download/version management is handled
 # separately by issue #218; this feature only loads verified files already on disk.
 local-mt = ["ort", "sentencepiece-rs"]
@@ -160,6 +165,10 @@ screencapturekit = { version = "6", features = ["macos_13_0"] }
 # rodio uses cpal internally; the same version as Windows is required so the
 # RodioSink shared implementation compiles on both platforms.
 rodio = "0.17"
+# whisper-rs with Metal GPU acceleration — merged with the base dep in [dependencies]
+# (which is optional = true without metal), so Metal is only activated on macOS.
+# Gated by `local-stt-metal` feature; see MACOS-19, issue #659.
+whisper-rs = { version = "0.12", optional = true, features = ["metal"] }
 
 [dev-dependencies]
 # Snapshot testing for the TUI layouts
