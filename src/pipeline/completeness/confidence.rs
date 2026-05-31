@@ -111,4 +111,17 @@ mod tests {
         let gate = ConfidenceGate::new(-1.0);
         assert!((gate.min_threshold - (-1.0_f32)).abs() < f32::EPSILON);
     }
+
+    /// T5 (issue #665 acceptance criterion): a confidence value just below the
+    /// threshold (−0.61 < −0.6) must return `Hold`, confirming the `>=`
+    /// comparison is not accidentally `>` or off-by-epsilon.
+    #[test]
+    fn confidence_gate_holds_when_just_below_threshold() {
+        let gate = ConfidenceGate::new(-0.6);
+        let ctx = SegmentContext {
+            stt_confidence: Some(-0.61),
+            ..SegmentContext::default()
+        };
+        assert_eq!(gate.assess("会議を", &ctx), GateDecision::Hold);
+    }
 }
