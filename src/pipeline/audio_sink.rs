@@ -4,7 +4,7 @@
 //! implementation so alternative sinks (virtual mic, file recorder, test
 //! double) can be plugged in without changing the pipeline.
 //!
-//! Implementations: `RodioSink` (Windows speaker output via rodio),
+//! Implementations: `RodioSink` (Windows and macOS speaker output via rodio),
 //! [`OemCableSink`] (virtual-microphone render endpoint, used in Windows
 //! production and cross-platform tests), and [`MockAudioSink`] (test double
 //! that records submitted chunks).
@@ -391,9 +391,9 @@ impl OemCablePcmWriter for WindowsRenderPcmWriter {
     }
 }
 
-// ── Windows: RodioSink ───────────────────────────────────────────────────────
+// ── Windows and macOS: RodioSink ─────────────────────────────────────────────
 
-/// Plays MP3 audio through the system speaker via `rodio`.
+/// Plays MP3 audio via `rodio` (Windows WASAPI; macOS CoreAudio; Linux no-op).
 ///
 /// **Must be constructed and used on the same OS thread** — `rodio::OutputStream`
 /// is `!Send` and therefore `RodioSink` does not implement [`AudioSink`].
@@ -401,14 +401,14 @@ impl OemCablePcmWriter for WindowsRenderPcmWriter {
 /// the dedicated playback thread.
 ///
 /// [`PlaybackService::new`]: super::playback::PlaybackService::new
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub struct RodioSink {
     _stream: rodio::OutputStream,
     stream_handle: rodio::OutputStreamHandle,
 }
 
 /// Result of an interruptible `RodioSink` playback attempt.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) enum RodioPlaybackOutcome {
     /// The clip reached its natural end.
     Completed,
@@ -416,7 +416,7 @@ pub(crate) enum RodioPlaybackOutcome {
     Interrupted,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl RodioSink {
     /// Open an output stream for `output_device` (or the system default when
     /// `None`) and verify that a rodio `Sink` can be created on it.
@@ -498,7 +498,7 @@ impl RodioSink {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn open_output_stream(
     output_device: Option<&str>,
 ) -> Result<(rodio::OutputStream, rodio::OutputStreamHandle), String> {
@@ -514,7 +514,7 @@ fn open_output_stream(
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn find_output_device_by_name(device_name: &str) -> Result<rodio::cpal::Device, String> {
     use rodio::cpal::traits::{DeviceTrait, HostTrait};
 

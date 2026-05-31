@@ -1,8 +1,9 @@
 //! TTS playback service.
 //!
-//! On Windows this module owns a dedicated playback thread backed by `RodioSink`.
-//! On other platforms it provides a lightweight stub so Linux CI can build and
-//! test the project without optional system audio libraries such as ALSA.
+//! On Windows and macOS this module owns a dedicated playback thread backed by
+//! `RodioSink` (WASAPI on Windows, CoreAudio on macOS). On Linux it provides a
+//! lightweight stub so CI can build and test the project without optional system
+//! audio libraries such as ALSA.
 //!
 //! The concrete audio backend is abstracted by the [`AudioSink`] trait
 //! (see [`super::audio_sink`]).  A custom sink — including [`MockAudioSink`]
@@ -18,9 +19,9 @@ use playback_routing::{build_sinks_for_targets, play_to_audio_sinks};
 #[allow(unused_imports)]
 pub use playback_routing::{PlaybackRoutePlan, PlaybackSinkTarget};
 
-// ── Windows implementation ───────────────────────────────────────────────────
+// ── Windows and macOS implementation ─────────────────────────────────────────
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod imp {
     use std::collections::VecDeque;
     use std::sync::{
@@ -328,9 +329,9 @@ mod imp {
     }
 }
 
-// ── Non-Windows stub ─────────────────────────────────────────────────────────
+// ── Linux stub (no system audio required) ────────────────────────────────────
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -345,10 +346,11 @@ mod imp {
         Shutdown,
     }
 
-    /// Playback service stub for non-Windows builds.
+    /// Playback service stub for Linux builds.
     ///
-    /// The product is Windows-native; Linux CI only needs this stub so the
-    /// pipeline and contract layers can compile without system audio packages.
+    /// Linux CI only needs this stub so the pipeline and contract layers can
+    /// compile without system audio packages (ALSA/PulseAudio).  Windows and
+    /// macOS use the real rodio-backed implementation above.
     ///
     /// `new()` silently drops all audio via a lightweight [`NoOpSink`].
     /// `with_sink()` spawns a background thread and routes audio through the

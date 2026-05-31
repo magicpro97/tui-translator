@@ -156,6 +156,10 @@ rubato = "0.15"
 # The macos_13_0 feature enables with_captures_audio / with_sample_rate / with_channel_count
 # and SCStreamOutputType::Audio. MACOS-10 (issue #641).
 screencapturekit = { version = "6", features = ["macos_13_0"] }
+# TTS audio playback via CoreAudio (macOS only). MACOS-17 (issue #657).
+# rodio uses cpal internally; the same version as Windows is required so the
+# RodioSink shared implementation compiles on both platforms.
+rodio = "0.17"
 
 [dev-dependencies]
 # Snapshot testing for the TUI layouts
