@@ -220,6 +220,14 @@ pub struct PipelineConfigJson {
     /// Range: `500`–`60000` ms.  Default: `4000` ms.
     #[serde(default = "default_pipeline_sentence_max_age_ms")]
     pub sentence_max_age_ms: u64,
+
+    /// Semantic sentence buffering configuration (SB-WBS).
+    ///
+    /// When enabled, `SentenceAggregator` consults a tiered completeness judge
+    /// before forwarding fragments to MT, reducing partial-clause flushes for
+    /// SOV languages such as Japanese.
+    #[serde(default)]
+    pub semantic_buffering: SemanticBufferingConfig,
 }
 
 impl Default for PipelineConfigJson {
@@ -230,6 +238,7 @@ impl Default for PipelineConfigJson {
             idle_flush_ms: DEFAULT_PIPELINE_IDLE_FLUSH_MS,
             idle_min_ms: DEFAULT_PIPELINE_IDLE_MIN_MS,
             sentence_max_age_ms: DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS,
+            semantic_buffering: SemanticBufferingConfig::default(),
         }
     }
 }
@@ -241,6 +250,44 @@ fn pipeline_config_is_default(p: &PipelineConfigJson) -> bool {
         && p.idle_flush_ms == DEFAULT_PIPELINE_IDLE_FLUSH_MS
         && p.idle_min_ms == DEFAULT_PIPELINE_IDLE_MIN_MS
         && p.sentence_max_age_ms == DEFAULT_PIPELINE_SENTENCE_MAX_AGE_MS
+        && p.semantic_buffering == SemanticBufferingConfig::default()
+}
+
+/// Configuration for the semantic sentence buffering feature (SB-WBS, issue #663).
+///
+/// Controls the tiered `CompletenessJudge` injected into `SentenceAggregator`
+/// to reduce partial-clause flushes for Subject-Object-Verb languages.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SemanticBufferingConfig {
+    /// Enable semantic sentence buffering (Tier 1 rule-based + Tier 2 confidence gate).
+    ///
+    /// Default: `false` — existing punctuation-only behaviour is unchanged.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Minimum Whisper `avg_logprob` score required to allow a semantic-complete flush.
+    ///
+    /// Typical Whisper range: `-2.0` (low quality) to `0.0` (high quality).
+    /// Fragments with `stt_confidence < min_confidence_threshold` are held even
+    /// when the rule-based judge returns `Complete`.
+    /// When `stt_confidence` is `None` (non-Whisper providers), this gate is a no-op.
+    ///
+    /// Default: `-0.6`.
+    #[serde(default = "default_min_confidence_threshold")]
+    pub min_confidence_threshold: f32,
+}
+
+fn default_min_confidence_threshold() -> f32 {
+    -0.6
+}
+
+impl Default for SemanticBufferingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_confidence_threshold: default_min_confidence_threshold(),
+        }
+    }
 }
 
 /// Transcript session storage settings.
@@ -4050,6 +4097,7 @@ mod tests {
                 idle_flush_ms: 800,
                 idle_min_ms: 400,
                 sentence_max_age_ms: 6000,
+                semantic_buffering: SemanticBufferingConfig::default(),
             },
             ..AppConfig::default()
         };
