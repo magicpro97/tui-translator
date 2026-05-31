@@ -55,16 +55,16 @@ impl CompletenessJudge for NoOpJudge {
 ///
 /// Selection logic:
 /// - When `enabled = false`: returns `None` (aggregator runs without a judge).
-/// - When `enabled = true` and `tier3_enabled = false` (or feature absent):
+/// - When `enabled = true` and `wtp_judge_enabled = false` (or feature absent):
 ///   returns a `RuleBasedJudge` (Tier 1 only).
-/// - When `enabled = true`, `tier3_enabled = true`, `wtp_model_dir` is set,
+/// - When `enabled = true`, `wtp_judge_enabled = true`, `wtp_model_dir` is set,
 ///   and the `semantic-buffering-wtp` feature is compiled in: attempts to load
 ///   `WtpJudge` (Tier 3). Falls back to `RuleBasedJudge` on error.
 ///
 /// This function is the single production call-site for `WtpJudge::load`.
 pub fn build_judge(
     enabled: bool,
-    tier3_enabled: bool,
+    wtp_judge_enabled: bool,
     wtp_model_dir: Option<&str>,
     min_confidence_threshold: f32,
 ) -> Option<Arc<dyn CompletenessJudge + Send + Sync>> {
@@ -74,7 +74,7 @@ pub fn build_judge(
 
     // Attempt Tier 3 when feature compiled in, tier3 enabled, and path provided.
     #[cfg(feature = "semantic-buffering-wtp")]
-    if tier3_enabled {
+    if wtp_judge_enabled {
         if let Some(dir) = wtp_model_dir {
             let model_dir = std::path::Path::new(dir);
             match wtp::WtpJudge::load(model_dir, min_confidence_threshold) {
@@ -96,7 +96,7 @@ pub fn build_judge(
     }
 
     // Suppress unused-variable warnings when feature is not compiled in.
-    let _ = (tier3_enabled, wtp_model_dir, min_confidence_threshold);
+    let _ = (wtp_judge_enabled, wtp_model_dir, min_confidence_threshold);
 
     // Default: Tier 1 RuleBasedJudge.
     tracing::debug!("Semantic buffering: using Tier 1 RuleBasedJudge");

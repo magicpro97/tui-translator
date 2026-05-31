@@ -1312,7 +1312,7 @@ fn main() -> Result<()> {
                             );
                         if let Some(judge) = pipeline::completeness::build_judge(
                             cfg_snapshot.pipeline.semantic_buffering.enabled,
-                            cfg_snapshot.pipeline.semantic_buffering.tier3_enabled,
+                            cfg_snapshot.pipeline.semantic_buffering.wtp_judge_enabled,
                             cfg_snapshot
                                 .pipeline
                                 .semantic_buffering
@@ -1457,7 +1457,10 @@ fn main() -> Result<()> {
                                             );
                                         if let Some(judge) = pipeline::completeness::build_judge(
                                             cfg_snapshot.pipeline.semantic_buffering.enabled,
-                                            cfg_snapshot.pipeline.semantic_buffering.tier3_enabled,
+                                            cfg_snapshot
+                                                .pipeline
+                                                .semantic_buffering
+                                                .wtp_judge_enabled,
                                             cfg_snapshot
                                                 .pipeline
                                                 .semantic_buffering
