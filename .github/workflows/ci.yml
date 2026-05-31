@@ -734,6 +734,59 @@ jobs:
       - name: cargo build --features local-mt (--locked)
         run: cargo build --locked --bins --features local-mt
 
+  # ── CI-02 macOS local-stt compile (Issue #658) — ADVISORY ──────────────────
+  # Compiles the `local-stt` feature on macOS-14 to detect whisper-rs / bindgen
+  # regressions on Apple Silicon early.  The Xcode toolchain (clang + libclang)
+  # is pre-installed on macos-14 runners; no additional brew deps are needed.
+  # Branch protection MUST NOT require this context — see CI-02-required-checks.md §2.4.
+  macos-local-stt:
+    name: macOS local-stt compile (allowed-fail)
+    runs-on: macos-14
+    # reason: Advisory only per CI-02 acceptance. The whisper.cpp / bindgen
+    # native toolchain on hosted macOS runners is not yet stabilised for this
+    # repo; failures here are early-warning signal only. Branch protection must
+    # NOT add this context — see CI-02-required-checks.md §2.4.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci02-local-stt-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --features local-stt (--locked)
+        run: cargo build --locked --bins --features local-stt
+
+  # ── CI-02 macOS local-mt compile (Issue #658) — ADVISORY ───────────────────
+  # Compiles the `local-mt` feature on macOS-14 to detect ORT / sentencepiece
+  # regressions on Apple Silicon.  sentencepiece-rs is pure Rust; no brew deps.
+  # Branch protection MUST NOT require this context — see CI-02-required-checks.md §2.4.
+  macos-local-mt:
+    name: macOS local-mt compile (allowed-fail)
+    runs-on: macos-14
+    # reason: Advisory only per CI-02 acceptance. ORT / sentencepiece native
+    # runtime bootstrap on macOS is not stable enough for a required gate;
+    # failures here are early-warning signal only. Branch protection must
+    # NOT add this context — see CI-02-required-checks.md §2.4.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ci02-local-mt-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --features local-mt (--locked)
+        run: cargo build --locked --bins --features local-mt
+
   # ── CI-01 cross-platform matrix (Issue #461) ────────────────────────────────
   # New required gates that prove the default-feature build compiles and runs
   # binary unit tests on Windows + macOS-14 (Apple silicon).
