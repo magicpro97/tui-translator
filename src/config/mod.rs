@@ -275,6 +275,26 @@ pub struct SemanticBufferingConfig {
     /// Default: `-0.6`.
     #[serde(default = "default_min_confidence_threshold")]
     pub min_confidence_threshold: f32,
+
+    /// Enable the optional Tier 3 `wtp-bert-mini` neural completeness judge
+    /// (SB-05, issue #668, feature `semantic-buffering-wtp`).
+    ///
+    /// Requires the `semantic-buffering-wtp` Cargo feature AND a valid
+    /// `wtp_model_dir` path containing `wtp-bert-mini.onnx`.
+    /// When `false` (default) or the feature is not compiled, the judge is a
+    /// no-op and falls through to Tier 1 + Tier 2.
+    ///
+    /// Default: `false`.
+    #[serde(default)]
+    pub tier3_enabled: bool,
+
+    /// Directory containing `wtp-bert-mini.onnx` and the ONNX Runtime library.
+    ///
+    /// Only used when `tier3_enabled = true` and the `semantic-buffering-wtp`
+    /// feature is compiled in. If `None`, Tier 3 is disabled even when
+    /// `tier3_enabled = true`.
+    #[serde(default)]
+    pub wtp_model_dir: Option<String>,
 }
 
 fn default_min_confidence_threshold() -> f32 {
@@ -286,6 +306,8 @@ impl Default for SemanticBufferingConfig {
         Self {
             enabled: false,
             min_confidence_threshold: default_min_confidence_threshold(),
+            tier3_enabled: false,
+            wtp_model_dir: None,
         }
     }
 }

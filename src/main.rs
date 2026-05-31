@@ -1303,15 +1303,31 @@ fn main() -> Result<()> {
                     stabilizer: Arc::new(std::sync::Mutex::new(
                         pipeline::segmentation::SegmentStabilizer::new(),
                     )),
-                    sentence_aggregator: Arc::new(std::sync::Mutex::new(
-                        pipeline::sentence_aggregator::SentenceAggregator::with_max_age(
-                            std::time::Duration::from_millis(
-                                cfg_snapshot.pipeline.sentence_max_age_ms,
-                            ),
-                        ),
-                    )),
+                    sentence_aggregator: Arc::new(std::sync::Mutex::new({
+                        let mut agg =
+                            pipeline::sentence_aggregator::SentenceAggregator::with_max_age(
+                                std::time::Duration::from_millis(
+                                    cfg_snapshot.pipeline.sentence_max_age_ms,
+                                ),
+                            );
+                        if let Some(judge) = pipeline::completeness::build_judge(
+                            cfg_snapshot.pipeline.semantic_buffering.enabled,
+                            cfg_snapshot.pipeline.semantic_buffering.tier3_enabled,
+                            cfg_snapshot
+                                .pipeline
+                                .semantic_buffering
+                                .wtp_model_dir
+                                .as_deref(),
+                            cfg_snapshot
+                                .pipeline
+                                .semantic_buffering
+                                .min_confidence_threshold,
+                        ) {
+                            agg = agg.with_judge(judge);
+                        }
+                        agg
+                    })),
                     session_recorder,
-                    // DM-06 (issue #382): compute whether this slot should call TTS.
                     // Slot A is `slot_is_a = true`; mode is single unless slot_mode == Dual.
                     tts_active_for_slot: cfg_snapshot
                         .tts_source
@@ -1432,13 +1448,30 @@ fn main() -> Result<()> {
                                     stabilizer: Arc::new(std::sync::Mutex::new(
                                         pipeline::segmentation::SegmentStabilizer::new(),
                                     )),
-                                    sentence_aggregator: Arc::new(std::sync::Mutex::new(
-                                        pipeline::sentence_aggregator::SentenceAggregator::with_max_age(
-                                            std::time::Duration::from_millis(
-                                                cfg_snapshot.pipeline.sentence_max_age_ms,
-                                            ),
-                                        ),
-                                    )),
+                                    sentence_aggregator: Arc::new(std::sync::Mutex::new({
+                                        let mut agg =
+                                            pipeline::sentence_aggregator::SentenceAggregator::with_max_age(
+                                                std::time::Duration::from_millis(
+                                                    cfg_snapshot.pipeline.sentence_max_age_ms,
+                                                ),
+                                            );
+                                        if let Some(judge) = pipeline::completeness::build_judge(
+                                            cfg_snapshot.pipeline.semantic_buffering.enabled,
+                                            cfg_snapshot.pipeline.semantic_buffering.tier3_enabled,
+                                            cfg_snapshot
+                                                .pipeline
+                                                .semantic_buffering
+                                                .wtp_model_dir
+                                                .as_deref(),
+                                            cfg_snapshot
+                                                .pipeline
+                                                .semantic_buffering
+                                                .min_confidence_threshold,
+                                        ) {
+                                            agg = agg.with_judge(judge);
+                                        }
+                                        agg
+                                    })),
                                     // DM-05: start per-slot session recorder for slot B.
                                     // Uses the same session_id and directory as slot A
                                     // (same per-session subdir) but writes to 00001-b.jsonl.

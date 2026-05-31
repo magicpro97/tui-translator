@@ -73,7 +73,9 @@
     "sentence_max_age_ms": 4000,
     "semantic_buffering": {
       "enabled": false,
-      "min_confidence_threshold": -0.6
+      "min_confidence_threshold": -0.6,
+      "tier3_enabled": false,
+      "wtp_model_dir": null
     }
   },
   "stt_phrase_hints": [],
