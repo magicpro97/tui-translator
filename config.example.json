@@ -70,7 +70,12 @@
     "early_flush_on_vad_end": true,
     "idle_flush_ms": 600,
     "idle_min_ms": 500,
-    "sentence_max_age_ms": 4000
+    "sentence_max_age_ms": 4000,
+    "semantic_buffering": {
+      "_comment": "Semantic sentence buffering (SB-WBS, issue #663). Holds STT fragments until the clause is complete before sending to MT — improves Japanese SOV translation quality. Default: disabled.",
+      "enabled": false,
+      "min_confidence_threshold": -0.6
+    }
   },
   "stt_phrase_hints": [],
   "locale": "en-US",
