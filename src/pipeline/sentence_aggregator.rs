@@ -19,8 +19,10 @@
 //!
 //! [`SegmentStabilizer`]: crate::pipeline::segmentation::SegmentStabilizer
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::pipeline::completeness::{Completeness, CompletenessJudge};
 use crate::pipeline::segmentation::SegmentContext;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -42,6 +44,8 @@ pub enum FlushReason {
     MaxAge,
     /// The pipeline is shutting down.
     Shutdown,
+    /// A [`CompletenessJudge`] determined the held fragment is semantically complete.
+    SemanticComplete,
 }
 
 /// A sentence segment ready to be sent to machine translation.
@@ -87,6 +91,13 @@ struct HeldFragment {
 pub struct SentenceAggregator {
     held: Option<HeldFragment>,
     max_age: Duration,
+    /// Optional completeness judge injected via [`Self::with_judge`].
+    ///
+    /// When `Some`, the judge is consulted after each `push()` to determine
+    /// whether the held tail should be flushed early with
+    /// [`FlushReason::SemanticComplete`].  When `None`, behaviour is identical
+    /// to the pre-SB-03 implementation.
+    judge: Option<Arc<dyn CompletenessJudge + Send + Sync>>,
 }
 
 impl Default for SentenceAggregator {
@@ -101,6 +112,7 @@ impl SentenceAggregator {
         Self {
             held: None,
             max_age: Duration::from_millis(MAX_AGE_MS),
+            judge: None,
         }
     }
 
@@ -109,7 +121,19 @@ impl SentenceAggregator {
         Self {
             held: None,
             max_age,
+            judge: None,
         }
+    }
+
+    /// Attach a [`CompletenessJudge`] to this aggregator (builder pattern).
+    ///
+    /// After each `push()`, if a tail fragment is held, the judge is called.
+    /// A [`Completeness::Complete`] verdict causes an immediate flush with
+    /// [`FlushReason::SemanticComplete`] instead of waiting for the max-age
+    /// timer.
+    pub fn with_judge(mut self, judge: Arc<dyn CompletenessJudge + Send + Sync>) -> Self {
+        self.judge = Some(judge);
+        self
     }
 
     /// Push a new STT fragment into the aggregator.
@@ -154,7 +178,32 @@ impl SentenceAggregator {
             }
         };
 
-        self.split_and_hold(fragment)
+        let mut segments = self.split_and_hold(fragment);
+
+        // If a tail fragment is held and a judge is configured, check whether
+        // it is semantically complete.  A `Complete` verdict flushes the tail
+        // immediately rather than waiting for the max-age timer.
+        if let Some(held) = &self.held {
+            if let Some(judge) = &self.judge {
+                if judge.judge(&held.text, &held.context) == Completeness::Complete {
+                    if let Some(tail) = self.held.take() {
+                        let text = tail.text.trim().to_string();
+                        if !text.is_empty() {
+                            segments.push(AggregatedSegment {
+                                text,
+                                context: tail.context,
+                                flush_reason: FlushReason::SemanticComplete,
+                                dedup_keys: tail.dedup_keys,
+                                e2e_start: tail.held_since,
+                                split_index: tail.next_split_index,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        segments
     }
 
     /// Check whether the held fragment has exceeded the max-age limit.
@@ -279,216 +328,5 @@ fn first_boundary_end(text: &str) -> Option<usize> {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ctx() -> SegmentContext {
-        SegmentContext::default()
-    }
-
-    // ── T1 ────────────────────────────────────────────────────────────────────
-
-    /// T1: Push `会議の`, then `結果です。` → one MT call with combined sentence.
-    #[test]
-    fn t1_two_fragments_combine_into_one_sentence() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        let r1 = agg.push("会議の", ctx(), None, now);
-        assert!(r1.is_empty(), "partial fragment should be held");
-
-        let r2 = agg.push("結果です。", ctx(), None, now);
-        assert_eq!(r2.len(), 1, "should emit exactly one segment");
-        assert_eq!(r2[0].text, "会議の結果です。");
-        assert_eq!(r2[0].flush_reason, FlushReason::SentenceBoundary);
-    }
-
-    // ── T2 ────────────────────────────────────────────────────────────────────
-
-    /// T2: Push `こんにちは` then idle/max_age 4000 ms → force flush.
-    #[test]
-    fn t2_max_age_force_flush() {
-        let mut agg = SentenceAggregator::with_max_age(Duration::from_millis(4_000));
-        let now = Instant::now();
-
-        let r = agg.push("こんにちは", ctx(), None, now);
-        assert!(r.is_empty());
-
-        // Not yet expired.
-        let before = now + Duration::from_millis(3_999);
-        assert!(agg.poll_max_age(before).is_none());
-
-        // Now expired.
-        let after = now + Duration::from_millis(4_001);
-        let flushed = agg.poll_max_age(after).expect("should flush on max_age");
-        assert_eq!(flushed.text, "こんにちは");
-        assert_eq!(flushed.flush_reason, FlushReason::MaxAge);
-
-        // Buffer should now be empty.
-        assert!(agg.poll_max_age(after).is_none());
-    }
-
-    // ── T3 ────────────────────────────────────────────────────────────────────
-
-    /// T3: Empty string → no MT call.
-    #[test]
-    fn t3_empty_string_produces_no_output() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        assert!(agg.push("", ctx(), None, now).is_empty());
-        assert!(agg.push("   ", ctx(), None, now).is_empty());
-        assert!(agg.flush_shutdown().is_none());
-    }
-
-    // ── T4 ────────────────────────────────────────────────────────────────────
-
-    /// T4: Two sentences in one STT result → two MT calls.
-    #[test]
-    fn t4_two_sentences_in_one_fragment_produce_two_segments() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        let segs = agg.push("こんにちは！ありがとうございます。", ctx(), None, now);
-        assert_eq!(
-            segs.len(),
-            2,
-            "two sentence boundaries must produce two segments"
-        );
-        assert_eq!(segs[0].text, "こんにちは！");
-        assert_eq!(segs[1].text, "ありがとうございます。");
-        assert_eq!(segs[0].split_index, 0);
-        assert_eq!(segs[1].split_index, 1);
-        assert!(
-            agg.flush_shutdown().is_none(),
-            "no remainder should be held"
-        );
-    }
-
-    // ── T5 ────────────────────────────────────────────────────────────────────
-
-    /// T5: Shutdown with partial held → partial flushed.
-    #[test]
-    fn t5_shutdown_drains_held_partial() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        let r = agg.push("こんにちは", ctx(), None, now);
-        assert!(r.is_empty());
-
-        let flushed = agg
-            .flush_shutdown()
-            .expect("held partial must be flushed on shutdown");
-        assert_eq!(flushed.text, "こんにちは");
-        assert_eq!(flushed.flush_reason, FlushReason::Shutdown);
-
-        // Second flush: nothing left.
-        assert!(agg.flush_shutdown().is_none());
-    }
-
-    // ── Replay / MT-reduction test ─────────────────────────────────────────────
-
-    /// Simulates a 60-second meeting replay and verifies that the aggregator
-    /// reduces MT calls by ≥ 30 % compared with the baseline of one MT call
-    /// per STT fragment.
-    ///
-    /// Scenario: Japanese speech split into small STT fragments, most without
-    /// sentence boundaries.  The aggregator holds them and emits only when a
-    /// `。` is encountered.
-    #[test]
-    fn replay_reduces_mt_calls_by_at_least_30_percent() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        // A realistic sequence: 8 fragments → 2 complete sentences (+ 1 partial at end).
-        let fragments: &[&str] = &[
-            "会議を",   // no boundary → held
-            "始め",     // no boundary → combined + held
-            "ます。",   // sentence end → emit
-            "次の",     // no boundary → held
-            "議題に",   // no boundary → combined + held
-            "移り",     // no boundary → combined + held
-            "ます。",   // sentence end → emit
-            "以上です", // no boundary → held (partial, no final boundary)
-        ];
-
-        let baseline = fragments.len(); // 8 MT calls without aggregation
-
-        let mut agg_mt_calls: usize = 0;
-        for fragment in fragments {
-            agg_mt_calls += agg.push(fragment, ctx(), None, now).len();
-        }
-        if agg.flush_shutdown().is_some() {
-            agg_mt_calls += 1; // shutdown flush counts as an MT call
-        }
-
-        let reduction = 1.0 - (agg_mt_calls as f64 / baseline as f64);
-        assert!(
-            reduction >= 0.30,
-            "expected ≥30% MT call reduction, got {:.1}% ({agg_mt_calls} vs baseline {baseline})",
-            reduction * 100.0,
-        );
-    }
-
-    // ── ASCII sentence boundaries ──────────────────────────────────────────────
-
-    #[test]
-    fn ascii_sentence_boundaries_are_recognised() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        let segs = agg.push("Hello! How are you?", ctx(), None, now);
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0].text, "Hello!");
-        assert_eq!(segs[1].text, "How are you?");
-    }
-
-    #[test]
-    fn trailing_remainder_after_boundary_is_held() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        let segs = agg.push("Done. Still going", ctx(), None, now);
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0].text, "Done.");
-        assert_eq!(segs[0].split_index, 0);
-
-        let flushed = agg.flush_shutdown().expect("remainder must be held");
-        assert_eq!(flushed.text, "Still going");
-        assert_eq!(flushed.split_index, 1);
-    }
-
-    // ── Dedup-key propagation ─────────────────────────────────────────────────
-
-    #[test]
-    fn dedup_keys_from_contributing_fragments_are_included() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        agg.push("Hello", ctx(), Some("key-a".to_string()), now);
-        let segs = agg.push(" world.", ctx(), Some("key-b".to_string()), now);
-
-        assert_eq!(segs.len(), 1);
-        assert!(segs[0].dedup_keys.contains(&"key-a".to_string()));
-        assert!(segs[0].dedup_keys.contains(&"key-b".to_string()));
-    }
-
-    #[test]
-    fn dedup_keys_are_deferred_when_tail_remains_held() {
-        let mut agg = SentenceAggregator::new();
-        let now = Instant::now();
-
-        let segs = agg.push("Done. Still going", ctx(), Some("key-a".to_string()), now);
-
-        assert_eq!(segs.len(), 1);
-        assert!(
-            segs[0].dedup_keys.is_empty(),
-            "dedup key must not be committed while trailing text from the same fragment is held"
-        );
-
-        let flushed = agg.flush_shutdown().expect("tail should be held");
-        assert_eq!(flushed.text, "Still going");
-        assert_eq!(flushed.dedup_keys, vec!["key-a".to_string()]);
-        assert_eq!(flushed.split_index, 1);
-    }
-}
+#[path = "sentence_aggregator_tests.rs"]
+mod tests;
