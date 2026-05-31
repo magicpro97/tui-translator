@@ -234,11 +234,11 @@ cargo build --release --features local-stt,local-mt,local-tts
 
 Install the three model bundles (one-time):
 
-| Stage | Model | Cache path | Size |
-|-------|-------|-----------|------|
-| **STT** | Whisper tiny (ggml-tiny.bin) | `%LOCALAPPDATA%\tui-translator\models\ggml-tiny.bin` | ~74 MB |
-| **MT** | OPUS-MT ja→vi ONNX bundle | `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` | ~250–300 MB |
-| **TTS** | Supertonic-3 int8 ONNX bundle | `%LOCALAPPDATA%\tui-translator\models\tts\supertonic-3\` | ~128 MB |
+| Stage | Model | Windows path | macOS path | Size |
+|-------|-------|-------------|-----------|------|
+| **STT** | Whisper tiny (ggml-tiny.bin) | `%LOCALAPPDATA%\tui-translator\models\ggml-tiny.bin` | `~/Library/Application Support/tui-translator/models/ggml-tiny.bin` | ~74 MB |
+| **MT** | OPUS-MT ja→vi ONNX bundle | `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` | `~/Library/Application Support/tui-translator/models/mt/opus-mt-ja-vi/` | ~250–300 MB |
+| **TTS** | Supertonic-3 int8 ONNX bundle | `%LOCALAPPDATA%\tui-translator\models\tts\supertonic-3\` | `~/Library/Application Support/tui-translator/models/tts/supertonic-3/` | ~128 MB |
 
 Set your `config.json`:
 
@@ -326,8 +326,10 @@ offline after the model files are downloaded.
 `mt_provider = "local"` is supported on builds that include the `local-mt`
 feature flag.  To run translation fully on your CPU:
 
-1. **Install the OPUS-MT ONNX bundle** into
-   `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\`.  The current
+1. **Install the OPUS-MT ONNX bundle** into the per-user model cache directory
+   (`%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` on Windows;
+   `~/Library/Application Support/tui-translator/models/mt/opus-mt-ja-vi/` on macOS;
+   `~/.local/share/tui-translator/models/mt/opus-mt-ja-vi/` on Linux).  The current
    release ships the Japanese → Vietnamese pair only
    (Helsinki-NLP/opus-mt-ja-vi, CC-BY-4.0; verify the model card before
    redistribution).  Approximate on-disk size: ~250–300 MB; peak RAM
@@ -391,11 +393,22 @@ they are not selected by the app today.
 
    Place the downloaded file in the per-user model cache directory:
 
+   **Windows:**
    ```text
    %LOCALAPPDATA%\tui-translator\models\
    ```
+   Example: `C:\Users\YourName\AppData\Local\tui-translator\models\ggml-tiny.bin`
 
-   Example result: `C:\Users\YourName\AppData\Local\tui-translator\models\ggml-tiny.bin`
+   **macOS:**
+   ```text
+   ~/Library/Application Support/tui-translator/models/
+   ```
+   Example: `~/.../Application Support/tui-translator/models/ggml-tiny.bin`
+
+   **Linux:**
+   ```text
+   ~/.local/share/tui-translator/models/
+   ```
 
    The application verifies the SHA-256 checksum on startup and will report a
    clear error if the file is missing or corrupted. See `USAGE.md` for the
@@ -431,9 +444,12 @@ they are not selected by the app today.
 - **8 GB machines may hit swap** if Zoom, local STT, local MT, and local TTS
   all run at once. Monitor RAM in Task Manager; switch to Google Cloud providers
   or a smaller STT model if headroom is tight.
-- **One-time model download required.** Model files must be placed in
-  `%LOCALAPPDATA%\tui-translator\models\` before local providers start. The
-  application verifies SHA-256 checksums on startup and reports a clear error if
+- **One-time model download required.** Model files must be placed in the
+  per-user model cache directory before local providers start
+  (`%LOCALAPPDATA%\tui-translator\models\` on Windows;
+  `~/Library/Application Support/tui-translator/models/` on macOS;
+  `~/.local/share/tui-translator/models/` on Linux).
+  The application verifies SHA-256 checksums on startup and reports a clear error if
   a file is missing or corrupted. A dedicated model-download command (issue #236)
   is planned for a future release.
 
@@ -446,7 +462,7 @@ they are not selected by the app today.
 | RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or switch back to Google STT |
 | "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
 | No translation output | No translation provider is available | Use `mt_provider = "google"` with a valid Google API key, or install the OPUS-MT bundle and set `mt_provider = "local"` |
-| `unsupported language pair` (local MT) | Requested pair has no installed OPUS-MT bundle | Install the bundle for the pair under `%LOCALAPPDATA%\tui-translator\models\mt\`, or set `mt_cloud_fallback = "google"` to opt in to Google for unsupported pairs |
+| `unsupported language pair` (local MT) | Requested pair has no installed OPUS-MT bundle | Install the bundle for the pair under `%LOCALAPPDATA%\tui-translator\models\mt\` (Windows) or `~/Library/Application Support/tui-translator/models/mt/` (macOS), or set `mt_cloud_fallback = "google"` to opt in to Google for unsupported pairs |
 | `onnxruntime.dll not found` / DLL load error | ONNX Runtime missing for `local-mt` builds | Place `onnxruntime.dll` (v1.20.x) next to `tui-translator.exe` or in the model folder, or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
 | `mt_bench` fails the gate | Host CPU cannot meet the JV-08 latency budget | Keep `mt_provider = "google"`; see `docs/11-google-local-benchmark.md` for the gate definition |
 
