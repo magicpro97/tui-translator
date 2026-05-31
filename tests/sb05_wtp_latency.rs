@@ -10,6 +10,9 @@
 #[path = "common/pipeline_bridge.rs"]
 mod pipeline;
 
+#[cfg(feature = "semantic-buffering-wtp")]
+pub use pipeline::providers;
+
 macro_rules! require_wtp_model {
     () => {{
         match std::env::var("WTP_MODEL_PATH") {

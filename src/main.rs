@@ -1251,6 +1251,47 @@ fn main() -> Result<()> {
                 // orphaned Arc; now any write by the orchestrator is visible outside.
                 let slot_a_tts_status_arc = Arc::new(Mutex::new(pipeline::SlotProviderStatus::Ok));
 
+                // ── #675 WTP model pre-flight ─────────────────────────────────────────────
+                #[cfg(feature = "semantic-buffering-wtp")]
+                let resolved_wtp_model_dir: Option<String> = {
+                    let sb = &cfg_snapshot.pipeline.semantic_buffering;
+                    if sb.enabled && sb.wtp_judge_enabled {
+                        match rt.block_on(
+                            pipeline::completeness::wtp_bootstrap::ensure_wtp_model_ready(
+                                cfg_snapshot
+                                    .pipeline
+                                    .semantic_buffering
+                                    .wtp_model_dir
+                                    .as_deref(),
+                                None,
+                            ),
+                        ) {
+                            Ok(dir) => {
+                                tracing::info!(dir = %dir.display(), "WTP model ready");
+                                Some(dir.to_string_lossy().into_owned())
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "WTP unavailable, falling back to RuleBasedJudge: {e:#}"
+                                );
+                                None
+                            }
+                        }
+                    } else {
+                        cfg_snapshot
+                            .pipeline
+                            .semantic_buffering
+                            .wtp_model_dir
+                            .clone()
+                    }
+                };
+                #[cfg(not(feature = "semantic-buffering-wtp"))]
+                let resolved_wtp_model_dir = cfg_snapshot
+                    .pipeline
+                    .semantic_buffering
+                    .wtp_model_dir
+                    .clone();
+
                 let ctx = pipeline::OrchestratorContext {
                     slot_id: pipeline::SlotId::A,
                     audio_level: Arc::clone(&state.audio_level),
@@ -1313,11 +1354,7 @@ fn main() -> Result<()> {
                         if let Some(judge) = pipeline::completeness::build_judge(
                             cfg_snapshot.pipeline.semantic_buffering.enabled,
                             cfg_snapshot.pipeline.semantic_buffering.wtp_judge_enabled,
-                            cfg_snapshot
-                                .pipeline
-                                .semantic_buffering
-                                .wtp_model_dir
-                                .as_deref(),
+                            resolved_wtp_model_dir.as_deref(),
                             cfg_snapshot
                                 .pipeline
                                 .semantic_buffering
@@ -1461,11 +1498,7 @@ fn main() -> Result<()> {
                                                 .pipeline
                                                 .semantic_buffering
                                                 .wtp_judge_enabled,
-                                            cfg_snapshot
-                                                .pipeline
-                                                .semantic_buffering
-                                                .wtp_model_dir
-                                                .as_deref(),
+                                            resolved_wtp_model_dir.as_deref(),
                                             cfg_snapshot
                                                 .pipeline
                                                 .semantic_buffering

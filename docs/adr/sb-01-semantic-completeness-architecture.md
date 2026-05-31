@@ -113,6 +113,20 @@ Boundary probability = `sigmoid(logits[0, last_pos, 1])`.
 
 ### Obtaining the model
 
+**Automatic download (recommended, issue #675)**
+
+Starting with issue #675, the application automatically downloads and verifies
+`wtp-bert-mini.onnx` at startup when both `pipeline.semantic_buffering.enabled: true`
+and `pipeline.semantic_buffering.tier3_enabled: true` are configured.
+No manual steps are required. The model is cached in the platform data directory
+(or `wtp_model_dir` when set) and re-verified (SHA-256) on every startup; corrupt
+or outdated files are re-downloaded automatically.
+
+To air-gap the download, set `TUI_TRANSLATOR_OFFLINE=1` and place the model
+file in the configured model directory before starting the application.
+
+**Manual download (legacy / air-gapped)**
+
 ```bash
 # Download model.onnx from HuggingFace Hub
 pip install huggingface_hub
