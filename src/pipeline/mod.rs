@@ -29,6 +29,7 @@ pub mod audio_sink;
 pub mod backpressure_hook;
 /// QA8-07 (#505) hook indirection for cancellation/shutdown latency.
 pub mod cancellation_hook;
+pub mod completeness;
 pub mod cpu_gate;
 pub mod fallback;
 pub mod playback;
