@@ -1,0 +1,9 @@
+{
+  "name": "wtp-bert-mini",
+  "version": "1.0.0",
+  "sha256": "8f2e2ada50239bef37469e4187b209c70d141e02f193cdfb5436e2ed6070479a",
+  "size_bytes": 14800980,
+  "license_url": "https://huggingface.co/benjamin/wtp-bert-mini",
+  "license_text": "Apache License 2.0. Model by Benjamin Minixhofer. See https://huggingface.co/benjamin/wtp-bert-mini for details.",
+  "source_url": "https://huggingface.co/benjamin/wtp-bert-mini/resolve/main/model.onnx"
+}

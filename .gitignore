@@ -79,3 +79,4 @@ scripts/standards/**/__pycache__/
 src/audio/mod.rs.orig
 src/audio/mod.rs.rej
 verification-evidence/
+scratch/

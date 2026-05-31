@@ -1138,3 +1138,36 @@ eval_session --latest ^
 `eval_session` reads local files only.  No audio, text, or credentials are
 sent to any server.  The output reports contain the transcript text from your
 session log; treat them with the same care as the log files themselves.
+
+## Neural Sentence Judge (wtp-bert-mini)
+
+When `pipeline.semantic_buffering.enabled: true` and
+`pipeline.semantic_buffering.tier3_enabled: true` are set in config, the app
+automatically downloads the `wtp-bert-mini` ONNX model (~14 MB) from HuggingFace
+on first run.
+
+### First-run behavior
+- The model is downloaded to the directory specified by `wtp_model_dir` in config,
+  or the platform cache directory when `wtp_model_dir` is unset
+- The download and any errors are written to the session log
+- If the download fails, the app falls back to the rule-based judge automatically
+
+### Platform cache locations
+| Platform | Path |
+|----------|------|
+| Windows | `%LOCALAPPDATA%\tui-translator\models\` |
+| macOS | `~/Library/Application Support/tui-translator/models/` |
+| Linux | `$XDG_DATA_HOME/tui-translator/models/` |
+
+### Disabling auto-download
+Set `pipeline.semantic_buffering.tier3_enabled: false` in config to use the
+rule-based judge only (or set `pipeline.semantic_buffering.enabled: false` to
+disable semantic buffering entirely).
+
+### Air-gapped environments
+Set the `TUI_TRANSLATOR_OFFLINE=1` environment variable to prevent download attempts.
+Place `wtp-bert-mini.onnx` in the configured `wtp_model_dir` directory (or the
+platform cache directory when `wtp_model_dir` is unset).
+
+### Updating the model
+Delete `wtp-bert-mini.onnx` from the model directory and restart. The app re-downloads automatically.
