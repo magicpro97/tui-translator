@@ -43,13 +43,21 @@ const PROGRESSIVE: &[&str] = &["ていました", "ています", "ていた", "
 const REQUEST: &[&str] = &["くださいませ", "ください"];
 
 /// Sentence-final particles (終助詞).
-const FINAL_PARTICLES: &[&str] = &["もん", "もの", "か", "ね", "よ", "な", "わ", "ぞ", "ぜ"];
+///
+/// Note: bare `"な"` is intentionally excluded — it collides with prenominal
+/// な-adjective endings (e.g. `きれいな`, `大切な`) which are *incomplete*.
+/// The prohibitive `な` is rare in business-meeting STT streams; the
+/// conservative default (Incomplete) is safer than a false-positive flush.
+const FINAL_PARTICLES: &[&str] = &["もん", "もの", "か", "ね", "よ", "わ", "ぞ", "ぜ"];
 
 /// Topic / subject / object / location particles that mark an *incomplete* phrase.
 const INCOMPLETE_PARTICLES: &[char] = &['は', 'が', 'を', 'に', 'へ', 'で', 'の'];
 
 /// Conjunctive endings that signal the sentence continues.
-const CONJUNCTIVE: &[&str] = &["けれど", "ながら", "から", "ので", "けど", "て", "で"];
+///
+/// Note: `"で"` is already caught by the `INCOMPLETE_PARTICLES` char-level
+/// check (step 2) so it is omitted here to avoid dead code.
+const CONJUNCTIVE: &[&str] = &["けれど", "ながら", "から", "ので", "けど", "て"];
 
 /// Returns `true` if `text` contains at least one Japanese character
 /// (Hiragana U+3040-U+309F, Katakana U+30A0-U+30FF, or CJK U+4E00-U+9FFF).
@@ -260,5 +268,15 @@ mod tests {
             "100 calls took {}ms, expected < 10ms",
             elapsed.as_millis()
         );
+    }
+
+    /// Regression: bare `な` in な-adjective prenominal position must NOT flush.
+    /// Before the fix, `"な"` in FINAL_PARTICLES caused false-positive Complete
+    /// for fragments like `"きれいな"` (review finding, PR #669).
+    #[test]
+    fn incomplete_for_na_adjective_prenominal() {
+        assert_eq!(judge("きれいな"), Completeness::Incomplete);
+        assert_eq!(judge("大切な"), Completeness::Incomplete);
+        assert_eq!(judge("素直な"), Completeness::Incomplete);
     }
 }
