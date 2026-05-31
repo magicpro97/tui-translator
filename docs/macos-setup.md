@@ -127,7 +127,100 @@ default system audio mix automatically.
 
 ---
 
-## Building from source
+## Fully offline mode (no Google API key)
+
+When built with `--features local-stt,local-mt,local-tts`, the entire
+transcription → translation → TTS pipeline runs on your CPU without any Google
+account, API key, or internet connection.
+
+### Build
+
+```bash
+# Install prerequisites (one-time)
+xcode-select --install
+brew install cmake
+
+# Clone and build
+git clone https://github.com/magicpro97/tui-translator.git
+cd tui-translator
+cargo build --release --features local-stt,local-mt,local-tts,local-stt-metal
+```
+
+> **Apple Silicon tip:** Include `local-stt-metal` to enable Whisper Metal GPU
+> acceleration.  On Intel Macs omit that flag.
+
+### Model files
+
+Place model files in the macOS per-user model cache directory:
+
+```
+~/Library/Application Support/tui-translator/models/
+```
+
+| Stage | Model | Relative cache path | Size |
+|-------|-------|-------------------|------|
+| **STT** | Whisper tiny | `ggml-tiny.bin` | ~74 MB |
+| **MT** | OPUS-MT ja→vi | `mt/opus-mt-ja-vi/` (ONNX bundle) | ~250–300 MB |
+| **TTS** | Supertonic-3 | `tts/supertonic-3/` (auto-downloaded on first run) | ~128 MB |
+
+**STT model download:**
+
+```bash
+mkdir -p ~/Library/Application\ Support/tui-translator/models
+curl -L -o ~/Library/Application\ Support/tui-translator/models/ggml-tiny.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+```
+
+**MT model:** Download the OPUS-MT ja→vi ONNX bundle from the project releases
+page or from [Helsinki-NLP/opus-mt-ja-vi](https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi)
+and extract it to `~/Library/Application Support/tui-translator/models/mt/opus-mt-ja-vi/`.
+
+**TTS model:** The Supertonic-3 model bundle is auto-downloaded to
+`~/Library/Application Support/tui-translator/models/tts/supertonic-3/` on first
+run when `tts_provider` is `"local"`.
+
+### Config
+
+Create `config.json` with these macOS offline settings:
+
+```jsonc
+{
+  "source_language": "ja-JP",
+  "target_language": "vi",
+  "stt_provider": "local",
+  "mt_provider": "local",
+  "tts_provider": "local",
+  "tts_enabled": true,
+  "stt_fallback_policy": "none"
+}
+```
+
+> **No `google_api_key` needed.** Remove it entirely — the app starts and runs
+> the full pipeline without any Google Cloud account.
+
+### Audio capture on macOS
+
+Audio capture is handled automatically on macOS:
+
+- **ScreenCaptureKit** (macOS 13+, zero install): Grant **Screen Recording**
+  permission in System Settings → Privacy & Security → Screen Recording.
+- **BlackHole** (macOS 12+): Install via `brew install blackhole-2ch` and set up
+  a Multi-Output Device as described in [Option A](#option-a-blackhole-loopback-recommended).
+
+The `capture_device` config field selects the BlackHole device name (e.g.
+`"BlackHole 2ch"`).  Omit it (or set to `null`) to use the ScreenCaptureKit
+default system-audio mix.
+
+### Verify
+
+```bash
+./target/release/tui-translator --list-audio-devices
+# Should show BlackHole 2ch or system default
+```
+
+---
+
+
 
 ```bash
 # Clone the repository
