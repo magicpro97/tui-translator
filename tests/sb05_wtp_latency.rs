@@ -67,7 +67,9 @@ mod wtp_latency {
         }
 
         latencies.sort_unstable();
-        let p95 = latencies[(n as f64 * 0.95) as usize];
+        // Nearest-rank p95: ceil(0.95 * n) - 1 = index 94 for n=100.
+        let p95_idx = ((n as f64 * 0.95).ceil() as usize).saturating_sub(1);
+        let p95 = latencies[p95_idx];
         assert!(p95 <= 10, "p95 inference latency was {}ms, want ≤10ms", p95);
     }
 }

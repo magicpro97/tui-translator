@@ -25,9 +25,9 @@ Implement a **tiered completeness judge** injected into `SentenceAggregator`:
 
 | Tier | Name | Description | Feature flag |
 |------|------|-------------|--------------|
-| 1 | `RuleBasedJudge` | Regex patterns on JA verbal endings (PLAIN_VERB, POLITE_VERB, COPULA, etc.) | Always-on when `semantic_buffering.enabled = true` |
-| 2 | `ConfidenceGate` | Holds fragments where Whisper `avg_logprob < threshold` | Always-on when `semantic_buffering.enabled = true` |
-| 3 | `WtpJudge` | ONNX neural boundary classifier (`wtp-bert-mini`) | Opt-in: `semantic-buffering-wtp` Cargo feature |
+| 1 | `RuleBasedJudge` | Regex patterns on JA verbal endings (PLAIN_VERB, POLITE_VERB, COPULA, etc.) — implements `CompletenessJudge` | Always-on when `semantic_buffering.enabled = true` |
+| 2 | `ConfidenceGate` | Vetos flushes where Whisper `avg_logprob < threshold` — **auxiliary gate**, NOT a `CompletenessJudge`; applied separately in `SentenceAggregator::push` | Always-on when `semantic_buffering.enabled = true` |
+| 3 | `WtpJudge` | ONNX neural boundary classifier (`wtp-bert-mini`) — implements `CompletenessJudge` | Opt-in: `semantic-buffering-wtp` Cargo feature |
 
 All tiers implement the `CompletenessJudge` trait:
 
@@ -50,6 +50,9 @@ pub trait CompletenessJudge: Send + Sync {
 
 ## Tier 2: Confidence Gate
 
+- **Not a `CompletenessJudge`** — `ConfidenceGate` has its own `assess()` method returning
+  `GateDecision` (Pass / Hold). It acts as an auxiliary veto layer applied in
+  `SentenceAggregator::push()` after the judge returns `Complete`.
 - Guards against low-confidence STT output causing spurious flushes.
 - Uses Whisper `avg_logprob`; no-op for non-Whisper STT providers.
 - Configurable threshold via `pipeline.semantic_buffering.min_confidence_threshold`.

@@ -204,6 +204,13 @@ impl WtpJudge {
             .context("WtpJudge: failed to set intra_threads")?
             .with_inter_threads(1)
             .context("WtpJudge: failed to set inter_threads")?
+            // Disable spin-waiting so idle ORT threads yield to the OS scheduler
+            // immediately, matching the pattern in `mt_ort.rs` to avoid CPU burn
+            // during audio-capture idle periods.
+            .with_intra_op_spinning(false)
+            .context("WtpJudge: failed to disable intra-op spinning")?
+            .with_inter_op_spinning(false)
+            .context("WtpJudge: failed to disable inter-op spinning")?
             .commit_from_file(&model_path)
             .with_context(|| {
                 format!(
@@ -255,6 +262,11 @@ impl WtpJudge {
         // Try f32 first (standard export); fall back to f16 (GPU-optimised export).
         let (shape, logit_newline) = match logits_val.try_extract_raw_tensor::<f32>() {
             Ok((shape, data)) => {
+                anyhow::ensure!(
+                    shape.len() == 3,
+                    "WtpJudge: expected rank-3 logits, got rank {}",
+                    shape.len()
+                );
                 let n_labels = shape[2] as usize;
                 let idx = (seq_len - 1) * n_labels + NEWLINE_LABEL_IDX;
                 (
@@ -268,6 +280,11 @@ impl WtpJudge {
                 let (shape, data) = logits_val
                     .try_extract_raw_tensor::<f16>()
                     .context("WtpJudge: could not extract logits as f32 or f16")?;
+                anyhow::ensure!(
+                    shape.len() == 3,
+                    "WtpJudge: expected rank-3 logits (f16), got rank {}",
+                    shape.len()
+                );
                 let n_labels = shape[2] as usize;
                 let idx = (seq_len - 1) * n_labels + NEWLINE_LABEL_IDX;
                 let val = data
