@@ -83,7 +83,7 @@ use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices}
 use local_model_cli::{
     parse_local_mt_model_install_args_from, parse_local_stt_model_prefetch_args_from,
     parse_model_verify_args_from, run_local_mt_model_install, run_local_stt_model_prefetch,
-    run_model_list, run_model_verify, should_list_local_models,
+    run_model_list, run_model_verify, run_startup_local_model_check, should_list_local_models,
 };
 use metrics::{
     spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
@@ -661,6 +661,17 @@ fn main() -> Result<()> {
     );
     let onboarding_required = startup_config_mode == StartupConfigMode::OnboardingRequired;
     let config_recovery_required = startup_config_mode == StartupConfigMode::ConfigRecoveryRequired;
+
+    // Auto-download any missing local models before the TUI starts so the
+    // download progress is visible on the terminal.  Only runs when both
+    // providers are already configured as "local" (i.e. not during first-run
+    // onboarding, where the user hasn't chosen their provider yet).
+    if !onboarding_required && !config_recovery_required && !skip_interactive_startup {
+        if let Err(err) = run_startup_local_model_check(&cfg.stt_provider, &cfg.mt_provider) {
+            tracing::warn!(%err, "startup local model check failed — continuing without models");
+        }
+    }
+
     let pending_consent_manifests =
         if !onboarding_required && !config_recovery_required && !skip_interactive_startup {
             collect_pending_consent_manifests(&cfg)
