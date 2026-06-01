@@ -57,16 +57,15 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d317f76f208d459dbc68d7c1d2a81ae4bb1ac9ddc67d3fef2d8b547cd4a0208"
 dependencies = [
- "doom-fish-utils 0.2.1",
+ "doom-fish-utils",
 ]
 
 [[package]]
 name = "apple-metal"
-version = "0.8.7"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "770ed47ba948122fc9ce0bc10a433cf9fabcf1c2ed6d44db5b7ad0d70ffede15"
+checksum = "387a63f8982428bf5bd67915adcf8ddb65eff6b7f8c37818945e4f6c355fd3f7"
 dependencies = [
- "doom-fish-utils 0.3.2",
  "libc",
 ]
 
@@ -411,15 +410,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-queue"
-version = "0.3.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f58bbc28f91df819d0aa2a2c00cd19754769c2fad90579b3592b1c9ba7a3115"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -612,16 +602,6 @@ name = "doom-fish-utils"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "075caf2993a45abe1c2e60d8d1514ce43f947fcbcd31de19db0075e80e20c6a7"
-
-[[package]]
-name = "doom-fish-utils"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2f014d56e0b8ef916deeaa003fb711eb52879fae2701d86cc73953367b805ac"
-dependencies = [
- "crossbeam-queue",
- "futures-util",
-]
 
 [[package]]
 name = "downcast-rs"
@@ -3367,6 +3347,7 @@ name = "tui-translator"
 version = "0.1.8"
 dependencies = [
  "anyhow",
+ "apple-metal",
  "base64 0.22.1",
  "cpal",
  "crossterm",

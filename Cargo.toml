@@ -167,6 +167,11 @@ rubato = "0.15"
 # The macos_13_0 feature enables with_captures_audio / with_sample_rate / with_channel_count
 # and SCStreamOutputType::Audio. MACOS-10 (issue #641).
 screencapturekit = { version = "6", features = ["macos_13_0"] }
+# apple-metal is a transitive dep of screencapturekit (>=0.6, <0.9). Pinned to <0.8.7
+# because 0.8.7 adds macOS 26 SDK APIs (MTLSamplerDescriptor.reductionMode/lodBias)
+# that fail to compile even on macOS 15 / Xcode 16 runners. 0.8.6 is the last version
+# with only macOS 15 APIs (MTLLogState), which compile fine on macos-15 runners. #679.
+apple-metal = { version = ">=0.8.0, <0.8.7", default-features = false }
 # TTS audio playback via CoreAudio (macOS only). MACOS-17 (issue #657).
 # rodio uses cpal internally; the same version as Windows is required so the
 # RodioSink shared implementation compiles on both platforms.
