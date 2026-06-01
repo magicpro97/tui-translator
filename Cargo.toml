@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "tui-translator"
-version = "0.1.4"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.88"
 description = "Real-time bilingual subtitles for Zoom meetings — terminal-based, Windows-native"
@@ -166,6 +166,8 @@ rubato = "0.15"
 # ScreenCaptureKit audio capture — zero-install system-audio loopback (macOS 13.0+).
 # The macos_13_0 feature enables with_captures_audio / with_sample_rate / with_channel_count
 # and SCStreamOutputType::Audio. MACOS-10 (issue #641).
+# Note: screencapturekit → apple-metal 0.8.x uses macOS 26 SDK APIs (MTLSamplerDescriptor),
+# requiring Xcode 26 / macos-26 CI runners to compile. Tracked in #679.
 screencapturekit = { version = "6", features = ["macos_13_0"] }
 # TTS audio playback via CoreAudio (macOS only). MACOS-17 (issue #657).
 # rodio uses cpal internally; the same version as Windows is required so the
