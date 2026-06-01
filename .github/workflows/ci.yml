@@ -11,6 +11,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # screencapturekit requires macOS 13.0+; setting the deployment target here
+  # tells the Swift/dyld linker that libswift_Concurrency is an OS library
+  # (in the dyld shared cache on macOS 12+), preventing the standalone dylib
+  # RPATH lookup that fails on macos-26 runners. Tracked in issue #679.
+  MACOSX_DEPLOYMENT_TARGET: "13.0"
 
 jobs:
   # ── Format ──────────────────────────────────────────────────────────────────
