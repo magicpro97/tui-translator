@@ -57,6 +57,7 @@ mod i18n;
 mod local_model_cli;
 #[cfg(test)]
 mod local_model_cli_tests;
+mod local_model_startup;
 #[cfg(test)]
 mod main_metrics_tests;
 mod metrics;
@@ -83,8 +84,9 @@ use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices}
 use local_model_cli::{
     parse_local_mt_model_install_args_from, parse_local_stt_model_prefetch_args_from,
     parse_model_verify_args_from, run_local_mt_model_install, run_local_stt_model_prefetch,
-    run_model_list, run_model_verify, run_startup_local_model_check, should_list_local_models,
+    run_model_list, run_model_verify, should_list_local_models,
 };
+use local_model_startup::run_startup_local_model_check;
 use metrics::{
     spawn_process_metrics_task, LatencyHistogram, LossMetrics, MemoryGuard, MetricsSnapshot,
     NetworkMetrics, ProcessSnapshot,
