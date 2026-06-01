@@ -547,7 +547,7 @@ fn run_startup_stt_model_check(stdout: &mut impl io::Write) -> Result<()> {
     // Default model: multilingual tiny (~74 MB).
     let spec = providers::local::ModelManifest::builtin()
         .find(providers::local::ModelId::Tiny)
-        .expect("ModelId::Tiny is always in the built-in manifest");
+        .ok_or_else(|| anyhow::anyhow!("ModelId::Tiny not found in built-in manifest"))?;
 
     let model_path = cache_dir.join(spec.file_name);
     if model_path.exists() {
