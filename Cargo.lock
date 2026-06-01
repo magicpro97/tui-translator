@@ -62,9 +62,9 @@ dependencies = [
 
 [[package]]
 name = "apple-metal"
-version = "0.8.6"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "387a63f8982428bf5bd67915adcf8ddb65eff6b7f8c37818945e4f6c355fd3f7"
+checksum = "c8bae3c878d7fe47a104bb9bc178c797323f2b503fe89ed4dd7e9991f65ba7dc"
 dependencies = [
  "libc",
 ]
