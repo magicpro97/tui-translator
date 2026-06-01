@@ -203,6 +203,83 @@ pub fn opus_mt_ja_vi_consent_manifest() -> bootstrap::ModelConsentManifest {
     }
 }
 
+/// Base URL for the tui-translator GitHub Release that hosts OPUS-MT ja→vi ONNX models.
+const OPUS_MT_JA_VI_RELEASE_URL: &str =
+    "https://github.com/magicpro97/tui-translator/releases/download/models-opus-mt-ja-vi-v1";
+
+/// Built-in download manifest for the OPUS-MT ja→vi model bundle.
+///
+/// Returns a [`super::ModelBundleManifest`] with all seven model files, their
+/// canonical GitHub Release download URLs, SHA-256 hashes, and byte sizes.
+/// Use with [`super::install_model_bundle`] to auto-download on first run.
+///
+/// # SHA-256 Sources
+///
+/// Hashes were computed from the ONNX files exported from the
+/// `Helsinki-NLP/opus-mt-ja-vi` HuggingFace snapshot
+/// `434d6a7a10ad829bb2c2c79a167c7338dda06fd3` using PyTorch ONNX export
+/// (opset 14, legacy TorchScript exporter) and verified locally.
+pub fn opus_mt_ja_vi_bundle_manifest() -> super::ModelBundleManifest {
+    super::ModelBundleManifest {
+        id: "opus-mt-ja-vi".to_string(),
+        display_name: "OPUS-MT Japanese\u{2192}Vietnamese (ONNX)".to_string(),
+        version: OPUS_MT_JA_VI_VERSION.to_string(),
+        license: "Apache-2.0".to_string(),
+        source_url: OPUS_MT_JA_VI_LICENSE_URL.to_string(),
+        files: vec![
+            super::ModelBundleFile {
+                relative_path: "encoder_model.onnx".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/encoder_model.onnx"),
+                size_bytes: 208_912_649,
+                sha256: "56908a93194100fe0433c52f4f1c76f31c72df94d38d756d241948c7976b7eea"
+                    .to_string(),
+            },
+            super::ModelBundleFile {
+                relative_path: "decoder_model.onnx".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/decoder_model.onnx"),
+                size_bytes: 366_605_519,
+                sha256: "ca0e462c0d6bc3befffe23273caa0d794269e7095a920ef6cb29a4593a111c74"
+                    .to_string(),
+            },
+            super::ModelBundleFile {
+                relative_path: "source.spm".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/source.spm"),
+                size_bytes: 839_903,
+                sha256: "d6d043e769032763788380b2851869987ca6f22b27e779468d4f704afd2e8473"
+                    .to_string(),
+            },
+            super::ModelBundleFile {
+                relative_path: "target.spm".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/target.spm"),
+                size_bytes: 762_876,
+                sha256: "391b0ec9aac4540171656ab73d5c86e9b60b1e74cbd449f9a3bca735eae02cbb"
+                    .to_string(),
+            },
+            super::ModelBundleFile {
+                relative_path: "vocab.json".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/vocab.json"),
+                size_bytes: 1_678_004,
+                sha256: "930bddc6fe758f163abebda8168da58426b1d9c744a3a36d300a949d4213658f"
+                    .to_string(),
+            },
+            super::ModelBundleFile {
+                relative_path: "config.json".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/config.json"),
+                size_bytes: 1_394,
+                sha256: "5f72d541d896aa985925be9707d4146b05df5ff771d129e69fb79ea4259f1757"
+                    .to_string(),
+            },
+            super::ModelBundleFile {
+                relative_path: "generation_config.json".to_string(),
+                download_url: format!("{OPUS_MT_JA_VI_RELEASE_URL}/generation_config.json"),
+                size_bytes: 293,
+                sha256: "c024b49d9426ec6b56a30a10ab56fad069f75c46673dfc5059a796b609c09331"
+                    .to_string(),
+            },
+        ],
+    }
+}
+
 /// Static array backing [`ModelManifest::builtin`].
 ///
 /// Sources:

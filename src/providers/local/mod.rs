@@ -63,8 +63,8 @@ mod whisper;
 
 #[allow(unused_imports)]
 pub use manifest::{
-    opus_mt_ja_vi_consent_manifest, ModelId, ModelManifest, ModelSpec, OPUS_MT_JA_VI_LICENSE_URL,
-    OPUS_MT_JA_VI_VERSION,
+    opus_mt_ja_vi_bundle_manifest, opus_mt_ja_vi_consent_manifest, ModelId, ModelManifest,
+    ModelSpec, OPUS_MT_JA_VI_LICENSE_URL, OPUS_MT_JA_VI_VERSION,
 };
 
 #[allow(unused_imports)]
