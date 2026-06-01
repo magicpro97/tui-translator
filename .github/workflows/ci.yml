@@ -565,7 +565,7 @@ jobs:
   # `portable-pty` which works on both Windows (ConPTY) and Unix (openpty).
   macos-integration-smoke:
     name: macOS integration smoke test (file audio)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -737,11 +737,11 @@ jobs:
   # ── CI-02 macOS local-stt compile (Issue #658) — ADVISORY ──────────────────
   # Compiles the `local-stt` feature on macOS-14 to detect whisper-rs / bindgen
   # regressions on Apple Silicon early.  The Xcode toolchain (clang + libclang)
-  # is pre-installed on macos-14 runners; no additional brew deps are needed.
+  # is pre-installed on macos-15 runners; no additional brew deps are needed.
   # Branch protection MUST NOT require this context — see CI-02-required-checks.md §2.4.
   macos-local-stt:
     name: macOS local-stt compile (allowed-fail)
-    runs-on: macos-14
+    runs-on: macos-15
     # reason: Advisory only per CI-02 acceptance. The whisper.cpp / bindgen
     # native toolchain on hosted macOS runners is not yet stabilised for this
     # repo; failures here are early-warning signal only. Branch protection must
@@ -767,7 +767,7 @@ jobs:
   # Branch protection MUST NOT require this context — see CI-02-required-checks.md §2.4.
   macos-local-mt:
     name: macOS local-mt compile (allowed-fail)
-    runs-on: macos-14
+    runs-on: macos-15
     # reason: Advisory only per CI-02 acceptance. ORT / sentencepiece native
     # runtime bootstrap on macOS is not stable enough for a required gate;
     # failures here are early-warning signal only. Branch protection must
@@ -798,14 +798,14 @@ jobs:
   # this matrix after the GitHub-hosted `macos-13` runner pool kept these jobs
   # queued for >19 hours, indefinitely blocking PR #512. The decision is a
   # deliberate matrix change (NOT a claim that macOS-13 passed). Apple-silicon
-  # coverage is retained via `macos-14`. Rationale and audit trail:
+  # coverage is retained via `macos-15`. Rationale and audit trail:
   # verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md.
   cross-platform:
     name: Cross-platform build (${{ matrix.os }}, ${{ matrix.feature }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14, ubuntu-22.04, ubuntu-24.04]
+        os: [windows-latest, macos-15, ubuntu-22.04, ubuntu-24.04]
         feature: [default]
     runs-on: ${{ matrix.os }}
     steps:
@@ -841,7 +841,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14, ubuntu-22.04]
+        os: [windows-latest, macos-15, ubuntu-22.04]
         feature: [audio-integration, production-audio]
     runs-on: ${{ matrix.os }}
     steps:
@@ -996,7 +996,7 @@ jobs:
   # compilation regressions early without requiring a full build or test run.
   macos-arch-check:
     name: macOS aarch64 cross-check (MACOS-11)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
