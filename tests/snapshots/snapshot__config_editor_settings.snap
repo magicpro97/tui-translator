@@ -13,6 +13,7 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  Audio file path : C:\capture\meeting.wav                                │
        │  STT provider    : local                                                 │
        │  MT provider     : google                                                │
+       │  MT style        : neutral                                               │
        │  TTS enabled     : false                                                 │
        │  TTS routing     : speakers                                              │
        │  Virtual mic     : not configured                                        │
@@ -20,5 +21,4 @@ expression: "render_config_editor(&editor, 90, 20)"
        │  VAD pre-roll ms : 200                                                   │
        │  Max window ms   : 3000                                                  │
        │  Early VAD flush : true                                                  │
-       │  Idle flush ms   : 600                                                   │
        └──────────────────────────────────────────────────────────────────────────┘

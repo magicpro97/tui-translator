@@ -12,9 +12,9 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  Audio file path : —                                     │
 │  STT provider    : local                                 │
 │  MT provider     : google                                │
+│  MT style        : neutral                               │
 │  TTS enabled     : false                                 │
 │  TTS routing     : speakers                              │
 │  Virtual mic     : not configured                        │
 │  STT fallback    : google-when-keyed                     │
-│  VAD pre-roll ms : 200                                   │
 └──────────────────────────────────────────────────────────┘
