@@ -36,5 +36,4 @@ expression: "render_config_editor_for_test(&editor, 90, 36)"
        │  Sentence max ms : 4000                                                  │
        │                                                                          │
        │ Ready to save.                                                           │
-       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
        └──────────────────────────────────────────────────────────────────────────┘
