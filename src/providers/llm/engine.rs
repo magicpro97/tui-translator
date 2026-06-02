@@ -196,6 +196,7 @@ mod real {
 
             let concurrency = NonZeroUsize::new(2)
                 .expect("literal 2 is non-zero; this cannot fail"); // allow-unwrap: #698
+            let mistralrs = MistralRsBuilder::new(
                 pipeline,
                 SchedulerConfig::DefaultScheduler {
                     method: DefaultSchedulerMethod::Fixed(concurrency),
