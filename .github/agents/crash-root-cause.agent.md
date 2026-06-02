@@ -1,7 +1,6 @@
 ---
 name: crash-root-cause
 description: 'Investigates tui-translator crashes using Windows crash dumps, WER/Event Viewer evidence, panic logs, OOM signals, and targeted source analysis. Use for 0xc0000409, panic, OOM, or long-run crash reports.'
-target: github-copilot
 ---
 
 # tui-translator Crash Root Cause Analyst

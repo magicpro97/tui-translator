@@ -1,7 +1,6 @@
 ---
 name: nfr-verification-gate
 description: 'Final non-functional requirements verification for tui-translator crash/performance/security hardening. Use before closing stability/security work.'
-target: github-copilot
 ---
 
 # tui-translator NFR Verification Gate

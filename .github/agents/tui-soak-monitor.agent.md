@@ -1,7 +1,6 @@
 ---
 name: tui-soak-monitor
 description: 'Runs and interprets tui-translator soak evidence for crash-free runtime, RSS growth, CPU, dropped chunks, subtitle pair count, and latency. Use for 30-minute or longer stability gates.'
-target: github-copilot
 ---
 
 # tui-translator Soak Monitor

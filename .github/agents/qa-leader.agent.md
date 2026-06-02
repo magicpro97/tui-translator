@@ -7,7 +7,6 @@ description: >
   for Windows/macOS/Linux, maps work to the WBS issue tracker, and must reach confidence
   = 1.0 before signing off. Use when planning any feature with cross-platform impact,
   release gate decisions, QA plan design, or ISO quality traceability.
-target: github-copilot
 ---
 
 # tui-translator QA Leader (Opus)
