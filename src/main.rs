@@ -671,7 +671,12 @@ fn main() -> Result<()> {
     // providers are already configured as "local" (i.e. not during first-run
     // onboarding, where the user hasn't chosen their provider yet).
     if !onboarding_required && !config_recovery_required && !skip_interactive_startup {
-        if let Err(err) = run_startup_local_model_check(&cfg.stt_provider, &cfg.mt_provider) {
+        if let Err(err) = run_startup_local_model_check(
+            &cfg.stt_provider,
+            &cfg.mt_provider,
+            &cfg.tts_provider,
+            cfg.tts_enabled,
+        ) {
             tracing::warn!(%err, "startup local model check failed — continuing without models");
         }
     }
