@@ -387,6 +387,58 @@ both the local OPUS-MT engine and Google Cloud Translation.
 | `terms` | `[]` | Strings that must appear verbatim in the output |
 | `case_insensitive` | `false` | If `true`, matching ignores case (e.g. `"api"` protects `"API"`) |
 
+### LLM-based machine translation (opt-in, CPU-local)
+
+> **Availability:** The LLM MT feature requires building from source with
+> `--features local-llm-mt`.  It is **not** included in the standard release
+> binaries — those ship with OPUS-MT and Google Cloud as the two MT options.
+
+When enabled, `mt_provider = "llm"` routes translation through a small GGUF LLM
+(Qwen2.5-0.5B-Instruct Q4_K_M ≈ 600 MB) running entirely on your CPU:
+
+```json
+{
+  "mt_provider": "llm",
+  "mt_customisation": {
+    "style": "neutral",
+    "preserve_numerics": true,
+    "domain_hints": ["tech", "agile"]
+  }
+}
+```
+
+| `mt_provider` value | Engine | Build feature | Notes |
+|---------------------|--------|--------------|-------|
+| `"local"` | OPUS-MT ONNX (default) | included in all releases | Recommended for general use |
+| `"google"` | Google Cloud Translation | included in all releases | Requires API key and billing |
+| `"llm"` | GGUF LLM via `mistralrs` | `local-llm-mt` only | Build from source |
+
+**Translation style** (`mt_customisation.style`):
+
+| Value | Behaviour |
+|-------|-----------|
+| `neutral` | Balanced, natural translation (default) |
+| `formal` | Polite / business Japanese register |
+| `casual` | Conversational, relaxed register |
+| `technical` | Preserves technical terminology; minimal rephrasing |
+| `verbatim` | Word-for-word, minimal interpretation |
+
+The `glossary` and `mt_customisation` settings work with all three MT providers.
+Style and domain hints are only acted on by the `"llm"` provider; OPUS-MT and
+Google Translate silently ignore them.
+
+**To build with LLM MT:**
+
+```bash
+cargo build --release --features local-llm-mt
+# or benchmark the model first:
+cargo run --features local-llm-mt --bin llm_mt_bench
+```
+
+The GGUF model file is not bundled in the binary.  Place it at the path
+configured in `providers.llm.model_path`, or the app will prompt for it on
+first startup.
+
 ### Recommended model tier
 
 The application uses GGML-format Whisper model files from the
