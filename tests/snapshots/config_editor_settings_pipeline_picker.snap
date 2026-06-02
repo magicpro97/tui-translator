@@ -19,7 +19,7 @@ expression: "render_config_editor_for_test(&editor, 90, 36)"
        │  Target language : vi                                                    │
        │  Google API key  : — (not set)                                           │
        │  Audio source    : file                                                  │
-       │  Capture device  : macOS default input                                   │
+       │  Capture device  : test-capture-device                                   │
        │  Audio file path : C:\capture\meeting.wav                                │
        │  STT provider    : local                                                 │
        │  MT provider     : google                                                │
