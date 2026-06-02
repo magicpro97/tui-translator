@@ -307,9 +307,10 @@ const PIPELINE_MAX_WINDOW_CHOICES: [&str; 6] = ["1500", "2000", "3000", "4500", 
 const IDLE_FLUSH_CHOICES: [&str; 5] = ["300", "500", "600", "800", "1200"];
 const IDLE_MIN_CHOICES: [&str; 5] = ["200", "300", "500", "800", "1200"];
 const SENTENCE_MAX_AGE_CHOICES: [&str; 5] = ["2000", "3000", "4000", "6000", "8000"];
+const MT_STYLE_CHOICES: [&str; 5] = ["neutral", "formal", "casual", "technical", "verbatim"];
 const CAPTURE_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES: usize = 3;
-const CONFIG_EDITOR_FIELD_COUNT: usize = 18;
+const CONFIG_EDITOR_FIELD_COUNT: usize = 19;
 const CONFIG_EDITOR_LABEL_WIDTH: usize = 16;
 const CONFIG_EDITOR_MIN_VALUE_WIDTH: usize = 8;
 
@@ -424,6 +425,7 @@ enum ConfigEditorField {
     AudioFilePath,
     SttProvider,
     MtProvider,
+    MtTranslationStyle,
     TtsEnabled,
     TtsRouting,
     VirtualMicDevice,
@@ -447,6 +449,7 @@ impl ConfigEditorField {
         Self::AudioFilePath,
         Self::SttProvider,
         Self::MtProvider,
+        Self::MtTranslationStyle,
         Self::TtsEnabled,
         Self::TtsRouting,
         Self::VirtualMicDevice,
@@ -469,6 +472,7 @@ impl ConfigEditorField {
             Self::AudioFilePath => "Audio file path",
             Self::SttProvider => "STT provider",
             Self::MtProvider => "MT provider",
+            Self::MtTranslationStyle => "MT style",
             Self::TtsEnabled => "TTS enabled",
             Self::TtsRouting => "TTS routing",
             Self::VirtualMicDevice => "Virtual mic",
@@ -492,16 +496,17 @@ impl ConfigEditorField {
             Self::AudioFilePath => 5,
             Self::SttProvider => 6,
             Self::MtProvider => 7,
-            Self::TtsEnabled => 8,
-            Self::TtsRouting => 9,
-            Self::VirtualMicDevice => 10,
-            Self::SttFallbackPolicy => 11,
-            Self::VadPreRollMs => 12,
-            Self::PipelineMaxWindowMs => 13,
-            Self::PipelineEarlyFlushOnVadEnd => 14,
-            Self::PipelineIdleFlushMs => 15,
-            Self::PipelineIdleMinMs => 16,
-            Self::PipelineSentenceMaxAgeMs => 17,
+            Self::MtTranslationStyle => 8,
+            Self::TtsEnabled => 9,
+            Self::TtsRouting => 10,
+            Self::VirtualMicDevice => 11,
+            Self::SttFallbackPolicy => 12,
+            Self::VadPreRollMs => 13,
+            Self::PipelineMaxWindowMs => 14,
+            Self::PipelineEarlyFlushOnVadEnd => 15,
+            Self::PipelineIdleFlushMs => 16,
+            Self::PipelineIdleMinMs => 17,
+            Self::PipelineSentenceMaxAgeMs => 18,
         }
     }
 
@@ -510,7 +515,8 @@ impl ConfigEditorField {
             ConfigEditorMode::Settings => true,
             ConfigEditorMode::Onboarding => !matches!(
                 self,
-                Self::VadPreRollMs
+                Self::MtTranslationStyle
+                    | Self::VadPreRollMs
                     | Self::PipelineMaxWindowMs
                     | Self::PipelineEarlyFlushOnVadEnd
                     | Self::PipelineIdleFlushMs
@@ -532,6 +538,7 @@ impl ConfigEditorField {
                 | Self::VirtualMicDevice
                 | Self::SttProvider
                 | Self::MtProvider
+                | Self::MtTranslationStyle
                 | Self::TtsEnabled
                 | Self::TtsRouting
                 | Self::SttFallbackPolicy
@@ -568,6 +575,8 @@ pub struct ConfigEditorState {
     pub stt_provider: String,
     /// MT backend name saved in config (`google` or feature-gated `local`).
     pub mt_provider: String,
+    /// MT translation style (`"neutral"`, `"formal"`, `"casual"`, `"technical"`, `"verbatim"`).
+    pub mt_translation_style: String,
     /// Whether TTS audio output is enabled, stored as `"true"` or `"false"`.
     pub tts_enabled: String,
     /// TTS audio route (`"speakers"`, `"virtual_mic"`, or `"both"`).
@@ -611,6 +620,7 @@ impl ConfigEditorState {
             audio_file_path: config.audio_file_path.clone().unwrap_or_default(),
             stt_provider: config.stt_provider.clone(),
             mt_provider: config.mt_provider.clone(),
+            mt_translation_style: config.mt_customisation.style.clone(),
             tts_enabled: if config.tts_enabled {
                 "true".to_string()
             } else {
@@ -655,6 +665,7 @@ impl ConfigEditorState {
             ConfigEditorField::AudioFilePath => &self.audio_file_path,
             ConfigEditorField::SttProvider => &self.stt_provider,
             ConfigEditorField::MtProvider => &self.mt_provider,
+            ConfigEditorField::MtTranslationStyle => &self.mt_translation_style,
             ConfigEditorField::TtsEnabled => &self.tts_enabled,
             ConfigEditorField::TtsRouting => &self.tts_routing,
             ConfigEditorField::VirtualMicDevice => &self.virtual_mic_device,
@@ -678,6 +689,7 @@ impl ConfigEditorState {
             ConfigEditorField::AudioFilePath => self.audio_file_path = value,
             ConfigEditorField::SttProvider => self.stt_provider = value,
             ConfigEditorField::MtProvider => self.mt_provider = value,
+            ConfigEditorField::MtTranslationStyle => self.mt_translation_style = value,
             ConfigEditorField::TtsEnabled => self.tts_enabled = value,
             ConfigEditorField::TtsRouting => self.tts_routing = value,
             ConfigEditorField::VirtualMicDevice => self.virtual_mic_device = value,
@@ -728,6 +740,7 @@ impl ConfigEditorState {
             ConfigEditorField::AudioFilePath => &mut self.audio_file_path,
             ConfigEditorField::SttProvider => &mut self.stt_provider,
             ConfigEditorField::MtProvider => &mut self.mt_provider,
+            ConfigEditorField::MtTranslationStyle => &mut self.mt_translation_style,
             ConfigEditorField::TtsEnabled => &mut self.tts_enabled,
             ConfigEditorField::TtsRouting => &mut self.tts_routing,
             ConfigEditorField::VirtualMicDevice => &mut self.virtual_mic_device,
@@ -4090,6 +4103,7 @@ fn config_editor_choice_values(field: ConfigEditorField) -> Option<&'static [&'s
         }
         ConfigEditorField::AudioSource => Some(crate::audio::audio_source_choices_for_os()),
         ConfigEditorField::SttProvider | ConfigEditorField::MtProvider => Some(&PROVIDER_CHOICES),
+        ConfigEditorField::MtTranslationStyle => Some(&MT_STYLE_CHOICES),
         ConfigEditorField::TtsEnabled | ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
             Some(&BOOLEAN_CHOICES)
         }
@@ -4124,6 +4138,7 @@ fn config_editor_choice_save_hint(field: ConfigEditorField) -> &'static str {
         | ConfigEditorField::PipelineIdleFlushMs
         | ConfigEditorField::PipelineIdleMinMs
         | ConfigEditorField::PipelineSentenceMaxAgeMs => ". Save and restart to apply.",
+        ConfigEditorField::MtTranslationStyle => ". Takes effect on next translation.",
         ConfigEditorField::GoogleApiKey
         | ConfigEditorField::CaptureDevice
         | ConfigEditorField::AudioFilePath
