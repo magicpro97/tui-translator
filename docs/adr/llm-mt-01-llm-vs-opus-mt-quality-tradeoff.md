@@ -1,15 +1,15 @@
 # ADR LLM-MT-01 — LLM-based MT vs. OPUS-MT quality/latency tradeoff
 
-> **Status:** Proposed — implementation in PR #705 (LLM-MT-01 benchmark) and
-> PR #706 (LLM-MT-03 LlmMtProvider); pending merge and hardware benchmark run.
+> **Status:** Accepted — dual-route MT architecture approved; `llm_mt_bench`
+> binary implemented in PR #705; `LlmMtProvider` implemented in PR #706.
+> Latency numbers TBD pending benchmark run on reference hardware tiers.
 > **Date:** 2026-05-22
 > **Updated:** 2026-06-02
 > **Owners:** qa-leader, dev-leader, test-leader
 > **Supersedes:** Extends — does not replace — `docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md`
-> **Decision confidence:** 0.8 for the decision framework; **0.0** for any specific
-> per-model latency/RAM/quality number until JV-03 / LLM-MT-01 benchmark issue lands.
-> `llm_mt_bench` binary exists on `feat/llm-mt-01-benchmark-spike`; numbers populate
-> once the binary is run on each reference tier.
+> **Decision confidence:** 1.0 for the dual-route architecture; benchmark
+> numbers (per-model latency/RAM/quality) TBD until `llm_mt_bench` is run
+> on each reference tier (see §3 for the pass/fail criteria).
 
 ---
 
@@ -115,9 +115,12 @@ regardless of quality.
 
 **Open / TBD**
 
+- Benchmark numbers for Qwen2.5-0.5B Q4_K_M on reference tiers (Windows i7-10th gen,
+  macOS M1, Linux Ryzen 5) are pending a `llm_mt_bench` run on each platform.
+  Issue: LLM-MT-01 (#696).
 - Whether the LLM provider should be lazy-loaded on first style/glossary request
-  vs. eager at startup. Decision deferred to LLM-MT-03 once cold-start numbers
-  exist.
+  vs. eager at startup. Current implementation uses lazy loading; can be revisited
+  once cold-start numbers exist from the benchmark.
 - Whether OPUS-MT itself should be replaced when the LLM proves dominant on all
   three axes (quality + latency + RAM) on a future hardware tier. Out of scope
   for this ADR — would need a new ADR superseding `jv-01`.
