@@ -122,7 +122,7 @@ tar = { version = "0.4", optional = true }
 bzip2 = { version = "0.4", features = ["static"], optional = true }
 # IEEE 754 f16 type — used by wtp-bert-mini ONNX (attention_mask expects fp16).
 half = { version = "2", optional = true }
-# LLM-MT (issue #696/#698): pure-Rust GGUF inference crate — no cmake, no system DLLs.
+# LLM-MT (issues #696/#698): pure-Rust GGUF inference crate — no cmake, no system DLLs.
 # CPU-only by default; Metal acceleration activates automatically on macOS Apple Silicon.
 # Feature-gated by `local-llm-mt` so default CI builds stay lightweight.
 mistralrs-core = { version = "0.8", optional = true, default-features = false }
@@ -188,6 +188,9 @@ release-macos-intel = ["local-stt", "local-mt", "local-tts", "ort/download-binar
 release-linux = ["local-stt", "local-mt", "ort/download-binaries", "ort/copy-dylibs"]
 # Developer alias: all local-model features without the CI download strategy.
 full = ["local-stt", "local-stt-metal", "local-mt", "local-tts"]
+# Enable the local LLM-based MT provider (LLM-MT-01 to LLM-MT-03, issues #696/#698).
+# Requires mistralrs-core which pulls in a large build-time dependency tree.
+# Only needed for GGUF LLM inference; OPUS-MT local-mt is a lighter alternative.
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)
