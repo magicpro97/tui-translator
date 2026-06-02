@@ -4700,5 +4700,67 @@ mod tests {
     }
 
 
+    fn config_editor_key_to_action(
+        key: &crossterm::event::KeyEvent,
+        picker_field_active: bool,
+    ) -> Option<UserAction> {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Tab => Some(UserAction::ConfigNextField),
+            KeyCode::BackTab => Some(UserAction::ConfigPrevField),
+            KeyCode::Down => {
+                if picker_field_active {
+                    Some(UserAction::ConfigPickerNext)
+                } else {
+                    Some(UserAction::ConfigNextField)
+                }
+            }
+            KeyCode::Up => {
+                if picker_field_active {
+                    Some(UserAction::ConfigPickerPrev)
+                } else {
+                    Some(UserAction::ConfigPrevField)
+                }
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn config_editor_tab_scoped_to_picker_open_state() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let shift_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+
+        assert_eq!(
+            config_editor_key_to_action(&tab, false),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&shift_tab, false),
+            Some(UserAction::ConfigPrevField)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&down, true),
+            Some(UserAction::ConfigPickerNext)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&up, true),
+            Some(UserAction::ConfigPickerPrev)
+        );
+        // Tab always advances field regardless of picker state
+        assert_eq!(
+            config_editor_key_to_action(&tab, true),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&shift_tab, true),
+            Some(UserAction::ConfigPrevField)
+        );
+    }
 
 }

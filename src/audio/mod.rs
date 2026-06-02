@@ -358,6 +358,10 @@ pub async fn start_capture_with_device(
         .filter(|device| !device.is_empty())
         .map(ToOwned::to_owned);
 
+    // `audio_source` is only used to dispatch on macOS; suppress the warning on other platforms.
+    #[cfg(not(target_os = "macos"))]
+    let _ = &audio_source;
+
     #[cfg(windows)]
     let info = wasapi_capture::spawn(tx, capture_device, silence_threshold)?;
 
