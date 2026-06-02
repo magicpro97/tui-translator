@@ -53,7 +53,10 @@ use crate::{
         SttSource, SttState,
     },
     pipeline::cpu_gate::CpuGate,
-    providers::{MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, TtsProvider},
+    providers::{
+        MtProvider, MtResult, PcmChunk, ProviderError, SttProvider, TranslationContext,
+        TranslationStyle, TtsProvider,
+    },
     session::{self, SessionRecorder, TranscriptSegment, SESSION_LOG_SCHEMA_VERSION},
     tui::{SubtitlePair, SubtitlePane, AUDIO_LEVEL_SCALE},
 };
@@ -374,6 +377,13 @@ pub struct OrchestratorContext {
 
     /// Optional transcript JSONL recorder. Disabled recorders do not create files.
     pub session_recorder: SessionRecorder,
+
+    /// MT customisation options (LLM-MT-04, issue #699).
+    ///
+    /// Used by LLM-class MT providers to set translation style and domain hints.
+    /// Non-LLM providers (OPUS-MT, Google) ignore this via the default
+    /// [`crate::providers::MtProvider::translate_with_context`] implementation.
+    pub mt_customisation: crate::config::MtCustomisation,
 }
 
 // ── Per-slot orchestrator state (DM-03, issue #379) ───────────────────────────
@@ -1019,45 +1029,57 @@ where
 
         let mt_start = Instant::now();
         set_mt_state(&ctx.mt_state, MtState::Loading);
-        let translation =
-            match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await {
-                Ok(r) => {
-                    set_mt_state(&ctx.mt_state, MtState::CloudFallback);
-                    record_provider_success(ctx, ProviderStage::Mt);
-                    // Track MT input chars (billing basis: source chars sent to the API,
-                    // matching the count used by GoogleMtProvider::translate).
-                    {
-                        let mut m = ctx
-                            .session_metrics
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner());
-                        m.chars_translated += seg.text.trim().chars().count() as u64;
-                        m.record_mt_call(); // Issue #269
-                    }
-                    // Issue #80: approximate MT bytes received = translated text length.
-                    ctx.network_metrics
-                        .record_bytes_recv(r.translated_text.len() as u64);
-                    clear_pipeline_error(&ctx.pipeline_error_msg);
-                    r
+        let mt_ctx = TranslationContext {
+            style: TranslationStyle::from_config_str(&ctx.mt_customisation.style),
+            domain: ctx
+                .mt_customisation
+                .domain_hints
+                .first()
+                .map(|s| s.as_str()),
+            do_not_translate_hints: &[],
+        };
+        let translation = match with_retry(|| {
+            mt.translate_with_context(&seg.text, &source_lang, &target_lang, mt_ctx.clone())
+        })
+        .await
+        {
+            Ok(r) => {
+                set_mt_state(&ctx.mt_state, MtState::CloudFallback);
+                record_provider_success(ctx, ProviderStage::Mt);
+                // Track MT input chars (billing basis: source chars sent to the API,
+                // matching the count used by GoogleMtProvider::translate).
+                {
+                    let mut m = ctx
+                        .session_metrics
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner());
+                    m.chars_translated += seg.text.trim().chars().count() as u64;
+                    m.record_mt_call(); // Issue #269
                 }
-                Err(ProviderError::AuthError(msg)) => {
-                    set_stt_state(&ctx.stt_state, SttState::Listening);
-                    set_mt_state(&ctx.mt_state, MtState::Error(msg.clone()));
-                    handle_auth_error(ctx, &format!("MT: {msg}"));
-                    return;
-                }
-                Err(err) => {
-                    record_provider_failure(ctx, ProviderStage::Mt, &err);
-                    let warn_msg = format!("⚠ Translation error: {err}");
-                    tracing::warn!("{warn_msg}");
-                    set_stt_state(&ctx.stt_state, SttState::Listening);
-                    set_mt_state(&ctx.mt_state, MtState::Error(err.to_string()));
-                    set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
-                    // Issue #81: MT failure counts as a dropped chunk.
-                    ctx.loss_metrics.record_drop();
-                    return; // discard chunk, continue outer loop
-                }
-            };
+                // Issue #80: approximate MT bytes received = translated text length.
+                ctx.network_metrics
+                    .record_bytes_recv(r.translated_text.len() as u64);
+                clear_pipeline_error(&ctx.pipeline_error_msg);
+                r
+            }
+            Err(ProviderError::AuthError(msg)) => {
+                set_stt_state(&ctx.stt_state, SttState::Listening);
+                set_mt_state(&ctx.mt_state, MtState::Error(msg.clone()));
+                handle_auth_error(ctx, &format!("MT: {msg}"));
+                return;
+            }
+            Err(err) => {
+                record_provider_failure(ctx, ProviderStage::Mt, &err);
+                let warn_msg = format!("⚠ Translation error: {err}");
+                tracing::warn!("{warn_msg}");
+                set_stt_state(&ctx.stt_state, SttState::Listening);
+                set_mt_state(&ctx.mt_state, MtState::Error(err.to_string()));
+                set_pipeline_error(&ctx.pipeline_error_msg, warn_msg);
+                // Issue #81: MT failure counts as a dropped chunk.
+                ctx.loss_metrics.record_drop();
+                return; // discard chunk, continue outer loop
+            }
+        };
         produced.push(ProducedSubtitle {
             transcript: seg.text,
             context: seg.context,
@@ -1282,7 +1304,19 @@ async fn commit_aggregated_segment<M, T>(
 
     let mt_start = Instant::now();
     set_mt_state(&ctx.mt_state, MtState::Loading);
-    let translation = match with_retry(|| mt.translate(&seg.text, &source_lang, &target_lang)).await
+    let mt_ctx = TranslationContext {
+        style: TranslationStyle::from_config_str(&ctx.mt_customisation.style),
+        domain: ctx
+            .mt_customisation
+            .domain_hints
+            .first()
+            .map(|s| s.as_str()),
+        do_not_translate_hints: &[],
+    };
+    let translation = match with_retry(|| {
+        mt.translate_with_context(&seg.text, &source_lang, &target_lang, mt_ctx.clone())
+    })
+    .await
     {
         Ok(result) => {
             set_mt_state(&ctx.mt_state, MtState::CloudFallback);
@@ -1959,6 +1993,8 @@ mod tests {
             // TTS slot selection — single-slot mode in tests: always active.
             tts_active_for_slot: true,
             tts_status: Arc::new(Mutex::new(SlotProviderStatus::Ok)),
+            // MT customisation — use default (neutral) in tests.
+            mt_customisation: crate::config::MtCustomisation::default(),
         };
         (ctx, tx)
     }

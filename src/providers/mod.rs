@@ -282,6 +282,21 @@ pub enum TranslationStyle {
     PreserveOriginalNumerics,
 }
 
+impl TranslationStyle {
+    /// Convert a config-style string to the provider enum value.
+    ///
+    /// Unknown strings silently fall back to [`TranslationStyle::Neutral`].
+    pub fn from_config_str(s: &str) -> Self {
+        match s {
+            "formal" => Self::Formal,
+            "casual" => Self::Casual,
+            "technical" => Self::Technical,
+            "verbatim" => Self::PreserveOriginalNumerics,
+            _ => Self::Neutral,
+        }
+    }
+}
+
 /// Style and domain hints that LLM-class MT providers can consume.
 ///
 /// Non-LLM providers (OPUS-MT, Google) inherit the default

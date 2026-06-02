@@ -729,6 +729,51 @@ pub struct GlossaryConfig {
     pub case_insensitive: bool,
 }
 
+/// How the LLM MT provider should frame the translation.
+///
+/// All fields are optional with conservative defaults that match the
+/// existing non-LLM behaviour.  Unknown style strings are silently
+/// ignored and fall back to [`crate::providers::TranslationStyle::Neutral`].
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MtCustomisation {
+    /// Desired translation register.  Accepted values:
+    /// `"neutral"` (default), `"formal"`, `"casual"`, `"technical"`, `"verbatim"`.
+    #[serde(default = "MtCustomisation::default_style")]
+    pub style: String,
+
+    /// When `true`, the LLM is instructed to keep numeric tokens, dates,
+    /// measurement units, and code identifiers in the original language.
+    #[serde(default)]
+    pub preserve_numerics: bool,
+
+    /// Vocabulary domain hints passed to the LLM as context.
+    /// Example: `["software", "agile"]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domain_hints: Vec<String>,
+}
+
+impl Default for MtCustomisation {
+    fn default() -> Self {
+        Self {
+            style: Self::default_style(),
+            preserve_numerics: false,
+            domain_hints: Vec::new(),
+        }
+    }
+}
+
+impl MtCustomisation {
+    #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
+    fn default_style() -> String {
+        "neutral".to_string()
+    }
+
+    /// Returns `true` when this value equals the default, allowing serde to skip it.
+    pub fn is_default(&self) -> bool {
+        self.style == "neutral" && !self.preserve_numerics && self.domain_hints.is_empty()
+    }
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -850,6 +895,12 @@ pub struct AppConfig {
     /// Changing this value requires restarting the application.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mt_cloud_fallback: Option<String>,
+
+    /// Machine-translation customisation options for LLM-backed providers.
+    ///
+    /// Ignored by Google Translation and OPUS-MT providers.
+    #[serde(default, skip_serializing_if = "MtCustomisation::is_default")]
+    pub mt_customisation: MtCustomisation,
 
     /// Text-to-speech provider backend (SUPERTONIC-06, issue #491).
     ///
@@ -1162,6 +1213,7 @@ impl Default for AppConfig {
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
             mt_cloud_fallback: None,
+            mt_customisation: MtCustomisation::default(),
             tts_provider: default_tts_provider(),
             tts_cloud_fallback: None,
             stt_fallback_policy: default_stt_fallback_policy(),
@@ -1204,6 +1256,7 @@ impl std::fmt::Debug for AppConfig {
             .field("stt_provider", &self.stt_provider)
             .field("mt_provider", &self.mt_provider)
             .field("mt_cloud_fallback", &self.mt_cloud_fallback)
+            .field("mt_customisation", &self.mt_customisation)
             .field("tts_provider", &self.tts_provider)
             .field("tts_cloud_fallback", &self.tts_cloud_fallback)
             .field("stt_fallback_policy", &self.stt_fallback_policy)
