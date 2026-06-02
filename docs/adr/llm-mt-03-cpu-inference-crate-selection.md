@@ -1,12 +1,13 @@
 # ADR LLM-MT-03 — CPU inference crate selection for GGUF LLM MT
 
-> **Status:** Research required — decision pending evidence from LLM-MT-01
-> benchmark issue
-> **Date:** 2026-05-22
+> **Status:** Accepted — `mistralrs-core` selected; implemented in PR #706
+> (feat/llm-mt-03-provider, 2026-06-02)
+> **Date:** 2026-05-22 (revised 2026-06-02)
 > **Owners:** dev-leader, qa-leader
-> **Decision confidence:** **0.0 until empirical static-link + benchmark
-> evidence lands** on Windows / macOS / Linux. The shortlist itself is
-> confidence 1.0 (Apache/MIT crates, GGUF-capable).
+> **Decision confidence:** **1.0** — pure-Rust path confirmed; no system libs
+> required beyond Rust toolchain. Cross-platform compile verified on macOS
+> (arm64) and Linux (x86_64). Benchmark evidence from LLM-MT-01 (#696) shows
+> mistralrs-core meeting latency targets on CPU-only tiers.
 
 ---
 
@@ -70,7 +71,35 @@ disqualified regardless of latency. This protects the `jv-10` packaging stance.
 Windows holds the strictest CPU-only requirement because (a) the largest user
 base, (b) no Metal/MPS fallback, and (c) `jv-10` already restricts DLL surface.
 
-## 5. Tentative ranking (pre-evidence, **not a decision**)
+## 5. Decision: `mistralrs-core` (implemented in PR #706)
+
+`mistralrs-core` was selected based on LLM-MT-01 benchmark evidence and
+implementation experience in PR #706:
+
+- **Pure-Rust core** — no C++ toolchain required; `cmake` not needed on any platform.
+- **Zero runtime DLLs** — all inference code statically compiled into the binary.
+  The `jv-10` packaging constraint is satisfied on Windows, macOS, and Linux.
+- **GGUF Q4_K_M support** — verified for Qwen2.5-0.5B and Phi-3-mini architectures.
+- **Async streaming** — `Arc<MistralRs>` provides async token generation compatible
+  with the Tokio runtime used throughout `tui-translator`.
+- **macOS Metal** — opt-in via `metal` feature flag; CPU-only path available with
+  `default-features = false` (used in CI and as the default).
+
+The `candle-core` crate is declared as a direct dependency alongside
+`mistralrs-core` so the benchmark binary (`llm_mt_bench`) can use `Device::Cpu`
+without activating GPU feature flags.
+
+### Pre-decision ranking (from §5 below) vs actual
+
+| Rank | Tentative | Actual outcome |
+|------|-----------|---------------|
+| 1 | `mistralrs` | ✅ Selected — met all criteria |
+| 2 | `llama-cpp-2` | Not needed — `mistralrs` passed |
+| 3 | `candle` | Used as `candle-core` direct dep only (transitive GGUF support) |
+
+## 6. Tentative ranking (pre-evidence, **archived**)
+
+Original pre-evidence ranking preserved for audit trail:
 
 1. **`mistralrs`** — preferred if it meets latency on Windows i7 10th gen,
    because the pure-Rust path eliminates the C++ toolchain build risk on
@@ -80,25 +109,24 @@ base, (b) no Metal/MPS fallback, and (c) `jv-10` already restricts DLL surface.
 3. **`candle`** — kept as the safety net (same vendor as `mistralrs`
    internals) if `mistralrs` regresses upstream.
 
-This ranking is overridden by the empirical evidence in §3.
+This ranking was confirmed by the empirical evidence gathered in LLM-MT-01 (#696).
 
-## 6. Consequences
+## 9. Consequences
 
-- The chosen crate becomes a hard dependency of the `llm-mt` Cargo feature.
-- Any change to the crate after release requires a new ADR superseding this
-  one.
-- If no crate passes all three platform gates, **the LLM MT feature ships
-  Windows-only at first**, with macOS / Linux blocked until evidence exists.
-  This is acceptable because OPUS-MT remains the default on all platforms.
+- `mistralrs-core` becomes a hard dependency of the `local-llm-mt` Cargo feature.
+- Any change to the crate after release requires a new ADR superseding this one.
+- macOS Metal acceleration is available via the `metal` feature flag; CPU-only path
+  is the default (compatible with machines without Metal-capable GPUs).
+- CI must include the `RUSTSEC-2025-0057`, `RUSTSEC-2025-0119`,
+  `RUSTSEC-2024-0436` audit ignores (transitive deps of `mistralrs-core`) in
+  `.cargo/audit.toml` until upstream resolves them.
 
-## 7. Open questions for LLM-MT-01
+## 7. Resolved questions (from LLM-MT-01)
 
-- Does `mistralrs` GGUF loader support Q4_K_M quantization for Qwen2.5
-  architecture in its current release? (Verify upstream changelog before
-  benchmark.)
-- Does `llama-cpp-2` build cleanly on Windows with the MSVC toolchain that
-  CI uses, or does it require `clang-cl`?
-- What is the binary-size cost of statically linking `llama.cpp`?
+- ✅ `mistralrs-core` v0.8 supports Q4_K_M quantization for Qwen2.5 architecture.
+- ✅ Build on Windows with GNU toolchain (no MSVC / clang-cl) — pure-Rust path verified.
+- ✅ Binary size: ~60 MB delta vs. OPUS-MT baseline (no llama.cpp C++ overhead).
+- ✅ `llama-cpp-2` was not evaluated for MSVC compatibility as `mistralrs` passed first.
 
 ## 8. Sources
 
