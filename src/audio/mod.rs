@@ -298,6 +298,29 @@ impl SilenceDetector {
 /// of provider latency before the dedicated capture thread can stall.
 const CHANNEL_CAPACITY: usize = 512;
 
+/// Returns the platform-default `audio_source` value for this crate.
+///
+/// Used internally when a caller does not have access to the config module,
+/// such as in secondary binaries or the router/supervisor.
+fn platform_default_audio_source() -> &'static str {
+    #[cfg(windows)]
+    {
+        "wasapi"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "coreaudio"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "pipewire"
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        "file"
+    }
+}
+
 /// Spawn the audio capture task and return the audio stream together with
 /// source metadata for the TUI status bar.
 ///
@@ -306,20 +329,27 @@ const CHANNEL_CAPACITY: usize = 512;
 /// mono via `rubato`, applies the silence gate, and forwards chunks over the
 /// returned channel plus source metadata.
 ///
-/// On **non-Windows** the function returns a stream that delivers 500 ms
-/// silence chunks at real-time pace.  This is enough for integration-test
-/// smoke runs without audio hardware.
+/// On **macOS** this dispatches to the CoreAudio (`"coreaudio"`) or
+/// ScreenCaptureKit (`"screencapturekit"`) backend based on the platform default.
+///
+/// On **non-Windows/non-macOS** the function returns a stream that delivers
+/// 500 ms silence chunks at real-time pace.
 pub async fn start_capture(silence_threshold: f32) -> Result<CaptureStream> {
-    start_capture_with_device(None, silence_threshold).await
+    start_capture_with_device(None, platform_default_audio_source(), silence_threshold).await
 }
 
-/// Spawn the audio capture task using an optional Windows playback endpoint name.
+/// Spawn the audio capture task using an optional device name and audio source backend.
 ///
-/// `capture_device = None` or a blank string uses the Windows default playback
-/// endpoint. Supplying a device name opens that exact active render endpoint for
-/// WASAPI loopback capture; startup fails with a clear error if it is not found.
+/// `capture_device = None` or a blank string uses the platform default device.
+/// `audio_source` selects the capture backend:
+/// - `"wasapi"` — Windows WASAPI loopback
+/// - `"coreaudio"` — macOS CoreAudio/BlackHole (or mic fallback)
+/// - `"screencapturekit"` — macOS ScreenCaptureKit system audio (macOS 13+)
+/// - `"pipewire"` — Linux PipeWire loopback
+/// - `"file"` — file replay (use [`start_file_capture`] directly instead)
 pub async fn start_capture_with_device(
     capture_device: Option<&str>,
+    audio_source: &str,
     silence_threshold: f32,
 ) -> Result<CaptureStream> {
     let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
@@ -335,13 +365,19 @@ pub async fn start_capture_with_device(
     let info = linux_capture::spawn(tx, capture_device, silence_threshold)?;
 
     #[cfg(target_os = "macos")]
-    let info = macos_capture::spawn(tx, capture_device, silence_threshold)?;
+    let info = match audio_source {
+        "screencapturekit" => {
+            screencapturekit_capture::spawn(tx, capture_device, silence_threshold)?
+        }
+        _ => macos_capture::spawn(tx, capture_device, silence_threshold)?,
+    };
 
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     let info = {
         // Other platforms: deliver silence at a realistic pace.
         tokio::spawn(async move {
             let _ = silence_threshold;
+            let _ = audio_source;
             loop {
                 let chunk = AudioChunk::new(vec![0i16; 8_000]);
                 if tx.send(chunk).await.is_err() {
@@ -363,11 +399,13 @@ pub async fn start_capture_with_device(
     Ok(CaptureStream { info, receiver: rx })
 }
 
-/// List active playback endpoints available for WASAPI loopback capture.
+/// List active capture devices available for audio input.
 ///
-/// On Windows this returns active render devices as reported by Core Audio. On
-/// non-Windows platforms it returns the silent test stub so callers can render a
-/// deterministic settings UI in CI.
+/// On **Windows** returns active WASAPI render (loopback) endpoints.
+/// On **macOS** returns all CoreAudio input devices (including virtual loopback
+/// drivers such as BlackHole) plus any available ScreenCaptureKit display sources.
+/// On **Linux** returns PipeWire/PulseAudio monitor sources.
+/// On other platforms returns the silent test stub.
 pub fn list_capture_devices() -> Result<Vec<CaptureDeviceInfo>> {
     #[cfg(windows)]
     {
@@ -381,7 +419,14 @@ pub fn list_capture_devices() -> Result<Vec<CaptureDeviceInfo>> {
 
     #[cfg(target_os = "macos")]
     {
-        macos_capture::list_loopback_devices()
+        let mut devs = macos_capture::list_loopback_devices().unwrap_or_default();
+        // Merge ScreenCaptureKit display sources so the TUI can show them when
+        // audio_source = "screencapturekit".  Errors here are non-fatal: SCK
+        // may not be available (macOS < 13 or no Screen Recording permission).
+        if let Ok(sck) = screencapturekit_capture::list_screencapturekit_devices() {
+            devs.extend(sck);
+        }
+        Ok(devs)
     }
 
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
@@ -460,6 +505,56 @@ pub async fn start_file_capture(wav_path: &str, silence_threshold: f32) -> Resul
         native_sample_rate: 16_000,
     };
     Ok(CaptureStream { info, receiver: rx })
+}
+
+// ─── Platform-label helpers ──────────────────────────────────────────────────
+
+/// Returns the valid `audio_source` choices for the current platform.
+///
+/// Use this in the TUI settings editor instead of a hardcoded constant so that
+/// macOS and Linux builds never show Windows-only entries.  All `#[cfg]` gates
+/// live here, enforcing ADR XPLAT-01 §3 (no platform cfg in `src/tui/`).
+pub fn audio_source_choices_for_os() -> &'static [&'static str] {
+    #[cfg(windows)]
+    {
+        &["wasapi", "file"]
+    }
+    #[cfg(target_os = "macos")]
+    {
+        &["coreaudio", "screencapturekit", "file"]
+    }
+    #[cfg(target_os = "linux")]
+    {
+        &["pipewire", "file"]
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        &["file"]
+    }
+}
+
+/// Returns the platform-appropriate label for the default capture device.
+///
+/// Use this wherever the TUI would otherwise show "Windows default playback"
+/// so that macOS and Linux users see a sensible string.  All `#[cfg]` gates
+/// live here, enforcing ADR XPLAT-01 §3.
+pub fn capture_device_default_label() -> &'static str {
+    #[cfg(windows)]
+    {
+        "Windows default playback"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "macOS default input"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "System default input"
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        "Default input"
+    }
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

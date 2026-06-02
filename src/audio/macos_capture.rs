@@ -261,35 +261,37 @@ fn capture_loop(
     }
 }
 
-/// Find the BlackHole (or explicitly requested) CoreAudio input device.
+/// Find the loopback-capable (or explicitly requested) CoreAudio input device.
 ///
 /// When `requested` is `Some(name)`, performs an exact name match among all
-/// input devices.  When `None`, returns the first device whose name contains
-/// `"BlackHole"`.
+/// input devices.  When `None`, returns the first device whose name matches
+/// the known virtual loopback set (BlackHole, Loopback, SoundFlower, Aggregate).
+/// If no loopback device is found, falls back to the default microphone input
+/// with a `tracing::warn!` rather than returning an error.
 ///
 /// # Errors
 ///
-/// - [`MacosCaptureError::BlackHoleNotFound`] — no BlackHole device present
-///   and no explicit name was requested.
-/// - [`MacosCaptureError::DeviceNotFound`] — explicit name not found among
-///   the enumerated input devices.
+/// - [`MacosCaptureError::DeviceNotFound`] — an explicit name was requested but
+///   not found among the enumerated input devices.
 /// - [`MacosCaptureError::CoreAudioError`] — CoreAudio failed to enumerate
 ///   devices.
+/// - [`MacosCaptureError::BlackHoleNotFound`] — no input devices at all (including
+///   no default microphone).
 pub(crate) fn find_blackhole_device(
     requested: Option<&str>,
 ) -> std::result::Result<cpal::Device, MacosCaptureError> {
     let host = cpal::default_host();
-    let devices: Vec<cpal::Device> = host
-        .input_devices()
-        .map_err(|e| MacosCaptureError::CoreAudioError {
-            code: 0,
-            message: e.to_string(),
-        })?
-        .collect();
 
     match requested {
         Some(name) => {
             let mut available = Vec::new();
+            let devices: Vec<cpal::Device> = host
+                .input_devices()
+                .map_err(|e| MacosCaptureError::CoreAudioError {
+                    code: 0,
+                    message: e.to_string(),
+                })?
+                .collect();
             for device in devices {
                 match device.name() {
                     Ok(device_name) if device_name == name => return Ok(device),
@@ -303,11 +305,49 @@ pub(crate) fn find_blackhole_device(
             })
         }
         None => {
-            for device in devices {
-                if device.name().ok().is_some_and(|n| n.contains("BlackHole")) {
-                    return Ok(device);
+            // First pass: look for a known virtual loopback driver.
+            let devices: Vec<cpal::Device> = host
+                .input_devices()
+                .map_err(|e| MacosCaptureError::CoreAudioError {
+                    code: 0,
+                    message: e.to_string(),
+                })?
+                .collect();
+            for device in &devices {
+                if let Ok(name) = device.name() {
+                    if is_loopback_device_name(&name) {
+                        // Re-enumerate to get a fresh owned device for this name
+                        // (cpal Device is not Clone).
+                        if let Ok(fresh) =
+                            host.input_devices()
+                                .map_err(|e| MacosCaptureError::CoreAudioError {
+                                    code: 0,
+                                    message: e.to_string(),
+                                })
+                        {
+                            for d in fresh {
+                                if d.name().ok().as_deref() == Some(&name) {
+                                    return Ok(d);
+                                }
+                            }
+                        }
+                    }
                 }
             }
+
+            // No virtual loopback installed — fall back to the default
+            // microphone input with a warning.
+            if let Some(default_dev) = host.default_input_device() {
+                let dev_name = default_dev.name().unwrap_or_else(|_| "unknown".into());
+                tracing::warn!(
+                    device = %dev_name,
+                    "No virtual loopback device found (BlackHole/Loopback/SoundFlower/Aggregate). \
+                     Capturing microphone only — install BlackHole or switch audio_source to \
+                     \"screencapturekit\" for system audio."
+                );
+                return Ok(default_dev);
+            }
+
             Err(MacosCaptureError::BlackHoleNotFound)
         }
     }
@@ -373,35 +413,73 @@ pub(crate) fn check_tcc_permission() -> Result<(), MacosCaptureError> {
     Ok(())
 }
 
+/// Returns `true` if the device name indicates a loopback-capable virtual audio device.
+///
+/// Recognises the common virtual loopback driver names: BlackHole (all channel counts),
+/// Loopback Audio (Rogue Amoeba), SoundFlower, and Aggregate Devices created via
+/// Audio MIDI Setup.
+fn is_loopback_device_name(name: &str) -> bool {
+    name.contains("BlackHole")
+        || name.contains("Loopback")
+        || name.contains("SoundFlower")
+        || name.contains("Aggregate")
+}
+
 /// List available macOS audio input devices via CoreAudio (cpal).
 ///
-/// Enumerates all CoreAudio input devices using the cpal default host.
-/// Devices whose name is `"BlackHole 2ch"` are marked as the default.
+/// Enumerates all CoreAudio input endpoints using the cpal default host.  Devices
+/// whose name contains `"BlackHole"`, `"Loopback"`, `"SoundFlower"`, or
+/// `"Aggregate"` are marked `is_default = true` (loopback-capable).
+///
+/// When no loopback device is installed, the function falls back to the default
+/// microphone input with `is_default = true` and emits a `tracing::warn!`.  It
+/// never returns an error solely because no virtual loopback driver is present;
+/// an empty `Ok(vec![])` is returned only when no input devices exist at all.
 ///
 /// # Errors
 ///
-/// Returns [`MacosCaptureError::BlackHoleNotFound`] if no input devices are
-/// present (typically only on headless CI runners without virtual audio
-/// devices).  Propagates [`cpal::DeviceNameError`] if CoreAudio fails to
-/// return a device name.
+/// Propagates a [`cpal::DevicesError`] if CoreAudio fails to enumerate devices.
 pub fn list_loopback_devices() -> anyhow::Result<Vec<CaptureDeviceInfo>> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();
     let mut result: Vec<CaptureDeviceInfo> = Vec::new();
+    let mut found_loopback = false;
 
     for device in host.input_devices()? {
-        let name = device.name()?;
-        let is_default = name == "BlackHole 2ch";
+        let name = match device.name() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let is_loopback = is_loopback_device_name(&name);
+        if is_loopback {
+            found_loopback = true;
+        }
         result.push(CaptureDeviceInfo {
             id: name.clone(),
             name,
-            is_default,
+            is_default: is_loopback,
         });
     }
 
-    if result.is_empty() {
-        return Err(MacosCaptureError::BlackHoleNotFound.into());
+    if !found_loopback {
+        if let Some(default_dev) = host.default_input_device() {
+            if let Ok(default_name) = default_dev.name() {
+                tracing::warn!(
+                    device = %default_name,
+                    "No virtual loopback device found (BlackHole/Loopback/SoundFlower/Aggregate). \
+                     Capturing microphone only. Install BlackHole or set audio_source to \
+                     \"screencapturekit\" for system audio capture."
+                );
+                // Mark the default input (microphone) as the default selection when no
+                // loopback is available, so the TUI has something sensible to display.
+                for d in &mut result {
+                    if d.name == default_name {
+                        d.is_default = true;
+                    }
+                }
+            }
+        }
     }
 
     Ok(result)
@@ -507,12 +585,46 @@ mod tests {
             }
             Err(e) => {
                 let msg = e.to_string();
+                // The only acceptable error now is a CoreAudio enumeration failure,
+                // not a missing-BlackHole error (we fall back to mic instead).
                 assert!(
-                    msg.contains("BlackHole") || msg.contains("not found"),
-                    "error must be about missing BlackHole, not a stub; got: {msg}"
+                    !msg.contains("macos-stub"),
+                    "stub sentinel must not appear in error; got: {msg}"
                 );
             }
         }
+    }
+
+    /// RED test (issue #638): `list_loopback_devices()` must never return `Err` solely
+    /// because no virtual loopback driver (BlackHole/Loopback/SoundFlower) is installed.
+    /// When no loopback is present the function must return `Ok` with mic fallback.
+    ///
+    /// On CI runners without BlackHole, this test verifies the mic-fallback path.
+    /// On dev machines with BlackHole installed, it verifies the happy path.
+    #[test]
+    fn list_loopback_devices_returns_mic_fallback_when_no_blackhole() {
+        // The function must always return Ok — never Err with BlackHoleNotFound.
+        let result = list_loopback_devices();
+        assert!(
+            result.is_ok(),
+            "list_loopback_devices() must return Ok even when no virtual loopback \
+             device is installed; got: {:?}",
+            result.err()
+        );
+    }
+
+    /// `is_loopback_device_name` must recognise all known loopback driver name patterns.
+    #[test]
+    fn is_loopback_device_name_recognises_variants() {
+        assert!(is_loopback_device_name("BlackHole 2ch"));
+        assert!(is_loopback_device_name("BlackHole 16ch"));
+        assert!(is_loopback_device_name("BlackHole 64ch"));
+        assert!(is_loopback_device_name("Loopback Audio"));
+        assert!(is_loopback_device_name("SoundFlower (2ch)"));
+        assert!(is_loopback_device_name("SoundFlower (16ch)"));
+        assert!(is_loopback_device_name("Aggregate Device"));
+        assert!(!is_loopback_device_name("MacBook Pro Microphone"));
+        assert!(!is_loopback_device_name("Built-in Microphone"));
     }
 
     /// Mutex to prevent parallel tests from racing on the env-var.

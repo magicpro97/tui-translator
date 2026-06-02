@@ -969,6 +969,7 @@ fn main() -> Result<()> {
     } else {
         rt.block_on(audio::start_capture_with_device(
             capture_device.as_deref(),
+            &audio_source_kind,
             DEFAULT_SILENCE_THRESHOLD,
         ))
     };

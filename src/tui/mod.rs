@@ -3480,7 +3480,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from(format!("  L          {}", crate::i18n::t("help-language"))),
         Line::from(settings_line),
         Line::from(format!(
-            "  \u{2191}/\u{2193}        {}",
+"  \u{2191}/\u{2193}        {}",
             crate::i18n::t("help-device-picker")
         )),
         Line::from(format!("  R          {}", crate::i18n::t("help-reload"))),
@@ -3595,7 +3595,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     let is_compact_editor = panel.width < 76 || panel.height <= 16;
     let show_editor_spacing = !is_compact_editor && panel.height >= 27;
     let key_hint_owned = if is_compact_editor {
-        " Tab/Shift+Tab move  ↓/↑ cycle picker  F2 cycle  Enter save  Esc close".to_string()
+" Tab/Shift+Tab move  ↓/↑ cycle picker  F2 cycle  Enter save  Esc close".to_string()
     } else {
         format!(
             " Tab/Down next  Shift+Tab/Up prev  {} cycle  Enter save  Esc close",
@@ -4689,4 +4689,5 @@ mod tests {
         editor.picker_prev();
         assert_eq!(editor.capture_device, "Device A");
     }
+
 }

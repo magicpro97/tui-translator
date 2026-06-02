@@ -78,7 +78,8 @@ impl CaptureStreamSupervisor {
 
     /// Start a fresh [`CaptureStream`] for `device_name`.
     pub async fn start(&self, device_name: Option<&str>) -> Result<CaptureStream> {
-        start_capture_with_device(device_name, self.silence_threshold).await
+        let audio_source = super::platform_default_audio_source();
+        start_capture_with_device(device_name, audio_source, self.silence_threshold).await
     }
 
     /// Stop `old_stream` and start a new one for `new_device`, recording gap metrics.
@@ -93,7 +94,9 @@ impl CaptureStreamSupervisor {
         let old_device = old_stream.info.device_name.clone();
         let stop_start = Instant::now();
         drop(old_stream);
-        let new_stream = start_capture_with_device(new_device, self.silence_threshold).await?;
+        let audio_source = super::platform_default_audio_source();
+        let new_stream =
+            start_capture_with_device(new_device, audio_source, self.silence_threshold).await?;
         let gap_ms = stop_start.elapsed().as_millis() as u64;
         tracing::info!(
             old_device = %old_device,
