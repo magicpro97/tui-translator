@@ -425,6 +425,7 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
     {
         let lang_flag = Arc::clone(&state.lang_prompt_active);
         let config_editor_flag = Arc::clone(&state.config_editor_active);
+        let picker_field_active = Arc::clone(&state.picker_field_active);
         let wizard_active_kb = Arc::clone(&state.wizard_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
@@ -433,6 +434,7 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
                     key_tx,
                     lang_flag,
                     config_editor_flag,
+                    picker_field_active,
                     wizard_active_kb,
                     keyboard_shutdown,
                 )
@@ -1926,6 +1928,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
     {
         let lang_flag = Arc::clone(&state.lang_prompt_active);
         let config_editor_flag = Arc::clone(&state.config_editor_active);
+        let picker_field_active = Arc::clone(&state.picker_field_active);
         let wizard_active_kb = Arc::clone(&state.wizard_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
@@ -1934,6 +1937,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     key_tx,
                     lang_flag,
                     config_editor_flag,
+                    picker_field_active,
                     wizard_active_kb,
                     keyboard_shutdown,
                 )
@@ -3069,6 +3073,8 @@ impl TuiInteractionMode {
                     | UserAction::ConfigInput(_)
                     | UserAction::ConfigNextField
                     | UserAction::ConfigPrevField
+                    | UserAction::ConfigPickerNext
+                    | UserAction::ConfigPickerPrev
                     | UserAction::ConfigSave
                     | UserAction::ConfigCycleCaptureDevice
                     | UserAction::ReloadConfig
@@ -3226,11 +3232,12 @@ fn event_loop(
 ///
 /// `in_lang_prompt` and `in_config_editor` route character input to the active
 /// overlay instead of the normal command set.
-fn key_to_action(
+pub(crate) fn key_to_action(
     key: &KeyEvent,
     in_lang_prompt: bool,
     in_config_editor: bool,
     in_wizard: bool,
+    picker_field_active: bool,
 ) -> Option<UserAction> {
     if in_wizard {
         return match key.code {
@@ -3284,8 +3291,25 @@ fn key_to_action(
             KeyCode::Right => Some(UserAction::ConfigInput(InputRequest::GoToNextChar)),
             KeyCode::Home => Some(UserAction::ConfigInput(InputRequest::GoToStart)),
             KeyCode::End => Some(UserAction::ConfigInput(InputRequest::GoToEnd)),
-            KeyCode::Tab | KeyCode::Down => Some(UserAction::ConfigNextField),
-            KeyCode::BackTab | KeyCode::Up => Some(UserAction::ConfigPrevField),
+            // Tab / Shift+Tab always advance / retreat through settings fields so
+            // that PTY tests and keyboard muscle-memory are preserved.  Arrow keys
+            // cycle the device picker when a picker field is active (UX-03, #683).
+            KeyCode::Tab => Some(UserAction::ConfigNextField),
+            KeyCode::BackTab => Some(UserAction::ConfigPrevField),
+            KeyCode::Down => {
+                if picker_field_active {
+                    Some(UserAction::ConfigPickerNext)
+                } else {
+                    Some(UserAction::ConfigNextField)
+                }
+            }
+            KeyCode::Up => {
+                if picker_field_active {
+                    Some(UserAction::ConfigPickerPrev)
+                } else {
+                    Some(UserAction::ConfigPrevField)
+                }
+            }
             KeyCode::F(2) => Some(UserAction::ConfigCycleCaptureDevice),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::ConfigCycleCaptureDevice)
@@ -3386,6 +3410,7 @@ fn keyboard_task(
     key_tx: mpsc::Sender<UserAction>,
     lang_prompt_active: Arc<AtomicBool>,
     config_editor_active: Arc<AtomicBool>,
+    picker_field_active: Arc<AtomicBool>,
     wizard_active: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -3403,10 +3428,15 @@ fn keyboard_task(
                 }
                 let in_lang_prompt = lang_prompt_active.load(Ordering::Relaxed);
                 let in_config_editor = config_editor_active.load(Ordering::Relaxed);
+                let picker_active = picker_field_active.load(Ordering::Relaxed);
                 let in_wizard = wizard_active.load(Ordering::Relaxed);
-                if let Some(action) =
-                    key_to_action(&key, in_lang_prompt, in_config_editor, in_wizard)
-                {
+                if let Some(action) = key_to_action(
+                    &key,
+                    in_lang_prompt,
+                    in_config_editor,
+                    in_wizard,
+                    picker_active,
+                ) {
                     if key_tx.send(action).is_err() {
                         // Receiver dropped; app is shutting down.
                         break;
@@ -3899,10 +3929,32 @@ fn handle_action(
             let _ = state.with_config_editor_mut(|editor| editor.handle_input_request(*request));
         }
         UserAction::ConfigNextField => {
-            let _ = state.with_config_editor_mut(|editor| editor.next_field());
+            let picker_active = state
+                .with_config_editor_mut(|editor| {
+                    editor.next_field();
+                    editor.is_picker_field_active()
+                })
+                .unwrap_or(false);
+            state
+                .picker_field_active
+                .store(picker_active, Ordering::Relaxed);
         }
         UserAction::ConfigPrevField => {
-            let _ = state.with_config_editor_mut(|editor| editor.prev_field());
+            let picker_active = state
+                .with_config_editor_mut(|editor| {
+                    editor.prev_field();
+                    editor.is_picker_field_active()
+                })
+                .unwrap_or(false);
+            state
+                .picker_field_active
+                .store(picker_active, Ordering::Relaxed);
+        }
+        UserAction::ConfigPickerNext => {
+            let _ = state.with_config_editor_mut(|editor| editor.picker_next());
+        }
+        UserAction::ConfigPickerPrev => {
+            let _ = state.with_config_editor_mut(|editor| editor.picker_prev());
         }
         UserAction::ConfigCycleCaptureDevice => {
             let _ = state.with_config_editor_mut(|editor| editor.cycle_active_field());
@@ -4275,8 +4327,57 @@ mod tests {
         let key = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
 
         assert_eq!(
-            key_to_action(&key, false, true, false),
+            key_to_action(&key, false, true, false, false),
             Some(UserAction::ConfigCycleCaptureDevice)
+        );
+    }
+
+    /// Tab/Shift+Tab always move through settings fields.
+    /// ↑/↓ arrows route to picker cycling only when `picker_field_active` is
+    /// `true` (UX-03 / issue #683).  Pane-cycle Tab is unaffected because it
+    /// only fires when `in_config_editor` is `false`.
+    #[test]
+    fn config_editor_tab_scoped_to_picker_open_state() {
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let shift_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+
+        // picker NOT active → Tab/Shift+Tab advance/retreat through fields
+        assert_eq!(
+            key_to_action(&tab, false, true, false, false),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            key_to_action(&shift_tab, false, true, false, false),
+            Some(UserAction::ConfigPrevField)
+        );
+        assert_eq!(
+            key_to_action(&down, false, true, false, false),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            key_to_action(&up, false, true, false, false),
+            Some(UserAction::ConfigPrevField)
+        );
+
+        // picker IS active → ↑/↓ cycle device picker; Tab/Shift+Tab still
+        // advance/retreat (preserved so PTY tests that use Tab for navigation work)
+        assert_eq!(
+            key_to_action(&tab, false, true, false, true),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            key_to_action(&shift_tab, false, true, false, true),
+            Some(UserAction::ConfigPrevField)
+        );
+        assert_eq!(
+            key_to_action(&down, false, true, false, true),
+            Some(UserAction::ConfigPickerNext)
+        );
+        assert_eq!(
+            key_to_action(&up, false, true, false, true),
+            Some(UserAction::ConfigPickerPrev)
         );
     }
 
@@ -4439,7 +4540,7 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
 
         assert_eq!(
-            key_to_action(&key, false, false, false),
+            key_to_action(&key, false, false, false, false),
             Some(UserAction::AnyKey)
         );
     }
@@ -4450,7 +4551,7 @@ mod tests {
             let key = KeyEvent::new(key_code, KeyModifiers::NONE);
 
             assert_eq!(
-                key_to_action(&key, false, false, false),
+                key_to_action(&key, false, false, false, false),
                 Some(UserAction::OpenSettings)
             );
         }
@@ -4506,7 +4607,7 @@ mod tests {
     fn config_editor_keys_route_when_settings_are_open() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
         assert_eq!(
-            key_to_action(&key, false, true, false),
+            key_to_action(&key, false, true, false, false),
             Some(UserAction::ConfigChar('x'))
         );
         assert_eq!(
@@ -4514,6 +4615,7 @@ mod tests {
                 &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
                 false,
                 true,
+                false,
                 false
             ),
             Some(UserAction::Quit)
@@ -4523,6 +4625,7 @@ mod tests {
                 &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
                 false,
                 true,
+                false,
                 false
             ),
             Some(UserAction::ConfigNextField)
@@ -4532,6 +4635,7 @@ mod tests {
                 &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
                 false,
                 true,
+                false,
                 false
             ),
             Some(UserAction::ConfigInput(InputRequest::GoToPrevChar))
@@ -4541,6 +4645,7 @@ mod tests {
                 &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
                 false,
                 true,
+                false,
                 false
             ),
             Some(UserAction::ConfigInput(InputRequest::DeleteNextChar))
