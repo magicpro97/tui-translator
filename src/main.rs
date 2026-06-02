@@ -1393,6 +1393,9 @@ fn main() -> Result<()> {
                     // DM-06 (issue #382): share the Arc created above so it is
                     // accessible to the halt-aggregation and label-copier tasks.
                     tts_status: Arc::clone(&slot_a_tts_status_arc),
+                    // LLM-MT-04 (issue #699): pass MT customisation so the pipeline can
+                    // use translate_with_context for LLM-class providers.
+                    mt_customisation: cfg_snapshot.mt_customisation.clone(),
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
@@ -1549,6 +1552,8 @@ fn main() -> Result<()> {
                                         .tts_source
                                         .is_active_for_slot(false, true),
                                     tts_status: Arc::clone(&slot_b_state.tts_status),
+                                    // LLM-MT-04 (issue #699): pass MT customisation for slot B.
+                                    mt_customisation: cfg_snapshot.mt_customisation.clone(),
                                 };
                                 orchestrator_join_b = Some(rt.spawn(pipeline::run_orchestrator(
                                     slot_b_rx,
@@ -2820,6 +2825,7 @@ fn build_config_from_editor(
     next_cfg.audio_file_path = normalize_optional_field(&editor.audio_file_path);
     next_cfg.stt_provider = editor.stt_provider.trim().to_string();
     next_cfg.mt_provider = editor.mt_provider.trim().to_string();
+    next_cfg.mt_customisation.style = editor.mt_translation_style.trim().to_string();
     next_cfg.tts_enabled = parse_editor_bool("tts_enabled", &editor.tts_enabled)?;
     next_cfg.tts_routing = parse_editor_tts_routing(&editor.tts_routing)?;
     next_cfg.virtual_mic_device = normalize_optional_field(&editor.virtual_mic_device);
