@@ -4917,7 +4917,6 @@ mod tests {
                     | ConfigEditorField::PipelineSentenceMaxAgeMs
                     | ConfigEditorField::MtTranslationStyle
             );
-            editor.selected_field = field.index();
             assert_eq!(
                 field.is_picker(),
                 expected,
