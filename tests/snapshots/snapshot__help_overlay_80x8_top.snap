@@ -2,7 +2,7 @@
 source: tests/snapshot.rs
 expression: "render_help(80, 8, 0)"
 ---
-            ┌ Help [0/11] — ↑↓ scroll · Esc close ─────────────────┐            
+            ┌ Help [0/13] — ↑↓ scroll · Esc close ─────────────────┐            
             │ Keyboard Shortcuts                                   │            
             │                                                      │            
             │  ↑ / ↓     Scroll subtitles/help                     │            

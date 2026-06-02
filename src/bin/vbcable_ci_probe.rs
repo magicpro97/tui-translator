@@ -255,7 +255,8 @@ async fn run_real_virtual_cable_tier(device_name: &str, spec: &ToneSpec) -> Tier
         }
     };
 
-    let mut capture = match audio::start_capture_with_device(Some(device_name), 0.0).await {
+    let mut capture = match audio::start_capture_with_device(Some(device_name), "wasapi", 0.0).await
+    {
         Ok(capture) => capture,
         Err(err) => {
             drop(playback);

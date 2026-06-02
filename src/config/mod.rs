@@ -1217,7 +1217,67 @@ fn default_target_lang() -> String {
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_audio_source() -> String {
-    "wasapi".to_string()
+    #[cfg(windows)]
+    {
+        "wasapi".to_string()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "coreaudio".to_string()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "pipewire".to_string()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        "file".to_string()
+    }
+}
+
+/// Returns `true` if `s` is a valid non-file `audio_source` value for the current platform.
+///
+/// Used by the config validator to accept platform-appropriate backends while rejecting
+/// backends that are not available on the current OS.
+fn audio_source_is_valid(s: &str) -> bool {
+    #[cfg(windows)]
+    {
+        s == "wasapi"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        matches!(s, "coreaudio" | "screencapturekit")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        s == "pipewire"
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = s;
+        false
+    }
+}
+
+/// Returns a human-readable comma-separated list of valid `audio_source` names for the
+/// current platform, used in validation error messages.
+fn valid_audio_source_names() -> &'static str {
+    #[cfg(windows)]
+    {
+        "\"wasapi\""
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "\"coreaudio\" or \"screencapturekit\""
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "\"pipewire\""
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        "(no platform-specific backend)"
+    }
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -1407,7 +1467,6 @@ impl AppConfig {
             crate::audio::audio_gain::OUTPUT_VOLUME_MAX_DB,
         )?;
         match self.audio_source.as_str() {
-            "wasapi" => {}
             "file" => {
                 if self.audio_file_path.is_none() {
                     bail!("`audio_file_path` is required when `audio_source` is \"file\"");
@@ -1416,8 +1475,12 @@ impl AppConfig {
                     bail!("`audio_file_path` must not be empty when `audio_source` is \"file\"");
                 }
             }
+            other if audio_source_is_valid(other) => {}
             other => {
-                bail!("`audio_source` must be \"wasapi\" or \"file\", got {other:?}");
+                bail!(
+                    "`audio_source` must be {} or \"file\", got {other:?}",
+                    valid_audio_source_names()
+                );
             }
         }
         match self.stt_provider.as_str() {
@@ -3869,12 +3932,29 @@ mod tests {
 
     // ── audio_source / audio_file_path tests ───────────────────────────────
 
+    #[cfg(windows)]
     #[test]
     fn default_audio_source_is_wasapi() {
         let cfg = AppConfig::default();
         assert_eq!(cfg.audio_source, "wasapi");
         assert!(cfg.audio_file_path.is_none());
         assert!(cfg.capture_device.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn audio_source_default_is_coreaudio_on_macos() {
+        // RED test (issue #684): default_audio_source() must return "coreaudio" on macOS.
+        assert_eq!(
+            default_audio_source(),
+            "coreaudio",
+            "default_audio_source() must return \"coreaudio\" on macOS (was returning \"wasapi\")"
+        );
+        let cfg = AppConfig::default();
+        assert_eq!(
+            cfg.audio_source, "coreaudio",
+            "AppConfig::default().audio_source must be \"coreaudio\" on macOS"
+        );
     }
 
     #[test]
@@ -3931,6 +4011,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn load_existing_config_without_audio_source_defaults_to_wasapi() {
         // Configs written before issue #110 do not have audio_source.
@@ -3939,6 +4020,28 @@ mod tests {
         write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
         let cfg = load(f.path()).unwrap();
         assert_eq!(cfg.audio_source, "wasapi");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn load_existing_config_without_audio_source_defaults_to_coreaudio_on_macos() {
+        // Configs written before the macOS platform-aware default must parse and
+        // default to "coreaudio" on macOS (issue #684).
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert_eq!(cfg.audio_source, "coreaudio");
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    #[test]
+    fn load_existing_config_without_audio_source_defaults_to_platform_value() {
+        // On non-Windows, non-macOS platforms (e.g. Linux) a missing audio_source
+        // must still deserialise cleanly to the platform default.
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
+        let cfg = load(f.path()).unwrap();
+        assert!(!cfg.audio_source.is_empty());
     }
 
     // ── ram_budget_mb (issue #231) ──────────────────────────────────────────

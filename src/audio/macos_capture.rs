@@ -261,35 +261,37 @@ fn capture_loop(
     }
 }
 
-/// Find the BlackHole (or explicitly requested) CoreAudio input device.
+/// Find the loopback-capable (or explicitly requested) CoreAudio input device.
 ///
 /// When `requested` is `Some(name)`, performs an exact name match among all
-/// input devices.  When `None`, returns the first device whose name contains
-/// `"BlackHole"`.
+/// input devices.  When `None`, returns the first device whose name matches
+/// the known virtual loopback set (BlackHole, Loopback, SoundFlower, Aggregate).
+/// If no loopback device is found, falls back to the default microphone input
+/// with a `tracing::warn!` rather than returning an error.
 ///
 /// # Errors
 ///
-/// - [`MacosCaptureError::BlackHoleNotFound`] — no BlackHole device present
-///   and no explicit name was requested.
-/// - [`MacosCaptureError::DeviceNotFound`] — explicit name not found among
-///   the enumerated input devices.
+/// - [`MacosCaptureError::DeviceNotFound`] — an explicit name was requested but
+///   not found among the enumerated input devices.
 /// - [`MacosCaptureError::CoreAudioError`] — CoreAudio failed to enumerate
 ///   devices.
+/// - [`MacosCaptureError::BlackHoleNotFound`] — no input devices at all (including
+///   no default microphone).
 pub(crate) fn find_blackhole_device(
     requested: Option<&str>,
 ) -> std::result::Result<cpal::Device, MacosCaptureError> {
     let host = cpal::default_host();
-    let devices: Vec<cpal::Device> = host
-        .input_devices()
-        .map_err(|e| MacosCaptureError::CoreAudioError {
-            code: 0,
-            message: e.to_string(),
-        })?
-        .collect();
 
     match requested {
         Some(name) => {
             let mut available = Vec::new();
+            let devices: Vec<cpal::Device> = host
+                .input_devices()
+                .map_err(|e| MacosCaptureError::CoreAudioError {
+                    code: 0,
+                    message: e.to_string(),
+                })?
+                .collect();
             for device in devices {
                 match device.name() {
                     Ok(device_name) if device_name == name => return Ok(device),
@@ -303,11 +305,49 @@ pub(crate) fn find_blackhole_device(
             })
         }
         None => {
-            for device in devices {
-                if device.name().ok().is_some_and(|n| n.contains("BlackHole")) {
-                    return Ok(device);
+            // First pass: look for a known virtual loopback driver.
+            let devices: Vec<cpal::Device> = host
+                .input_devices()
+                .map_err(|e| MacosCaptureError::CoreAudioError {
+                    code: 0,
+                    message: e.to_string(),
+                })?
+                .collect();
+            for device in &devices {
+                if let Ok(name) = device.name() {
+                    if is_loopback_device_name(&name) {
+                        // Re-enumerate to get a fresh owned device for this name
+                        // (cpal Device is not Clone).
+                        if let Ok(fresh) =
+                            host.input_devices()
+                                .map_err(|e| MacosCaptureError::CoreAudioError {
+                                    code: 0,
+                                    message: e.to_string(),
+                                })
+                        {
+                            for d in fresh {
+                                if d.name().ok().as_deref() == Some(&name) {
+                                    return Ok(d);
+                                }
+                            }
+                        }
+                    }
                 }
             }
+
+            // No virtual loopback installed — fall back to the default
+            // microphone input with a warning.
+            if let Some(default_dev) = host.default_input_device() {
+                let dev_name = default_dev.name().unwrap_or_else(|_| "unknown".into());
+                tracing::warn!(
+                    device = %dev_name,
+                    "No virtual loopback device found (BlackHole/Loopback/SoundFlower/Aggregate). \
+                     Capturing microphone only — install BlackHole or switch audio_source to \
+                     \"screencapturekit\" for system audio."
+                );
+                return Ok(default_dev);
+            }
+
             Err(MacosCaptureError::BlackHoleNotFound)
         }
     }
@@ -373,162 +413,78 @@ pub(crate) fn check_tcc_permission() -> Result<(), MacosCaptureError> {
     Ok(())
 }
 
+/// Returns `true` if the device name indicates a loopback-capable virtual audio device.
+///
+/// Recognises the common virtual loopback driver names: BlackHole (all channel counts),
+/// Loopback Audio (Rogue Amoeba), SoundFlower, and Aggregate Devices created via
+/// Audio MIDI Setup.
+fn is_loopback_device_name(name: &str) -> bool {
+    name.contains("BlackHole")
+        || name.contains("Loopback")
+        || name.contains("SoundFlower")
+        || name.contains("Aggregate")
+}
+
 /// List available macOS audio input devices via CoreAudio (cpal).
 ///
-/// Enumerates all CoreAudio input devices using the cpal default host.
-/// Devices whose name is `"BlackHole 2ch"` are marked as the default.
+/// Enumerates all CoreAudio input endpoints using the cpal default host.  Devices
+/// whose name contains `"BlackHole"`, `"Loopback"`, `"SoundFlower"`, or
+/// `"Aggregate"` are marked `is_default = true` (loopback-capable).
+///
+/// When no loopback device is installed, the function falls back to the default
+/// microphone input with `is_default = true` and emits a `tracing::warn!`.  It
+/// never returns an error solely because no virtual loopback driver is present;
+/// an empty `Ok(vec![])` is returned only when no input devices exist at all.
 ///
 /// # Errors
 ///
-/// Returns [`MacosCaptureError::BlackHoleNotFound`] if no input devices are
-/// present (typically only on headless CI runners without virtual audio
-/// devices).  Propagates [`cpal::DeviceNameError`] if CoreAudio fails to
-/// return a device name.
+/// Propagates a [`cpal::DevicesError`] if CoreAudio fails to enumerate devices.
 pub fn list_loopback_devices() -> anyhow::Result<Vec<CaptureDeviceInfo>> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();
     let mut result: Vec<CaptureDeviceInfo> = Vec::new();
+    let mut found_loopback = false;
 
     for device in host.input_devices()? {
-        let name = device.name()?;
-        let is_default = name == "BlackHole 2ch";
+        let name = match device.name() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let is_loopback = is_loopback_device_name(&name);
+        if is_loopback {
+            found_loopback = true;
+        }
         result.push(CaptureDeviceInfo {
             id: name.clone(),
             name,
-            is_default,
+            is_default: is_loopback,
         });
     }
 
-    if result.is_empty() {
-        return Err(MacosCaptureError::BlackHoleNotFound.into());
+    if !found_loopback {
+        if let Some(default_dev) = host.default_input_device() {
+            if let Ok(default_name) = default_dev.name() {
+                tracing::warn!(
+                    device = %default_name,
+                    "No virtual loopback device found (BlackHole/Loopback/SoundFlower/Aggregate). \
+                     Capturing microphone only. Install BlackHole or set audio_source to \
+                     \"screencapturekit\" for system audio capture."
+                );
+                // Mark the default input (microphone) as the default selection when no
+                // loopback is available, so the TUI has something sensible to display.
+                for d in &mut result {
+                    if d.name == default_name {
+                        d.is_default = true;
+                    }
+                }
+            }
+        }
     }
 
     Ok(result)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn macos_capture_error_messages_are_actionable() {
-        let err = MacosCaptureError::NotImplemented;
-        let msg = err.to_string();
-        assert!(
-            msg.contains("issue #451"),
-            "error must reference the tracking issue"
-        );
-        assert!(
-            msg.contains("--audio-file"),
-            "error must suggest the workaround"
-        );
-    }
-
-    #[test]
-    fn macos_capture_blackhole_error_mentions_install_url() {
-        let err = MacosCaptureError::BlackHoleNotFound;
-        let msg = err.to_string();
-        assert!(msg.contains("existential.audio/blackhole"));
-    }
-
-    #[test]
-    fn macos_capture_error_device_not_found_includes_name() {
-        let err = MacosCaptureError::DeviceNotFound {
-            device_name: "my-device".to_string(),
-            available: vec!["BlackHole 2ch".to_string()],
-        };
-        let msg = err.to_string();
-        assert!(msg.contains("my-device"));
-        assert!(msg.contains("BlackHole 2ch"));
-    }
-
-    /// `spawn()` must return `Err` when the requested capture device does not exist.
-    ///
-    /// On CI runners without BlackHole this test verifies the real impl path: the
-    /// stub always returned `Ok`, but the real impl must surface the missing-device
-    /// error before ever entering the worker loop.
-    #[tokio::test]
-    async fn spawn_without_blackhole_returns_blackhole_not_found() {
-        let (tx, _rx) = mpsc::channel(8);
-        let result = spawn(tx, Some("NonExistentBlackHole99".to_string()), 0.0);
-        assert!(
-            result.is_err(),
-            "spawn must return Err when the requested device is not found"
-        );
-    }
-
-    #[test]
-    fn interleaved_to_mono_f32_averages_stereo() {
-        // Two frames: [1.0, -1.0] and [0.5, 0.5] → [0.0, 0.5]
-        let data = [1.0_f32, -1.0, 0.5, 0.5];
-        let mono = interleaved_to_mono_f32(&data, 2);
-        assert_eq!(mono.len(), 2);
-        assert!((mono[0] - 0.0).abs() < 1e-6);
-        assert!((mono[1] - 0.5).abs() < 1e-6);
-    }
-
-    #[test]
-    fn interleaved_to_mono_f32_passthrough_mono() {
-        let data = [0.1_f32, 0.2, 0.3];
-        let mono = interleaved_to_mono_f32(&data, 1);
-        assert_eq!(mono, data);
-    }
-
-    #[test]
-    fn interleaved_to_mono_f32_empty_returns_empty() {
-        let mono = interleaved_to_mono_f32(&[], 2);
-        assert!(mono.is_empty());
-    }
-
-    #[test]
-    fn find_blackhole_device_nonexistent_returns_device_not_found() {
-        let result = find_blackhole_device(Some("NonExistentDevice_XYZ_99"));
-        assert!(
-            matches!(result, Err(MacosCaptureError::DeviceNotFound { .. })),
-            "must return DeviceNotFound for an explicit non-existent name"
-        );
-    }
-
-    #[test]
-    fn list_loopback_devices_excludes_stub_sentinel() {
-        match list_loopback_devices() {
-            Ok(devices) => {
-                for d in &devices {
-                    assert_ne!(
-                        d.id, "macos-stub",
-                        "stub sentinel must not appear after impl"
-                    );
-                    assert!(
-                        !d.name.contains("macos-stub"),
-                        "stub name must not appear after impl"
-                    );
-                }
-            }
-            Err(e) => {
-                let msg = e.to_string();
-                assert!(
-                    msg.contains("BlackHole") || msg.contains("not found"),
-                    "error must be about missing BlackHole, not a stub; got: {msg}"
-                );
-            }
-        }
-    }
-
-    /// Mutex to prevent parallel tests from racing on the env-var.
-    static TCC_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    #[test]
-    fn check_tcc_permission_denied_via_env_var() {
-        let _guard = TCC_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        // SAFETY: single-threaded via mutex guard; env-var is removed before guard drops.
-        unsafe { std::env::set_var("TUI_TEST_FORCE_TCC_DENIED", "1") };
-        let result = check_tcc_permission();
-        // SAFETY: same guard — still holding the mutex.
-        unsafe { std::env::remove_var("TUI_TEST_FORCE_TCC_DENIED") };
-        assert!(
-            matches!(result, Err(MacosCaptureError::PermissionDenied)),
-            "env-var injection must trigger PermissionDenied"
-        );
-    }
-}
+#[path = "macos_capture_tests.rs"]
+mod tests;

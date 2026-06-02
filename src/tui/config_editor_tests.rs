@@ -41,7 +41,10 @@ fn capture_device_picker_choices_highlight_selected_device() {
     let choices = capture_device_picker_choices(&editor);
 
     assert_eq!(choices.len(), 3);
-    assert_eq!(choices[0].label, CAPTURE_DEVICE_DEFAULT_LABEL);
+    assert_eq!(
+        choices[0].label,
+        crate::audio::capture_device_default_label()
+    );
     assert!(!choices[0].selected);
     assert_eq!(choices[2].label, "Headphones (USB Audio)");
     assert!(choices[2].selected);
@@ -246,11 +249,15 @@ fn render_config_editor_shows_choice_list_for_selectable_fields() {
         .map(|c| c.symbol().to_string())
         .collect();
 
+    let default_audio_label = config_choice_label(
+        ConfigEditorField::AudioSource,
+        &AppConfig::default().audio_source,
+    );
     assert!(
         rendered.contains("Choice list"),
         "selectable fields should render an audio-like choice list; got: {rendered:?}"
     );
-    assert!(rendered.contains("wasapi - live Windows audio"));
+    assert!(rendered.contains(&default_audio_label));
     assert!(rendered.contains("file - WAV file replay"));
     assert!(rendered.contains("selected"));
 }
@@ -524,7 +531,7 @@ fn render_config_editor_shows_capture_device_picker_with_selection() {
         "settings should expose a visible capture device picker; got: {rendered:?}"
     );
     assert!(
-        rendered.contains("Windows default playback"),
+        rendered.contains(crate::audio::capture_device_default_label()),
         "picker should include the default-device option; got: {rendered:?}"
     );
     assert!(
@@ -549,7 +556,10 @@ fn capture_device_picker_stale_saved_device_keeps_default_and_detected_choices()
     let choices = capture_device_picker_choices(&editor);
 
     assert_eq!(choices.len(), 3);
-    assert_eq!(choices[0].label, CAPTURE_DEVICE_DEFAULT_LABEL);
+    assert_eq!(
+        choices[0].label,
+        crate::audio::capture_device_default_label()
+    );
     assert!(choices
         .iter()
         .any(|choice| choice.label == "Speakers (Realtek Audio)"));
