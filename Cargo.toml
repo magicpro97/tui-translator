@@ -207,6 +207,8 @@ tokio = { version = "1", features = ["test-util"] }
 portable-pty = "0.9"
 # VT100 / ANSI terminal emulator used to parse PTY output into a cell grid
 vt100 = "0.15"
+# Property-based testing (LLM-MT-02, issue #697)
+proptest = "1"
 
 [profile.release]
 # Optimise for small binary size — users download a single .exe

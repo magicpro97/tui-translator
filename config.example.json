@@ -83,5 +83,9 @@
     "enabled": false,
     "channel": "stable",
     "check_interval_hours": 24
+  },
+  "glossary": {
+    "terms": [],
+    "case_insensitive": false
   }
 }

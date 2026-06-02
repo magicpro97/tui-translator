@@ -53,6 +53,7 @@ pub trait CostReporter: Send + Sync + std::fmt::Debug {
 
 pub mod backend_selection;
 pub mod google;
+pub mod llm;
 pub mod local;
 pub mod mt;
 
@@ -265,6 +266,39 @@ pub trait SttProvider: Send + Sync {
     ) -> Result<SttResult, ProviderError>;
 }
 
+/// Desired register / tone for machine translation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TranslationStyle {
+    /// Neutral register (default).
+    #[default]
+    Neutral,
+    /// Formal register.
+    Formal,
+    /// Casual register.
+    Casual,
+    /// Technical/domain-specific language.
+    Technical,
+    /// Preserve digits, code identifiers, units, and dates verbatim.
+    PreserveOriginalNumerics,
+}
+
+/// Style and domain hints that LLM-class MT providers can consume.
+///
+/// Non-LLM providers (OPUS-MT, Google) inherit the default
+/// [`MtProvider::translate_with_context`] implementation which ignores this
+/// struct and forwards to [`MtProvider::translate`].
+#[derive(Debug, Clone, Default)]
+pub struct TranslationContext<'a> {
+    /// Desired register / tone.
+    pub style: TranslationStyle,
+    /// Domain hint (e.g. `"software-engineering"`, `"medical"`).
+    /// Providers may ignore unknown values.
+    pub domain: Option<&'a str>,
+    /// Optional list of terms to preserve verbatim (defence-in-depth alongside
+    /// the glossary wrapper).
+    pub do_not_translate_hints: &'a [String],
+}
+
 /// Machine-translation provider.
 ///
 /// Translates `text` from `source_language` into `target_language`
@@ -277,6 +311,21 @@ pub trait MtProvider: Send + Sync {
         source_language: &str,
         target_language: &str,
     ) -> Result<MtResult, ProviderError>;
+
+    /// Translate `text` with optional style and domain context.
+    ///
+    /// The default implementation ignores `ctx` and forwards to [`translate`].
+    ///
+    /// [`translate`]: MtProvider::translate
+    async fn translate_with_context(
+        &self,
+        text: &str,
+        source_language: &str,
+        target_language: &str,
+        _ctx: TranslationContext<'_>,
+    ) -> Result<MtResult, ProviderError> {
+        self.translate(text, source_language, target_language).await
+    }
 }
 
 // ── Voice selection (CTRL-02, issue #455) ────────────────────────────────────
