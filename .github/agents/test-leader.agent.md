@@ -7,7 +7,6 @@ description: >
   harness design, and must reach confidence = 1.0 before signing off. Use when planning
   features or fixes that require test strategy decisions, coverage gate design, or
   deterministic simulation fixture design.
-target: github-copilot
 ---
 
 # tui-translator Test Leader (Opus)

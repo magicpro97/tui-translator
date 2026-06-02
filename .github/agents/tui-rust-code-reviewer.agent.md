@@ -1,7 +1,6 @@
 ---
 name: tui-rust-code-reviewer
 description: 'Reviews tui-translator Rust/Tokio/WASAPI/pipeline/provider changes for crash, race, memory, and async correctness. Use before merging or closing Rust runtime hardening work.'
-target: github-copilot
 ---
 
 # tui-translator Rust Code Reviewer
