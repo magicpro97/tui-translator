@@ -340,6 +340,10 @@ pub enum UserAction {
     ConfigNextField,
     /// Move to the previous config-editor field.
     ConfigPrevField,
+    /// Advance the active device picker selection without leaving the field.
+    ConfigPickerNext,
+    /// Move the active device picker selection backward without leaving the field.
+    ConfigPickerPrev,
     /// Save the current config-editor contents.
     ConfigSave,
     /// F2 / Ctrl+D while editing settings — cycle values for the active
@@ -794,6 +798,32 @@ impl ConfigEditorState {
         self.status_message = None;
     }
 
+    /// Returns whether the currently selected settings field uses picker-style navigation.
+    pub fn is_picker_field_active(&self) -> bool {
+        matches!(
+            self.active_field(),
+            ConfigEditorField::CaptureDevice | ConfigEditorField::VirtualMicDevice
+        )
+    }
+
+    /// Advance the active device picker without changing the selected editor field.
+    pub fn picker_next(&mut self) {
+        match self.active_field() {
+            ConfigEditorField::CaptureDevice => self.cycle_capture_device(),
+            ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device(),
+            _ => self.next_field(),
+        }
+    }
+
+    /// Move the active device picker backward without changing the selected editor field.
+    pub fn picker_prev(&mut self) {
+        match self.active_field() {
+            ConfigEditorField::CaptureDevice => self.cycle_capture_device_prev(),
+            ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device_prev(),
+            _ => self.prev_field(),
+        }
+    }
+
     pub fn set_status_message(&mut self, message: impl Into<String>) {
         self.status_message = Some(message.into());
     }
@@ -855,6 +885,47 @@ impl ConfigEditorState {
         }
     }
 
+    pub fn cycle_capture_device_prev(&mut self) {
+        if self.capture_device_options.is_empty() {
+            self.set_status_message(
+                " No capture devices detected. Leave blank for Windows default or type a name.",
+            );
+            return;
+        }
+
+        let choices = visible_capture_device_picker_choices(self);
+        if choices.is_empty() {
+            let filter = self.capture_device.trim();
+            self.set_status_message(format!(
+                " No capture devices match \"{filter}\". Clear the field for Windows default."
+            ));
+            return;
+        }
+
+        let current = self.capture_device.trim();
+        let current_index = choices
+            .iter()
+            .position(|candidate| candidate.value == current)
+            .unwrap_or(0);
+        let next_index = if current_index == 0 {
+            choices.len() - 1
+        } else {
+            current_index - 1
+        };
+        let next = &choices[next_index];
+        self.set_field_value(ConfigEditorField::CaptureDevice, next.value.clone());
+        self.capture_device_filter_active = false;
+
+        if next.value.is_empty() {
+            self.set_status_message(" Capture device: Windows default playback device.");
+        } else {
+            self.set_status_message(format!(
+                " Capture device selected: {}. Save and restart to use it.",
+                next.label
+            ));
+        }
+    }
+
     pub fn cycle_virtual_mic_device(&mut self) {
         if self.virtual_mic_device_options.is_empty() {
             self.set_status_message(
@@ -873,6 +944,33 @@ impl ConfigEditorState {
             0
         } else {
             (current_index + 1) % choices.len()
+        };
+        let next = &choices[next_index];
+        self.set_field_value(ConfigEditorField::VirtualMicDevice, next.value.clone());
+        self.set_status_message(format!(
+            " Virtual mic selected: {}. Save and restart to use it.",
+            next.label
+        ));
+    }
+
+    pub fn cycle_virtual_mic_device_prev(&mut self) {
+        if self.virtual_mic_device_options.is_empty() {
+            self.set_status_message(
+                " No virtual microphone devices detected. Install VB-CABLE/VAC/Voicemeeter, then reopen Settings.",
+            );
+            return;
+        }
+
+        let choices = virtual_mic_device_picker_choices(self);
+        let current = self.virtual_mic_device.trim();
+        let current_index = choices
+            .iter()
+            .position(|candidate| candidate.value == current)
+            .unwrap_or(0);
+        let next_index = if current_index == 0 {
+            choices.len() - 1
+        } else {
+            current_index - 1
         };
         let next = &choices[next_index];
         self.set_field_value(ConfigEditorField::VirtualMicDevice, next.value.clone());
@@ -1632,9 +1730,9 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
 }
 
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
-const HELP_OVERLAY_IDEAL_H: u16 = 20;
+const HELP_OVERLAY_IDEAL_H: u16 = 21;
 const HELP_OVERLAY_MIN_H: u16 = 4;
-const HELP_OVERLAY_CONTENT_LINES: u16 = 17;
+const HELP_OVERLAY_CONTENT_LINES: u16 = 19;
 
 /// Return the maximum valid scroll offset for the help overlay at `area`.
 pub fn help_overlay_max_scroll(area: Rect) -> u16 {
@@ -1689,6 +1787,8 @@ pub struct AppState {
     pub lang_input: Mutex<String>,
     /// Whether the shared config editor overlay is active.
     pub config_editor_active: Arc<AtomicBool>,
+    /// Whether the currently focused config-editor field is a picker-aware field.
+    pub picker_field_active: Arc<AtomicBool>,
     /// State for the shared first-run / settings editor overlay.
     pub config_editor: Mutex<Option<ConfigEditorState>>,
     /// BCP-47 source language code forwarded to the STT provider.
@@ -1839,6 +1939,7 @@ impl AppState {
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
             config_editor_active: Arc::new(AtomicBool::new(false)),
+            picker_field_active: Arc::new(AtomicBool::new(false)),
             config_editor: Mutex::new(None),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("vi".to_string())),
@@ -2084,13 +2185,17 @@ impl AppState {
         self.show_help.store(false, Ordering::Relaxed);
         self.lang_prompt_active.store(false, Ordering::Relaxed);
         *self.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
-        *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) =
-            Some(ConfigEditorState::from_config(config, config_path, mode));
+        let editor = ConfigEditorState::from_config(config, config_path, mode);
+        let picker_active = editor.is_picker_field_active();
+        *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) = Some(editor);
         self.config_editor_active.store(true, Ordering::Relaxed);
+        self.picker_field_active
+            .store(picker_active, Ordering::Relaxed);
     }
 
     pub fn close_config_editor(&self) {
         self.config_editor_active.store(false, Ordering::Relaxed);
+        self.picker_field_active.store(false, Ordering::Relaxed);
         *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
@@ -3374,6 +3479,10 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from(format!("  M          {}", crate::i18n::t("help-metrics"))),
         Line::from(format!("  L          {}", crate::i18n::t("help-language"))),
         Line::from(settings_line),
+        Line::from(format!(
+            "  \u{2191}/\u{2193}        {}",
+            crate::i18n::t("help-device-picker")
+        )),
         Line::from(format!("  R          {}", crate::i18n::t("help-reload"))),
         Line::from(format!("  ?          {}", crate::i18n::t("help-help"))),
         Line::from(format!("  Esc        {}", crate::i18n::t("help-esc"))),
@@ -3486,7 +3595,7 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
     let is_compact_editor = panel.width < 76 || panel.height <= 16;
     let show_editor_spacing = !is_compact_editor && panel.height >= 27;
     let key_hint_owned = if is_compact_editor {
-        " Tab/Shift+Tab move  F2 cycle  Enter save  Esc close".to_string()
+        " Tab/Shift+Tab move  ↓/↑ cycle picker  F2 cycle  Enter save  Esc close".to_string()
     } else {
         format!(
             " Tab/Down next  Shift+Tab/Up prev  {} cycle  Enter save  Esc close",
@@ -3835,10 +3944,10 @@ fn capture_device_picker_lines(
     let choices = capture_device_picker_choices(editor);
     let visible_choices = visible_capture_device_picker_choices(editor);
     let capture_picker_hint = if is_compact_editor {
-        " Device picker: type filter, F2 selects".to_string()
+        " Device picker: ↑/↓ or Tab/Shift+Tab change, F2 also cycles".to_string()
     } else {
         format!(
-            " Capture device picker: type to search, {} selects next",
+            " Capture device picker: type to search, ↑/↓ or Tab/Shift+Tab change, {} also cycles",
             render_f2_or_ctrl_d(detect_key_os())
         )
     };
@@ -4139,10 +4248,10 @@ fn virtual_mic_device_picker_lines(
     let choices = virtual_mic_device_picker_choices(editor);
     let visible_choices = visible_virtual_mic_device_picker_choices(editor);
     let vmic_picker_hint = if is_compact_editor {
-        " Virtual mic picker: F2 selects".to_string()
+        " Virtual mic picker: ↑/↓ or Tab/Shift+Tab change, F2 also cycles".to_string()
     } else {
         format!(
-            " Virtual microphone picker: {} selects detected endpoint",
+            " Virtual microphone picker: ↑/↓ or Tab/Shift+Tab change, {} also cycles",
             render_f2_or_ctrl_d(detect_key_os())
         )
     };
@@ -4559,5 +4668,25 @@ mod tests {
     /// `tests/snapshot.rs` all serialise on the same lock.
     fn with_key_os_override(value: &str) -> key_hint::test_helpers::KeyOsGuard {
         key_hint::test_helpers::with_key_os_override(value)
+    }
+
+    #[test]
+    fn config_editor_arrow_down_cycles_capture_device_picker() {
+        let mut editor = ConfigEditorState::from_config(
+            &AppConfig::default(),
+            Path::new("config.json"),
+            ConfigEditorMode::Settings,
+        );
+        editor.set_capture_device_options(vec!["Device A".to_string(), "Device B".to_string()]);
+        editor.selected_field = ConfigEditorField::CaptureDevice.index();
+
+        editor.picker_next();
+        assert_eq!(editor.capture_device, "Device A");
+
+        editor.picker_next();
+        assert_eq!(editor.capture_device, "Device B");
+
+        editor.picker_prev();
+        assert_eq!(editor.capture_device, "Device A");
     }
 }
