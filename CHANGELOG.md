@@ -9,6 +9,39 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### LLM-MT — LLM-based machine translation (issues #696, #697, #698, #699)
+
+Adds an opt-in LLM-based translation route alongside the existing OPUS-MT default.
+The LLM route enables style-aware translation (Formal / Casual / Technical register),
+glossary / term-protection middleware, and configurable translation quality settings.
+
+#### Added
+
+- **`src/providers/glossary/`** — `GlossaryMtProvider` middleware (LLM-MT-02, PR #703)
+  wraps any `TranslationProvider` with mask/translate/unmask placeholder injection.
+  Prevents proper nouns, sprint identifiers, and acronyms from being translated.
+  Config path: `translation.glossary.entries` (see `config.example.json`).
+- **`src/providers/llm/`** — `LlmMtProvider` GGUF inference engine infrastructure (LLM-MT-03, PR #706)
+  using `mistralrs-core 0.8.x` (pure-Rust, no system DLLs required). Supports
+  Qwen2.5-0.5B-Instruct Q4_K_M (≈600 MB) and Phi-3-mini-4k-instruct Q4_K_M (≈2.2 GB).
+  Provider is built; config wiring and pipeline integration planned for LLM-MT-05.
+  Enable the build with `--features local-llm-mt`. Falls back to OPUS-MT on error/timeout.
+- **`src/bin/llm_mt_bench.rs`** — benchmark binary (LLM-MT-01, PR #705) for measuring
+  GGUF CPU inference latency, RSS, and quality against the JV-02 meeting corpus.
+  Build with `--features local-llm-mt`. Required before declaring a model Tier 1.
+- **`src/config/`** — `MtCustomisation` struct (LLM-MT-04, PR #707) adds
+  `translation.style` (Formal/Casual/Technical), `translation.domain_hint`, and
+  `translation.preserve_numbers` fields to `config.json`.
+
+#### Notes
+
+- The LLM route is **opt-in** — default remains OPUS-MT (`mt_provider = "local"`).
+- `local-llm-mt` Cargo feature is required to compile the LLM engine; release builds
+  include it by default (`--features release-windows` pulls in `local-llm-mt`).
+- ADR references: `docs/adr/llm-mt-01`, `llm-mt-02`, `llm-mt-03`.
+
+---
+
 ### DM-08 / JV-17 — Dual-mode and local-MT user docs (issues #384, #425)
 
 Documentation-only release that brings end-user docs in line with the

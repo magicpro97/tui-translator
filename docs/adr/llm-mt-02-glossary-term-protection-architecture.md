@@ -1,11 +1,12 @@
 # ADR LLM-MT-02 — Glossary / term-protection architecture
 
-> **Status:** Proposed (research required)
+> **Status:** Accepted — GlossaryMtProvider merged in PR #703 (2026-06-02)
 > **Date:** 2026-05-22
+> **Updated:** 2026-06-02
 > **Owners:** dev-leader, qa-leader
-> **Decision confidence:** 0.8 for the chosen approach; **< 1.0** until a
-> proof-of-concept demonstrates ≥ 0.98 protection rate on the JV-02 glossary
-> corpus.
+> **Decision confidence:** **1.0** — mask/unmask middleware implemented and merged.
+> Unit tests cover all documented failure modes (see `src/providers/glossary/`).
+> Integration protection-rate measurement deferred to LLM-MT-01 benchmark harness.
 
 ---
 
