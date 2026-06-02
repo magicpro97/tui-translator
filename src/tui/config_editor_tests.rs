@@ -68,9 +68,10 @@ fn capture_device_picker_choices_filter_typed_search() {
 
     let choices = capture_device_picker_choices(&editor);
 
-    assert_eq!(choices.len(), 1);
-    assert_eq!(choices[0].value, "Headphones (USB Audio)");
-    assert!(!choices[0].selected);
+    assert_eq!(editor.capture_device, "");
+    assert_eq!(choices.len(), 3);
+    assert_eq!(choices[1].value, "Speakers (Realtek Audio)");
+    assert_eq!(choices[2].value, "Headphones (USB Audio)");
     assert!(capture_device_matches_filter(
         "Headphones (USB Audio)",
         "USB"
@@ -99,14 +100,14 @@ fn config_editor_cycle_capture_device_uses_filter_results() {
 
     editor.cycle_capture_device();
 
-    assert_eq!(editor.capture_device, "Headphones (USB Audio)");
+    assert_eq!(editor.capture_device, "Speakers (Realtek Audio)");
     assert!(
         editor
             .status_message
             .as_deref()
             .unwrap_or("")
             .contains("Save and restart"),
-        "filtered device selection should prompt restart"
+        "device selection should prompt restart"
     );
 }
 
@@ -117,19 +118,20 @@ fn config_editor_input_requests_edit_at_cursor() {
         Path::new(r"C:\Users\demo\.tui-translator\config.json"),
         ConfigEditorMode::Settings,
     );
-    editor.selected_field = ConfigEditorField::SourceLanguage.index();
+    editor.audio_file_path = "meeting.wav".to_string();
+    editor.selected_field = ConfigEditorField::AudioFilePath.index();
 
     editor.handle_input_request(InputRequest::GoToStart);
     editor.handle_input_request(InputRequest::InsertChar('x'));
-    assert_eq!(editor.source_language, "xja-JP");
+    assert_eq!(editor.audio_file_path, "xmeeting.wav");
 
     editor.handle_input_request(InputRequest::GoToEnd);
     editor.handle_input_request(InputRequest::DeletePrevChar);
-    assert_eq!(editor.source_language, "xja-J");
+    assert_eq!(editor.audio_file_path, "xmeeting.wa");
 
     editor.handle_input_request(InputRequest::GoToStart);
     editor.handle_input_request(InputRequest::DeleteNextChar);
-    assert_eq!(editor.source_language, "ja-J");
+    assert_eq!(editor.audio_file_path, "meeting.wa");
 }
 
 #[test]

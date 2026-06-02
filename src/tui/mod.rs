@@ -294,11 +294,19 @@ const MIN_USABLE_ROWS: u16 = 3   // title bar
 
 /// Preset BCP-47 language codes offered by F2/Ctrl+D when the source or
 /// target language field is active in the settings editor.
-const LANGUAGE_PRESETS: [&str; 5] = ["ja-JP", "vi", "en-US", "zh-CN", "ko"];
+const LANGUAGE_PRESETS: [&str; 12] = [
+    "ja-JP", "vi", "en-US", "en-GB", "zh-CN", "zh-TW", "ko", "fr-FR", "de-DE", "es-ES", "it-IT",
+    "pt-BR",
+];
 const PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
 const BOOLEAN_CHOICES: [&str; 2] = ["false", "true"];
 const TTS_ROUTING_CHOICES: [&str; 3] = ["speakers", "virtual_mic", "both"];
 const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "google-when-keyed"];
+const VAD_PRE_ROLL_CHOICES: [&str; 5] = ["0", "100", "200", "400", "800"];
+const PIPELINE_MAX_WINDOW_CHOICES: [&str; 6] = ["1500", "2000", "3000", "4500", "6000", "8000"];
+const IDLE_FLUSH_CHOICES: [&str; 5] = ["300", "500", "600", "800", "1200"];
+const IDLE_MIN_CHOICES: [&str; 5] = ["200", "300", "500", "800", "1200"];
+const SENTENCE_MAX_AGE_CHOICES: [&str; 5] = ["2000", "3000", "4000", "6000", "8000"];
 const CAPTURE_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const CONFIG_EDITOR_FIELD_COUNT: usize = 18;
@@ -511,6 +519,30 @@ impl ConfigEditorField {
             ),
         }
     }
+
+    /// Returns `true` for every field that uses selection-only navigation.
+    /// Backspace and character input are suppressed for these fields.
+    pub fn is_picker(&self) -> bool {
+        matches!(
+            self,
+            Self::SourceLanguage
+                | Self::TargetLanguage
+                | Self::AudioSource
+                | Self::CaptureDevice
+                | Self::VirtualMicDevice
+                | Self::SttProvider
+                | Self::MtProvider
+                | Self::TtsEnabled
+                | Self::TtsRouting
+                | Self::SttFallbackPolicy
+                | Self::PipelineEarlyFlushOnVadEnd
+                | Self::VadPreRollMs
+                | Self::PipelineMaxWindowMs
+                | Self::PipelineIdleFlushMs
+                | Self::PipelineIdleMinMs
+                | Self::PipelineSentenceMaxAgeMs
+        )
+    }
 }
 
 fn tts_routing_config_value(routing: TtsRouting) -> &'static str {
@@ -721,6 +753,9 @@ impl ConfigEditorState {
 
     pub fn handle_input_request(&mut self, request: InputRequest) {
         let field = self.active_field();
+        if field.is_picker() {
+            return; // picker fields use F2/Ctrl+D cycling only
+        }
         let starts_google_api_key_edit = field == ConfigEditorField::GoogleApiKey
             && matches!(request, InputRequest::InsertChar(_));
         if field == ConfigEditorField::GoogleApiKey {
@@ -798,26 +833,35 @@ impl ConfigEditorState {
 
     /// Returns whether the currently selected settings field uses picker-style navigation.
     pub fn is_picker_field_active(&self) -> bool {
-        matches!(
-            self.active_field(),
-            ConfigEditorField::CaptureDevice | ConfigEditorField::VirtualMicDevice
-        )
+        self.active_field().is_picker()
     }
 
     /// Advance the active device picker without changing the selected editor field.
     pub fn picker_next(&mut self) {
-        match self.active_field() {
+        let field = self.active_field();
+        match field {
             ConfigEditorField::CaptureDevice => self.cycle_capture_device(),
             ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device(),
+            _ if field.is_picker() => {
+                if let Some(choices) = config_editor_choice_values(field) {
+                    self.cycle_choice_field(choices, config_editor_choice_save_hint(field));
+                }
+            }
             _ => self.next_field(),
         }
     }
 
     /// Move the active device picker backward without changing the selected editor field.
     pub fn picker_prev(&mut self) {
-        match self.active_field() {
+        let field = self.active_field();
+        match field {
             ConfigEditorField::CaptureDevice => self.cycle_capture_device_prev(),
             ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device_prev(),
+            _ if field.is_picker() => {
+                if let Some(choices) = config_editor_choice_values(field) {
+                    self.cycle_choice_field_prev(choices, config_editor_choice_save_hint(field));
+                }
+            }
             _ => self.prev_field(),
         }
     }
@@ -992,33 +1036,13 @@ impl ConfigEditorState {
     /// detected WASAPI device list.  Free-form fields (API key, file path)
     /// show a plain status message instead.
     pub fn cycle_active_field(&mut self) {
-        match self.active_field() {
+        let field = self.active_field();
+        match field {
             ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage => {
                 self.cycle_language_presets();
             }
-            ConfigEditorField::AudioSource => {
-                self.cycle_choice_field(
-                    crate::audio::audio_source_choices_for_os(),
-                    ". Save and restart to apply.",
-                );
-            }
-            ConfigEditorField::SttProvider => {
-                self.cycle_choice_field(&PROVIDER_CHOICES, ". Save and restart to apply.");
-            }
-            ConfigEditorField::MtProvider => {
-                self.cycle_choice_field(&PROVIDER_CHOICES, ". Save and restart to apply.");
-            }
-            ConfigEditorField::TtsEnabled => {
-                self.cycle_choice_field(&BOOLEAN_CHOICES, ". Save to apply.");
-            }
-            ConfigEditorField::TtsRouting => {
-                self.cycle_choice_field(&TTS_ROUTING_CHOICES, ". Save and restart to apply.");
-            }
-            ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device(),
-            ConfigEditorField::SttFallbackPolicy => {
-                self.cycle_choice_field(&STT_FALLBACK_CHOICES, ". Save and restart to apply.");
-            }
             ConfigEditorField::CaptureDevice => self.cycle_capture_device(),
+            ConfigEditorField::VirtualMicDevice => self.cycle_virtual_mic_device(),
             ConfigEditorField::GoogleApiKey => {
                 self.begin_google_api_key_replacement(Some(
                     " Existing Google API key cleared. Type the replacement key, then press Enter to save.",
@@ -1029,19 +1053,10 @@ impl ConfigEditorState {
                     " Type to edit this field. No preset values are available.",
                 );
             }
-            ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
-                self.cycle_choice_field(&BOOLEAN_CHOICES, ". Save and restart to apply.");
-            }
-            ConfigEditorField::VadPreRollMs
-            | ConfigEditorField::PipelineMaxWindowMs
-            | ConfigEditorField::PipelineIdleFlushMs
-            | ConfigEditorField::PipelineIdleMinMs
-            | ConfigEditorField::PipelineSentenceMaxAgeMs => {
-                let field = self.active_field();
-                self.set_status_message(format!(
-                    " {}: type an integer (ms). Save and restart to apply.",
-                    field.label()
-                ));
+            _ => {
+                if let Some(choices) = config_editor_choice_values(field) {
+                    self.cycle_choice_field(choices, config_editor_choice_save_hint(field));
+                }
             }
         }
     }
@@ -1069,11 +1084,29 @@ impl ConfigEditorState {
     fn cycle_choice_field(&mut self, choices: &[&str], save_hint: &str) {
         let field = self.active_field();
         let current = self.active_field_mut().trim().to_string();
-        let idx = choices
+        let next = choices
             .iter()
             .position(|&c| c == current.as_str())
-            .unwrap_or(0);
-        let next = choices[(idx + 1) % choices.len()];
+            .map(|idx| choices[(idx + 1) % choices.len()])
+            .unwrap_or(choices[0]);
+        self.set_active_field_value(next.to_string());
+        self.status_message = Some(format!(" {} set to \"{next}\"{save_hint}", field.label(),));
+    }
+
+    fn cycle_choice_field_prev(&mut self, choices: &[&str], save_hint: &str) {
+        let field = self.active_field();
+        let current = self.active_field_mut().trim().to_string();
+        let next = choices
+            .iter()
+            .position(|&c| c == current.as_str())
+            .map(|idx| {
+                if idx == 0 {
+                    choices[choices.len() - 1]
+                } else {
+                    choices[idx - 1]
+                }
+            })
+            .unwrap_or(choices[0]);
         self.set_active_field_value(next.to_string());
         self.status_message = Some(format!(" {} set to \"{next}\"{save_hint}", field.label(),));
     }
@@ -4062,15 +4095,39 @@ fn config_editor_choice_values(field: ConfigEditorField) -> Option<&'static [&'s
         }
         ConfigEditorField::TtsRouting => Some(&TTS_ROUTING_CHOICES),
         ConfigEditorField::SttFallbackPolicy => Some(&STT_FALLBACK_CHOICES),
+        ConfigEditorField::VadPreRollMs => Some(&VAD_PRE_ROLL_CHOICES),
+        ConfigEditorField::PipelineMaxWindowMs => Some(&PIPELINE_MAX_WINDOW_CHOICES),
+        ConfigEditorField::PipelineIdleFlushMs => Some(&IDLE_FLUSH_CHOICES),
+        ConfigEditorField::PipelineIdleMinMs => Some(&IDLE_MIN_CHOICES),
+        ConfigEditorField::PipelineSentenceMaxAgeMs => Some(&SENTENCE_MAX_AGE_CHOICES),
         ConfigEditorField::GoogleApiKey
         | ConfigEditorField::CaptureDevice
         | ConfigEditorField::AudioFilePath
-        | ConfigEditorField::VirtualMicDevice
+        | ConfigEditorField::VirtualMicDevice => None,
+    }
+}
+
+fn config_editor_choice_save_hint(field: ConfigEditorField) -> &'static str {
+    match field {
+        ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage => {
+            ". Press Enter to save."
+        }
+        ConfigEditorField::TtsEnabled => ". Save to apply.",
+        ConfigEditorField::AudioSource
+        | ConfigEditorField::SttProvider
+        | ConfigEditorField::MtProvider
+        | ConfigEditorField::TtsRouting
+        | ConfigEditorField::SttFallbackPolicy
         | ConfigEditorField::VadPreRollMs
         | ConfigEditorField::PipelineMaxWindowMs
+        | ConfigEditorField::PipelineEarlyFlushOnVadEnd
         | ConfigEditorField::PipelineIdleFlushMs
         | ConfigEditorField::PipelineIdleMinMs
-        | ConfigEditorField::PipelineSentenceMaxAgeMs => None,
+        | ConfigEditorField::PipelineSentenceMaxAgeMs => ". Save and restart to apply.",
+        ConfigEditorField::GoogleApiKey
+        | ConfigEditorField::CaptureDevice
+        | ConfigEditorField::AudioFilePath
+        | ConfigEditorField::VirtualMicDevice => "",
     }
 }
 
@@ -4078,7 +4135,7 @@ fn config_choice_picker_lines(
     editor: &ConfigEditorState,
     field: ConfigEditorField,
     panel_width: u16,
-    is_compact_editor: bool,
+    _is_compact_editor: bool,
 ) -> Vec<Line<'static>> {
     let Some(values) = config_editor_choice_values(field) else {
         return Vec::new();
@@ -4088,20 +4145,25 @@ fn config_choice_picker_lines(
         .saturating_sub(5)
         .max(CONFIG_EDITOR_MIN_VALUE_WIDTH);
     let current = editor.field_value(field).trim();
-    let choice_list_hint = if is_compact_editor {
-        " Choice list: F2 selects".to_string()
-    } else {
-        format!(
-            " Choice list: {} selects next option; type to override only when needed",
-            render_f2_or_ctrl_d(detect_key_os())
-        )
-    };
+    let choice_list_hint = format!(
+        " Choice list: {} selects next option",
+        render_f2_or_ctrl_d(detect_key_os())
+    );
     let mut lines = vec![Line::from(Span::styled(
         choice_list_hint,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     ))];
+
+    if !values.contains(&current) && !current.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  <custom: {current}>"),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
+    }
 
     for value in values {
         lines.push(config_choice_line(
@@ -4110,23 +4172,6 @@ fn config_choice_picker_lines(
             current == *value,
             label_width,
         ));
-    }
-
-    if !current.is_empty() && !values.contains(&current) {
-        lines.push(Line::from(vec![
-            Span::styled(
-                "  > ",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                truncate_device_name(&format!("custom/invalid: {current}"), label_width),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
     }
 
     lines
@@ -4170,11 +4215,32 @@ fn config_choice_label(field: ConfigEditorField, value: &str) -> String {
         (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "en-US") => {
             "en-US - English (US)".to_string()
         }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "en-GB") => {
+            "en-GB - English (UK)".to_string()
+        }
         (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "zh-CN") => {
             "zh-CN - Chinese (Simplified)".to_string()
         }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "zh-TW") => {
+            "zh-TW - Chinese (Traditional)".to_string()
+        }
         (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "ko") => {
             "ko - Korean".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "fr-FR") => {
+            "fr-FR - French".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "de-DE") => {
+            "de-DE - German".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "es-ES") => {
+            "es-ES - Spanish".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "it-IT") => {
+            "it-IT - Italian".to_string()
+        }
+        (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "pt-BR") => {
+            "pt-BR - Portuguese (Brazil)".to_string()
         }
         (ConfigEditorField::AudioSource, "wasapi") => {
             "wasapi - live system audio (Windows)".to_string()
@@ -4679,6 +4745,7 @@ pub fn format_storage_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
 
     // ── UX-02: TUI_KEY_OS_OVERRIDE env-var helpers (issue #480) ──────────────
 
@@ -4688,6 +4755,55 @@ mod tests {
     /// `tests/snapshot.rs` all serialise on the same lock.
     fn with_key_os_override(value: &str) -> key_hint::test_helpers::KeyOsGuard {
         key_hint::test_helpers::with_key_os_override(value)
+    }
+
+    fn settings_editor() -> ConfigEditorState {
+        let mut app_config = AppConfig::default();
+        app_config.mt_provider = "google".to_string();
+        ConfigEditorState::from_config(
+            &app_config,
+            Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+            ConfigEditorMode::Settings,
+        )
+    }
+
+    fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
+        let area = buf.area;
+        let mut rows = Vec::with_capacity(area.height as usize);
+        for y in 0..area.height {
+            let row: String = (0..area.width)
+                .map(|x| buf[(x, y)].symbol().chars().next().unwrap_or(' '))
+                .collect();
+            rows.push(row);
+        }
+        rows.join("\n")
+    }
+
+    fn render_config_editor_for_test(
+        editor: &ConfigEditorState,
+        width: u16,
+        height: u16,
+    ) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                super::render_config_editor(frame, frame.area(), editor);
+            })
+            .unwrap();
+        buffer_to_string(terminal.backend().buffer())
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn assert_strictly_increasing(values: &[&str]) {
+        let parsed: Vec<u32> = values
+            .iter()
+            .map(|value| value.parse::<u32>().unwrap())
+            .collect();
+        assert!(parsed.windows(2).all(|window| window[0] < window[1]));
     }
 
     #[test]
@@ -4708,6 +4824,125 @@ mod tests {
 
         editor.picker_prev();
         assert_eq!(editor.capture_device, "Device A");
+    }
+
+    #[test]
+    fn backspace_on_picker_field_is_noop() {
+        let mut editor = settings_editor();
+        editor.selected_field = ConfigEditorField::VadPreRollMs.index();
+        let original = editor.vad_pre_roll_ms.clone();
+
+        editor.backspace();
+
+        assert_eq!(editor.vad_pre_roll_ms, original);
+    }
+
+    #[test]
+    fn char_input_on_picker_field_is_noop() {
+        let mut editor = settings_editor();
+        editor.selected_field = ConfigEditorField::SourceLanguage.index();
+        let original = editor.source_language.clone();
+
+        editor.push_char('x');
+
+        assert_eq!(editor.source_language, original);
+    }
+
+    #[test]
+    fn cycle_choice_field_replaces_custom_value_with_first_preset() {
+        let mut editor = settings_editor();
+        editor.selected_field = ConfigEditorField::VadPreRollMs.index();
+        editor.vad_pre_roll_ms = "350".to_string();
+
+        editor.cycle_active_field();
+
+        assert_eq!(editor.vad_pre_roll_ms, "0");
+    }
+
+    #[test]
+    fn picker_navigation_cycles_numeric_field_presets() {
+        let mut editor = settings_editor();
+        editor.selected_field = ConfigEditorField::VadPreRollMs.index();
+
+        editor.picker_next();
+        assert_eq!(editor.vad_pre_roll_ms, "400");
+
+        editor.picker_prev();
+        assert_eq!(editor.vad_pre_roll_ms, "200");
+    }
+
+    #[test]
+    fn is_picker_set_matches_expected_field_list() {
+        let mut editor = settings_editor();
+        for field in ConfigEditorField::ALL {
+            let expected = matches!(
+                field,
+                ConfigEditorField::SourceLanguage
+                    | ConfigEditorField::TargetLanguage
+                    | ConfigEditorField::AudioSource
+                    | ConfigEditorField::CaptureDevice
+                    | ConfigEditorField::VirtualMicDevice
+                    | ConfigEditorField::SttProvider
+                    | ConfigEditorField::MtProvider
+                    | ConfigEditorField::TtsEnabled
+                    | ConfigEditorField::TtsRouting
+                    | ConfigEditorField::SttFallbackPolicy
+                    | ConfigEditorField::PipelineEarlyFlushOnVadEnd
+                    | ConfigEditorField::VadPreRollMs
+                    | ConfigEditorField::PipelineMaxWindowMs
+                    | ConfigEditorField::PipelineIdleFlushMs
+                    | ConfigEditorField::PipelineIdleMinMs
+                    | ConfigEditorField::PipelineSentenceMaxAgeMs
+            );
+            editor.selected_field = field.index();
+            assert_eq!(
+                field.is_picker(),
+                expected,
+                "unexpected picker flag for {field:?}"
+            );
+            assert_eq!(editor.is_picker_field_active(), expected);
+        }
+    }
+
+    #[test]
+    fn pipeline_preset_values_are_strictly_increasing() {
+        assert_strictly_increasing(&VAD_PRE_ROLL_CHOICES);
+        assert_strictly_increasing(&PIPELINE_MAX_WINDOW_CHOICES);
+        assert_strictly_increasing(&IDLE_FLUSH_CHOICES);
+        assert_strictly_increasing(&IDLE_MIN_CHOICES);
+        assert_strictly_increasing(&SENTENCE_MAX_AGE_CHOICES);
+    }
+
+    #[test]
+    fn language_presets_has_12_entries() {
+        assert_eq!(
+            LANGUAGE_PRESETS,
+            [
+                "ja-JP", "vi", "en-US", "en-GB", "zh-CN", "zh-TW", "ko", "fr-FR", "de-DE", "es-ES",
+                "it-IT", "pt-BR",
+            ]
+        );
+    }
+
+    #[test]
+    fn config_editor_settings_pipeline_picker() {
+        let _key_guard = with_key_os_override("windows");
+        let mut editor = settings_editor();
+        editor.selected_field = ConfigEditorField::VadPreRollMs.index();
+        editor.audio_source = "file".to_string();
+        editor.capture_device = "Windows default playback".to_string();
+        editor.audio_file_path = r"C:\capture\meeting.wav".to_string();
+        editor.vad_pre_roll_ms = "350".to_string();
+
+        insta::with_settings!({
+            snapshot_path => "../../tests/snapshots",
+            prepend_module_to_snapshot => false,
+        }, {
+            insta::assert_snapshot!(
+                "config_editor_settings_pipeline_picker",
+                render_config_editor_for_test(&editor, 90, 36)
+            );
+        });
     }
 
     fn config_editor_key_to_action(
