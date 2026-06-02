@@ -2649,9 +2649,6 @@ fn apply_capture_hot_swap(next_cfg: &config::AppConfig, reason: &str) -> Capture
 
 fn capture_source_spec_from_config(cfg: &config::AppConfig) -> Result<audio::CaptureSourceSpec> {
     match cfg.audio_source.as_str() {
-        "wasapi" => Ok(audio::CaptureSourceSpec::Wasapi {
-            device: cfg.capture_device.clone(),
-        }),
         "file" => {
             let path = cfg
                 .audio_file_path
@@ -2663,7 +2660,19 @@ fn capture_source_spec_from_config(cfg: &config::AppConfig) -> Result<audio::Cap
                 path: path.to_string(),
             })
         }
-        other => bail!("audio_source must be \"wasapi\" or \"file\", got {other:?}"),
+        other if audio::audio_source_choices_for_os().contains(&other) => {
+            Ok(audio::CaptureSourceSpec::Wasapi {
+                device: cfg.capture_device.clone(),
+            })
+        }
+        other => bail!(
+            "audio_source must be one of {}, got {other:?}",
+            audio::audio_source_choices_for_os()
+                .iter()
+                .map(|source| format!("{source:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
