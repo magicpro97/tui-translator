@@ -93,9 +93,9 @@ use metrics::{
 };
 use metrics_export::{write_metrics_snapshot_export, StorageMetricsHandles, METRICS_SNAPSHOT_ENV};
 use runtime_providers::{
-    apply_tts_voice_from_config, build_runtime_tts_provider, build_slot_mt_provider,
-    build_slot_stt_provider, cycle_tts_voice_for_language, stt_local_unavailable_is_fatal_for_slot,
-    DisabledTtsProvider, RuntimeTtsProvider,
+    apply_tts_voice_from_config, build_llm_mt_provider, build_runtime_tts_provider,
+    build_slot_mt_provider, build_slot_stt_provider, cycle_tts_voice_for_language,
+    stt_local_unavailable_is_fatal_for_slot, DisabledTtsProvider, RuntimeTtsProvider,
 };
 use runtime_recording::{log_measurement_mode_status, start_audio_archive, start_session_recorder};
 use session_export_cli::{parse_session_export_args_from, run_session_export};
@@ -1151,46 +1151,90 @@ fn main() -> Result<()> {
                 // Issue #71–#76 and #217: wire the configured MT provider.
                 // Google reports billable character usage; local OPUS-MT ignores
                 // the reporter but shares the same runtime trait.
-                let mt_provider = match build_slot_mt_provider(
-                    &slot_a_cfg.mt_provider,
-                    google_api_key,
-                    cfg_snapshot.mt_cloud_fallback.as_deref(),
-                    Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
-                ) {
-                    Ok(p) => p,
-                    Err(err) => {
-                        tracing::error!("failed to create MT provider: {err}");
-                        let provider_msg = format!("Machine translation unavailable: {err}");
-                        *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
-                            metrics::SttState::Error(provider_msg.clone());
-                        *state
-                            .pipeline_error_msg
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
-                        spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
-                        orchestrator_join = None;
-                        return finish_main(
-                            rt,
-                            FinishMainArgs {
-                                state: &state,
-                                restart_required: &restart_required,
-                                cfg_path: &cfg_path,
-                                current_config: &current_config,
-                                playback_service: &playback_service,
-                                orchestrator_join,
-                                orchestrator_join_b: None,
-                                orchestrator_shutdown,
-                                process_rx: process_rx.clone(),
-                                e2e_latency: Arc::clone(&e2e_latency),
-                                network_metrics: Arc::clone(&network_metrics),
-                                loss_metrics: Arc::clone(&loss_metrics),
-                                cpu_gate: Arc::clone(&cpu_gate),
-                                memory_guard: Arc::clone(&memory_guard),
-                                storage,
-                                fanout_counters: Arc::clone(&fanout_counters),
-                                capture_router_metrics: capture_router_metrics.clone(),
-                            },
-                        );
+                // LLM-MT-05 (#700): "llm" requires async load/download — use rt.block_on.
+                let mt_provider = if slot_a_cfg.mt_provider == "llm" {
+                    match rt.block_on(build_llm_mt_provider(
+                        cfg_snapshot.llm_model_path.as_deref(),
+                        None,
+                    )) {
+                        Ok(p) => p,
+                        Err(err) => {
+                            tracing::error!("failed to create LLM MT provider: {err}");
+                            let provider_msg = format!("Machine translation unavailable: {err}");
+                            *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                                metrics::SttState::Error(provider_msg.clone());
+                            *state
+                                .pipeline_error_msg
+                                .lock()
+                                .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
+                            spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
+                            orchestrator_join = None;
+                            return finish_main(
+                                rt,
+                                FinishMainArgs {
+                                    state: &state,
+                                    restart_required: &restart_required,
+                                    cfg_path: &cfg_path,
+                                    current_config: &current_config,
+                                    playback_service: &playback_service,
+                                    orchestrator_join,
+                                    orchestrator_join_b: None,
+                                    orchestrator_shutdown,
+                                    process_rx: process_rx.clone(),
+                                    e2e_latency: Arc::clone(&e2e_latency),
+                                    network_metrics: Arc::clone(&network_metrics),
+                                    loss_metrics: Arc::clone(&loss_metrics),
+                                    cpu_gate: Arc::clone(&cpu_gate),
+                                    memory_guard: Arc::clone(&memory_guard),
+                                    storage,
+                                    fanout_counters: Arc::clone(&fanout_counters),
+                                    capture_router_metrics: capture_router_metrics.clone(),
+                                },
+                            );
+                        }
+                    }
+                } else {
+                    match build_slot_mt_provider(
+                        &slot_a_cfg.mt_provider,
+                        google_api_key,
+                        cfg_snapshot.mt_cloud_fallback.as_deref(),
+                        Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
+                    ) {
+                        Ok(p) => p,
+                        Err(err) => {
+                            tracing::error!("failed to create MT provider: {err}");
+                            let provider_msg = format!("Machine translation unavailable: {err}");
+                            *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
+                                metrics::SttState::Error(provider_msg.clone());
+                            *state
+                                .pipeline_error_msg
+                                .lock()
+                                .unwrap_or_else(|p| p.into_inner()) = Some(provider_msg);
+                            spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
+                            orchestrator_join = None;
+                            return finish_main(
+                                rt,
+                                FinishMainArgs {
+                                    state: &state,
+                                    restart_required: &restart_required,
+                                    cfg_path: &cfg_path,
+                                    current_config: &current_config,
+                                    playback_service: &playback_service,
+                                    orchestrator_join,
+                                    orchestrator_join_b: None,
+                                    orchestrator_shutdown,
+                                    process_rx: process_rx.clone(),
+                                    e2e_latency: Arc::clone(&e2e_latency),
+                                    network_metrics: Arc::clone(&network_metrics),
+                                    loss_metrics: Arc::clone(&loss_metrics),
+                                    cpu_gate: Arc::clone(&cpu_gate),
+                                    memory_guard: Arc::clone(&memory_guard),
+                                    storage,
+                                    fanout_counters: Arc::clone(&fanout_counters),
+                                    capture_router_metrics: capture_router_metrics.clone(),
+                                },
+                            );
+                        }
                     }
                 };
                 // Issue #71–#76: wire cost reporter so TTS API usage is billed
@@ -1436,12 +1480,19 @@ fn main() -> Result<()> {
                             Arc::clone(&provider_is_local_b),
                             Arc::clone(&slot_b_state.stt_source),
                         );
-                        let mt_b = build_slot_mt_provider(
-                            &slot_b_cfg.mt_provider,
-                            google_api_key_b,
-                            cfg_snapshot.mt_cloud_fallback.as_deref(),
-                            Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
-                        );
+                        let mt_b = if slot_b_cfg.mt_provider == "llm" {
+                            rt.block_on(build_llm_mt_provider(
+                                cfg_snapshot.llm_model_path.as_deref(),
+                                None,
+                            ))
+                        } else {
+                            build_slot_mt_provider(
+                                &slot_b_cfg.mt_provider,
+                                google_api_key_b,
+                                cfg_snapshot.mt_cloud_fallback.as_deref(),
+                                Arc::clone(&state.cost_counter) as Arc<dyn providers::CostReporter>,
+                            )
+                        };
 
                         match (stt_b, mt_b) {
                             (Ok(stt_b), Ok(mt_b)) => {

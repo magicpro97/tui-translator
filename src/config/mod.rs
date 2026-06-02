@@ -875,8 +875,21 @@ pub struct AppConfig {
     ///   CPU-local OPUS-MT when built with `local-mt` and ONNX Runtime 1.20.x
     ///   is available.
     /// - `"google"` *(default without `local-mt` feature)* — Google Cloud Translation.
+    /// - `"llm"` *(requires `local-llm-mt` feature)* — CPU-local GGUF LLM translation.
+    ///   If the model file is missing it is downloaded automatically from HuggingFace Hub.
     #[serde(default = "default_mt_provider")]
     pub mt_provider: String,
+
+    /// Path to the GGUF model file used when `mt_provider = "llm"`.
+    ///
+    /// When absent the application manages the model in its standard local-model
+    /// cache directory (`~/.local/share/tui-translator/models/llm/` on Linux,
+    /// `%APPDATA%\tui-translator\models\llm\` on Windows, and
+    /// `~/Library/Application Support/tui-translator/models/llm/` on macOS).
+    ///
+    /// Ignored when `mt_provider` is not `"llm"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_model_path: Option<String>,
 
     /// Cloud provider to use when the local MT backend cannot serve a
     /// language pair (LF-04, issue #372).
@@ -1212,6 +1225,7 @@ impl Default for AppConfig {
             capture_device: None,
             stt_provider: default_stt_provider(),
             mt_provider: default_mt_provider(),
+            llm_model_path: None,
             mt_cloud_fallback: None,
             mt_customisation: MtCustomisation::default(),
             tts_provider: default_tts_provider(),
@@ -1255,6 +1269,7 @@ impl std::fmt::Debug for AppConfig {
             .field("capture_device", &self.capture_device)
             .field("stt_provider", &self.stt_provider)
             .field("mt_provider", &self.mt_provider)
+            .field("llm_model_path", &self.llm_model_path)
             .field("mt_cloud_fallback", &self.mt_cloud_fallback)
             .field("mt_customisation", &self.mt_customisation)
             .field("tts_provider", &self.tts_provider)
@@ -1572,9 +1587,9 @@ impl AppConfig {
             }
         }
         match self.mt_provider.as_str() {
-            "google" | "local" => {}
+            "google" | "local" | "llm" => {}
             other => {
-                bail!("`mt_provider` must be \"google\" or \"local\", got {other:?}");
+                bail!("`mt_provider` must be \"google\", \"local\", or \"llm\", got {other:?}");
             }
         }
         // ── mt_cloud_fallback validation (LF-04, issue #372) ──────────────
@@ -1830,6 +1845,7 @@ impl AppConfig {
             || self.virtual_device_patterns != next.virtual_device_patterns
             || self.stt_provider != next.stt_provider
             || self.mt_provider != next.mt_provider
+            || self.llm_model_path != next.llm_model_path
             || self.mt_cloud_fallback != next.mt_cloud_fallback
             || self.tts_provider != next.tts_provider
             || self.tts_cloud_fallback != next.tts_cloud_fallback
@@ -2529,9 +2545,11 @@ fn validate_slot_config(context: &str, slot: &SlotConfig) -> Result<()> {
         }
     }
     match slot.mt_provider.as_str() {
-        "google" | "local" => {}
+        "google" | "local" | "llm" => {}
         other => {
-            bail!("`{context}.mt_provider` must be \"google\" or \"local\", got {other:?}");
+            bail!(
+                "`{context}.mt_provider` must be \"google\", \"local\", or \"llm\", got {other:?}"
+            );
         }
     }
     Ok(())
