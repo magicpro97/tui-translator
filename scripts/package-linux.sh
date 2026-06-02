@@ -29,12 +29,14 @@ VERSION="${VERSION:-$(cargo metadata --no-deps --format-version 1 | python3 -c "
 TARGET="${TARGET:-x86_64-unknown-linux-gnu}"
 SKIP_APPIMAGE="${SKIP_APPIMAGE:-0}"
 DIST="${REPO_ROOT}/dist/linux"
+FEATURES="${FEATURES:-}"
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) VERSION="$2"; shift 2 ;;
     --target)  TARGET="$2";  shift 2 ;;
+    --features) FEATURES="$2"; shift 2 ;;
     --skip-appimage) SKIP_APPIMAGE=1; shift ;;
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
@@ -45,7 +47,12 @@ mkdir -p "${DIST}"
 
 # ── 1. Build release binary ───────────────────────────────────────────────────
 echo "==> Building release binary"
-cargo build --locked --release --target "${TARGET}" --bin tui-translator
+FEATURES_FLAG=""
+if [[ -n "${FEATURES}" ]]; then
+  FEATURES_FLAG="--features ${FEATURES}"
+fi
+# shellcheck disable=SC2086
+cargo build --locked --release --target "${TARGET}" --bin tui-translator ${FEATURES_FLAG}
 BIN="target/${TARGET}/release/tui-translator"
 if [[ ! -f "${BIN}" ]]; then
   echo "ERROR: binary not found at ${BIN}" >&2
@@ -64,6 +71,14 @@ cp USAGE.md                        "${TARBALL_STAGE}/" 2>/dev/null || true
 cp LICENSE                         "${TARBALL_STAGE}/" 2>/dev/null || true
 mkdir -p "${TARBALL_STAGE}/LICENSES"
 find assets/licenses -name "*.txt" -exec cp {} "${TARBALL_STAGE}/LICENSES/" \; 2>/dev/null || true
+# Bundle ORT runtime library if present (placed by ort/copy-dylibs feature next to the binary)
+ORT_LIB="$(find "target/${TARGET}/release" -maxdepth 1 -name "libonnxruntime*.so*" 2>/dev/null | head -1)"
+if [[ -n "${ORT_LIB}" ]]; then
+  cp "${ORT_LIB}" "${TARBALL_STAGE}/"
+  echo "    Bundled ORT runtime: $(basename "${ORT_LIB}")"
+else
+  echo "    NOTE: ORT runtime library not found in release output (expected with release-linux features)"
+fi
 # MODEL-03 packaging constraint: assert no model weight files leaked into the tarball stage
 # Model binaries are NOT bundled — first-run download only
 if find "${TARBALL_STAGE}" \( -name '*.onnx' -o -name '*.bin' -o -name '*.gguf' -o -name '*.pt' -o -name '*.pth' \) | grep -q .; then

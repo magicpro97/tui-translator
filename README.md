@@ -36,9 +36,10 @@ virtual microphone so meeting apps can receive the AI-translated voice.
 > WASAPI audio capture, local Whisper STT, local OPUS-MT translation,
 > local Supertonic-3 TTS, cost tracking, and live keyboard controls are
 > all implemented on `main`.
-> **The complete pipeline now runs without any Google API key** when built with
-> `--features local-stt,local-mt,local-tts` and the required model files are
-> installed.  Google Cloud providers remain available as opt-in alternatives.
+> **The complete pipeline now runs without any Google API key.**  Set
+> `stt_provider = "local"`, `mt_provider = "local"`, and `tts_provider = "local"` in
+> `config.json` and local models download automatically on first run (~480 MB total).
+> Google Cloud providers remain available as opt-in alternatives.
 > Packaged GitHub Releases remain **pre-releases** until Layer 5 human
 > acceptance (issues #115–#122) is completed by named reviewers.
 
@@ -50,9 +51,10 @@ virtual microphone so meeting apps can receive the AI-translated voice.
 
 - **Windows 10 or Windows 11** (64-bit)
 - A terminal emulator — Windows Terminal (recommended), PowerShell, or cmd
-- **For fully local operation (no Google account needed):** build with
-  `--features local-stt,local-mt,local-tts` and install the three model
-  bundles (see [Running fully local](#running-fully-local-no-google-api))
+- **For fully local operation (no Google account needed):** download the
+  release binary, set `stt_provider = "local"` (and optionally `mt_provider`
+  and `tts_provider`) in your config — models download automatically on
+  first run (~480 MB total). See [Running fully local](#running-fully-local-no-google-api).
 - **For cloud translation/TTS:** a Google Cloud API key with Translation
   (and optionally TTS) enabled
 - An internet connection is only required while Google Cloud providers are active
@@ -105,9 +107,9 @@ The packaged flow is documented in **[USAGE.md](USAGE.md)**.
 > The application captures Zoom audio through WASAPI loopback,
 > uses local Whisper for speech-to-text by default and Google Translation
 > by default, and exposes the full TUI controls, settings overlay, and metrics
-> panels.  A Google Cloud API key is needed for translation (and TTS when
-> enabled); local STT runs without a key once `ggml-tiny.bin` is placed in
-> `%LOCALAPPDATA%\tui-translator\models\`.
+> panels.  A Google Cloud API key is needed for cloud translation (and TTS when
+> enabled); local STT, local MT, and local TTS auto-download their models on
+> first run when configured.
 > Layer 5 human-acceptance (issues #115–#122) is not yet complete;
 > the release is marked *pre-release* on GitHub accordingly.
 
@@ -124,12 +126,13 @@ If you want to try the current build from source:
 
 3. The terminal window opens showing the subtitle area, audio-level bar,
    and status strip. The current WASAPI device name appears in the audio bar.
-4. Local STT (`stt_provider: "local"`) does not need a Google API key once the
-   executable includes the `local-stt` feature and the model is installed.
+4. Local STT (`stt_provider: "local"`) does not need a Google API key.
+   Models download automatically on first run — no manual file placement
+   required.
    Because translation defaults to `mt_provider: "google"`, the full subtitle
-   pipeline still needs either a Google API key or `mt_provider: "local"` in a
-   local-MT build with the OPUS-MT bundle installed. Without either translation
-   provider, the app opens in metrics-only mode and shows no live subtitles.
+   pipeline still needs either a Google API key or `mt_provider: "local"`.
+   Without either translation provider, the app opens in metrics-only mode
+   and shows no live subtitles.
 5. Press `q` or `Ctrl+C` to close cleanly and show the session summary.
 
 ### Keyboard controls
@@ -219,26 +222,36 @@ Never put your real API key in `config.example.json`.
 
 ## Running fully local (no Google API)
 
-> **All three pipeline stages now have CPU-local implementations.** When built
-> with `--features local-stt,local-mt,local-tts`, the complete transcription →
-> translation → TTS pipeline runs on your CPU with no Google API key or internet
-> connection.
+> **All three pipeline stages have CPU-local implementations.**  The complete
+> transcription → translation → TTS pipeline runs on your CPU with no Google
+> API key or internet connection.  **No compilation required** — download the
+> release binary and configure your providers; models download automatically.
+
+### Local models — auto-download on first run
+
+**Local (offline) mode:** Download the release binary. Set
+`stt_provider = "local"` in your config file and models auto-download on
+first run. No compilation needed.
+
+When you configure any local provider for the first time, the app:
+
+1. Shows a **Y/n consent prompt** (defaults to Yes after 10 seconds).
+2. Downloads the required model files (~480 MB total) with a progress bar.
+3. Downloads are **resumable** — you can interrupt and restart safely.
+4. Caches models in your platform's data directory:
+   - **Windows:** `%APPDATA%\tui-translator\models\`
+   - **macOS:** `~/Library/Application Support/tui-translator/models/`
+   - **Linux:** `~/.local/share/tui-translator/models/`
+5. No internet connection is required after the initial download.
+
+| Stage | Model | Size |
+|-------|-------|------|
+| **STT** | Whisper tiny (ggml-tiny.bin) | ~74 MB |
+| **MT** | OPUS-MT ja→vi ONNX bundle | ~280 MB |
+| **TTS** | Supertonic-3 int8 ONNX | ~128 MB |
+| **Total** | | **~480 MB** |
 
 ### Quick setup for full local operation
-
-Build with all local features:
-
-```bash
-cargo build --release --features local-stt,local-mt,local-tts
-```
-
-Install the three model bundles (one-time):
-
-| Stage | Model | Windows path | macOS path | Size |
-|-------|-------|-------------|-----------|------|
-| **STT** | Whisper tiny (ggml-tiny.bin) | `%LOCALAPPDATA%\tui-translator\models\ggml-tiny.bin` | `~/Library/Application Support/tui-translator/models/ggml-tiny.bin` | ~74 MB |
-| **MT** | OPUS-MT ja→vi ONNX bundle | `%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` | `~/Library/Application Support/tui-translator/models/mt/opus-mt-ja-vi/` | ~250–300 MB |
-| **TTS** | Supertonic-3 int8 ONNX bundle | `%LOCALAPPDATA%\tui-translator\models\tts\supertonic-3\` | `~/Library/Application Support/tui-translator/models/tts/supertonic-3/` | ~128 MB |
 
 Set your `config.json`:
 
@@ -285,9 +298,8 @@ and lower `ram_budget_mb` in config to get status-bar warnings.
 
 ## CPU-only / offline mode
 
-> **All providers are local by default** when the executable is built with
-> `--features local-stt,local-mt,local-tts`.  No Google API key or internet
-> connection is needed for the full subtitle pipeline.
+> **All providers are local by default** in the release builds.  No Google API
+> key or internet connection is needed for the full subtitle pipeline.
 > Google Cloud providers remain available as explicit opt-in via `config.json`.
 
 ### When local providers are especially useful
@@ -312,33 +324,28 @@ offline after the model files are downloaded.
 | STT quality | Good — varies by model and hardware | High |
 | MT language pairs | Japanese→Vietnamese (current release) | All pairs |
 | TTS voices | Supertonic-3 (ja/vi/en) | Many voices and languages |
-| Setup | One-time model download | API key + billing |
+| Setup | Auto-download on first run (~480 MB) | API key + billing |
 | Extra RAM | ~1–2 GB total | Minimal |
 | Cost per session | **Free after download** | Per-API-call billing |
 
-> **Local MT:** `mt_provider = "local"` requires the OPUS-MT ONNX bundle
-> installed and the `local-mt` feature compiled in.  Without that, set
-> `mt_provider = "google"` with a valid API key.
+> **Local MT:** `mt_provider = "local"` requires the OPUS-MT ONNX bundle,
+> which downloads automatically on first use when `mt_provider = "local"` is set.
+> Without a translation provider, set `mt_provider = "google"` with a valid API key.
 
 
-### Local MT setup (opt-in)
+### Local MT setup (auto-download)
 
-`mt_provider = "local"` is supported on builds that include the `local-mt`
-feature flag.  To run translation fully on your CPU:
+`mt_provider = "local"` is supported on all release builds.  To run
+translation fully on your CPU:
 
-1. **Install the OPUS-MT ONNX bundle** into the per-user model cache directory
-   (`%LOCALAPPDATA%\tui-translator\models\mt\opus-mt-ja-vi\` on Windows;
-   `~/Library/Application Support/tui-translator/models/mt/opus-mt-ja-vi/` on macOS;
-   `~/.local/share/tui-translator/models/mt/opus-mt-ja-vi/` on Linux).  The current
-   release ships the Japanese → Vietnamese pair only
-   (Helsinki-NLP/opus-mt-ja-vi, CC-BY-4.0; verify the model card before
-   redistribution).  Approximate on-disk size: ~250–300 MB; peak RAM
-   ~400–600 MB during inference.
-2. **Provide ONNX Runtime 1.20.x**.  Place `onnxruntime.dll` either next to
-   `tui-translator.exe`, inside the model folder above, or point the
-   `TUI_TRANSLATOR_ONNXRUNTIME_DLL` environment variable at it.
-3. **Set the field**: `"mt_provider": "local"` in `config.json`.
-4. (Optional) **Allow cloud fallback for unsupported pairs**:
+1. **Set `"mt_provider": "local"` in `config.json`** (or use the in-app
+   settings editor).  On the next startup, the app will prompt to download
+   the OPUS-MT bundle (~280 MB) into the per-user model cache automatically.
+2. **Provide ONNX Runtime 1.20.x** if not already present.  Place
+   `onnxruntime.dll` either next to `tui-translator.exe`, inside the model
+   folder, or point the `TUI_TRANSLATOR_ONNXRUNTIME_DLL` environment variable
+   at it.
+3. (Optional) **Allow cloud fallback for unsupported pairs**:
    `"mt_cloud_fallback": "google"`.  This field is **absent by default**.
    Having `google_api_key` present is **not** consent on its own — without
    `mt_cloud_fallback`, unsupported pairs surface a visible error instead of
@@ -382,39 +389,25 @@ they are not selected by the app today.
 
 ### Enabling local STT
 
-> Local STT requires the executable to be built with the `local-stt` feature
-> flag. Check the release notes for a build that includes it.
+Local STT is included in all release builds and enabled by default
+(`stt_provider = "local"`). The required Whisper model (~74 MB) downloads
+automatically on first run — no manual file placement is needed.
 
-1. Download the GGML-format Whisper model file used by the current release:
-   `ggml-tiny.bin` (~74 MB, multilingual).
+On first startup with `stt_provider = "local"`:
 
-   Download links (from the [whisper.cpp Hugging Face repository](https://huggingface.co/ggerganov/whisper.cpp)):
-   - **Tiny (~74 MB, required):** `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin`
+1. The app shows a **Y/n consent prompt** for the model download (defaults
+   to Yes after 10 seconds).
+2. `ggml-tiny.bin` (~74 MB) is downloaded with a progress bar.
+3. The download is resumable — restart safely if interrupted.
+4. The model is cached at:
+   - **Windows:** `%APPDATA%\tui-translator\models\ggml-tiny.bin`
+   - **macOS:** `~/Library/Application Support/tui-translator/models/ggml-tiny.bin`
+   - **Linux:** `~/.local/share/tui-translator/models/ggml-tiny.bin`
 
-   Place the downloaded file in the per-user model cache directory:
+After the first download, the app runs fully offline with no internet needed
+for speech recognition.
 
-   **Windows:**
-   ```text
-   %LOCALAPPDATA%\tui-translator\models\
-   ```
-   Example: `C:\Users\YourName\AppData\Local\tui-translator\models\ggml-tiny.bin`
-
-   **macOS:**
-   ```text
-   ~/Library/Application Support/tui-translator/models/
-   ```
-   Example: `~/.../Application Support/tui-translator/models/ggml-tiny.bin`
-
-   **Linux:**
-   ```text
-   ~/.local/share/tui-translator/models/
-   ```
-
-   The application verifies the SHA-256 checksum on startup and will report a
-   clear error if the file is missing or corrupted. See `USAGE.md` for the
-   expected checksums and a one-line PowerShell verification command.
-
-2. Add or update these fields in your `config.json`:
+Add or update these fields in your `config.json`:
 
    ```jsonc
    {
@@ -444,14 +437,11 @@ they are not selected by the app today.
 - **8 GB machines may hit swap** if Zoom, local STT, local MT, and local TTS
   all run at once. Monitor RAM in Task Manager; switch to Google Cloud providers
   or a smaller STT model if headroom is tight.
-- **One-time model download required.** Model files must be placed in the
-  per-user model cache directory before local providers start
-  (`%LOCALAPPDATA%\tui-translator\models\` on Windows;
-  `~/Library/Application Support/tui-translator/models/` on macOS;
-  `~/.local/share/tui-translator/models/` on Linux).
-  The application verifies SHA-256 checksums on startup and reports a clear error if
-  a file is missing or corrupted. A dedicated model-download command (issue #236)
-  is planned for a future release.
+- **One-time model download required per device.** Models download
+  automatically on first use — a Y/n consent prompt appears before any
+  download begins. Downloads are resumable; re-run the app if interrupted.
+  The application verifies SHA-256 checksums on startup and reports a clear
+  error if a file is missing or corrupted.
 
 ### Troubleshooting
 
@@ -460,9 +450,9 @@ they are not selected by the app today.
 | Subtitles lag or pile up | CPU cannot keep up with local STT | Close CPU-heavy apps, raise `cpu_budget_pct` only if acceptable for the meeting, or switch back to Google STT |
 | High CPU while Zoom is running | `cpu_budget_pct` not configured | Set `cpu_budget_pct` to 70–80 to throttle inference |
 | RAM warning in the status bar | Model + Zoom exceeding `ram_budget_mb` | Close memory-heavy apps, raise `ram_budget_mb` only if it was set too low, or switch back to Google STT |
-| "local-stt feature not available" | Build does not include local STT | Download a release build that lists `local-stt` in its release notes |
-| No translation output | No translation provider is available | Use `mt_provider = "google"` with a valid Google API key, or install the OPUS-MT bundle and set `mt_provider = "local"` |
-| `unsupported language pair` (local MT) | Requested pair has no installed OPUS-MT bundle | Install the bundle for the pair under `%LOCALAPPDATA%\tui-translator\models\mt\` (Windows) or `~/Library/Application Support/tui-translator/models/mt/` (macOS), or set `mt_cloud_fallback = "google"` to opt in to Google for unsupported pairs |
+| "local-stt feature not available" | Older build without local STT support | Download the latest release build |
+| No translation output | No translation provider is available | Use `mt_provider = "google"` with a valid Google API key, or set `mt_provider = "local"` and let the OPUS-MT bundle download automatically |
+| `unsupported language pair` (local MT) | Requested pair has no downloaded bundle | Set `mt_cloud_fallback = "google"` to opt in to Google for unsupported pairs, or wait for additional language pair releases |
 | `onnxruntime.dll not found` / DLL load error | ONNX Runtime missing for `local-mt` builds | Place `onnxruntime.dll` (v1.20.x) next to `tui-translator.exe` or in the model folder, or set `TUI_TRANSLATOR_ONNXRUNTIME_DLL` |
 | `mt_bench` fails the gate | Host CPU cannot meet the JV-08 latency budget | Keep `mt_provider = "google"`; see `docs/11-google-local-benchmark.md` for the gate definition |
 
