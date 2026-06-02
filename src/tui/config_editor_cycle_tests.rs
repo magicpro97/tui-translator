@@ -16,9 +16,23 @@ fn config_editor_cycles_source_language_presets() {
     editor.cycle_active_field();
     assert_eq!(editor.source_language, "en-US");
     editor.cycle_active_field();
+    assert_eq!(editor.source_language, "en-GB");
+    editor.cycle_active_field();
     assert_eq!(editor.source_language, "zh-CN");
     editor.cycle_active_field();
+    assert_eq!(editor.source_language, "zh-TW");
+    editor.cycle_active_field();
     assert_eq!(editor.source_language, "ko");
+    editor.cycle_active_field();
+    assert_eq!(editor.source_language, "fr-FR");
+    editor.cycle_active_field();
+    assert_eq!(editor.source_language, "de-DE");
+    editor.cycle_active_field();
+    assert_eq!(editor.source_language, "es-ES");
+    editor.cycle_active_field();
+    assert_eq!(editor.source_language, "it-IT");
+    editor.cycle_active_field();
+    assert_eq!(editor.source_language, "pt-BR");
     editor.cycle_active_field();
     assert_eq!(editor.source_language, "ja-JP");
 }
@@ -36,7 +50,7 @@ fn config_editor_cycles_target_language_presets() {
     editor.cycle_active_field();
     assert_eq!(editor.target_language, "en-US");
     editor.cycle_active_field();
-    assert_eq!(editor.target_language, "zh-CN");
+    assert_eq!(editor.target_language, "en-GB");
 }
 
 #[test]
