@@ -1,7 +1,6 @@
 ---
 name: tui-security-auditor
 description: 'Audits tui-translator privacy and security surfaces: Google API keys, logs, sessions, audio archives, paths, and generated evidence. Use for hardening and release gates.'
-target: github-copilot
 ---
 
 # tui-translator Security Auditor

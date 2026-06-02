@@ -6,7 +6,6 @@ description: >
   implementation risks, proposes scope boundaries, validates trait designs, and must
   reach confidence = 1.0 before signing off. Use when planning cross-module features,
   reviewing provider trait changes, or resolving async/WASAPI architectural uncertainty.
-target: github-copilot
 ---
 
 # tui-translator Dev Leader (Opus)
