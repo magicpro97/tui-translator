@@ -1,0 +1,39 @@
+---
+source: src/tui/mod.rs
+expression: "render_config_editor_for_test(&editor, 90, 36)"
+---
+
+       ┌ Settings ────────────────────────────────────────────────────────────────┐
+       │ Edit the saved config and press Enter to persist changes.                │
+       │ Path: C:\Users\demo\.tui-translator\config.json                          │
+       │                                                                          │
+       │ Choice list: F2/Ctrl+D selects next option                               │
+       │  <custom: 350>                                                           │
+       │    0                                                                     │
+       │    100                                                                   │
+       │    200                                                                   │
+       │    400                                                                   │
+       │    800                                                                   │
+       │                                                                          │
+       │  Source language : ja-JP                                                 │
+       │  Target language : vi                                                    │
+       │  Google API key  : — (not set)                                           │
+       │  Audio source    : file                                                  │
+       │  Capture device  : test-capture-device                                   │
+       │  Audio file path : C:\capture\meeting.wav                                │
+       │  STT provider    : local                                                 │
+       │  MT provider     : google                                                │
+       │  TTS enabled     : false                                                 │
+       │  TTS routing     : speakers                                              │
+       │  Virtual mic     : not configured                                        │
+       │  STT fallback    : google-when-keyed                                     │
+       │> VAD pre-roll ms : 350_                                                  │
+       │  Max window ms   : 3000                                                  │
+       │  Early VAD flush : true                                                  │
+       │  Idle flush ms   : 600                                                   │
+       │  Idle min ms     : 500                                                   │
+       │  Sentence max ms : 4000                                                  │
+       │                                                                          │
+       │ Ready to save.                                                           │
+       │ Tab/Down next  Shift+Tab/Up prev  F2/Ctrl+D cycle  Enter save  Esc close │
+       └──────────────────────────────────────────────────────────────────────────┘
