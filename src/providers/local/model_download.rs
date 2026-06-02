@@ -20,6 +20,12 @@ use transfer::{
     download_file, existing_len, quarantine_file, sha256_file, write_installed_manifest,
 };
 
+#[cfg(feature = "local-tts")]
+#[path = "model_download_archive.rs"]
+mod archive;
+#[cfg(feature = "local-tts")]
+pub use archive::install_archive_bundle;
+
 #[cfg(test)]
 #[path = "model_download_tests.rs"]
 mod tests;
@@ -304,7 +310,6 @@ pub enum ModelDownloadError {
     },
 }
 
-/// Install all files from `manifest` into `model_dir`.
 ///
 /// Existing verified files are reused. Partial downloads are stored as
 /// `<file>.part` and resumed with an HTTP `Range` request.

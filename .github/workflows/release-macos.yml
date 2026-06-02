@@ -28,6 +28,8 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   MACOSX_DEPLOYMENT_TARGET: "13.0"
+  # Tell ort-sys to download the prebuilt ORT binary at build time.
+  ORT_STRATEGY: download
 
 jobs:
   build-macos:
@@ -42,6 +44,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Guard — verify release build includes local-model features
+        run: |
+          # Prevent regression: ensure this workflow still passes --features local-
+          # to the release build (test-leader requirement).
+          if ! grep -qE '\-\-features (local-|release-)' .github/workflows/release-macos.yml; then
+            echo "::error::Regression guard FAILED: release-macos.yml has no --features local-* or release-* flag"
+            exit 1
+          fi
+          echo "PASS: local-model features are present in release-macos.yml"
 
       - name: Install Rust targets
         uses: dtolnay/rust-toolchain@stable
@@ -58,7 +70,7 @@ jobs:
           key: macos-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run release safety tests
-        run: cargo test --locked --bin tui-translator
+        run: cargo test --locked --bin tui-translator --features local-stt-metal,local-mt,local-tts
 
       # ── optional: import Developer ID certificate ─────────────────────────
       - name: Import code-signing certificate
@@ -87,18 +99,22 @@ jobs:
         env:
           APPLE_DEVELOPER_ID_APP: ""
           APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID || 'com.tui-translator.app' }}
+          # local-model features for the universal build:
+          # arm64 uses Metal-accelerated STT; x86_64 falls back to CPU automatically.
+          RELEASE_FEATURES: "release-macos-arm"
         run: |
           chmod +x scripts/package-macos.sh
-          ./scripts/package-macos.sh --arch ${{ matrix.arch }}
+          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --features release-macos-arm
 
       - name: Package macOS (signed)
         if: ${{ env.APPLE_DEVELOPER_ID_APP != '' && env.APPLE_APPLE_ID == '' }}
         env:
           APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
           APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
+          RELEASE_FEATURES: "release-macos-arm"
         run: |
           chmod +x scripts/package-macos.sh
-          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --sign
+          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --sign --features release-macos-arm
 
       - name: Package macOS (signed + notarized)
         if: ${{ env.APPLE_DEVELOPER_ID_APP != '' && env.APPLE_APPLE_ID != '' }}
@@ -106,6 +122,7 @@ jobs:
           APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
           APPLE_BUNDLE_ID: ${{ secrets.APPLE_BUNDLE_ID }}
           APPLE_KEYCHAIN_PROFILE: notarize-profile
+          RELEASE_FEATURES: "release-macos-arm"
         run: |
           # Store notarytool credentials in a keychain profile
           xcrun notarytool store-credentials "$APPLE_KEYCHAIN_PROFILE" \
@@ -114,7 +131,7 @@ jobs:
             --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}"
 
           chmod +x scripts/package-macos.sh
-          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --notarize
+          ./scripts/package-macos.sh --arch ${{ matrix.arch }} --notarize --features release-macos-arm
 
       # ── upload artifacts ──────────────────────────────────────────────────
       - name: Upload DMG artifact

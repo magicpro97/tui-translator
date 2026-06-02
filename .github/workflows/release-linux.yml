@@ -19,6 +19,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Tell ort-sys to download the prebuilt ORT binary at build time.
+  ORT_STRATEGY: download
 
 jobs:
   build-linux:
@@ -29,6 +31,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Guard — verify release build includes local-model features
+        run: |
+          # Prevent regression: ensure this workflow still passes --features local-
+          # to the release build (test-leader requirement).
+          if ! grep -qE '\-\-features (local-|release-)' .github/workflows/release-linux.yml; then
+            echo "::error::Regression guard FAILED: release-linux.yml has no --features local-* or release-* flag"
+            exit 1
+          fi
+          echo "PASS: local-model features are present in release-linux.yml"
 
       - name: Install Rust (stable, x86_64-unknown-linux-gnu)
         uses: dtolnay/rust-toolchain@stable
@@ -59,13 +71,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends fuse libfuse2
 
       - name: Run release safety tests (Linux)
-        run: cargo test --locked --bin tui-translator --target x86_64-unknown-linux-gnu
+        run: cargo test --locked --bin tui-translator --target x86_64-unknown-linux-gnu --features local-stt,local-mt
 
       - name: Build release binary (static musl-glibc)
         run: |
           cargo build --locked --release \
             --target x86_64-unknown-linux-gnu \
-            --bin tui-translator
+            --bin tui-translator \
+            --features release-linux
 
       - name: Verify binary runs and prints help
         run: |
@@ -78,7 +91,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           export VERSION TARGET=x86_64-unknown-linux-gnu
-          bash scripts/package-linux.sh --version "${VERSION}" --target x86_64-unknown-linux-gnu
+          bash scripts/package-linux.sh --version "${VERSION}" --target x86_64-unknown-linux-gnu --features release-linux
 
           # Collect output paths for upload
           DIST="dist/linux"

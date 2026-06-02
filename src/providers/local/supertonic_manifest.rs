@@ -39,6 +39,12 @@ pub const SUPERTONIC_3_INT8_ARCHIVE_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/\
      sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2";
 
+/// Lower-case hexadecimal SHA-256 digest of the Supertonic-3 int8 archive.
+///
+/// Sourced from the sherpa-onnx GitHub release checksum.txt (SUPERTONIC-15 #632).
+pub const SUPERTONIC_3_INT8_ARCHIVE_SHA256: &str =
+    "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427";
+
 /// Extracted subdirectory name inside the archive.
 pub const SUPERTONIC_3_INT8_DIR: &str = "sherpa-onnx-supertonic-3-tts-int8-2026-05-11";
 

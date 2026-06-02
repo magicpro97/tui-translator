@@ -110,6 +110,10 @@ ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dyn
 sentencepiece-rs = { version = "0.2.1", optional = true }
 # Random number generation for Gaussian noise in Supertonic diffusion inference.
 rand = { version = "0.8", optional = true }
+# tar + bzip2 for Supertonic-3 archive extraction at startup (issue #692).
+# bzip2 uses static linking so no system libbz2 is required.
+tar = { version = "0.4", optional = true }
+bzip2 = { version = "0.4", features = ["static"], optional = true }
 # IEEE 754 f16 type — used by wtp-bert-mini ONNX (attention_mask expects fp16).
 half = { version = "2", optional = true }
 tui-input = { version = "0.15.3", default-features = false }
@@ -137,7 +141,10 @@ local-stt-metal = ["local-stt"]
 local-mt = ["dep:ort", "sentencepiece-rs"]
 # Enable the local Supertonic TTS backend (SUPERTONIC-13, issue #630).
 # Reuses the ort crate already required by local-mt; no new dep family.
-local-tts = ["dep:ort", "rand"]
+# tar + bzip2 are used by install_archive_bundle (issue #692) to extract the
+# Supertonic-3 int8 tar.bz2 archive during startup.  bzip2 is built statically
+# so no system libbz2 is required on Windows, macOS, or Linux.
+local-tts = ["dep:ort", "rand", "dep:tar", "dep:bzip2"]
 # Enable the optional wtp-bert-mini ONNX Tier-3 sentence-completeness classifier
 # (SB-05, issue #668).  Requires placing wtp-bert-mini.onnx in the model cache dir.
 # Enables the `half` crate for fp16 attention_mask and ort's half-precision support.
@@ -148,6 +155,17 @@ audio-integration = []
 # Enable VMIC-B4 production virtual-cable sink contract tests. The mandatory
 # tier is hardware-free; optional real-cable probing remains skip-safe.
 production-audio = []
+
+# ── Release convenience aliases ───────────────────────────────────────────────
+# Use these in CI release builds to enable all local-model providers and
+# bundle the ORT runtime (download-binaries + copy-dylibs place the ORT
+# dylib next to the binary so it can be included in the release package).
+release-windows = ["local-stt", "local-mt", "local-tts", "ort/download-binaries", "ort/copy-dylibs"]
+release-macos-arm = ["local-stt-metal", "local-mt", "local-tts", "ort/download-binaries", "ort/copy-dylibs"]
+release-macos-intel = ["local-stt", "local-mt", "local-tts", "ort/download-binaries", "ort/copy-dylibs"]
+release-linux = ["local-stt", "local-mt", "ort/download-binaries", "ort/copy-dylibs"]
+# Developer alias: all local-model features without the CI download strategy.
+full = ["local-stt", "local-stt-metal", "local-mt", "local-tts"]
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)
