@@ -49,6 +49,12 @@ path = "src/bin/eval_session.rs"
 name = "mt_bench"
 path = "src/bin/mt_bench.rs"
 
+# LLM-MT-01 (issue #696): GGUF LLM benchmark for CPU real-time ja→vi MT.
+# Build with: cargo build --features local-llm-mt --bin llm_mt_bench
+[[bin]]
+name = "llm_mt_bench"
+path = "src/bin/llm_mt_bench.rs"
+
 # QA8-02 (issue #500): machine-readable SLO gate checker. Reads the SLO
 # spec validated against verification-evidence/qa8/QA8-02-slo-schema.json
 # and evaluates gates against soak/release evidence; exits non-zero on any
@@ -116,6 +122,15 @@ tar = { version = "0.4", optional = true }
 bzip2 = { version = "0.4", features = ["static"], optional = true }
 # IEEE 754 f16 type — used by wtp-bert-mini ONNX (attention_mask expects fp16).
 half = { version = "2", optional = true }
+# LLM-MT (issue #696/#698): pure-Rust GGUF inference crate — no cmake, no system DLLs.
+# CPU-only by default; Metal acceleration activates automatically on macOS Apple Silicon.
+# Feature-gated by `local-llm-mt` so default CI builds stay lightweight.
+mistralrs-core = { version = "0.8", optional = true, default-features = false }
+# candle-core is a transitive dep of mistralrs-core; declaring it directly lets the
+# llm_mt_bench binary use Device::Cpu without pulling in the GPU feature flags.
+candle-core = { version = "0.10", optional = true, default-features = false }
+# clap is used by the llm_mt_bench benchmark binary for argument parsing.
+clap = { version = "4", optional = true, features = ["derive"] }
 tui-input = { version = "0.15.3", default-features = false }
 directories = "5"
 
@@ -156,6 +171,12 @@ audio-integration = []
 # Enable VMIC-B4 production virtual-cable sink contract tests. The mandatory
 # tier is hardware-free; optional real-cable probing remains skip-safe.
 production-audio = []
+# Enable the LLM-based machine translation provider (LLM-MT-01 to LLM-MT-05).
+# Uses mistralrs-core for pure-Rust GGUF inference on CPU (+ Metal on macOS).
+# Requires a GGUF model file (Qwen2.5-0.5B-Instruct Q4_K_M ≈ 600 MB) placed
+# in the model cache directory.  Build requires no system libraries beyond the
+# Rust toolchain (pure-Rust path; no cmake or llama.cpp).
+local-llm-mt = ["dep:mistralrs-core", "dep:candle-core", "dep:clap"]
 
 # ── Release convenience aliases ───────────────────────────────────────────────
 # Use these in CI release builds to enable all local-model providers and
