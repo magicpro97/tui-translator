@@ -70,12 +70,18 @@ pub use manifest::{
 #[allow(unused_imports)]
 pub use whisper::LocalWhisperSttProvider;
 
+#[cfg(test)]
+#[allow(unused_imports)]
+pub use bootstrap::TEST_ENV_MUTEX;
 #[allow(unused_imports)]
 pub use bootstrap::{
     consent_status, migrate_models, model_consent_status, offline_guard, try_migrate_legacy_cache,
     write_consent_record, write_model_consent_record, BootstrapError, ConsentRecord, ConsentStatus,
     ModelBootstrapManifest, ModelConsentManifest, LOCAL_DATA_DIR_OVERRIDE_ENV, OFFLINE_MODE_ENV,
 };
+#[cfg(feature = "local-tts")]
+#[allow(unused_imports)]
+pub use model_download::install_archive_bundle;
 #[allow(unused_imports)]
 pub use model_download::{
     install_model_bundle, stt_model_bundle_manifest, ModelBundleFile, ModelBundleManifest,
@@ -86,7 +92,8 @@ pub use mt::{LocalOpusMtProvider, OpusMtLanguagePair};
 #[allow(unused_imports)]
 pub use supertonic_manifest::{
     supertonic_bundle_manifest, supertonic_consent_manifest, SupertonicManifest, SupertonicModelId,
-    SupertonicModelSpec, SUPERTONIC_LICENSE_URL, SUPERTONIC_VERSION,
+    SupertonicModelSpec, SUPERTONIC_3_INT8_ARCHIVE_SHA256, SUPERTONIC_3_INT8_ARCHIVE_URL,
+    SUPERTONIC_3_INT8_DIR, SUPERTONIC_3_INT8_FILES, SUPERTONIC_LICENSE_URL, SUPERTONIC_VERSION,
 };
 #[cfg(feature = "local-tts")]
 #[allow(unused_imports)]

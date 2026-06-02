@@ -11,6 +11,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Tell ort-sys to download the prebuilt ORT binary at build time.
+  # Combined with ort/download-binaries + ort/copy-dylibs features in
+  # release-windows, this ensures the ORT dll lands next to the binary.
+  ORT_STRATEGY: download
 
 jobs:
   build-windows:
@@ -22,11 +26,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Guard — verify release build includes local-model features
+        shell: pwsh
+        run: |
+          # Prevent regression: ensure this workflow still passes --features local-
+          # to the release build and test steps (test-leader requirement).
+          $content = Get-Content ".github/workflows/release.yml" -Raw
+          if ($content -notmatch '--features (local-|release-)') {
+            throw "Regression guard FAILED: release.yml has no --features local-* or release-* flag"
+          }
+          Write-Host "PASS: local-model features are present in release.yml"
+
+
         with:
           targets: x86_64-pc-windows-msvc
-
-      - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
@@ -36,10 +49,10 @@ jobs:
           key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run release safety tests
-        run: cargo test --locked --bin tui-translator
+        run: cargo test --locked --bin tui-translator --features local-stt,local-mt,local-tts
 
       - name: Build release exe (MSVC static target)
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin tui-translator
+        run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin tui-translator --features release-windows
 
       - name: Verify no VC++ runtime DLLs
         shell: pwsh
@@ -86,6 +99,20 @@ jobs:
           Copy-Item "config.example.json" "$stage\"
           Copy-Item "USAGE.md" "$stage\"
           Copy-Item "LICENSE" "$stage\"
+          # Bundle ORT runtime dll (placed next to the binary by ort/copy-dylibs)
+          $ortDll = Get-ChildItem -Path "target\x86_64-pc-windows-msvc\release" `
+                      -Filter "onnxruntime*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $ortDll) {
+            # Fallback: search entire target tree (ort download-binaries may put it in build/ output)
+            $ortDll = Get-ChildItem -Path "target" -Recurse `
+                        -Filter "onnxruntime*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($ortDll) {
+            Copy-Item $ortDll.FullName "$stage\"
+            Write-Host "Bundled ORT runtime: $($ortDll.Name)  ($([math]::Round($ortDll.Length/1MB,2)) MB)"
+          } else {
+            Write-Host "::warning::ORT dll not found in build output — local model features require it at runtime"
+          }
           # Bundle third-party model/runtime licenses so offline users have attribution
           $licDir = "$stage\LICENSES"
           New-Item -ItemType Directory -Force -Path $licDir | Out-Null

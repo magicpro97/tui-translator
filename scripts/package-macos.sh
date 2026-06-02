@@ -35,12 +35,14 @@ BUNDLE_ID="${APPLE_BUNDLE_ID:-com.tui-translator.app}"
 VERSION="$(grep '^version' "$REPO_ROOT/Cargo.toml" | head -1 | cut -d'"' -f2)"
 DIST_DIR="$REPO_ROOT/dist/macos-$ARCH"
 STAGING="$DIST_DIR/staging"
+FEATURES="${RELEASE_FEATURES:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch)     ARCH="$2";     shift 2 ;;
     --sign)     DO_SIGN=true;  shift   ;;
     --notarize) DO_NOTARIZE=true; DO_SIGN=true; shift ;;
+    --features) FEATURES="$2"; shift 2 ;;
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
@@ -64,9 +66,16 @@ echo ""
 # ── build ──────────────────────────────────────────────────────────────────────
 cd "$REPO_ROOT"
 
+FEATURES_FLAG=""
+if [[ -n "${FEATURES}" ]]; then
+  FEATURES_FLAG="--features ${FEATURES}"
+fi
+
 if [[ "$ARCH" == "universal" ]]; then
-  cargo build --locked --release --target x86_64-apple-darwin --bin "$BINARY_NAME"
-  cargo build --locked --release --target aarch64-apple-darwin --bin "$BINARY_NAME"
+  # shellcheck disable=SC2086
+  cargo build --locked --release --target x86_64-apple-darwin --bin "$BINARY_NAME" ${FEATURES_FLAG}
+  # shellcheck disable=SC2086
+  cargo build --locked --release --target aarch64-apple-darwin --bin "$BINARY_NAME" ${FEATURES_FLAG}
   mkdir -p "$DIST_DIR"
   lipo -create \
     "target/x86_64-apple-darwin/release/$BINARY_NAME" \
@@ -75,7 +84,8 @@ if [[ "$ARCH" == "universal" ]]; then
   BINARY_PATH="$DIST_DIR/$BINARY_NAME-universal"
   lipo -info "$BINARY_PATH" | tee "$DIST_DIR/lipo-info.log"
 else
-  cargo build --locked --release --target "$TARGET" --bin "$BINARY_NAME"
+  # shellcheck disable=SC2086
+  cargo build --locked --release --target "$TARGET" --bin "$BINARY_NAME" ${FEATURES_FLAG}
   BINARY_PATH="target/$TARGET/release/$BINARY_NAME"
 fi
 
@@ -91,6 +101,24 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$STAGING"
 
 cp "$BINARY_PATH" "$APP_MACOS/$BINARY_NAME"
+
+# Bundle ORT runtime dylib if present (placed by ort/copy-dylibs feature).
+# The dylib must be inside MacOS/ so macOS loader finds it relative to the binary.
+ORT_DYLIB=""
+for search_target in "x86_64-apple-darwin" "aarch64-apple-darwin"; do
+  candidate="$(find "target/${search_target}/release" -maxdepth 1 \
+    -name "libonnxruntime*.dylib" 2>/dev/null | head -1)"
+  if [[ -n "${candidate}" ]]; then
+    ORT_DYLIB="${candidate}"
+    break
+  fi
+done
+if [[ -n "${ORT_DYLIB}" ]]; then
+  cp "${ORT_DYLIB}" "$APP_MACOS/"
+  echo "  Bundled ORT runtime: $(basename "${ORT_DYLIB}")"
+else
+  echo "  NOTE: ORT dylib not found in build output (expected when using release-macos-* features)"
+fi
 
 cat > "$APP_CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
