@@ -125,6 +125,7 @@ directories = "5"
 fluent-bundle = "0.15"
 intl-memoizer = "0.5"
 unic-langid = { version = "0.9", features = ["macros"] }
+sys-locale = "0.3.2"
 
 [features]
 # Enable the local Whisper STT backend (requires whisper.cpp build toolchain).

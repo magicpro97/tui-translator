@@ -23,6 +23,7 @@ use std::sync::{
 use std::time::Duration;
 use tokio::sync::watch;
 
+pub mod autodetect;
 pub mod capture_supervisor;
 mod paths;
 pub mod provider_supervisor;
