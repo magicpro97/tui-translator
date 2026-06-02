@@ -89,7 +89,21 @@ self-contained.
    | `capture_device` | Leave blank for the Windows default playback device, or choose a playback device in settings | blank |
 
    This table is the minimal first-run subset. See `config.example.json` for
-   optional settings such as `cost_warning_usd` and `tts_output_device`.
+   optional settings such as `cost_warning_usd`, `tts_output_device`, and `glossary`.
+
+   **Term protection (glossary):** If your meetings include technical terms, sprint
+   identifiers, or proper nouns that should not be translated, add a `glossary` block:
+
+   ```json
+   "glossary": {
+     "terms": ["Sprint13", "API", "MVP", "Tanaka"],
+     "case_insensitive": false
+   }
+   ```
+
+   Listed terms are preserved verbatim in both local (OPUS-MT) and Google Cloud
+   translation. Add terms in the in-app settings editor under the
+   **Glossary** section.
 
    Common language codes: `en-US` (English), `ja-JP` (Japanese), `zh-CN` (Mandarin),
    `ko` (Korean), `vi` (Vietnamese), `es` (Spanish), `fr` (French), `de` (German).
