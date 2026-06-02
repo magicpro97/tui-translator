@@ -3291,14 +3291,19 @@ pub(crate) fn key_to_action(
             KeyCode::Right => Some(UserAction::ConfigInput(InputRequest::GoToNextChar)),
             KeyCode::Home => Some(UserAction::ConfigInput(InputRequest::GoToStart)),
             KeyCode::End => Some(UserAction::ConfigInput(InputRequest::GoToEnd)),
-            KeyCode::Tab | KeyCode::Down => {
+            // Tab / Shift+Tab always advance / retreat through settings fields so
+            // that PTY tests and keyboard muscle-memory are preserved.  Arrow keys
+            // cycle the device picker when a picker field is active (UX-03, #683).
+            KeyCode::Tab => Some(UserAction::ConfigNextField),
+            KeyCode::BackTab => Some(UserAction::ConfigPrevField),
+            KeyCode::Down => {
                 if picker_field_active {
                     Some(UserAction::ConfigPickerNext)
                 } else {
                     Some(UserAction::ConfigNextField)
                 }
             }
-            KeyCode::BackTab | KeyCode::Up => {
+            KeyCode::Up => {
                 if picker_field_active {
                     Some(UserAction::ConfigPickerPrev)
                 } else {
@@ -4327,8 +4332,9 @@ mod tests {
         );
     }
 
-    /// ↑/↓/Tab/Shift+Tab route to picker cycling only when `picker_field_active`
-    /// is `true` (UX-03 / issue #683).  Pane-cycle Tab is unaffected because it
+    /// Tab/Shift+Tab always move through settings fields.
+    /// ↑/↓ arrows route to picker cycling only when `picker_field_active` is
+    /// `true` (UX-03 / issue #683).  Pane-cycle Tab is unaffected because it
     /// only fires when `in_config_editor` is `false`.
     #[test]
     fn config_editor_tab_scoped_to_picker_open_state() {
@@ -4337,7 +4343,7 @@ mod tests {
         let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
 
-        // picker NOT active → field navigation (existing behaviour preserved)
+        // picker NOT active → Tab/Shift+Tab advance/retreat through fields
         assert_eq!(
             key_to_action(&tab, false, true, false, false),
             Some(UserAction::ConfigNextField)
@@ -4355,14 +4361,15 @@ mod tests {
             Some(UserAction::ConfigPrevField)
         );
 
-        // picker IS active → cycle device picker (Tab scoped to picker-open state only)
+        // picker IS active → ↑/↓ cycle device picker; Tab/Shift+Tab still
+        // advance/retreat (preserved so PTY tests that use Tab for navigation work)
         assert_eq!(
             key_to_action(&tab, false, true, false, true),
-            Some(UserAction::ConfigPickerNext)
+            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
             key_to_action(&shift_tab, false, true, false, true),
-            Some(UserAction::ConfigPickerPrev)
+            Some(UserAction::ConfigPrevField)
         );
         assert_eq!(
             key_to_action(&down, false, true, false, true),
