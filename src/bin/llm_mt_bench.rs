@@ -1,41 +1,10 @@
-//! LLM-MT-01 benchmark: measure Qwen2.5-0.5B / Phi-3-mini GGUF latency and
-//! throughput for CPU real-time ja→vi machine translation.
+//! LLM-MT-01 benchmark: GGUF LLM latency/throughput for CPU real-time ja→vi MT.
+//! Evidence for `docs/adr/llm-mt-01-llm-vs-opus-mt-quality-tradeoff.md` and
+//! `docs/adr/llm-mt-03-cpu-inference-crate-selection.md` (issue #696).
 //!
-//! # Purpose
-//!
-//! Produces the empirical evidence artifact required by:
-//! - `docs/adr/llm-mt-01-llm-vs-opus-mt-quality-tradeoff.md`
-//! - `docs/adr/llm-mt-03-cpu-inference-crate-selection.md`
-//!
-//! # Usage (requires `--features local-llm-mt`)
-//!
-//! ```sh
-//! cargo build --release --features local-llm-mt --bin llm_mt_bench
-//!
-//! # Load from local GGUF file (tokenizer.json + config.json must be in the same dir)
-//! ./target/release/llm_mt_bench \
-//!   --quantized-model-id path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf \
-//!   --tok-model-id Qwen/Qwen2.5-0.5B-Instruct \
-//!   --model-label "Qwen2.5-0.5B Q4_K_M" \
-//!   --output docs/evidence/llm-mt-01-bench.json
-//!
-//! # Load from HuggingFace cache (`huggingface-cli download` first)
-//! ./target/release/llm_mt_bench \
-//!   --hf-repo bartowski/Qwen2.5-0.5B-Instruct-GGUF \
-//!   --quantized-filename Qwen2.5-0.5B-Instruct-Q4_K_M.gguf \
-//!   --tok-model-id Qwen/Qwen2.5-0.5B-Instruct \
-//!   --output docs/evidence/llm-mt-01-bench.json
-//! ```
-//!
-//! # Pass/fail thresholds (from qa-leader council in LLM-MT-01 issue #696)
-//!
-//! | Metric                              | Threshold |
-//! |-------------------------------------|-----------|
-//! | P95 wall-clock latency (50-char JA) | ≤ 3 000 ms |
-//! | Peak RSS delta vs baseline          | ≤ 1 536 MB |
-//! | Cold start (load → first token)     | ≤ 5 000 ms |
-//! | Sustained tokens/sec                | ≥ 15 tok/s |
-//! | Glossary placeholder survival rate  | ≥ 0.98 |
+//! Build: `cargo build --release --features local-llm-mt --bin llm_mt_bench`
+//! Pass thresholds: P95 ≤ 3000 ms, RSS Δ ≤ 1536 MB, cold-start ≤ 5000 ms,
+//! sustained ≥ 15 tok/s, glossary survival ≥ 0.98.
 
 // ── Feature guard ─────────────────────────────────────────────────────────────
 // When `local-llm-mt` feature is absent the binary still compiles but exits
@@ -397,7 +366,7 @@ mod bench {
         .context("failed to load GGUF model — check model path and tokenizer files")?;
 
         // 5 concurrent sequences is well within CPU memory for a 0.5B model.
-        let concurrency = NonZeroUsize::new(5).expect("literal 5 is non-zero; this cannot fail");
+        let concurrency = NonZeroUsize::new(5).expect("literal 5 is non-zero; this cannot fail"); // allow-unwrap: #696
         let mistralrs = MistralRsBuilder::new(
             pipeline,
             SchedulerConfig::DefaultScheduler {

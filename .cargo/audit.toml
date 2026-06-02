@@ -1,0 +1,14 @@
+# cargo-audit configuration
+# Mirrors the ignore list in deny.toml for cargo-deny.
+# These are transitive deps of mistralrs-core (local-llm-mt feature only)
+# with no known CVEs or exploitability.
+
+[advisories]
+ignore = [
+  # fxhash — no CVE; mistralrs-core transitive dep; local-llm-mt feature only
+  "RUSTSEC-2025-0057",
+  # number_prefix — no CVE; indicatif transitive dep; local-llm-mt feature only
+  "RUSTSEC-2025-0119",
+  # paste — no CVE; candle-core transitive dep; local-llm-mt feature only
+  "RUSTSEC-2024-0436",
+]
