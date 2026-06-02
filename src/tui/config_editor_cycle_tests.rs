@@ -46,13 +46,14 @@ fn config_editor_cycles_audio_source() {
         Path::new(r"C:\Users\demo\.tui-translator\config.json"),
         ConfigEditorMode::Settings,
     );
+    let choices = crate::audio::audio_source_choices_for_os();
     editor.selected_field = ConfigEditorField::AudioSource.index();
-    assert_eq!(editor.audio_source, "wasapi");
+    assert_eq!(editor.audio_source, choices[0]);
 
-    editor.cycle_active_field();
-    assert_eq!(editor.audio_source, "file");
-    editor.cycle_active_field();
-    assert_eq!(editor.audio_source, "wasapi");
+    for expected in choices.iter().cycle().skip(1).take(choices.len()) {
+        editor.cycle_active_field();
+        assert_eq!(editor.audio_source, *expected);
+    }
     assert!(
         editor
             .status_message
