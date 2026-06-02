@@ -4930,7 +4930,7 @@ mod tests {
         let mut editor = settings_editor();
         editor.selected_field = ConfigEditorField::VadPreRollMs.index();
         editor.audio_source = "file".to_string();
-        editor.capture_device = "Windows default playback".to_string();
+        editor.capture_device = String::new();
         editor.audio_file_path = r"C:\capture\meeting.wav".to_string();
         editor.vad_pre_roll_ms = "350".to_string();
 
