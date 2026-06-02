@@ -875,7 +875,7 @@ impl ConfigEditorState {
 
         if next.value.is_empty() {
             self.set_status_message(format!(
-                " Capture device: {} device.",
+                " Capture device: {} (default).",
                 crate::audio::capture_device_default_label()
             ));
         } else {
@@ -919,7 +919,7 @@ impl ConfigEditorState {
 
         if next.value.is_empty() {
             self.set_status_message(format!(
-                " Capture device: {} device.",
+                " Capture device: {} (default).",
                 crate::audio::capture_device_default_label()
             ));
         } else {
@@ -4176,7 +4176,18 @@ fn config_choice_label(field: ConfigEditorField, value: &str) -> String {
         (ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage, "ko") => {
             "ko - Korean".to_string()
         }
-        (ConfigEditorField::AudioSource, "wasapi") => "wasapi - live Windows audio".to_string(),
+        (ConfigEditorField::AudioSource, "wasapi") => {
+            "wasapi - live system audio (Windows)".to_string()
+        }
+        (ConfigEditorField::AudioSource, "coreaudio") => {
+            "coreaudio - live system audio (macOS)".to_string()
+        }
+        (ConfigEditorField::AudioSource, "screencapturekit") => {
+            "screencapturekit - ScreenCaptureKit (macOS 13+)".to_string()
+        }
+        (ConfigEditorField::AudioSource, "pipewire") => {
+            "pipewire - live system audio (Linux)".to_string()
+        }
         (ConfigEditorField::AudioSource, "file") => "file - WAV file replay".to_string(),
         (ConfigEditorField::SttProvider | ConfigEditorField::MtProvider, "google") => {
             "google - cloud provider".to_string()
