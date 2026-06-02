@@ -3775,6 +3775,13 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             value_width,
         ),
         config_editor_field_line(
+            ConfigEditorField::MtTranslationStyle,
+            &editor.mt_translation_style,
+            active,
+            editor.field_cursor(ConfigEditorField::MtTranslationStyle),
+            value_width,
+        ),
+        config_editor_field_line(
             ConfigEditorField::TtsEnabled,
             &editor.tts_enabled,
             active,
@@ -4908,8 +4915,8 @@ mod tests {
                     | ConfigEditorField::PipelineIdleFlushMs
                     | ConfigEditorField::PipelineIdleMinMs
                     | ConfigEditorField::PipelineSentenceMaxAgeMs
+                    | ConfigEditorField::MtTranslationStyle
             );
-            editor.selected_field = field.index();
             assert_eq!(
                 field.is_picker(),
                 expected,
