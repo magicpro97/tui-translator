@@ -250,3 +250,53 @@ fn file_source_tail_chunk_has_shorter_duration_than_full_chunk() {
         tail.duration_ms
     );
 }
+
+// ─── Platform label helper tests ─────────────────────────────────────────────
+
+#[cfg(target_os = "macos")]
+#[test]
+fn audio_source_choices_macos_contains_coreaudio_not_wasapi() {
+    let choices = super::audio_source_choices_for_os();
+    assert!(
+        choices.contains(&"coreaudio"),
+        "macOS choices must include coreaudio; got: {choices:?}"
+    );
+    assert!(
+        !choices.contains(&"wasapi"),
+        "macOS choices must not include wasapi; got: {choices:?}"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn capture_device_default_label_macos_not_windows() {
+    let label = super::capture_device_default_label();
+    assert_ne!(
+        label, "Windows default playback",
+        "macOS must not return the Windows label"
+    );
+    assert!(
+        label.contains("macOS"),
+        "macOS label should mention macOS; got: {label:?}"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn audio_source_choices_linux_contains_pipewire() {
+    let choices = super::audio_source_choices_for_os();
+    assert!(
+        choices.contains(&"pipewire"),
+        "Linux choices must include pipewire; got: {choices:?}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn audio_source_choices_windows_contains_wasapi() {
+    let choices = super::audio_source_choices_for_os();
+    assert!(
+        choices.contains(&"wasapi"),
+        "Windows choices must include wasapi; got: {choices:?}"
+    );
+}

@@ -3936,7 +3936,9 @@ mod tests {
     #[test]
     fn default_audio_source_is_wasapi() {
         let cfg = AppConfig::default();
-        assert_eq!(cfg.audio_source, "wasapi");
+        // Platform-aware: each OS has its own default audio backend.
+        let expected = default_audio_source();
+        assert_eq!(cfg.audio_source, expected);
         assert!(cfg.audio_file_path.is_none());
         assert!(cfg.capture_device.is_none());
     }
@@ -4015,11 +4017,13 @@ mod tests {
     #[test]
     fn load_existing_config_without_audio_source_defaults_to_wasapi() {
         // Configs written before issue #110 do not have audio_source.
-        // They must continue to parse and validate without error.
+        // They must continue to parse and validate without error,
+        // defaulting to the platform's native audio backend.
         let mut f = NamedTempFile::new().unwrap();
         write!(f, r#"{{"source_language":"ja-JP","target_language":"vi"}}"#).unwrap();
         let cfg = load(f.path()).unwrap();
-        assert_eq!(cfg.audio_source, "wasapi");
+        let expected = default_audio_source();
+        assert_eq!(cfg.audio_source, expected);
     }
 
     #[cfg(target_os = "macos")]
