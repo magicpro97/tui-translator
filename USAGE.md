@@ -83,7 +83,7 @@ self-contained.
    | `target_language` | The language you want to read subtitles in (BCP-47 code) | `"vi"` for Vietnamese |
    | `google_api_key` | **Optional** when using local providers; required for Google Cloud translation and TTS | `"AIzaSy…"` |
    | `stt_provider` | `"local"` for CPU-local Whisper (default), or `"google"` for Google Cloud STT | `"local"` |
-   | `mt_provider` | `"local"` for CPU-local OPUS-MT (default in local builds), or `"google"` | `"local"` |
+   | `mt_provider` | `"local"` for CPU-local OPUS-MT (default in local builds), `"google"` for Google Cloud, or `"llm"` for GGUF LLM (requires `local-llm-mt` build feature) | `"local"` |
    | `tts_provider` | `"local"` for CPU-local Supertonic-3 (default in local builds), or `"google"` | `"local"` |
    | `tts_enabled` | `false` to show text subtitles only; `true` to also hear translation | `false` |
    | `capture_device` | Leave blank for the Windows default playback device, or choose a playback device in settings | blank |
@@ -893,6 +893,86 @@ Vietnamese pair is the only shipped bundle (LF-04, issue #372).
 | `unsupported language pair` | Requested pair has no downloaded bundle | Set `mt_cloud_fallback: "google"` (this is an explicit network opt-in); additional language pairs are planned |
 | Translation is very slow / RTF above 1.0 | CPU cannot keep up with OPUS-MT | Switch back to `mt_provider: "google"` or use a faster machine; do not raise `cpu_budget_pct` past safe limits while in a call |
 | Subtitles stop after a model bundle update | Update failed mid-replace | Re-extract the bundle, verify file integrity, and restart the app |
+
+---
+
+## LLM-based machine translation (`mt_provider = "llm"`)
+
+> **Build-from-source only.** The `"llm"` MT provider is **not** included in
+> standard release binaries. It requires compiling with `--features local-llm-mt`.
+
+When enabled, `mt_provider = "llm"` runs a small GGUF language model (Qwen2.5-0.5B-Instruct
+Q4_K_M ≈ 600 MB) on your CPU via `mistralrs`. Unlike OPUS-MT, an LLM model can follow
+natural-language instructions — so you can control translation style, protect custom
+terms, and preserve domain vocabulary.
+
+### When to use LLM MT vs OPUS-MT
+
+| | OPUS-MT (`"local"`) | LLM MT (`"llm"`) |
+|--|---------------------|-----------------|
+| Available in release builds | ✅ | ❌ Build from source |
+| Auto-downloads model | ✅ | Requires model placement |
+| Latency (P95, 50-char ja) | ~200–500 ms | ~800–2500 ms (CPU-only) |
+| Translation style control | ❌ | ✅ via `mt_customisation` |
+| Custom term vocabulary | Glossary only | Glossary + domain hints |
+| Language pairs | ja→vi only | Any pair the model supports |
+
+### Setup steps
+
+1. **Build with the `local-llm-mt` feature:**
+   ```bash
+   cargo build --release --features local-llm-mt
+   ```
+
+2. **Run the benchmark** to verify your CPU meets the latency target:
+   ```bash
+   cargo run --features local-llm-mt --bin llm_mt_bench
+   ```
+   RTF (realtime-factor) must be below 1.0. A failure means your CPU is too slow
+   for live LLM MT — use OPUS-MT or Google Cloud instead.
+
+3. **Place the GGUF model file** at the path in `providers.llm.model_path`
+   (or the default per-user model cache directory).
+
+4. **Configure `config.json`:**
+   ```json
+   {
+     "mt_provider": "llm",
+     "mt_customisation": {
+       "style": "technical",
+       "preserve_numerics": true,
+       "domain_hints": ["software", "agile"]
+     }
+   }
+   ```
+
+5. **Restart the application.** The status bar shows `LLM-MT` when the model is ready.
+
+### Translation style options
+
+| `style` value | Behaviour |
+|---------------|-----------|
+| `"neutral"` | Balanced, natural translation (default) |
+| `"formal"` | Polite / business register |
+| `"casual"` | Conversational, relaxed register |
+| `"technical"` | Preserves technical terminology; minimal rephrasing |
+| `"verbatim"` | Word-for-word, minimal interpretation |
+
+### Combining glossary and LLM MT
+
+The `glossary.terms` list works with LLM MT just as with OPUS-MT — terms are
+wrapped in placeholder tokens before the LLM sees the prompt and restored
+verbatim in the output. Use `mt_customisation.domain_hints` for broader
+vocabulary guidance (e.g. `["cloud infrastructure", "sprint planning"]`).
+
+### LLM MT troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `local-llm-mt feature not available` | Standard release build | Build from source with `--features local-llm-mt` |
+| `LLM model not found` | Model file missing | Place GGUF file at `providers.llm.model_path` |
+| Translation slower than live audio (RTF > 1.0) | CPU too slow | Switch to OPUS-MT or Google Cloud Translation |
+| Subtitles contain placeholder tokens | Glossary restore bug | Report the issue; workaround: set `glossary.terms` to `[]` |
 
 ---
 
