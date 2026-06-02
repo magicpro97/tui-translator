@@ -714,6 +714,20 @@ impl Default for AutoUpdateConfig {
     }
 }
 
+/// Configuration for translation glossary (term protection).
+///
+/// Terms listed here are replaced with opaque sentinels before the text
+/// reaches any MT provider and restored afterwards.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GlossaryConfig {
+    /// Terms that must not be translated (e.g. `"Sprint13"`, `"APIGateway"`).
+    #[serde(default)]
+    pub terms: Vec<String>,
+    /// If `true`, term matching is case-insensitive.
+    #[serde(default)]
+    pub case_insensitive: bool,
+}
+
 /// Top-level application configuration, parsed from `config.json`.
 ///
 /// Every field has a sensible default so the user only needs to supply the
@@ -1092,6 +1106,14 @@ pub struct AppConfig {
     /// When absent from config, the updater is disabled by default.
     #[serde(default, skip_serializing_if = "AutoUpdateConfig::is_default")]
     pub auto_update: AutoUpdateConfig,
+
+    /// Glossary configuration for term protection (LLM-MT-02, issue #697).
+    ///
+    /// Terms listed here are masked before any MT provider sees them and
+    /// restored afterwards.  An empty `terms` list (the default) disables
+    /// term protection entirely.
+    #[serde(default, skip_serializing_if = "glossary_config_is_default")]
+    pub glossary: GlossaryConfig,
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -1101,6 +1123,10 @@ fn default_locale() -> String {
 
 fn is_default_locale(value: &String) -> bool {
     value == "en-US"
+}
+
+fn glossary_config_is_default(value: &GlossaryConfig) -> bool {
+    value.terms.is_empty() && !value.case_insensitive
 }
 
 fn is_default_f32(value: &f32) -> bool {
@@ -1156,6 +1182,7 @@ impl Default for AppConfig {
             tts_voice: None,
             locale: default_locale(),
             auto_update: AutoUpdateConfig::default(),
+            glossary: GlossaryConfig::default(),
         }
     }
 }
@@ -1196,6 +1223,7 @@ impl std::fmt::Debug for AppConfig {
             .field("tts_voice", &self.tts_voice)
             .field("locale", &self.locale)
             .field("auto_update", &self.auto_update)
+            .field("glossary", &self.glossary)
             .finish()
     }
 }
