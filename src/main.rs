@@ -3589,6 +3589,10 @@ fn apply_wizard_patch_to_config(
 
     let mut cfg = config::AppConfig::default();
 
+    // UX-04 (#689): populate source_language from OS locale on first run.
+    let autodetect = config::autodetect::probe_sync();
+    cfg.source_language = autodetect.source_language;
+
     match patch.branch {
         OnboardingBranch::LocalOnly => {
             cfg.stt_provider = "local".to_string();
