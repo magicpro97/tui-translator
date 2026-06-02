@@ -295,12 +295,10 @@ const MIN_USABLE_ROWS: u16 = 3   // title bar
 /// Preset BCP-47 language codes offered by F2/Ctrl+D when the source or
 /// target language field is active in the settings editor.
 const LANGUAGE_PRESETS: [&str; 5] = ["ja-JP", "vi", "en-US", "zh-CN", "ko"];
-const AUDIO_SOURCE_CHOICES: [&str; 2] = ["wasapi", "file"];
 const PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
 const BOOLEAN_CHOICES: [&str; 2] = ["false", "true"];
 const TTS_ROUTING_CHOICES: [&str; 3] = ["speakers", "virtual_mic", "both"];
 const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "google-when-keyed"];
-const CAPTURE_DEVICE_DEFAULT_LABEL: &str = "Windows default playback";
 const CAPTURE_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const VIRTUAL_MIC_DEVICE_PICKER_MAX_CHOICES: usize = 3;
 const CONFIG_EDITOR_FIELD_COUNT: usize = 18;
@@ -847,7 +845,7 @@ impl ConfigEditorState {
     pub fn cycle_capture_device(&mut self) {
         if self.capture_device_options.is_empty() {
             self.set_status_message(
-                " No capture devices detected. Leave blank for Windows default or type a name.",
+                " No capture devices detected. Leave blank for the OS default or type a name.",
             );
             return;
         }
@@ -856,7 +854,7 @@ impl ConfigEditorState {
         if choices.is_empty() {
             let filter = self.capture_device.trim();
             self.set_status_message(format!(
-                " No capture devices match \"{filter}\". Clear the field for Windows default."
+                " No capture devices match \"{filter}\". Clear the field for the OS default."
             ));
             return;
         }
@@ -876,7 +874,10 @@ impl ConfigEditorState {
         self.capture_device_filter_active = false;
 
         if next.value.is_empty() {
-            self.set_status_message(" Capture device: Windows default playback device.");
+            self.set_status_message(format!(
+                " Capture device: {} device.",
+                crate::audio::capture_device_default_label()
+            ));
         } else {
             self.set_status_message(format!(
                 " Capture device selected: {}. Save and restart to use it.",
@@ -888,7 +889,7 @@ impl ConfigEditorState {
     pub fn cycle_capture_device_prev(&mut self) {
         if self.capture_device_options.is_empty() {
             self.set_status_message(
-                " No capture devices detected. Leave blank for Windows default or type a name.",
+                " No capture devices detected. Leave blank for the OS default or type a name.",
             );
             return;
         }
@@ -897,7 +898,7 @@ impl ConfigEditorState {
         if choices.is_empty() {
             let filter = self.capture_device.trim();
             self.set_status_message(format!(
-                " No capture devices match \"{filter}\". Clear the field for Windows default."
+                " No capture devices match \"{filter}\". Clear the field for the OS default."
             ));
             return;
         }
@@ -917,7 +918,10 @@ impl ConfigEditorState {
         self.capture_device_filter_active = false;
 
         if next.value.is_empty() {
-            self.set_status_message(" Capture device: Windows default playback device.");
+            self.set_status_message(format!(
+                " Capture device: {} device.",
+                crate::audio::capture_device_default_label()
+            ));
         } else {
             self.set_status_message(format!(
                 " Capture device selected: {}. Save and restart to use it.",
@@ -993,7 +997,10 @@ impl ConfigEditorState {
                 self.cycle_language_presets();
             }
             ConfigEditorField::AudioSource => {
-                self.cycle_choice_field(&AUDIO_SOURCE_CHOICES, ". Save and restart to apply.");
+                self.cycle_choice_field(
+                    crate::audio::audio_source_choices_for_os(),
+                    ". Save and restart to apply.",
+                );
             }
             ConfigEditorField::SttProvider => {
                 self.cycle_choice_field(&PROVIDER_CHOICES, ". Save and restart to apply.");
@@ -3884,7 +3891,7 @@ fn capture_device_picker_choices(editor: &ConfigEditorState) -> Vec<CaptureDevic
     if filter.is_none() {
         choices.push(CaptureDeviceChoice {
             value: String::new(),
-            label: CAPTURE_DEVICE_DEFAULT_LABEL.to_string(),
+            label: crate::audio::capture_device_default_label().to_string(),
             selected: current.is_empty(),
         });
     }
@@ -4048,7 +4055,7 @@ fn config_editor_choice_values(field: ConfigEditorField) -> Option<&'static [&'s
         ConfigEditorField::SourceLanguage | ConfigEditorField::TargetLanguage => {
             Some(&LANGUAGE_PRESETS)
         }
-        ConfigEditorField::AudioSource => Some(&AUDIO_SOURCE_CHOICES),
+        ConfigEditorField::AudioSource => Some(crate::audio::audio_source_choices_for_os()),
         ConfigEditorField::SttProvider | ConfigEditorField::MtProvider => Some(&PROVIDER_CHOICES),
         ConfigEditorField::TtsEnabled | ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
             Some(&BOOLEAN_CHOICES)
@@ -4322,7 +4329,9 @@ fn config_editor_field_line(
     let prefix = if is_active { "> " } else { "  " };
     let display_value = if value.is_empty() && !is_active {
         match field {
-            ConfigEditorField::CaptureDevice => "Windows default playback".to_string(),
+            ConfigEditorField::CaptureDevice => {
+                crate::audio::capture_device_default_label().to_string()
+            }
             ConfigEditorField::VirtualMicDevice => "not configured".to_string(),
             _ => "\u{2014}".to_string(),
         }
@@ -4688,5 +4697,68 @@ mod tests {
 
         editor.picker_prev();
         assert_eq!(editor.capture_device, "Device A");
+    }
+
+    fn config_editor_key_to_action(
+        key: &crossterm::event::KeyEvent,
+        picker_field_active: bool,
+    ) -> Option<UserAction> {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Tab => Some(UserAction::ConfigNextField),
+            KeyCode::BackTab => Some(UserAction::ConfigPrevField),
+            KeyCode::Down => {
+                if picker_field_active {
+                    Some(UserAction::ConfigPickerNext)
+                } else {
+                    Some(UserAction::ConfigNextField)
+                }
+            }
+            KeyCode::Up => {
+                if picker_field_active {
+                    Some(UserAction::ConfigPickerPrev)
+                } else {
+                    Some(UserAction::ConfigPrevField)
+                }
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn config_editor_tab_scoped_to_picker_open_state() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let shift_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let up = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+
+        assert_eq!(
+            config_editor_key_to_action(&tab, false),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&shift_tab, false),
+            Some(UserAction::ConfigPrevField)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&down, true),
+            Some(UserAction::ConfigPickerNext)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&up, true),
+            Some(UserAction::ConfigPickerPrev)
+        );
+        // Tab always advances field regardless of picker state
+        assert_eq!(
+            config_editor_key_to_action(&tab, true),
+            Some(UserAction::ConfigNextField)
+        );
+        assert_eq!(
+            config_editor_key_to_action(&shift_tab, true),
+            Some(UserAction::ConfigPrevField)
+        );
     }
 }

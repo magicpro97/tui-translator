@@ -16,6 +16,26 @@
 
 use super::AppConfig;
 
+fn capture_audio_source_is_valid(s: &str) -> bool {
+    #[cfg(windows)]
+    {
+        s == "wasapi"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        matches!(s, "coreaudio" | "screencapturekit")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        s == "pipewire"
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = s;
+        false
+    }
+}
+
 /// Result of classifying a `capture_device` / `audio_source` config change.
 #[derive(Debug, PartialEq, Eq)]
 pub enum CaptureChangeOutcome {
@@ -49,10 +69,11 @@ pub fn classify_capture_change(old: &AppConfig, new: &AppConfig) -> CaptureChang
     }
 
     match new.audio_source.as_str() {
-        "wasapi" | "file" => {}
+        "file" => {}
+        other if capture_audio_source_is_valid(other) => {}
         other => {
             return CaptureChangeOutcome::Rejected {
-                reason: format!("unsupported audio_source value: {other:?}"),
+                reason: format!("unsupported audio_source value for this platform: {other:?}"),
             };
         }
     }

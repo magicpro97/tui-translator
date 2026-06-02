@@ -412,10 +412,14 @@ fn settings_capture_device_field_shows_picker() {
         "active capture-device field should show the picker list; screen:\n{}",
         session.all_rows().join("\n"),
     );
+    // Platform-appropriate default device label or the no-device recovery message.
+    let has_device_entry = session.screen_contains("Windows default playback")
+        || session.screen_contains("macOS default input")
+        || session.screen_contains("System default input")
+        || session.screen_contains("No active playback devices");
     assert!(
-        session.screen_contains("Windows default playback")
-            || session.screen_contains("No active playback devices"),
-        "picker should show either default selection or no-device recovery text; screen:\n{}",
+        has_device_entry,
+        "picker should show a platform-appropriate device or no-device recovery text; screen:\n{}",
         session.all_rows().join("\n"),
     );
 

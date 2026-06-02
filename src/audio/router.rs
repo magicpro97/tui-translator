@@ -468,7 +468,12 @@ async fn drain_old(
 async fn open_source(spec: &CaptureSourceSpec, silence_threshold: f32) -> Result<CaptureStream> {
     match spec {
         CaptureSourceSpec::Wasapi { device } => {
-            super::start_capture_with_device(device.as_deref(), silence_threshold).await
+            // CaptureSourceSpec::Wasapi is the generic device-based variant used on all
+            // platforms.  Pass the platform-default audio_source so macOS dispatches to
+            // the correct backend (CoreAudio or SCK) based on the OS default.
+            let audio_source = super::platform_default_audio_source();
+            super::start_capture_with_device(device.as_deref(), audio_source, silence_threshold)
+                .await
         }
         CaptureSourceSpec::File { path } => {
             super::start_file_capture(path, silence_threshold).await
