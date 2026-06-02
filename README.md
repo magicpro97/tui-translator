@@ -363,6 +363,30 @@ translation fully on your CPU:
 > runtime crash; it means the host did not meet the documented latency
 > target and you should keep `mt_provider = "google"`.
 
+### Term protection (glossary)
+
+Project identifiers, acronyms, and proper nouns often get translated or
+misrecognised.  Add a `glossary` block to `config.json` to protect any term
+verbatim:
+
+```jsonc
+{
+  "glossary": {
+    "terms": ["Sprint13", "API", "MVP", "Tanaka"],
+    "case_insensitive": false
+  }
+}
+```
+
+Terms listed here are wrapped in placeholder tokens before being sent to the
+translation engine and restored unchanged after translation.  This works for
+both the local OPUS-MT engine and Google Cloud Translation.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `terms` | `[]` | Strings that must appear verbatim in the output |
+| `case_insensitive` | `false` | If `true`, matching ignores case (e.g. `"api"` protects `"API"`) |
+
 ### Recommended model tier
 
 The application uses GGML-format Whisper model files from the
