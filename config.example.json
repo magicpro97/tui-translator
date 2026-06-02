@@ -81,6 +81,10 @@
   },
   "stt_phrase_hints": [],
   "locale": "en-US",
+  "mt_customisation": {
+    "style": "neutral",
+    "preserve_numerics": false
+  },
   "auto_update": {
     "enabled": false,
     "channel": "stable",

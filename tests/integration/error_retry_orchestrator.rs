@@ -115,6 +115,7 @@ fn make_orch_context() -> TestCtx {
         session_recorder: crate::session::SessionRecorder::disabled(),
         tts_active_for_slot: true,
         tts_status: Arc::new(Mutex::new(crate::pipeline::SlotProviderStatus::Ok)),
+        mt_customisation: crate::config::MtCustomisation::default(),
     };
 
     TestCtx {
