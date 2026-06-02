@@ -16,5 +16,5 @@ expression: "render_config_editor(&editor, 60, 16)"
 │  TTS routing     : speakers                              │
 │  Virtual mic     : not configured                        │
 │  STT fallback    : google-when-keyed                     │
-│ Tab/Shift+Tab move  F2 cycle  Enter save  Esc close      │
+│ Tab/Shift+Tab move  ↓/↑ cycle picker  F2 cycle  Enter    │
 └──────────────────────────────────────────────────────────┘

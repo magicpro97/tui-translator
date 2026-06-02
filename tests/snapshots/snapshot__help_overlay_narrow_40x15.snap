@@ -2,7 +2,7 @@
 source: tests/snapshot.rs
 expression: rendered
 ---
-┌ Help [0/4] — ↑↓ scroll · Esc close ──┐
+┌ Help [0/6] — ↑↓ scroll · Esc close ──┐
 │ Keyboard Shortcuts                   │
 │                                      │
 │  ↑ / ↓     Scroll subtitles/help     │
@@ -14,6 +14,6 @@ expression: rendered
 │  M          Toggle metrics panel (com│
 │  L          Change target language   │
 │  S          Settings (F2/Ctrl+D cycle│
+│  ↑/↓        In device picker: ↑/↓ cyc│
 │  R          Reload config from disk  │
-│  ?          Show / hide this help    │
 └──────────────────────────────────────┘
