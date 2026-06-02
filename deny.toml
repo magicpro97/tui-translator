@@ -11,6 +11,17 @@ all-features = false
 
 [advisories]
 yanked = "deny"
+# Transitive dependencies of mistralrs-core that are unmaintained but have
+# no known security advisories.  These are optional-feature-only deps
+# (local-llm-mt feature) and will be removed if upstream drops them.
+ignore = [
+    # fxhash — fast non-crypto hash used internally by mistralrs-core
+    { id = "RUSTSEC-2025-0057", reason = "no CVE; mistralrs-core transitive dep; local-llm-mt feature only" },
+    # number_prefix — terminal progress bar dep via indicatif
+    { id = "RUSTSEC-2025-0119", reason = "no CVE; indicatif transitive dep; local-llm-mt feature only" },
+    # paste — proc-macro, no runtime risk
+    { id = "RUSTSEC-2024-0436", reason = "no CVE; candle-core transitive dep; local-llm-mt feature only" },
+]
 
 [licenses]
 allow = [

@@ -1,0 +1,44 @@
+{
+  "schema_version": "llm-mt-01-v1",
+  "_note": "Placeholder — run `cargo build --release --features local-llm-mt --bin llm_mt_bench` then execute the binary to populate measured values.",
+  "generated_at_unix_s": 0,
+  "model_label": "TBD — pending hardware run",
+  "tok_model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "quantized_source": "TBD",
+  "platform": "TBD",
+  "cpu_cores": 0,
+
+  "methodology": {
+    "warmup_rounds": 3,
+    "bench_rounds": 20,
+    "max_output_tokens": 128,
+    "corpus": "10 Zoom meeting JA segments (short phrases and medium sentences)",
+    "glossary_test": "__GTERM_0__, __GTERM_1__, __GTERM_2__ sentinel survival",
+    "rss_measurement": "Linux /proc/self/status VmRSS; returns 0 on macOS/Windows"
+  },
+
+  "thresholds": {
+    "p95_latency_ms": 3000,
+    "rss_delta_mb": 1536,
+    "cold_start_ms": 5000,
+    "tokens_per_sec_p5": 15,
+    "glossary_survival_rate": 0.98
+  },
+
+  "latency_mean_ms": null,
+  "latency_p50_ms": null,
+  "latency_p95_ms": null,
+  "latency_min_ms": null,
+  "latency_max_ms": null,
+  "tokens_per_sec_mean": null,
+  "tokens_per_sec_p5": null,
+  "cold_start_ms": null,
+  "rss_baseline_bytes": null,
+  "rss_peak_bytes": null,
+  "rss_delta_bytes": null,
+  "glossary_survival_rate": null,
+
+  "pass": null,
+  "fail_reasons": ["NOT YET RUN — this is a methodology placeholder"],
+  "samples": []
+}
