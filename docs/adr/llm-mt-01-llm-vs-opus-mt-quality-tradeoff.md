@@ -1,11 +1,15 @@
 # ADR LLM-MT-01 — LLM-based MT vs. OPUS-MT quality/latency tradeoff
 
-> **Status:** Proposed (research required)
+> **Status:** Proposed — implementation in PR #705 (LLM-MT-01 benchmark) and
+> PR #706 (LLM-MT-03 LlmMtProvider); pending merge and hardware benchmark run.
 > **Date:** 2026-05-22
+> **Updated:** 2026-06-02
 > **Owners:** qa-leader, dev-leader, test-leader
 > **Supersedes:** Extends — does not replace — `docs/adr/jv-01-ja-vi-local-mt-model-shortlist.md`
 > **Decision confidence:** 0.8 for the decision framework; **0.0** for any specific
 > per-model latency/RAM/quality number until JV-03 / LLM-MT-01 benchmark issue lands.
+> `llm_mt_bench` binary exists on `feat/llm-mt-01-benchmark-spike`; numbers populate
+> once the binary is run on each reference tier.
 
 ---
 
