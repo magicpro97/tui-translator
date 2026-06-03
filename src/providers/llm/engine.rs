@@ -144,8 +144,8 @@ mod real {
                 )
                 .map_err(|e| LlmError::ModelError(e.to_string()))?;
 
-            let concurrency = NonZeroUsize::new(2)
-                .expect("literal 2 is non-zero; this cannot fail"); // allow-unwrap: #698
+            let concurrency =
+                NonZeroUsize::new(2).expect("literal 2 is non-zero; this cannot fail"); // allow-unwrap: #698
             let mistralrs = MistralRsBuilder::new(
                 pipeline,
                 SchedulerConfig::DefaultScheduler {
@@ -194,8 +194,8 @@ mod real {
                 )
                 .map_err(|e| LlmError::ModelError(e.to_string()))?;
 
-            let concurrency = NonZeroUsize::new(2)
-                .expect("literal 2 is non-zero; this cannot fail"); // allow-unwrap: #698
+            let concurrency =
+                NonZeroUsize::new(2).expect("literal 2 is non-zero; this cannot fail"); // allow-unwrap: #698
             let mistralrs = MistralRsBuilder::new(
                 pipeline,
                 SchedulerConfig::DefaultScheduler {
