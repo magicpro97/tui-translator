@@ -88,10 +88,10 @@ fn meta_to_voice_selection(meta: &SupertonicVoiceMeta) -> VoiceSelection {
 
 /// Loaded Supertonic-3 ORT sessions and supporting data (process-wide singleton).
 pub(super) struct SupertonicOrtSessions {
-    pub(super) duration_predictor: ort::session::Session,
-    pub(super) text_encoder: ort::session::Session,
-    pub(super) vector_estimator: ort::session::Session,
-    pub(super) vocoder: ort::session::Session,
+    pub(super) duration_predictor: Mutex<ort::session::Session>,
+    pub(super) text_encoder: Mutex<ort::session::Session>,
+    pub(super) vector_estimator: Mutex<ort::session::Session>,
+    pub(super) vocoder: Mutex<ort::session::Session>,
     pub(super) config: SupertonicTtsConfig,
     /// Unicode codepoint → token id array from `unicode_indexer.bin`.
     pub(super) indexer: Vec<i32>,
@@ -213,10 +213,10 @@ impl SupertonicTtsProvider {
         );
 
         Ok(SupertonicOrtSessions {
-            duration_predictor,
-            text_encoder,
-            vector_estimator,
-            vocoder,
+            duration_predictor: Mutex::new(duration_predictor),
+            text_encoder: Mutex::new(text_encoder),
+            vector_estimator: Mutex::new(vector_estimator),
+            vocoder: Mutex::new(vocoder),
             config,
             indexer,
             style_ttl_all,

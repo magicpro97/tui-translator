@@ -25,11 +25,10 @@ use crate::providers::{MtProvider, MtResult, ProviderError};
 #[cfg(feature = "local-mt")]
 use {
     super::mt_ort::{
-        ensure_ort_initialized, has_input, load_session, load_token_ids, map_ort_error,
-        named_f32_tensor, named_i64_tensor, next_token_id, required_file, MarianVocab,
-        OpusMtTokenIds, DECODER_ONNX, ENCODER_ONNX, SOURCE_SPM, TARGET_SPM, VOCAB_JSON,
+        ensure_ort_initialized, load_session, load_token_ids, map_ort_error, next_token_id,
+        required_file, run_decoder, run_encoder, MarianVocab, OpusMtTokenIds, DECODER_ONNX,
+        ENCODER_ONNX, SOURCE_SPM, TARGET_SPM, VOCAB_JSON,
     },
-    ort::value::Tensor,
     sentencepiece_rs::SentencePieceProcessor,
 };
 
@@ -73,8 +72,8 @@ impl OpusMtLanguagePair {
 #[cfg(feature = "local-mt")]
 #[derive(Debug)]
 struct LocalOpusMtEngine {
-    encoder: ort::session::Session,
-    decoder: ort::session::Session,
+    encoder: Mutex<ort::session::Session>,
+    decoder: Mutex<ort::session::Session>,
     source_tokenizer: SentencePieceProcessor,
     target_tokenizer: SentencePieceProcessor,
     vocab: MarianVocab,
@@ -466,8 +465,8 @@ impl LocalOpusMtEngine {
         );
 
         Ok(Self {
-            encoder,
-            decoder,
+            encoder: Mutex::new(encoder),
+            decoder: Mutex::new(decoder),
             source_tokenizer,
             target_tokenizer,
             vocab,
@@ -538,18 +537,7 @@ impl LocalOpusMtEngine {
         source_ids: &[i64],
         attention_mask: &[i64],
     ) -> Result<(Vec<i64>, Vec<f32>), ProviderError> {
-        let inputs = ort::inputs! {
-            "input_ids" => Tensor::from_array(([1_usize, source_ids.len()], source_ids.to_vec().into_boxed_slice()))?,
-            "attention_mask" => Tensor::from_array(([1_usize, attention_mask.len()], attention_mask.to_vec().into_boxed_slice()))?,
-        }
-        .map_err(map_ort_error)?;
-
-        let outputs = self.encoder.run(inputs).map_err(map_ort_error)?;
-        let output = outputs.get("last_hidden_state").unwrap_or(&outputs[0]);
-        let (shape, data) = output
-            .try_extract_raw_tensor::<f32>()
-            .map_err(map_ort_error)?;
-        Ok((shape.to_vec(), data.to_vec()))
+        run_encoder(&self.encoder, source_ids, attention_mask)
     }
 
     fn decode(
@@ -559,33 +547,13 @@ impl LocalOpusMtEngine {
         hidden_shape: &[i64],
         hidden_data: &[f32],
     ) -> Result<(Vec<i64>, Vec<f32>), ProviderError> {
-        let attention_name = if has_input(&self.decoder, "encoder_attention_mask") {
-            "encoder_attention_mask"
-        } else {
-            "attention_mask"
-        };
-        let hidden_name = if has_input(&self.decoder, "encoder_hidden_states") {
-            "encoder_hidden_states"
-        } else {
-            "encoder_outputs"
-        };
-
-        let inputs = vec![
-            named_i64_tensor("input_ids", &[1, decoder_ids.len() as i64], decoder_ids)?,
-            named_f32_tensor(hidden_name, hidden_shape, hidden_data)?,
-            named_i64_tensor(
-                attention_name,
-                &[1, attention_mask.len() as i64],
-                attention_mask,
-            )?,
-        ];
-
-        let outputs = self.decoder.run(inputs).map_err(map_ort_error)?;
-        let output = outputs.get("logits").unwrap_or(&outputs[0]);
-        let (shape, data) = output
-            .try_extract_raw_tensor::<f32>()
-            .map_err(map_ort_error)?;
-        Ok((shape.to_vec(), data.to_vec()))
+        run_decoder(
+            &self.decoder,
+            decoder_ids,
+            attention_mask,
+            hidden_shape,
+            hidden_data,
+        )
     }
 }
 
