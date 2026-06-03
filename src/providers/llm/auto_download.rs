@@ -18,10 +18,11 @@
 //!    progress channel.
 //! 5. Rename the `.part` file to the final name on success.
 //! 6. Return the directory path so the caller can pass it to
-//!    [`MistralRsEngine::load_local`].
+//!    `MistralRsEngine::load_local` (only available with the `local-llm-mt`
+//!    Cargo feature).
 //!
 //! On Windows the downloaded GGUF is quarantined via
-//! [`super::super::local::model_download_transfer::quarantine_file`] before
+//! `super::super::local::model_download_transfer::quarantine_file` before
 //! renaming, following the same pattern as the Supertonic TTS download.
 
 use std::path::{Path, PathBuf};

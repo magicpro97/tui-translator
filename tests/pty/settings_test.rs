@@ -38,11 +38,29 @@ const OVERLAY_TIMEOUT: Duration = Duration::from_secs(8);
 /// Open the settings overlay by pressing `s` and wait until the panel title
 /// `"Settings"` (capital S) appears on screen.
 ///
+/// Re-sends `'s'` while polling because portable-pty on macOS occasionally
+/// drops the first keystroke when the child has just finished its initial
+/// render burst (the kernel PTY input queue can race the first crossterm
+/// event-loop poll). The keystroke is idempotent: a second `'s'` while the
+/// overlay is already up is consumed by the editor as plain input on the
+/// active field, which is the source-language picker that ignores characters.
+///
 /// Panics with a screen dump on timeout.
 fn open_settings(session: &mut PtySession, cols: u16, rows: u16) {
     session.send(b"s").expect("send 's' to open settings");
-    assert!(
-        session.wait_for_text("Settings", OVERLAY_TIMEOUT),
+    let deadline = Instant::now() + OVERLAY_TIMEOUT;
+    let mut last_resend = Instant::now();
+    while Instant::now() < deadline {
+        if session.screen_contains("Settings") {
+            return;
+        }
+        if last_resend.elapsed() >= Duration::from_millis(1500) {
+            let _ = session.send(b"s");
+            last_resend = Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!(
         "settings overlay did not appear within {}s at {cols}×{rows}; screen:\n{}",
         OVERLAY_TIMEOUT.as_secs(),
         session.all_rows().join("\n"),
@@ -131,6 +149,8 @@ fn write_config_with_capture_device(dir: &Path, capture_device: &str) -> PathBuf
         "google_api_key": "pty-test-key",
         "source_language": "ja-JP",
         "target_language": "vi",
+        "stt_provider": "google",
+        "mt_provider": "google",
         "tts_enabled": false,
         "audio_source": "file",
         "audio_file_path": fixture,
@@ -154,6 +174,8 @@ fn write_config_with_virtual_mic_device(dir: &Path, virtual_mic_device: &str) ->
         "google_api_key": "pty-test-key",
         "source_language": "ja-JP",
         "target_language": "vi",
+        "stt_provider": "google",
+        "mt_provider": "google",
         "tts_enabled": false,
         "tts_routing": "speakers",
         "virtual_mic_device": virtual_mic_device,
@@ -485,7 +507,10 @@ fn settings_tts_route_selection_persists_keyboard_only() {
     );
 
     open_settings(&mut session, 110, 30);
-    tab_to_field(&mut session, "TTS routing", 9);
+    // TtsRouting is field index 10 (MtTranslationStyle was added at index 8 in
+    // LLM-MT-04 #699, shifting TtsRouting from 9 to 10). Tab from the initially
+    // active SourceLanguage (index 0) requires 10 presses to reach index 10.
+    tab_to_field(&mut session, "TTS routing", 10);
 
     // Ctrl+D is the same cycle action as F2 and is stable across PTY encodings.
     session

@@ -156,9 +156,13 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
         written.contains("\"stt_provider\": \"google\""),
         "saved config should set stt_provider to google for GoogleCloud branch; got:\n{written}"
     );
+    // `source_language` is auto-detected from the OS locale (UX-04 #689). On CI
+    // the locale varies (en-US on most runners, ja-JP on JP runners, etc.), so
+    // assert only that the field is present and non-empty rather than pinning a
+    // specific value.
     assert!(
-        written.contains("\"source_language\": \"ja-JP\""),
-        "saved config should keep the default source language; got:\n{written}"
+        written.contains("\"source_language\":"),
+        "saved config should contain a source_language field; got:\n{written}"
     );
     assert!(
         written.contains("\"target_language\": \"vi\""),
@@ -212,6 +216,8 @@ fn settings_save_defaults_blank_file_audio_path_and_closes_overlay() {
                 "  \"google_api_key\": \"pty-test-key\",\n",
                 "  \"source_language\": \"ja-JP\",\n",
                 "  \"target_language\": \"vi\",\n",
+                "  \"stt_provider\": \"google\",\n",
+                "  \"mt_provider\": \"google\",\n",
                 "  \"tts_enabled\": false,\n",
                 "  \"audio_source\": \"file\",\n",
                 "  \"audio_file_path\": \"{}\"\n",

@@ -1,9 +1,9 @@
 //! LLM inference engine abstraction for the LLM-based MT provider.
 //!
 //! The [`LlmEngine`] trait is injectable so unit tests can drive the provider
-//! with a [`MockLlmEngine`] without loading a real GGUF model.
+//! with a `MockLlmEngine` (test-only) without loading a real GGUF model.
 //!
-//! The [`MistralRsEngine`] concrete type wraps an `Arc<MistralRs>` and is only
+//! The `MistralRsEngine` concrete type wraps an `Arc<MistralRs>` and is only
 //! compiled when the `local-llm-mt` feature is enabled.
 
 use crate::providers::ProviderError;
