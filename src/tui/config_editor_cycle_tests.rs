@@ -127,6 +127,8 @@ fn config_editor_cycles_mt_provider() {
     );
     editor.mt_provider = "local".to_string();
     editor.cycle_active_field();
+    assert_eq!(editor.mt_provider, "llm");
+    editor.cycle_active_field();
     assert_eq!(editor.mt_provider, "google");
 }
 

@@ -298,7 +298,8 @@ const LANGUAGE_PRESETS: [&str; 12] = [
     "ja-JP", "vi", "en-US", "en-GB", "zh-CN", "zh-TW", "ko", "fr-FR", "de-DE", "es-ES", "it-IT",
     "pt-BR",
 ];
-const PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
+const STT_PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
+const MT_PROVIDER_CHOICES: [&str; 3] = ["google", "local", "llm"];
 const BOOLEAN_CHOICES: [&str; 2] = ["false", "true"];
 const TTS_ROUTING_CHOICES: [&str; 3] = ["speakers", "virtual_mic", "both"];
 const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "google-when-keyed"];
@@ -4115,7 +4116,8 @@ fn config_editor_choice_values(field: ConfigEditorField) -> Option<&'static [&'s
             Some(&LANGUAGE_PRESETS)
         }
         ConfigEditorField::AudioSource => Some(crate::audio::audio_source_choices_for_os()),
-        ConfigEditorField::SttProvider | ConfigEditorField::MtProvider => Some(&PROVIDER_CHOICES),
+        ConfigEditorField::SttProvider => Some(&STT_PROVIDER_CHOICES),
+        ConfigEditorField::MtProvider => Some(&MT_PROVIDER_CHOICES),
         ConfigEditorField::MtTranslationStyle => Some(&MT_STYLE_CHOICES),
         ConfigEditorField::TtsEnabled | ConfigEditorField::PipelineEarlyFlushOnVadEnd => {
             Some(&BOOLEAN_CHOICES)
@@ -4288,6 +4290,7 @@ fn config_choice_label(field: ConfigEditorField, value: &str) -> String {
         }
         (ConfigEditorField::SttProvider, "local") => "local - offline STT build".to_string(),
         (ConfigEditorField::MtProvider, "local") => "local - offline MT build".to_string(),
+        (ConfigEditorField::MtProvider, "llm") => "llm - local LLM (mistralrs, GGUF)".to_string(),
         (ConfigEditorField::TtsEnabled, "false") => "false - subtitles only".to_string(),
         (ConfigEditorField::TtsEnabled, "true") => "true - speak translations".to_string(),
         (ConfigEditorField::TtsRouting, "speakers") => "speakers - play locally".to_string(),
