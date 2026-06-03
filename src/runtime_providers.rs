@@ -540,8 +540,9 @@ pub(crate) fn build_slot_stt_provider(
 /// Build the runtime MT provider for a single slot.
 ///
 /// **Note:** `"llm"` is not handled here because it requires async work (model
-/// loading + optional auto-download).  Use [`build_llm_mt_provider`] for that
-/// case and call it via `rt.block_on(...)` before delegating to this function.
+/// loading + optional auto-download).  Use `build_llm_mt_provider` (in
+/// `crate::llm_startup`) for that case and call it via `rt.block_on(...)`
+/// before delegating to this function.
 pub(crate) fn build_slot_mt_provider(
     mt_provider: &str,
     google_api_key: Option<&str>,

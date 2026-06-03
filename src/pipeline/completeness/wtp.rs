@@ -254,10 +254,11 @@ impl WtpJudge {
             "attention_mask" => mask_tensor,
         };
 
-        let outputs = self
+        let mut session_guard = self
             .session
             .lock()
-            .map_err(|e| anyhow::anyhow!("WtpJudge: session mutex poisoned: {e}"))?
+            .map_err(|e| anyhow::anyhow!("WtpJudge: session mutex poisoned: {e}"))?;
+        let outputs = session_guard
             .run(inputs)
             .context("WtpJudge: inference run failed")?;
 

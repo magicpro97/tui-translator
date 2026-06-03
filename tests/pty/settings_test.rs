@@ -485,7 +485,10 @@ fn settings_tts_route_selection_persists_keyboard_only() {
     );
 
     open_settings(&mut session, 110, 30);
-    tab_to_field(&mut session, "TTS routing", 9);
+    // TtsRouting is field index 10 (MtTranslationStyle was added at index 8 in
+    // LLM-MT-04 #699, shifting TtsRouting from 9 to 10). Tab from the initially
+    // active SourceLanguage (index 0) requires 10 presses to reach index 10.
+    tab_to_field(&mut session, "TTS routing", 10);
 
     // Ctrl+D is the same cycle action as F2 and is stable across PTY encodings.
     session

@@ -5,7 +5,7 @@
 //! stripped model output as an [`MtResult`].
 //!
 //! The engine is injected as `Arc<dyn LlmEngine>` so tests can substitute a
-//! [`MockLlmEngine`] without loading a real GGUF model.
+//! `MockLlmEngine` (test-only) without loading a real GGUF model.
 //!
 //! ## Feature gate
 //!
@@ -19,13 +19,11 @@
 //! When `local-llm-mt` is NOT enabled, a zero-dependency stub is provided so
 //! callers can reference the type without a feature-check everywhere:
 //!
-//! ```rust,ignore
+//! ```ignore
 //! // In pipeline wiring:
 //! let provider = LlmMtProvider::stub(); // always available
-//! provider.translate(…).await?; // returns ProviderError::Unimplemented
+//! provider.translate(/* ... */).await?; // returns ProviderError::Unimplemented
 //! ```
-//!
-//! [`MockLlmEngine`]: crate::providers::llm::engine::MockLlmEngine
 
 use crate::providers::{MtProvider, MtResult, ProviderError, TranslationContext};
 use std::sync::Arc;
