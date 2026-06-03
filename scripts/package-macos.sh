@@ -33,8 +33,6 @@ DO_NOTARIZE=false
 BINARY_NAME="tui-translator"
 BUNDLE_ID="${APPLE_BUNDLE_ID:-com.tui-translator.app}"
 VERSION="$(grep '^version' "$REPO_ROOT/Cargo.toml" | head -1 | cut -d'"' -f2)"
-DIST_DIR="$REPO_ROOT/dist/macos-$ARCH"
-STAGING="$DIST_DIR/staging"
 FEATURES="${RELEASE_FEATURES:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -46,6 +44,12 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown argument: $1"; exit 1 ;;
   esac
 done
+
+# Compute paths AFTER --arch parsing (otherwise --arch universal still uses the
+# default 'aarch64' and writes DMG to dist/macos-aarch64/, leaving the workflow's
+# dist/macos-universal/ glob empty).
+DIST_DIR="$REPO_ROOT/dist/macos-$ARCH"
+STAGING="$DIST_DIR/staging"
 
 # ── resolve Rust target triple ─────────────────────────────────────────────────
 case "$ARCH" in
