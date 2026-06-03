@@ -17,4 +17,9 @@
 # +crt-static: statically link the MSVC/UCRT runtime components that Rust and
 # native dependencies would otherwise load from vcruntime/msvcp/ucrtbase DLLs.
 # This avoids requiring the end-user to install the VC++ Redistributable.
-rustflags = ["-C", "target-feature=+crt-static"]
+#
+# legacy_stdio_definitions.lib: resolves __imp_fgetpos, __imp_fsetpos,
+# __imp_rand, __imp__aligned_malloc etc. that whisper_rs_sys (built with /MD
+# via the cc crate) references as DLL imports while the Rust side uses /MT.
+# See: https://docs.microsoft.com/en-us/cpp/c-runtime-library/potential-errors-passing-crt-objects-across-dll-boundaries
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=legacy_stdio_definitions.lib"]
