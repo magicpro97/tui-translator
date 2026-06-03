@@ -18,8 +18,13 @@
 # native dependencies would otherwise load from vcruntime/msvcp/ucrtbase DLLs.
 # This avoids requiring the end-user to install the VC++ Redistributable.
 #
-# legacy_stdio_definitions.lib: resolves __imp_fgetpos, __imp_fsetpos,
-# __imp_rand, __imp__aligned_malloc etc. that whisper_rs_sys (built with /MD
-# via the cc crate) references as DLL imports while the Rust side uses /MT.
-# See: https://docs.microsoft.com/en-us/cpp/c-runtime-library/potential-errors-passing-crt-objects-across-dll-boundaries
-rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=legacy_stdio_definitions.lib"]
+# ucrt.lib: whisper_rs_sys 0.10 bundles whisper.cpp 1.6.2 which is compiled by
+# cmake without CMAKE_MSVC_RUNTIME_LIBRARY, so it uses /MD (DLL CRT) regardless
+# of our +crt-static flag.  This generates __imp_fgetpos, __imp__aligned_malloc,
+# __imp_rand, __imp_strncpy, __imp_strdup, __imp_fmaxf etc. that the static UCRT
+# (libucrt.lib) does not provide.  Linking ucrt.lib (the UCRT DLL import library)
+# alongside libucrt.lib satisfies those __imp_* symbols via ucrtbase.dll, which is
+# a universal system DLL present on all Windows 10/11 machines.  Since whisper.cpp
+# handles its own memory internally (no cross-boundary malloc/free with Rust), the
+# mixed-CRT usage is safe in practice for this dependency.
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=ucrt.lib"]
