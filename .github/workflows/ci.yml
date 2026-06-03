@@ -583,7 +583,7 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-macos-smoke-${{ hashFiles('**/Cargo.lock') }}
       - name: Run PTY integration tests (file-backed audio, no hardware needed)
-        run: cargo test --test pty -- --nocapture
+        run: cargo test --test pty -- --nocapture --test-threads=1
         env:
           RUST_LOG: "off"
 
