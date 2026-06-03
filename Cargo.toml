@@ -257,7 +257,7 @@ depends = "$auto, libpipewire-0.3-0 | libpulse0, libasound2 | libasound2t64"
 section = "utils"
 priority = "optional"
 assets = [
-  ["target/x86_64-unknown-linux-gnu/release/tui-translator", "usr/bin/", "755"],
+  ["target/release/tui-translator", "usr/bin/", "755"],
   ["config.example.json", "usr/share/tui-translator/", "644"],
   ["USAGE.md", "usr/share/doc/tui-translator/", "644"],
   ["README.md", "usr/share/doc/tui-translator/", "644"],
@@ -275,7 +275,7 @@ PipeWire or PulseAudio, transcribes with Google Speech-to-Text, and translates
 with Google Translate — all in a terminal TUI."""
 
 [[package.metadata.generate-rpm.assets]]
-source = "target/x86_64-unknown-linux-gnu/release/tui-translator"
+source = "target/release/tui-translator"
 dest = "/usr/bin/tui-translator"
 mode = "755"
 

@@ -25,9 +25,9 @@ use crate::providers::{MtProvider, MtResult, ProviderError};
 #[cfg(feature = "local-mt")]
 use {
     super::mt_ort::{
-        ensure_ort_initialized, load_session, load_token_ids, map_ort_error, next_token_id,
-        required_file, run_decoder, run_encoder, MarianVocab, OpusMtTokenIds, DECODER_ONNX,
-        ENCODER_ONNX, SOURCE_SPM, TARGET_SPM, VOCAB_JSON,
+        ensure_ort_initialized, load_session, load_token_ids, next_token_id, required_file,
+        run_decoder, run_encoder, MarianVocab, OpusMtTokenIds, DECODER_ONNX, ENCODER_ONNX,
+        SOURCE_SPM, TARGET_SPM, VOCAB_JSON,
     },
     sentencepiece_rs::SentencePieceProcessor,
 };
