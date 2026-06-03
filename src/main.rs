@@ -54,6 +54,7 @@ mod audio_device_cli_tests;
 mod config;
 mod diagnostics;
 mod i18n;
+mod llm_startup;
 mod local_model_cli;
 #[cfg(test)]
 mod local_model_cli_tests;
@@ -81,6 +82,7 @@ pub mod updater;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
 use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices};
+use llm_startup::build_llm_mt_provider;
 use local_model_cli::{
     parse_local_mt_model_install_args_from, parse_local_stt_model_prefetch_args_from,
     parse_model_verify_args_from, run_local_mt_model_install, run_local_stt_model_prefetch,
@@ -93,9 +95,9 @@ use metrics::{
 };
 use metrics_export::{write_metrics_snapshot_export, StorageMetricsHandles, METRICS_SNAPSHOT_ENV};
 use runtime_providers::{
-    apply_tts_voice_from_config, build_llm_mt_provider, build_runtime_tts_provider,
-    build_slot_mt_provider, build_slot_stt_provider, cycle_tts_voice_for_language,
-    stt_local_unavailable_is_fatal_for_slot, DisabledTtsProvider, RuntimeTtsProvider,
+    apply_tts_voice_from_config, build_runtime_tts_provider, build_slot_mt_provider,
+    build_slot_stt_provider, cycle_tts_voice_for_language, stt_local_unavailable_is_fatal_for_slot,
+    DisabledTtsProvider, RuntimeTtsProvider,
 };
 use runtime_recording::{log_measurement_mode_status, start_audio_archive, start_session_recorder};
 use session_export_cli::{parse_session_export_args_from, run_session_export};
