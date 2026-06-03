@@ -259,9 +259,14 @@ pub(crate) fn log_measurement_mode_status(
             session_id = %session_id,
             jsonl_path = ?jsonl_path,
             wav_path = ?wav_path,
+            details = %msg,
             "measurement mode active"
         );
-        *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(msg);
+        // Issue: the full status string (with file paths and eval command) is
+        // far too long for the one-line title bar. Publish only a short marker
+        // to the TUI slot; full details remain in the log above for operators.
+        let short = format!("\u{26a0} Measurement mode active (session {session_id})");
+        *status_slot.lock().unwrap_or_else(|p| p.into_inner()) = Some(short);
     }
 }
 
