@@ -111,11 +111,12 @@ fn config_editor_cycles_mt_provider() {
 
     editor.cycle_active_field();
 
-    // After one cycle from the default, we should be on the other option.
+    // After one cycle from the default, we should advance one position in
+    // the 3-state cycle [google, local, llm].
     #[cfg(not(feature = "local-mt"))]
     assert_eq!(editor.mt_provider, "local");
     #[cfg(feature = "local-mt")]
-    assert_eq!(editor.mt_provider, "google");
+    assert_eq!(editor.mt_provider, "llm");
 
     assert!(
         editor
