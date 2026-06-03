@@ -3774,13 +3774,19 @@ pub fn render_config_editor(frame: &mut ratatui::Frame, area: Rect, editor: &Con
             editor.field_cursor(ConfigEditorField::MtProvider),
             value_width,
         ),
-        config_editor_field_line(
+    ]);
+
+    if ConfigEditorField::MtTranslationStyle.is_visible_in_mode(editor.mode) {
+        lines.push(config_editor_field_line(
             ConfigEditorField::MtTranslationStyle,
             &editor.mt_translation_style,
             active,
             editor.field_cursor(ConfigEditorField::MtTranslationStyle),
             value_width,
-        ),
+        ));
+    }
+
+    lines.extend([
         config_editor_field_line(
             ConfigEditorField::TtsEnabled,
             &editor.tts_enabled,

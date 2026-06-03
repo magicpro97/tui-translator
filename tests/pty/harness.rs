@@ -414,6 +414,8 @@ fn write_fixture_backed_config(dir: &std::path::Path) -> Result<PathBuf, String>
             "  \"google_api_key\": \"pty-test-key\",\n",
             "  \"source_language\": \"ja-JP\",\n",
             "  \"target_language\": \"vi\",\n",
+            "  \"stt_provider\": \"google\",\n",
+            "  \"mt_provider\": \"google\",\n",
             "  \"tts_enabled\": false,\n",
             "  \"audio_source\": \"file\",\n",
             "  \"audio_file_path\": \"{}\"\n",
