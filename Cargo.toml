@@ -112,7 +112,7 @@ hex = "0.4"
 whisper-rs = { version = "0.12", optional = true }
 # ONNX Runtime + pure-Rust SentencePiece for the local OPUS-MT backend (#217).
 # Optional so default CI/release builds stay lightweight until local MT is enabled.
-ort = { version = "=2.0.0-rc.9", default-features = false, features = ["load-dynamic"], optional = true }
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["load-dynamic"], optional = true }
 sentencepiece-rs = { version = "0.2.1", optional = true }
 # Random number generation for Gaussian noise in Supertonic diffusion inference.
 rand = { version = "0.8", optional = true }

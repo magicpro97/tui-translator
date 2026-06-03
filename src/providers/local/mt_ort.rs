@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 #[cfg(feature = "local-mt")]
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Mutex};
 
 #[cfg(feature = "local-mt")]
 use ort::{session::Session, value::Tensor};
@@ -135,7 +135,9 @@ pub(super) fn ensure_ort_initialized(model_dir: &Path) -> Result<(), ProviderErr
         .get_or_init(|| {
             let dll_path = resolve_onnxruntime_library(model_dir)?;
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                ort::init_from(dll_path.to_string_lossy()).commit()
+                ort::init_from(&dll_path).map(|b| {
+                    b.commit();
+                })
             })) {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(e)) => Err(format!("failed to initialize ONNX Runtime: {e}")),
@@ -231,7 +233,7 @@ pub(super) fn load_session(path: &Path, role: &str) -> Result<Session, ProviderE
 
 #[cfg(feature = "local-mt")]
 pub(super) fn has_input(session: &Session, name: &str) -> bool {
-    session.inputs.iter().any(|input| input.name == name)
+    session.inputs().iter().any(|input| input.name() == name)
 }
 
 #[cfg(feature = "local-mt")]
@@ -386,4 +388,71 @@ pub(super) fn next_token_id(shape: &[i64], logits: &[f32]) -> Result<i64, Provid
 #[cfg(feature = "local-mt")]
 pub(super) fn map_ort_error(error: ort::Error) -> ProviderError {
     ProviderError::ServiceUnavailable(format!("ONNX Runtime error: {error}"))
+}
+
+/// Run the OPUS-MT encoder session and return `(hidden_shape, hidden_data)`.
+#[cfg(feature = "local-mt")]
+pub(super) fn run_encoder(
+    encoder: &Mutex<Session>,
+    source_ids: &[i64],
+    attention_mask: &[i64],
+) -> Result<(Vec<i64>, Vec<f32>), ProviderError> {
+    let input_ids_t = Tensor::from_array((
+        [1_usize, source_ids.len()],
+        source_ids.to_vec().into_boxed_slice(),
+    ))
+    .map_err(map_ort_error)?;
+    let attn_mask_t = Tensor::from_array((
+        [1_usize, attention_mask.len()],
+        attention_mask.to_vec().into_boxed_slice(),
+    ))
+    .map_err(map_ort_error)?;
+    let inputs = ort::inputs! {
+        "input_ids"      => input_ids_t,
+        "attention_mask" => attn_mask_t,
+    };
+    let mut enc = encoder
+        .lock()
+        .map_err(|e| ProviderError::ServiceUnavailable(format!("encoder mutex: {e}")))?;
+    let outputs = enc.run(inputs).map_err(map_ort_error)?;
+    let output = outputs.get("last_hidden_state").unwrap_or(&outputs[0]);
+    let (shape, data) = output.try_extract_tensor::<f32>().map_err(map_ort_error)?;
+    Ok((shape.to_vec(), data.to_vec()))
+}
+
+/// Run the OPUS-MT decoder session and return `(logits_shape, logits_data)`.
+#[cfg(feature = "local-mt")]
+pub(super) fn run_decoder(
+    decoder: &Mutex<Session>,
+    decoder_ids: &[i64],
+    attention_mask: &[i64],
+    hidden_shape: &[i64],
+    hidden_data: &[f32],
+) -> Result<(Vec<i64>, Vec<f32>), ProviderError> {
+    let mut dec = decoder
+        .lock()
+        .map_err(|e| ProviderError::ServiceUnavailable(format!("decoder mutex: {e}")))?;
+    let attention_name = if has_input(&dec, "encoder_attention_mask") {
+        "encoder_attention_mask"
+    } else {
+        "attention_mask"
+    };
+    let hidden_name = if has_input(&dec, "encoder_hidden_states") {
+        "encoder_hidden_states"
+    } else {
+        "encoder_outputs"
+    };
+    let inputs = vec![
+        named_i64_tensor("input_ids", &[1, decoder_ids.len() as i64], decoder_ids)?,
+        named_f32_tensor(hidden_name, hidden_shape, hidden_data)?,
+        named_i64_tensor(
+            attention_name,
+            &[1, attention_mask.len() as i64],
+            attention_mask,
+        )?,
+    ];
+    let outputs = dec.run(inputs).map_err(map_ort_error)?;
+    let output = outputs.get("logits").unwrap_or(&outputs[0]);
+    let (shape, data) = output.try_extract_tensor::<f32>().map_err(map_ort_error)?;
+    Ok((shape.to_vec(), data.to_vec()))
 }

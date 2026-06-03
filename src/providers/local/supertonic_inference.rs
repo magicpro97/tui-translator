@@ -97,19 +97,21 @@ pub(super) fn run_supertonic_inference(
         "text_ids"  => dp_ids,
         "style_dp"  => dp_sdp,
         "text_mask" => dp_mask,
-    }
-    .map_err(|e| ProviderError::from(SupertonicError::OrtInference(format!("dp inputs: {e}"))))?;
+    };
 
-    let dp_out = sessions
-        .duration_predictor
-        .run(dp_inputs)
-        .map_err(|e| SupertonicError::OrtInference(format!("duration_predictor: {e}")))?;
-
-    let (_, dur_data) = dp_out["duration"]
-        .try_extract_raw_tensor::<f32>()
-        .map_err(|e| SupertonicError::OrtInference(format!("duration extract: {e}")))?;
-
-    let duration_secs = dur_data.first().copied().unwrap_or(1.0_f32).max(0.1); // allow-unwrap: #631 — ORT guarantees non-empty output tensor
+    let duration_secs = {
+        let mut guard = sessions
+            .duration_predictor
+            .lock()
+            .map_err(|e| SupertonicError::OrtInference(format!("duration_predictor lock: {e}")))?;
+        let dp_out = guard
+            .run(dp_inputs)
+            .map_err(|e| SupertonicError::OrtInference(format!("duration_predictor: {e}")))?;
+        let (_, dur_data) = dp_out["duration"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| SupertonicError::OrtInference(format!("duration extract: {e}")))?;
+        dur_data.first().copied().unwrap_or(1.0_f32).max(0.1) // allow-unwrap: #631 — ORT guarantees non-empty output tensor
+    };
     let wav_samples = (duration_secs * sessions.config.sample_rate as f32).ceil() as usize;
     let latent_len = sessions.config.latent_len_for_samples(wav_samples);
     let latent_frame_dim = sessions.config.latent_frame_dim();
@@ -130,19 +132,21 @@ pub(super) fn run_supertonic_inference(
         "text_ids"  => te_ids,
         "style_ttl" => te_sttl,
         "text_mask" => te_mask,
-    }
-    .map_err(|e| ProviderError::from(SupertonicError::OrtInference(format!("te inputs: {e}"))))?;
+    };
 
-    let te_out = sessions
-        .text_encoder
-        .run(te_inputs)
-        .map_err(|e| SupertonicError::OrtInference(format!("text_encoder: {e}")))?;
-
-    let (te_shape, te_data) = te_out["text_emb"]
-        .try_extract_raw_tensor::<f32>()
-        .map_err(|e| SupertonicError::OrtInference(format!("text_emb extract: {e}")))?;
-    let te_shape = te_shape.to_vec();
-    let te_data = te_data.to_vec();
+    let (te_shape, te_data) = {
+        let mut guard = sessions
+            .text_encoder
+            .lock()
+            .map_err(|e| SupertonicError::OrtInference(format!("text_encoder lock: {e}")))?;
+        let te_out = guard
+            .run(te_inputs)
+            .map_err(|e| SupertonicError::OrtInference(format!("text_encoder: {e}")))?;
+        let (te_shape, te_data) = te_out["text_emb"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| SupertonicError::OrtInference(format!("text_emb extract: {e}")))?;
+        (te_shape.to_vec(), te_data.to_vec())
+    };
 
     // ── Diffusion loop (flow-matching, 8 steps) ───────────────────────────────
     let mut noisy_latent = sample_gaussian_vec(latent_frame_dim * latent_len);
@@ -182,23 +186,22 @@ pub(super) fn run_supertonic_inference(
             "text_mask"    => ve_tmask,
             "current_step" => ve_cur,
             "total_step"   => ve_tot,
-        }
-        .map_err(|e| {
-            ProviderError::from(SupertonicError::OrtInference(format!(
-                "ve inputs step {step}: {e}"
-            )))
-        })?;
+        };
 
-        let ve_out = sessions.vector_estimator.run(ve_inputs).map_err(|e| {
-            SupertonicError::OrtInference(format!("vector_estimator step {step}: {e}"))
-        })?;
-
-        let (_, denoised) = ve_out["denoised_latent"]
-            .try_extract_raw_tensor::<f32>()
-            .map_err(|e| {
-                SupertonicError::OrtInference(format!("denoised_latent step {step}: {e}"))
+        noisy_latent = {
+            let mut guard = sessions.vector_estimator.lock().map_err(|e| {
+                SupertonicError::OrtInference(format!("vector_estimator lock: {e}"))
             })?;
-        noisy_latent = denoised.to_vec();
+            let ve_out = guard.run(ve_inputs).map_err(|e| {
+                SupertonicError::OrtInference(format!("vector_estimator step {step}: {e}"))
+            })?;
+            let (_, denoised) = ve_out["denoised_latent"]
+                .try_extract_tensor::<f32>()
+                .map_err(|e| {
+                    SupertonicError::OrtInference(format!("denoised_latent step {step}: {e}"))
+                })?;
+            denoised.to_vec()
+        };
     }
 
     // ── Vocoder ───────────────────────────────────────────────────────────────
@@ -207,22 +210,25 @@ pub(super) fn run_supertonic_inference(
         noisy_latent,
         "voc/latent",
     )?;
-    let voc_inputs = ort::inputs! { "latent" => voc_latent }.map_err(|e| {
-        ProviderError::from(SupertonicError::OrtInference(format!("voc inputs: {e}")))
-    })?;
+    let voc_inputs = ort::inputs! { "latent" => voc_latent };
 
-    let voc_out = sessions
-        .vocoder
-        .run(voc_inputs)
-        .map_err(|e| SupertonicError::OrtInference(format!("vocoder: {e}")))?;
+    let wav_data_owned: Vec<f32> = {
+        let mut guard = sessions
+            .vocoder
+            .lock()
+            .map_err(|e| SupertonicError::OrtInference(format!("vocoder lock: {e}")))?;
+        let voc_out = guard
+            .run(voc_inputs)
+            .map_err(|e| SupertonicError::OrtInference(format!("vocoder: {e}")))?;
+        let (_, wav_data) = voc_out["wav_tts"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| SupertonicError::OrtInference(format!("wav_tts extract: {e}")))?;
+        wav_data.to_vec()
+    };
 
-    let (_, wav_data) = voc_out["wav_tts"]
-        .try_extract_raw_tensor::<f32>()
-        .map_err(|e| SupertonicError::OrtInference(format!("wav_tts extract: {e}")))?;
-
-    let trim_len = wav_samples.min(wav_data.len());
+    let trim_len = wav_samples.min(wav_data_owned.len());
     let mut audio_bytes = Vec::with_capacity(trim_len * 4);
-    for &sample in &wav_data[..trim_len] {
+    for &sample in &wav_data_owned[..trim_len] {
         audio_bytes.extend_from_slice(&sample.to_le_bytes());
     }
 

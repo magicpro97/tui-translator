@@ -22,7 +22,7 @@
 #![cfg(feature = "semantic-buffering-wtp")]
 
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use half::f16;
@@ -83,7 +83,9 @@ fn ensure_ort_ready(model_dir: &Path) -> Result<()> {
             Err(e) => return Err(e),
         };
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ort::init_from(dll.to_string_lossy()).commit()
+            ort::init_from(&dll).map(|b| {
+                b.commit();
+            })
         })) {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => Err(format!("ORT init failed: {e}")),
@@ -184,7 +186,7 @@ fn encode_text(text: &str) -> (Vec<i64>, Vec<f16>, usize) {
 /// Load once at startup and share via `Arc<dyn CompletenessJudge>`.
 pub struct WtpJudge {
     /// Loaded ORT session for wtp-bert-mini.
-    session: Session,
+    session: Mutex<Session>,
     /// Sigmoid threshold for the newline boundary class. Default: `0.5`.
     threshold: f32,
 }
@@ -224,7 +226,10 @@ impl WtpJudge {
             threshold,
             "WtpJudge loaded wtp-bert-mini (Tier 3 completeness judge)"
         );
-        Ok(Self { session, threshold })
+        Ok(Self {
+            session: Mutex::new(session),
+            threshold,
+        })
     }
 
     /// Runs a single forward pass and extracts the boundary probability.
@@ -247,11 +252,12 @@ impl WtpJudge {
         let inputs = ort::inputs! {
             "hashed_ids"     => hashed_tensor,
             "attention_mask" => mask_tensor,
-        }
-        .context("WtpJudge: inputs map creation failed")?;
+        };
 
         let outputs = self
             .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("WtpJudge: session mutex poisoned: {e}"))?
             .run(inputs)
             .context("WtpJudge: inference run failed")?;
 
@@ -260,7 +266,7 @@ impl WtpJudge {
             .context("WtpJudge: 'logits' output not found")?;
 
         // Try f32 first (standard export); fall back to f16 (GPU-optimised export).
-        let (shape, logit_newline) = match logits_val.try_extract_raw_tensor::<f32>() {
+        let (shape, logit_newline) = match logits_val.try_extract_tensor::<f32>() {
             Ok((shape, data)) => {
                 anyhow::ensure!(
                     shape.len() == 3,
@@ -278,7 +284,7 @@ impl WtpJudge {
             }
             Err(_) => {
                 let (shape, data) = logits_val
-                    .try_extract_raw_tensor::<f16>()
+                    .try_extract_tensor::<f16>()
                     .context("WtpJudge: could not extract logits as f32 or f16")?;
                 anyhow::ensure!(
                     shape.len() == 3,
