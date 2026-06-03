@@ -38,11 +38,29 @@ const OVERLAY_TIMEOUT: Duration = Duration::from_secs(8);
 /// Open the settings overlay by pressing `s` and wait until the panel title
 /// `"Settings"` (capital S) appears on screen.
 ///
+/// Re-sends `'s'` while polling because portable-pty on macOS occasionally
+/// drops the first keystroke when the child has just finished its initial
+/// render burst (the kernel PTY input queue can race the first crossterm
+/// event-loop poll). The keystroke is idempotent: a second `'s'` while the
+/// overlay is already up is consumed by the editor as plain input on the
+/// active field, which is the source-language picker that ignores characters.
+///
 /// Panics with a screen dump on timeout.
 fn open_settings(session: &mut PtySession, cols: u16, rows: u16) {
     session.send(b"s").expect("send 's' to open settings");
-    assert!(
-        session.wait_for_text("Settings", OVERLAY_TIMEOUT),
+    let deadline = Instant::now() + OVERLAY_TIMEOUT;
+    let mut last_resend = Instant::now();
+    while Instant::now() < deadline {
+        if session.screen_contains("Settings") {
+            return;
+        }
+        if last_resend.elapsed() >= Duration::from_millis(1500) {
+            let _ = session.send(b"s");
+            last_resend = Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!(
         "settings overlay did not appear within {}s at {cols}×{rows}; screen:\n{}",
         OVERLAY_TIMEOUT.as_secs(),
         session.all_rows().join("\n"),
