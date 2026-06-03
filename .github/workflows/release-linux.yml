@@ -71,7 +71,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends fuse libfuse2
 
       - name: Run release safety tests (Linux)
-        run: cargo test --locked --bin tui-translator --target x86_64-unknown-linux-gnu --features local-stt,local-mt,local-llm-mt,ort/download-binaries
+        run: cargo test --locked --bin tui-translator --target x86_64-unknown-linux-gnu --features local-stt,local-mt,local-llm-mt,ort/download-binaries,ort/tls-native
 
       - name: Build release binary (static musl-glibc)
         run: |
