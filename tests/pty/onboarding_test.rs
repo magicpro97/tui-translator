@@ -216,6 +216,8 @@ fn settings_save_defaults_blank_file_audio_path_and_closes_overlay() {
                 "  \"google_api_key\": \"pty-test-key\",\n",
                 "  \"source_language\": \"ja-JP\",\n",
                 "  \"target_language\": \"vi\",\n",
+                "  \"stt_provider\": \"google\",\n",
+                "  \"mt_provider\": \"google\",\n",
                 "  \"tts_enabled\": false,\n",
                 "  \"audio_source\": \"file\",\n",
                 "  \"audio_file_path\": \"{}\"\n",
