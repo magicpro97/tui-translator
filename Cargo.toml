@@ -182,10 +182,10 @@ local-llm-mt = ["dep:mistralrs-core", "dep:candle-core", "dep:clap"]
 # Use these in CI release builds to enable all local-model providers and
 # bundle the ORT runtime (download-binaries + copy-dylibs place the ORT
 # dylib next to the binary so it can be included in the release package).
-release-windows = ["local-stt", "local-mt", "local-tts", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs"]
-release-macos-arm = ["local-stt-metal", "local-mt", "local-tts", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs"]
-release-macos-intel = ["local-stt", "local-mt", "local-tts", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs"]
-release-linux = ["local-stt", "local-mt", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs"]
+release-windows = ["local-stt", "local-mt", "local-tts", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs", "ort/tls-native"]
+release-macos-arm = ["local-stt-metal", "local-mt", "local-tts", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs", "ort/tls-native"]
+release-macos-intel = ["local-stt", "local-mt", "local-tts", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs", "ort/tls-native"]
+release-linux = ["local-stt", "local-mt", "local-llm-mt", "ort/download-binaries", "ort/copy-dylibs", "ort/tls-native"]
 # Developer alias: all local-model features without the CI download strategy.
 full = ["local-stt", "local-stt-metal", "local-mt", "local-tts", "local-llm-mt"]
 # Enable the local LLM-based MT provider (LLM-MT-01 to LLM-MT-03, issues #696/#698).
