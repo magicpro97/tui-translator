@@ -479,6 +479,15 @@ fn main() -> Result<()> {
 
     init_tracing();
 
+    // Bug #5: route whisper.cpp native logs (e.g. "whisper_init_state: kv pad size = 2.36 MB")
+    // through the `tracing` crate instead of letting them print directly to stderr,
+    // where they would corrupt the ratatui display. The `whisper-cpp-tracing` feature
+    // of whisper-rs 0.12 exposes a trampoline that registers a global log callback.
+    // Idempotent and cheap; safe to call unconditionally at startup. No-op when
+    // local-stt is not compiled in.
+    #[cfg(feature = "local-stt")]
+    whisper_rs::install_whisper_tracing_trampoline();
+
     // QA8-08 (issue #506): install panic-sidecar hook before any task
     // spawns so backgrounded Tokio panics are still captured. The hook
     // is idempotent and chains to the default hook so existing
