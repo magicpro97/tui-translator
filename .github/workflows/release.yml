@@ -53,16 +53,15 @@ jobs:
 
       - name: Run release safety tests
         env:
-          # Force whisper-rs-sys/whisper.cpp to compile with /MT (static CRT) so
-          # all object files match Rust's +crt-static (no LNK2005/LNK2019 mix).
-          CFLAGS: "/MT /O2"
-          CXXFLAGS: "/MT /O2"
+          # whisper-rs-sys 0.10 build.rs forwards any CMAKE_* env vars as cmake
+          # -D defines (see build.rs lines ~203-206). Setting this forces whisper.cpp
+          # to compile with /MT (static CRT), matching Rust's +crt-static flag.
+          CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
         run: cargo test --locked --bin tui-translator --features local-stt,local-mt,local-tts,local-llm-mt,ort/download-binaries,ort/tls-native
 
       - name: Build release exe (MSVC static target)
         env:
-          CFLAGS: "/MT /O2"
-          CXXFLAGS: "/MT /O2"
+          CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
         run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin tui-translator --features release-windows
 
       - name: Verify no VC++ runtime DLLs
