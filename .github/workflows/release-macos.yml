@@ -70,7 +70,7 @@ jobs:
           key: macos-cargo-release-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run release safety tests
-        run: cargo test --locked --bin tui-translator --features local-stt-metal,local-mt,local-tts,local-llm-mt,ort/download-binaries
+        run: cargo test --locked --bin tui-translator --features local-stt-metal,local-mt,local-tts,local-llm-mt,ort/download-binaries,ort/tls-native
 
       # ── optional: import Developer ID certificate ─────────────────────────
       - name: Import code-signing certificate
