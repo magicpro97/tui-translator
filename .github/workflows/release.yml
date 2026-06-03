@@ -38,8 +38,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          # v2: include workflow hash to bust cache when CRT flags change
-          key: ${{ runner.os }}-cargo-release-v2-${{ hashFiles('**/Cargo.lock') }}
+          # v3: bust cache after switching from CMAKE_MSVC_RUNTIME_LIBRARY to
+          # explicit CMAKE_C_FLAGS_RELEASE/RELWITHDEBINFO for CRT unification
+          key: ${{ runner.os }}-cargo-release-v3-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Guard — verify release build includes local-model features
         shell: pwsh
@@ -55,14 +56,25 @@ jobs:
       - name: Run release safety tests
         env:
           # whisper-rs-sys 0.10 build.rs forwards any CMAKE_* env vars as cmake
-          # -D defines (see build.rs lines ~203-206). Setting this forces whisper.cpp
-          # to compile with /MT (static CRT), matching Rust's +crt-static flag.
-          CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
+          # -D defines (build.rs lines ~203-206). Explicitly overriding
+          # CMAKE_C_FLAGS_* forces whisper.cpp to compile with /MT (static CRT),
+          # matching Rust's +crt-static flag. CMAKE_MSVC_RUNTIME_LIBRARY is NOT
+          # used because whisper.cpp 1.6.2 CMakeLists.txt lacks CMP0091, so that
+          # variable is ignored by CMake's Visual Studio generator.
+          # cargo test uses debug_assertions=true → cmake build type RelWithDebInfo.
+          CMAKE_C_FLAGS_RELWITHDEBINFO: "/MT /O2 /Zi /DNDEBUG"
+          CMAKE_CXX_FLAGS_RELWITHDEBINFO: "/MT /O2 /Zi /DNDEBUG"
+          CMAKE_C_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
+          CMAKE_CXX_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
         run: cargo test --locked --bin tui-translator --features local-stt,local-mt,local-tts,local-llm-mt,ort/download-binaries,ort/tls-native
 
       - name: Build release exe (MSVC static target)
         env:
-          CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
+          # cargo build --release uses debug_assertions=false → cmake build type Release.
+          CMAKE_C_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
+          CMAKE_CXX_FLAGS_RELEASE: "/MT /O2 /Ob2 /DNDEBUG"
+          CMAKE_C_FLAGS_RELWITHDEBINFO: "/MT /O2 /Zi /DNDEBUG"
+          CMAKE_CXX_FLAGS_RELWITHDEBINFO: "/MT /O2 /Zi /DNDEBUG"
         run: cargo build --locked --release --target x86_64-pc-windows-msvc --bin tui-translator --features release-windows
 
       - name: Verify no VC++ runtime DLLs
