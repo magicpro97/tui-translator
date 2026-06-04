@@ -33,6 +33,8 @@ mod layout_tests;
 pub mod onboarding;
 pub mod rolling_frame_stats;
 #[cfg(test)]
+mod status_metrics_render_tests;
+#[cfg(test)]
 mod status_metrics_tests;
 #[cfg(test)]
 mod storage_metrics_tests;
