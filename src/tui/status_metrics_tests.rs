@@ -352,10 +352,32 @@ fn format_stt_error_lines_caps_at_max_rows() {
     );
 }
 
+/// Copilot review #3353355859: wide Unicode (CJK / emoji) must wrap at the
+/// terminal *cell* width, not at character count.  10 CJK ideographs occupy
+/// 20 columns, so with `width = 10` the helper must emit at least two visual
+/// rows or the rendered output overflows the bordered subtitle pane.
+#[test]
+fn format_stt_error_lines_wraps_cjk_at_cell_width() {
+    // 10 CJK characters, each 2 columns wide → 20 display columns total.
+    let cjk: String = "漢".repeat(10);
+    let lines = format_stt_error_lines(&cjk, 10);
+    assert!(
+        lines.len() >= 2,
+        "expected wrap into >=2 rows for 20-col CJK at width=10, got {} row(s): {:?}",
+        lines.len(),
+        lines,
+    );
+}
+
 fn strip_for_height_check(stt: &SttState) -> StatusMetricsStrip<'_> {
+    // Copilot review #3353355962: avoid intentional `Box::leak` by stashing
+    // the default `MtState` in a process-wide `LazyLock`.  `MtState` derives
+    // `Default` and contains only `String` payloads, so it is `Send + Sync`
+    // and safe to share across the test runner.
+    static MT_STATE: std::sync::LazyLock<MtState> = std::sync::LazyLock::new(MtState::default);
     StatusMetricsStrip {
         stt,
-        mt: Box::leak(Box::new(MtState::default())),
+        mt: &MT_STATE,
         tts_on: false,
         tts_route: TtsRouteStatus::default(),
         target_language: "vi".to_string(),

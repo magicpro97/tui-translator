@@ -2612,43 +2612,58 @@ pub(crate) fn format_stt_error_lines(msg: &str, inner_width: u16) -> Vec<Line<'s
     let width = inner_width.max(1) as usize;
     let mut lines: Vec<String> = Vec::new();
     let mut current = String::new();
+    let mut current_cols: usize = 0;
     for word in msg.split_whitespace() {
+        let word_cols = display_width(word);
         if current.is_empty() {
-            if word.chars().count() > width {
-                // Hard-break very long single tokens.
+            if word_cols > width {
+                // Hard-break very long single tokens at the cell boundary so
+                // wide-Unicode payloads (CJK, emoji) cannot overflow the
+                // bordered subtitle pane (Copilot review #3353355859).
                 let mut buf = String::new();
+                let mut buf_cols = 0usize;
                 for ch in word.chars() {
-                    if buf.chars().count() == width {
-                        lines.push(buf.clone());
-                        buf.clear();
+                    let cw = char_width(ch);
+                    if buf_cols + cw > width {
+                        lines.push(std::mem::take(&mut buf));
+                        buf_cols = 0;
                     }
                     buf.push(ch);
+                    buf_cols += cw;
                 }
                 if !buf.is_empty() {
                     current = buf;
+                    current_cols = buf_cols;
                 }
             } else {
                 current.push_str(word);
+                current_cols = word_cols;
             }
             continue;
         }
-        if current.chars().count() + 1 + word.chars().count() <= width {
+        if current_cols + 1 + word_cols <= width {
             current.push(' ');
             current.push_str(word);
+            current_cols += 1 + word_cols;
         } else {
             lines.push(std::mem::take(&mut current));
-            if word.chars().count() > width {
+            if word_cols > width {
                 let mut buf = String::new();
+                let mut buf_cols = 0usize;
                 for ch in word.chars() {
-                    if buf.chars().count() == width {
-                        lines.push(buf.clone());
-                        buf.clear();
+                    let cw = char_width(ch);
+                    if buf_cols + cw > width {
+                        lines.push(std::mem::take(&mut buf));
+                        buf_cols = 0;
                     }
                     buf.push(ch);
+                    buf_cols += cw;
                 }
                 current = buf;
+                current_cols = buf_cols;
             } else {
                 current.push_str(word);
+                current_cols = word_cols;
             }
         }
     }
@@ -2662,8 +2677,17 @@ pub(crate) fn format_stt_error_lines(msg: &str, inner_width: u16) -> Vec<Line<'s
         lines.truncate(STT_ERROR_MAX_WRAPPED_ROWS);
         if let Some(last) = lines.last_mut() {
             let cap = width.saturating_sub(1);
-            if last.chars().count() > cap {
-                let truncated: String = last.chars().take(cap).collect();
+            if display_width(last) > cap {
+                let mut truncated = String::new();
+                let mut cols = 0usize;
+                for ch in last.chars() {
+                    let cw = char_width(ch);
+                    if cols + cw > cap {
+                        break;
+                    }
+                    truncated.push(ch);
+                    cols += cw;
+                }
                 *last = truncated;
             }
             last.push('\u{2026}');

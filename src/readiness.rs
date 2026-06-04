@@ -16,6 +16,10 @@ use std::sync::{
 use tokio::sync::watch;
 
 /// Public, monotonic readiness state surfaced to the TUI status badge.
+///
+/// The lifecycle is enforced by [`publish`]: once the state reaches
+/// [`ReadinessState::Error`], all subsequent transitions are no-ops so the
+/// terminal error remains visible to the operator.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReadinessState {
     /// Process is starting; no model loads have begun yet.
@@ -50,9 +54,15 @@ impl ReadinessState {
 static TX: OnceLock<watch::Sender<ReadinessState>> = OnceLock::new();
 static LOAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-/// Initialise the readiness channel.  Must be called exactly once, very early
-/// in `main` before TUI mount or any model load.  Subsequent calls return a
-/// fresh subscriber on the already-installed channel and do not reset state.
+/// Initialise the readiness channel.
+///
+/// **Idempotent:** safe to call multiple times.  The first call wins and
+/// constructs the underlying `watch` channel; subsequent calls return a
+/// fresh subscriber on the already-installed channel and do not reset the
+/// observed state.  It is recommended to call this once early in `main`
+/// (before any TUI mount or model load) so initial subscribers see the
+/// `Init` baseline rather than a transient `Loading{...}` snapshot, but
+/// duplicate calls are not an error.
 pub fn install() -> watch::Receiver<ReadinessState> {
     let sender = TX.get_or_init(|| {
         let (tx, _rx) = watch::channel(ReadinessState::Init);
@@ -77,8 +87,16 @@ pub fn subscribe() -> Option<watch::Receiver<ReadinessState>> {
 /// Publish a state transition.  Idempotent; silently ignored if the channel
 /// has not been installed (so test code paths that never call [`install`]
 /// remain safe).
+///
+/// Enforces the documented monotonicity contract: once the channel holds
+/// [`ReadinessState::Error`], further `publish(...)` calls are no-ops so
+/// the terminal error remains observable (Copilot review #3353355902).
 pub fn publish(state: ReadinessState) {
     if let Some(tx) = TX.get() {
+        if matches!(*tx.borrow(), ReadinessState::Error(_)) {
+            // Error is terminal — drop the transition silently.
+            return;
+        }
         // `send_replace` never panics and never blocks; receivers see the new
         // value via `borrow()` / `changed()`.
         let _ = tx.send_replace(state);
@@ -96,12 +114,30 @@ pub struct LoadGuard {
     /// Set to `false` on [`LoadGuard::finish_error`] so `drop` does not
     /// overwrite an error state with `Ready`.
     publish_ready_on_drop: bool,
+    /// `false` when [`LoadGuard::start`] short-circuited because the
+    /// channel was already in [`ReadinessState::Error`]; in that case
+    /// `LOAD_COUNT` was never incremented and `Drop` must not decrement it.
+    decrement_on_drop: bool,
 }
 
 impl LoadGuard {
     /// Start tracking a load for `component`.  Publishes
     /// `Loading{component, None}` immediately.
+    ///
+    /// No-op when the channel is already in [`ReadinessState::Error`]: the
+    /// terminal error is preserved, no `Loading` is published, and the
+    /// returned guard's `Drop` will not republish `Ready` (Copilot review
+    /// #3353355902).
     pub fn start(component: &'static str) -> Self {
+        if let Some(tx) = TX.get() {
+            if matches!(*tx.borrow(), ReadinessState::Error(_)) {
+                return Self {
+                    component,
+                    publish_ready_on_drop: false,
+                    decrement_on_drop: false,
+                };
+            }
+        }
         LOAD_COUNT.fetch_add(1, Ordering::SeqCst);
         publish(ReadinessState::Loading {
             component,
@@ -110,6 +146,7 @@ impl LoadGuard {
         Self {
             component,
             publish_ready_on_drop: true,
+            decrement_on_drop: true,
         }
     }
 
@@ -137,6 +174,9 @@ impl LoadGuard {
 
 impl Drop for LoadGuard {
     fn drop(&mut self) {
+        if !self.decrement_on_drop {
+            return;
+        }
         let prev = LOAD_COUNT.fetch_sub(1, Ordering::SeqCst);
         // `prev == 1` means we were the last in-flight load.  Only publish
         // `Ready` when the load completed successfully *and* no error state
@@ -156,6 +196,17 @@ impl Drop for LoadGuard {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    /// Test-only: forcibly clear the global readiness state and load
+    /// refcount so the next test observes an `Init` baseline.  This bypasses
+    /// the production `publish()` sticky-Error guard via direct
+    /// `send_replace`; production code paths must NEVER do this.
+    fn reset_state_for_tests() {
+        if let Some(tx) = TX.get() {
+            let _ = tx.send_replace(ReadinessState::Init);
+        }
+        LOAD_COUNT.store(0, Ordering::SeqCst);
+    }
 
     // The readiness channel is a process-global `OnceLock`; tests that
     // depend on the initial `Init` state must serialise to avoid observing
@@ -188,6 +239,7 @@ mod tests {
     #[test]
     fn readiness_publish_is_observable() {
         let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        reset_state_for_tests();
         let rx = install();
         publish(ReadinessState::Loading {
             component: "test-load",
@@ -236,6 +288,7 @@ mod tests {
     #[test]
     fn load_guard_publishes_loading_on_start() {
         let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        reset_state_for_tests();
         let rx = install();
         let _guard = LoadGuard::start("guard-test");
         let snap = rx.borrow().clone();
@@ -254,6 +307,7 @@ mod tests {
     #[test]
     fn load_guard_finish_error_is_sticky() {
         let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        reset_state_for_tests();
         let rx = install();
         {
             let guard = LoadGuard::start("sticky-error-test");
@@ -268,6 +322,38 @@ mod tests {
                 );
             }
             other => panic!("expected sticky Error(_) after finish_error+drop, got: {other:?}"),
+        }
+    }
+
+    /// Copilot review #3353355902: `Error(_)` is documented as terminal —
+    /// once published, no further state changes are observable.  This test
+    /// exercises the publish guard: after an `Error` is published, both
+    /// subsequent `publish(...)` calls and `LoadGuard::start` must be
+    /// no-ops with respect to the receiver.
+    #[test]
+    fn publish_after_error_is_sticky_no_op() {
+        let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let rx = install();
+        reset_state_for_tests();
+        publish(ReadinessState::Loading {
+            component: "pre-error",
+            percent: None,
+        });
+        publish(ReadinessState::Error("sticky-marker-x9z".to_string()));
+        // These must NOT overwrite the terminal Error state.
+        publish(ReadinessState::Ready);
+        publish(ReadinessState::Loading {
+            component: "post-error",
+            percent: Some(50),
+        });
+        let _ = LoadGuard::start("post-error-guard");
+        let snap = rx.borrow().clone();
+        match snap {
+            ReadinessState::Error(msg) => assert!(
+                msg.contains("sticky-marker-x9z"),
+                "expected error to retain 'sticky-marker-x9z', got: {msg}"
+            ),
+            other => panic!("expected sticky Error(_) after Error→*, got: {other:?}"),
         }
     }
 }
