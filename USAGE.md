@@ -33,6 +33,29 @@ It takes about ten minutes from start to finish.
 | [Offline / local STT](#optional-offline--local-speech-to-text-mode) | Run speech recognition locally |
 | [Offline quality evaluator](#offline-quality-evaluator-eval_session) | Score session logs without network access |
 
+## Use as a live interpreter
+
+Route translated speech into Zoom or Teams as a virtual microphone so peers
+hear an AI-generated translated voice.  For full details see
+[docs/12-virtual-mic-setup.md](docs/12-virtual-mic-setup.md).
+
+1. Install **VB-Audio Virtual Cable** from
+   [vb-audio.com](https://vb-audio.com/Cable/) and restart Windows when the
+   installer asks.
+2. Set `tts_routing = "virtual_mic"` and
+   `virtual_mic_device = "CABLE Input (VB-Audio Virtual Cable)"` in
+   `config.json`, or press **S** inside the app to open the settings editor and
+   change both fields there.
+3. Restart tui-translator and confirm the **READY** badge in the status bar.
+4. In Zoom or Teams, open your microphone settings and select
+   **CABLE Output (VB-Audio Virtual Cable)** as the microphone.
+5. Speak or play meeting audio — participants should now hear the translated
+   output.  Use the consent notice in
+   [docs/12-virtual-mic-setup.md](docs/12-virtual-mic-setup.md) to inform
+   participants before you enable this route.
+
+---
+
 ## What the screens look like
 
 ![First-run setup screen](docs/images/first-run-setup.svg)
