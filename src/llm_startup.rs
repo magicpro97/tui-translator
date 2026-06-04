@@ -275,7 +275,7 @@ pub(crate) fn run_startup_llm_model_check(
             Err(err) => {
                 writeln!(io::stdout(), "{}", format_prefetch_failure(&err)).ok();
                 tracing::warn!(
-                    error = format!("{err:#}").as_str(),
+                    error = ?err,
                     "LLM-MT-05: startup pre-fetch failed; lazy path will retry"
                 );
                 Ok(())
@@ -292,8 +292,7 @@ pub(crate) fn run_startup_llm_model_check(
 #[cfg(any(feature = "local-llm-mt", test))]
 pub(crate) fn format_prefetch_failure(err: &anyhow::Error) -> String {
     format!(
-        "[tui-translator] LLM model pre-fetch failed: {err:#}\n\
-         [tui-translator] Will retry when audio capture starts."
+        "[tui-translator] LLM model pre-fetch failed: {err:#}\n[tui-translator] Will retry when audio capture starts."
     )
 }
 
@@ -339,6 +338,14 @@ mod tests {
         assert!(
             rendered.contains("Will retry"),
             "retry hint missing from rendered message: {rendered}"
+        );
+        // Regression for Copilot review finding: the second line must start
+        // flush with `[tui-translator]`, not indented by the source-string
+        // continuation backslash. Reject any leading whitespace after the
+        // first newline.
+        assert!(
+            !rendered.contains("\n "),
+            "second line is indented; banner will look misaligned: {rendered:?}"
         );
     }
 }
