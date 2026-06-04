@@ -7,6 +7,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.16] — 2026-06-04
+
+### Fixed
+- TLS validation in corporate / MITM-proxy networks now reads the OS trust store
+  in addition to the bundled Mozilla CA roots. LLM model auto-download and
+  Google STT/Translate API calls no longer fail with `UnknownIssuer` when the
+  network uses TLS interception (#719).
+- LLM model pre-fetch failures now print the full anyhow source chain to stdout
+  so users can identify TLS / DNS / disk / permission causes without enabling
+  debug logging (#720).
+
+---
+
 ## [Unreleased]
 
 ### LLM-MT — LLM-based machine translation (issues #696, #697, #698, #699)
