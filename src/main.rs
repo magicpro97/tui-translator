@@ -82,7 +82,7 @@ pub mod updater;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
 use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices};
-use llm_startup::build_llm_mt_provider;
+use llm_startup::{build_llm_mt_provider, run_startup_llm_model_check};
 use local_model_cli::{
     parse_local_mt_model_install_args_from, parse_local_stt_model_prefetch_args_from,
     parse_model_verify_args_from, run_local_mt_model_install, run_local_stt_model_prefetch,
@@ -689,6 +689,15 @@ fn main() -> Result<()> {
             cfg.tts_enabled,
         ) {
             tracing::warn!(%err, "startup local model check failed — continuing without models");
+        }
+
+        // Bug #4: pre-fetch LLM model files before TUI starts so audio capture
+        // does not stall on a multi-hundred-MB download.  Bug #3: progress is
+        // printed to stdout while the regular terminal is still visible.
+        if let Err(err) =
+            run_startup_llm_model_check(&cfg.mt_provider, cfg.llm_model_path.as_deref())
+        {
+            tracing::warn!(%err, "startup LLM model check failed — continuing without model");
         }
     }
 
