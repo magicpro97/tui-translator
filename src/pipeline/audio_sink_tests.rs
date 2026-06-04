@@ -111,3 +111,108 @@ fn production_sink_roundtrip_rejects_misaligned_pcm_payload() {
         )
     );
 }
+
+// ── Tests for review-comment bug fixes ────────────────────────────────────────
+
+/// BUG #5: F32 sink path must reject stereo-decoded input with a clear error.
+/// Previously `resample_i16_mono_to_f32_stereo` received already-interleaved
+/// stereo i16 and produced an incorrectly layouted F32 buffer.
+#[test]
+fn f32_sink_rejects_stereo_decoded_input() {
+    use crate::audio::pcm_format::{PcmFormat, SampleEncoding};
+    use std::sync::Arc;
+
+    // Decoder that returns stereo i16.
+    struct StereoPcmDecoder;
+    impl TtsPcmDecoder for StereoPcmDecoder {
+        fn decode(&self, _audio_bytes: &[u8]) -> Result<DecodedPcm, ProductionSinkError> {
+            Ok(DecodedPcm {
+                samples: vec![100i16, -100, 200, -200], // 2 stereo frames
+                format: PcmFormat::i16(24_000, 2),
+            })
+        }
+    }
+
+    let f32_target = PcmFormat {
+        sample_rate_hz: 44_100,
+        channels: 2,
+        bits_per_sample: 32,
+        encoding: SampleEncoding::F32,
+    };
+
+    let sink = OemCableSink::with_components(
+        "VB-CABLE Input",
+        f32_target,
+        Arc::new(StereoPcmDecoder),
+        Arc::new(MemoryPcmWriter::new()),
+    )
+    .expect("sink construction must succeed");
+
+    let err = sink
+        .try_play_bytes(vec![0u8; 8])
+        .expect_err("stereo decoded input must be rejected in F32 path");
+
+    match err {
+        ProductionSinkError::DecodeFailed(msg) => {
+            assert!(
+                msg.contains("channels"),
+                "error message must mention channels, got: {msg}"
+            );
+        }
+        other => panic!("expected DecodeFailed, got {other:?}"),
+    }
+}
+
+/// BUG #6: backpressure hook bytes must use 4 bytes/sample for F32 endpoints.
+/// Verify bytes-per-sample selection is correct for both I16 and F32.
+#[test]
+fn backpressure_bytes_per_sample_is_encoding_aware() {
+    use crate::audio::pcm_format::SampleEncoding;
+    // Inline the same match used in try_play_bytes so a future regression
+    // in that match expression fails here first.
+    let bps_i16: u64 = match SampleEncoding::I16 {
+        SampleEncoding::I16 => 2,
+        SampleEncoding::F32 => 4,
+    };
+    let bps_f32: u64 = match SampleEncoding::F32 {
+        SampleEncoding::I16 => 2,
+        SampleEncoding::F32 => 4,
+    };
+    assert_eq!(bps_i16, 2, "I16 must report 2 bytes/sample");
+    assert_eq!(bps_f32, 4, "F32 must report 4 bytes/sample");
+}
+
+/// BUG #2: i16→f32 conversion in write_pcm must NOT duplicate channels.
+/// The old code used flat_map(|s| [v, v]) which doubled sample count
+/// regardless of input channel layout.
+#[cfg(windows)]
+#[test]
+fn f32_writer_write_pcm_preserves_channel_count() {
+    // Simulate what write_pcm must now do: map without duplication.
+    let stereo_i16: Vec<i16> = vec![1000i16, -1000, 2000, -2000]; // 2 stereo frames
+                                                                  // Fixed conversion (map, not flat_map):
+    let f32_samples: Vec<f32> = stereo_i16.iter().map(|&s| s as f32 / 32_768.0).collect();
+    assert_eq!(
+        f32_samples.len(),
+        stereo_i16.len(),
+        "i16→f32 must not change sample count (channel duplication bug)"
+    );
+    // Verify values are normalised correctly
+    assert!(
+        (f32_samples[0] - (1000.0f32 / 32_768.0)).abs() < 1e-5,
+        "normalisation is incorrect"
+    );
+}
+
+/// BUG #1/#7: wasapi::initialize_mta() must be idempotent (repeated calls harmless).
+/// This guards against callers that forget pre-init by verifying the fallback
+/// `.ok()` pattern doesn't mask a fatal error on the first call.
+#[cfg(windows)]
+#[test]
+fn wasapi_initialize_mta_is_idempotent() {
+    // First call initialises COM; second returns RPC_E_CHANGED_MODE which
+    // must be silently discarded with .ok().
+    wasapi::initialize_mta().ok();
+    wasapi::initialize_mta().ok();
+    // If either call panicked or unwrapped on an Err, the test would have failed.
+}

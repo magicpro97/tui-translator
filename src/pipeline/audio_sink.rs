@@ -216,6 +216,9 @@ impl OemCableSink {
         if trimmed.is_empty() {
             return Err(ProductionSinkError::EmptyDeviceName);
         }
+        // COM must be initialized before any WASAPI call on this thread.
+        // Repeated init returns RPC_E_CHANGED_MODE which is harmless; ignore it.
+        wasapi::initialize_mta().ok();
         use wasapi::{DeviceCollection, Direction};
         let collection = DeviceCollection::new(&Direction::Render)
             .map_err(|e| ProductionSinkError::WriteFailed(e.to_string()))?;
@@ -255,6 +258,12 @@ impl OemCableSink {
                 (s, count, rms)
             }
             SampleEncoding::F32 => {
+                if decoded.format.channels != 1 {
+                    return Err(ProductionSinkError::DecodeFailed(format!(
+                        "F32 render path currently requires mono decoded input, got {} channels",
+                        decoded.format.channels
+                    )));
+                }
                 let resampled = resample_i16_mono_to_f32_stereo(
                     &decoded.samples,
                     decoded.format.sample_rate_hz,
@@ -275,7 +284,12 @@ impl OemCableSink {
         // evidence captures virtual-mic starvation. No-op when no
         // telemetry sink is installed.
         crate::pipeline::backpressure_hook::sink_write(
-            summary.sample_count.saturating_mul(2),
+            summary
+                .sample_count
+                .saturating_mul(match self.target_format.encoding {
+                    SampleEncoding::I16 => 2,
+                    SampleEncoding::F32 => 4,
+                }),
             elapsed.as_nanos() as u64,
         );
         if summary.dropped_frames > 0 {

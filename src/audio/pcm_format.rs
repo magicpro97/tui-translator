@@ -275,13 +275,17 @@ pub fn convert_i16_pcm(
     Ok(output)
 }
 
-/// Root-mean-square energy of IEEE-float PCM, normalized to `[0.0, 1.0]`.
+/// Root-mean-square energy of IEEE-float PCM.
+///
+/// The return value is clamped to `[0.0, 1.0]`. Resampler ringing can produce
+/// samples with |value| > 1.0; without clamping the RMS would silently exceed
+/// 1.0 and violate callers that assume a normalized range.
 pub fn rms_f32(samples: &[f32]) -> f64 {
     if samples.is_empty() {
         return 0.0;
     }
     let sum_sq: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
-    (sum_sq / samples.len() as f64).sqrt()
+    (sum_sq / samples.len() as f64).sqrt().clamp(0.0, 1.0)
 }
 
 /// Convert a normalized `[-1.0, 1.0]` sample into signed 16-bit PCM.
@@ -317,6 +321,12 @@ pub fn resample_i16_mono_to_f32_stereo(
     use rubato::{
         Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
     };
+    if source_rate_hz == 0 {
+        return Err(PcmFormatError::InvalidSampleRate(source_rate_hz));
+    }
+    if target_rate_hz == 0 {
+        return Err(PcmFormatError::InvalidSampleRate(target_rate_hz));
+    }
     if samples.is_empty() {
         return Ok(Vec::new());
     }
@@ -372,10 +382,13 @@ pub fn resample_i16_mono_to_f32_stereo(
     Ok(stereo)
 }
 
-/// WasapiMixFormatProvider queries IAudioClient::GetMixFormat() directly.
+/// `WasapiMixFormatProvider` queries `IAudioClient::GetMixFormat()` directly.
 ///
-/// Returns the device native shared-mode mix format without going through CPAL,
-/// preserving the SubFormat GUID that distinguishes I16 from F32.
+/// Returns the device native shared-mode mix format without going through CPAL.
+/// Infers encoding from `bits_per_sample` (16 → I16, 32 → F32). The wasapi
+/// crate already resolves the `KSDATAFORMAT_SUBTYPE_IEEE_FLOAT` SubFormat into
+/// the bits-per-sample value that `get_waveformat()` returns, so no explicit
+/// SubFormat GUID inspection is required.
 #[cfg(windows)]
 pub struct WasapiMixFormatProvider {
     device: wasapi::Device,
@@ -465,123 +478,5 @@ fn clamp_f64_to_i16(value: f64) -> i16 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn negotiate_mock_device_format() {
-        let provider = MockDeviceFormatProvider::new(PcmFormat::i16(48_000, 2));
-
-        let negotiated = negotiate_device_format(&provider, TTS_PCM_24K_MONO)
-            .expect("mock device format should negotiate");
-
-        assert_eq!(negotiated.source, TTS_PCM_24K_MONO);
-        assert_eq!(negotiated.target, PcmFormat::i16(48_000, 2));
-    }
-
-    #[test]
-    fn negotiate_rejects_unsupported_bit_depth() {
-        let provider = MockDeviceFormatProvider::new(PcmFormat {
-            sample_rate_hz: 48_000,
-            channels: 2,
-            bits_per_sample: 24,
-            encoding: SampleEncoding::I16,
-        });
-
-        let err = negotiate_device_format(&provider, TTS_PCM_24K_MONO)
-            .expect_err("24-bit target is intentionally unsupported in B1");
-
-        assert_eq!(err, PcmFormatError::UnsupportedBitDepth(24));
-    }
-
-    #[test]
-    fn resample_tts_to_device_format() {
-        let source = TTS_PCM_24K_MONO;
-        let target_mono = PcmFormat::i16(48_000, 1);
-        let target_stereo = PcmFormat::i16(48_000, 2);
-        let samples = vec![0, 8_000, 16_000, 8_000, 0, -8_000, -16_000, -8_000];
-
-        let mono =
-            convert_i16_pcm(&samples, source, target_mono).expect("mono resample should pass");
-        let stereo =
-            convert_i16_pcm(&samples, source, target_stereo).expect("stereo resample should pass");
-
-        assert_eq!(mono.len(), samples.len() * 2);
-        assert_eq!(stereo.len(), samples.len() * 2 * 2);
-        assert!(rms_i16(&mono) > 0.20);
-        assert!(rms_i16(&stereo) > 0.20);
-        for frame in stereo.chunks_exact(2) {
-            assert_eq!(
-                frame[0], frame[1],
-                "mono-to-stereo conversion duplicates channels"
-            );
-        }
-    }
-
-    #[test]
-    fn pcm_conversion_clamps() {
-        assert_eq!(f32_to_i16_clamped(1.25), i16::MAX);
-        assert_eq!(f32_to_i16_clamped(-1.25), i16::MIN);
-        assert_eq!(f32_to_i16_clamped(0.0), 0);
-        assert!(rms_i16(&[i16::MIN, i16::MAX]) <= 1.0);
-
-        let source = PcmFormat::i16(24_000, 2);
-        let target = PcmFormat::i16(24_000, 1);
-        let samples = [i16::MAX, i16::MAX, i16::MIN, i16::MIN];
-        let converted = convert_i16_pcm(&samples, source, target)
-            .expect("stereo-to-mono near clipping should clamp safely");
-
-        assert_eq!(converted, vec![i16::MAX, i16::MIN]);
-    }
-
-    #[test]
-    fn downsample_short_non_empty_pcm_keeps_one_frame() {
-        let converted = convert_i16_pcm(
-            &[12_000],
-            PcmFormat::i16(48_000, 1),
-            PcmFormat::i16(8_000, 1),
-        )
-        .expect("short non-empty PCM should downsample to at least one frame");
-
-        assert_eq!(converted, vec![12_000]);
-    }
-
-    #[test]
-    fn rejects_misaligned_interleaved_pcm() {
-        let err = convert_i16_pcm(
-            &[1, 2, 3],
-            PcmFormat::i16(48_000, 2),
-            PcmFormat::i16(48_000, 2),
-        )
-        .expect_err("stereo input must contain an even sample count");
-
-        assert_eq!(
-            err,
-            PcmFormatError::InvalidInterleavedSampleCount {
-                sample_count: 3,
-                channels: 2
-            }
-        );
-    }
-
-    #[test]
-    fn vmic_b1_evidence_artifact_records_format_metadata() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("verification-evidence/vmic/VMIC-B1-format-negotiation.json");
-        let evidence = std::fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
-
-        for term in [
-            "\"issue\": \"#321\"",
-            "\"status\": \"pass\"",
-            "\"sample_rate_hz\": 24000",
-            "\"sample_rate_hz\": 48000",
-            "\"negotiate_device_format\"",
-            "\"CpalDeviceFormatProvider\"",
-            "\"convert_i16_pcm\"",
-            "\"pcm_conversion_clamps\"",
-        ] {
-            assert!(evidence.contains(term), "evidence must contain {term}");
-        }
-    }
-}
+#[path = "pcm_format_tests.rs"]
+mod tests;

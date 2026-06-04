@@ -26,18 +26,11 @@ impl OemCablePcmWriter for WasapiF32RenderPcmWriter {
         format: PcmFormat,
         samples: &[i16],
     ) -> Result<OemCableWriteSummary, ProductionSinkError> {
-        let f32_samples: Vec<f32> = samples
-            .iter()
-            .flat_map(|&s| {
-                let v = s as f32 / 32_768.0;
-                [v, v]
-            })
-            .collect();
-        self.write_f32_pcm(
-            device_name,
-            PcmFormat::f32_format(format.sample_rate_hz, 2),
-            &f32_samples,
-        )
+        // Convert i16 → f32 without changing channel count.
+        // The caller (try_play_bytes) guarantees the input is already in the
+        // correct channel layout; duplicating would produce wrong interleaving.
+        let f32_samples: Vec<f32> = samples.iter().map(|&s| s as f32 / 32_768.0).collect();
+        self.write_f32_pcm(device_name, format, &f32_samples)
     }
 
     fn write_f32_pcm(
@@ -48,6 +41,9 @@ impl OemCablePcmWriter for WasapiF32RenderPcmWriter {
     ) -> Result<OemCableWriteSummary, ProductionSinkError> {
         use std::collections::VecDeque;
         use wasapi::{calculate_period_100ns, DeviceCollection, Direction, ShareMode, WaveFormat};
+        // This method runs on the playback thread which may not have COM initialized.
+        // Repeated init returns RPC_E_CHANGED_MODE which is harmless; ignore it.
+        wasapi::initialize_mta().ok();
         let collection = DeviceCollection::new(&Direction::Render)
             .map_err(|e| ProductionSinkError::WriteFailed(e.to_string()))?;
         let device = collection

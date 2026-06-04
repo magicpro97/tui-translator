@@ -10,6 +10,7 @@
 #[path = "../src/audio/pcm_format.rs"]
 mod pcm_format;
 
+#[allow(unused_imports)]
 use pcm_format::{
     negotiate_device_format, resample_i16_mono_to_f32_stereo, DeviceFormatProvider,
     MockDeviceFormatProvider, PcmFormat, PcmFormatError, SampleEncoding, TTS_PCM_24K_MONO,
@@ -28,8 +29,8 @@ fn f32_44100_stereo() -> PcmFormat {
     }
 }
 
-/// Today this test FAILS with `PcmFormatError::UnsupportedBitDepth(32)`.
-/// After US-08, it must return `Ok`.
+/// After US-08 this test passes: F32 device format is accepted by negotiation and
+/// `resample_i16_mono_to_f32_stereo` correctly resamples TTS PCM to the device rate.
 #[test]
 fn f32_device_format_is_accepted_by_negotiation() {
     let provider = MockDeviceFormatProvider::new(f32_44100_stereo());
