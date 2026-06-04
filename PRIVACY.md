@@ -41,7 +41,7 @@ device:
 
 | Field | Storage | Sensitivity | Purpose |
 |-------|---------|-------------|---------|
-| `onboarding_completed_at` | `~/AppData/Roaming/tui-translator/config.json` | Non-PII timestamp (ISO 8601 UTC) | Suppress re-showing first-run wizard |
+| `onboarding_completed_at` | `%APPDATA%\tui-translator\config.json` | Non-PII timestamp (ISO 8601 UTC) | Suppress re-showing first-run wizard |
 
 ### Default mode (local-first)
 
