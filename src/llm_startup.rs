@@ -119,10 +119,15 @@ pub(crate) async fn build_llm_mt_provider(
 /// * all required model files are already cached on disk.
 ///
 /// When a download is required, a percentage line is printed to stdout every
-/// ~500 ms.  Errors are converted to warnings and returned — the caller logs
-/// them and lets the app continue (the lazy path in `build_llm_mt_provider`
-/// will retry).
-#[allow(unused_variables)]
+/// ~500 ms.  Download failures are intentionally logged as warnings and
+/// swallowed (the function still returns `Ok(())`) so that a transient
+/// network problem at launch does not block the app — the lazy path in
+/// `build_llm_mt_provider` retries on the first audio capture.
+///
+/// # Errors
+/// Returns an error only for genuinely fatal startup conditions (cache
+/// directory cannot be resolved, Tokio runtime cannot be built).  Network
+/// failures are reported via `tracing::warn!` and a stdout notice.
 pub(crate) fn run_startup_llm_model_check(
     mt_provider: &str,
     llm_model_path: Option<&str>,
@@ -202,14 +207,15 @@ pub(crate) fn run_startup_llm_model_check(
                 // sender is dropped.
                 let mut rx = progress_rx;
                 let progress_printer = tokio::spawn(async move {
+                    let mut stdout = io::stdout();
                     let mut last_label = String::new();
                     let mut last_pct: i32 = -1;
                     loop {
                         {
                             let snapshot = rx.borrow_and_update().clone();
                             if snapshot.complete {
-                                println!("[tui-translator] LLM model ready.");
-                                let _ = io::stdout().flush();
+                                writeln!(stdout, "[tui-translator] LLM model ready.").ok();
+                                stdout.flush().ok();
                                 break;
                             }
                             if !snapshot.file_label.is_empty() && snapshot.total_bytes > 0 {
@@ -221,11 +227,13 @@ pub(crate) fn run_startup_llm_model_check(
                                 if snapshot.file_label != last_label || pct != last_pct {
                                     let mb_done = snapshot.bytes_received / 1_048_576;
                                     let mb_total = snapshot.total_bytes / 1_048_576;
-                                    println!(
-                                    "[tui-translator] {}  {pct:>3}%  ({mb_done} / {mb_total} MB)",
-                                    snapshot.file_label,
-                                );
-                                    let _ = io::stdout().flush();
+                                    writeln!(
+                                        stdout,
+                                        "[tui-translator] {}  {pct:>3}%  ({mb_done} / {mb_total} MB)",
+                                        snapshot.file_label,
+                                    )
+                                    .ok();
+                                    stdout.flush().ok();
                                     last_label = snapshot.file_label.clone();
                                     last_pct = pct;
                                 }
@@ -246,7 +254,8 @@ pub(crate) fn run_startup_llm_model_check(
                     }
                 });
 
-                let download_result = ensure_model_available(&model_dir, entry, &progress_tx).await;
+                let download_result =
+                    ensure_model_available(&model_dir, entry, &progress_tx).await;
                 // Drop sender so the printer exits even on error paths.
                 drop(progress_tx);
                 let _ = progress_printer.await;
