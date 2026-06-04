@@ -155,6 +155,7 @@ impl Drop for LoadGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     // The readiness channel is a process-global `OnceLock`; tests that
     // depend on the initial `Init` state must serialise to avoid observing
@@ -162,6 +163,12 @@ mod tests {
     // `OnceLock` between tests, the assertions below operate purely on
     // the *publish/subscribe* surface — they tolerate prior state and
     // verify ordering relative to local actions.
+    //
+    // Tests that assert on a specific terminal state (e.g. the sticky
+    // `Error` invariant) acquire `STATE_LOCK` so that no other test in
+    // this module can race a `publish(...)` call between the assertion's
+    // setup and `rx.borrow()`.
+    static STATE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn readiness_install_returns_initial_state() {
@@ -180,6 +187,7 @@ mod tests {
 
     #[test]
     fn readiness_publish_is_observable() {
+        let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let rx = install();
         publish(ReadinessState::Loading {
             component: "test-load",
@@ -215,6 +223,7 @@ mod tests {
 
     #[test]
     fn readiness_publish_without_install_is_safe() {
+        let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Even if the global channel hasn't been installed by a prior test,
         // publishing must not panic.  (After other tests run in the same
         // process the channel IS installed; either way this must succeed.)
@@ -226,11 +235,39 @@ mod tests {
 
     #[test]
     fn load_guard_publishes_loading_on_start() {
+        let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let rx = install();
         let _guard = LoadGuard::start("guard-test");
         let snap = rx.borrow().clone();
         assert!(
             matches!(snap, ReadinessState::Loading { component, .. } if component == "guard-test")
         );
+    }
+
+    /// Binds the council "errors are sticky" invariant: after a
+    /// `LoadGuard::start("x"); guard.finish_error("boom");` sequence, the
+    /// subscribed receiver MUST observe `ReadinessState::Error(_)` rather
+    /// than the `Ready` value that `Drop` would otherwise republish.  This
+    /// guards #716's production contract — the slot A/B build sites in
+    /// `main.rs` rely on `finish_error` to keep the badge red when an
+    /// LLM-MT load fails.
+    #[test]
+    fn load_guard_finish_error_is_sticky() {
+        let _serial = STATE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let rx = install();
+        {
+            let guard = LoadGuard::start("sticky-error-test");
+            guard.finish_error("boom-test-marker");
+        }
+        let snap = rx.borrow().clone();
+        match snap {
+            ReadinessState::Error(msg) => {
+                assert!(
+                    msg.contains("boom-test-marker"),
+                    "expected error payload to contain 'boom-test-marker', got: {msg}"
+                );
+            }
+            other => panic!("expected sticky Error(_) after finish_error+drop, got: {other:?}"),
+        }
     }
 }
