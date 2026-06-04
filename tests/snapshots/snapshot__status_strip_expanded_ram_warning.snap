@@ -3,7 +3,7 @@ source: tests/snapshot.rs
 expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
-│● STT: local   TTS: off   Route: Speakers                                     │
+│[READY] ● STT: local   TTS: off   Route: Speakers                             │
 │MT: idle                                                                      │
 │Target: vi   Pairs: 10   Cost: ~$0.024                                        │
 │Elapsed: 1:00                                                                 │

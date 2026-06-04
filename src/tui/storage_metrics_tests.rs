@@ -49,6 +49,7 @@ fn render_expanded_storage_strip(
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: crate::readiness::ReadinessState::Ready,
     };
     let backend = TestBackend::new(120, 11);
     let mut terminal = Terminal::new(backend)?;

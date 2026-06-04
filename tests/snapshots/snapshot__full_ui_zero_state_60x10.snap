@@ -1,6 +1,5 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1516
 expression: rendered
 ---
 ┌──────────────────────────────────────────────────────────┐
@@ -10,6 +9,6 @@ expression: rendered
 │                            0%                            │
 └──────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────┐
-│ I/L | Lang:vi | TTS:off/spk | 0p | no charges | 0:00     │
+│[READY]  I/L | Lang:vi | TTS:off/spk | 0p | no charges | 0│
 └──────────────────────────────────────────────────────────┘
  ?  Spc  T  L  S  M  R  Tab  Q

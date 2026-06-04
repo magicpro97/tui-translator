@@ -65,6 +65,7 @@ mod metrics;
 mod metrics_export;
 mod pipeline;
 mod providers;
+mod readiness;
 mod runtime_providers;
 #[cfg(test)]
 mod runtime_providers_tests;
@@ -479,6 +480,11 @@ fn main() -> Result<()> {
 
     init_tracing();
 
+    // #716: install the readiness channel as early as possible so every
+    // subsequent publisher (model pre-fetch, post-TUI loads) and the TUI
+    // subscriber see the same `OnceLock<watch::Sender<ReadinessState>>`.
+    let _readiness_rx = readiness::install();
+
     // Bug #5: route whisper.cpp native logs (e.g. "whisper_init_state: kv pad size = 2.36 MB")
     // through the `tracing` crate instead of letting them print directly to stderr,
     // where they would corrupt the ratatui display. The `whisper-cpp-tracing` feature
@@ -682,6 +688,15 @@ fn main() -> Result<()> {
     // providers are already configured as "local" (i.e. not during first-run
     // onboarding, where the user hasn't chosen their provider yet).
     if !onboarding_required && !config_recovery_required && !skip_interactive_startup {
+        // #716: publish a single aggregate `Loading{"startup-models"}` covering
+        // both pre-fetch calls below.  On success the guard drops at the end
+        // of this block (transitioning to `Ready` if no other guards are
+        // outstanding); on failure we call `finish_error` so the badge
+        // sticks at `[ERROR]` rather than flipping to `[READY]`.  The post-
+        // TUI provider construction further down installs its own
+        // `LoadGuard`s.
+        let prefetch_guard = readiness::LoadGuard::start("startup-models");
+        let mut prefetch_error: Option<String> = None;
         if let Err(err) = run_startup_local_model_check(
             &cfg.stt_provider,
             &cfg.mt_provider,
@@ -689,6 +704,7 @@ fn main() -> Result<()> {
             cfg.tts_enabled,
         ) {
             tracing::warn!(%err, "startup local model check failed — continuing without models");
+            prefetch_error = Some(format!("startup-models: {err}"));
         }
 
         // Bug #4: pre-fetch LLM model files before TUI starts so audio capture
@@ -698,6 +714,14 @@ fn main() -> Result<()> {
             run_startup_llm_model_check(&cfg.mt_provider, cfg.llm_model_path.as_deref())
         {
             tracing::warn!(%err, "startup LLM model check failed — continuing without model");
+            if prefetch_error.is_none() {
+                prefetch_error = Some(format!("startup-models: {err}"));
+            }
+        }
+        if let Some(msg) = prefetch_error {
+            prefetch_guard.finish_error(msg);
+        } else {
+            drop(prefetch_guard);
         }
     }
 
@@ -1173,12 +1197,14 @@ fn main() -> Result<()> {
                 // the reporter but shares the same runtime trait.
                 // LLM-MT-05 (#700): "llm" requires async load/download — use rt.block_on.
                 let mt_provider = if slot_a_cfg.mt_provider == "llm" {
+                    let llm_load_guard = readiness::LoadGuard::start("llm-mt-slot-a");
                     match rt.block_on(build_llm_mt_provider(
                         cfg_snapshot.llm_model_path.as_deref(),
                         None,
                     )) {
                         Ok(p) => p,
                         Err(err) => {
+                            llm_load_guard.finish_error(format!("llm-mt-slot-a: {err}"));
                             tracing::error!("failed to create LLM MT provider: {err}");
                             let provider_msg = format!("Machine translation unavailable: {err}");
                             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
@@ -1501,10 +1527,15 @@ fn main() -> Result<()> {
                             Arc::clone(&slot_b_state.stt_source),
                         );
                         let mt_b = if slot_b_cfg.mt_provider == "llm" {
-                            rt.block_on(build_llm_mt_provider(
+                            let llm_load_guard_b = readiness::LoadGuard::start("llm-mt-slot-b");
+                            let result = rt.block_on(build_llm_mt_provider(
                                 cfg_snapshot.llm_model_path.as_deref(),
                                 None,
-                            ))
+                            ));
+                            if let Err(err) = &result {
+                                llm_load_guard_b.finish_error(format!("llm-mt-slot-b: {err}"));
+                            }
+                            result
                         } else {
                             build_slot_mt_provider(
                                 &slot_b_cfg.mt_provider,
@@ -2944,7 +2975,29 @@ fn runtime_provider_error(cfg: &config::AppConfig) -> Option<String> {
         "local" => {
             unsupported.push("mt_provider=\"local\" (requires a local-mt build)".to_string())
         }
+        #[cfg(feature = "local-llm-mt")]
+        "llm" => {}
+        #[cfg(not(feature = "local-llm-mt"))]
+        "llm" => {
+            unsupported.push("mt_provider=\"llm\" (requires a local-llm-mt build)".to_string())
+        }
         _ => unsupported.push(format!("mt_provider={:?}", slot_a_cfg.mt_provider)),
+    }
+    if let Some(slot_b_cfg) = cfg.slot_b() {
+        match slot_b_cfg.mt_provider.as_str() {
+            "google" => {}
+            #[cfg(feature = "local-mt")]
+            "local" => {}
+            #[cfg(not(feature = "local-mt"))]
+            "local" => unsupported
+                .push("slot B mt_provider=\"local\" (requires a local-mt build)".to_string()),
+            #[cfg(feature = "local-llm-mt")]
+            "llm" => {}
+            #[cfg(not(feature = "local-llm-mt"))]
+            "llm" => unsupported
+                .push("slot B mt_provider=\"llm\" (requires a local-llm-mt build)".to_string()),
+            _ => unsupported.push(format!("slot B mt_provider={:?}", slot_b_cfg.mt_provider)),
+        }
     }
 
     if unsupported.is_empty() {
@@ -5004,6 +5057,120 @@ mod tests {
         cfg.mt_provider = "local".to_string();
 
         assert!(runtime_provider_error(&cfg).is_none());
+    }
+
+    #[cfg(feature = "local-llm-mt")]
+    #[test]
+    fn runtime_provider_error_allows_llm_mt_with_feature() {
+        // #714: "llm" must be accepted in builds that compile in local-llm-mt.
+        let mut cfg = config::AppConfig::default();
+        cfg.mt_provider = "llm".to_string();
+        assert!(
+            runtime_provider_error(&cfg).is_none(),
+            "mt_provider=\"llm\" must be accepted in local-llm-mt builds"
+        );
+    }
+
+    #[cfg(not(feature = "local-llm-mt"))]
+    #[test]
+    fn runtime_provider_error_rejects_llm_mt_without_feature() {
+        // #714: a build without local-llm-mt must name the feature flag in the
+        // error message so the operator knows how to recover.
+        let mut cfg = config::AppConfig::default();
+        cfg.mt_provider = "llm".to_string();
+        let msg = runtime_provider_error(&cfg)
+            .expect("llm MT should require the local-llm-mt feature in default builds");
+        assert!(msg.contains("mt_provider=\"llm\""), "got: {msg}");
+        assert!(
+            msg.contains("local-llm-mt"),
+            "error must name the feature flag, got: {msg}"
+        );
+        assert!(msg.contains("google"), "got: {msg}");
+    }
+
+    #[test]
+    fn runtime_provider_error_rejects_truly_unknown_mt_provider() {
+        // Regression guard: the fix for #714 must not silently accept unknown
+        // provider strings via an over-broad wildcard arm.
+        let mut cfg = config::AppConfig::default();
+        cfg.mt_provider = "ollama-future-arm".to_string();
+        let msg = runtime_provider_error(&cfg).expect("unknown provider must still be reported");
+        assert!(msg.contains("ollama-future-arm"), "got: {msg}");
+    }
+
+    #[test]
+    fn mt_provider_choices_all_validate() {
+        // #714 regression harness: every value the UI offers in
+        // `MT_PROVIDER_CHOICES` must either validate cleanly or produce a
+        // helpful, feature-flag-naming error so the editor picker never drifts
+        // from the validator.
+        for choice in tui::MT_PROVIDER_CHOICES {
+            let mut cfg = config::AppConfig::default();
+            cfg.stt_provider = "google".to_string();
+            cfg.mt_provider = choice.to_string();
+            let res = runtime_provider_error(&cfg);
+            match choice {
+                "google" => assert!(
+                    res.is_none(),
+                    "mt_provider=\"google\" must always validate; got: {res:?}"
+                ),
+                "local" => {
+                    if cfg!(feature = "local-mt") {
+                        assert!(
+                            res.is_none(),
+                            "mt_provider=\"local\" must validate when local-mt is on; got: {res:?}"
+                        );
+                    } else {
+                        let msg = res.expect("expected error for local without feature");
+                        assert!(msg.contains("local-mt"), "msg should name local-mt: {msg}");
+                    }
+                }
+                "llm" => {
+                    if cfg!(feature = "local-llm-mt") {
+                        assert!(
+                            res.is_none(),
+                            "mt_provider=\"llm\" must validate when local-llm-mt is on; got: {res:?}"
+                        );
+                    } else {
+                        let msg = res.expect("expected error for llm without feature");
+                        assert!(
+                            msg.contains("local-llm-mt"),
+                            "msg should name local-llm-mt: {msg}"
+                        );
+                    }
+                }
+                other => panic!("unexpected MT_PROVIDER_CHOICES entry: {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn stt_provider_choices_all_validate() {
+        // Symmetric regression guard for STT picker / validator parity.
+        for choice in tui::STT_PROVIDER_CHOICES {
+            let mut cfg = config::AppConfig::default();
+            cfg.stt_provider = choice.to_string();
+            cfg.mt_provider = "google".to_string();
+            let res = runtime_provider_error(&cfg);
+            match choice {
+                "google" => assert!(res.is_none(), "google STT must validate; got: {res:?}"),
+                "local" => {
+                    if cfg!(feature = "local-stt") {
+                        assert!(
+                            res.is_none(),
+                            "stt_provider=\"local\" must validate when local-stt is on; got: {res:?}"
+                        );
+                    } else {
+                        let msg = res.expect("expected error for local without feature");
+                        assert!(
+                            msg.contains("local-stt"),
+                            "msg should name local-stt: {msg}"
+                        );
+                    }
+                }
+                other => panic!("unexpected STT_PROVIDER_CHOICES entry: {other}"),
+            }
+        }
     }
 
     #[test]

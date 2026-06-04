@@ -3,7 +3,7 @@ source: tests/snapshot.rs
 expression: "render_strip(&strip, 80, height)"
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────┐
-│● STT: local   TTS: on   Route: Speakers                                      │
+│[READY] ● STT: local   TTS: on   Route: Speakers                              │
 │MT: idle                                                                      │
 │Target: vi   Pairs: 20   Cost: ~$0.750                                        │
 │Elapsed: 5:00                                                                 │
