@@ -186,3 +186,110 @@ fn config_editor_cycle_active_field_dispatches_to_capture_device_when_active() {
     editor.cycle_active_field();
     assert_eq!(editor.capture_device, "Speakers (Realtek Audio)");
 }
+
+/// Mock output devices that mirror what `list_output_devices()` would return on a
+/// machine with VB-CABLE installed.  Tests inject these directly via
+/// [`ConfigEditorState::set_virtual_mic_device_options`] so no real audio
+/// hardware is required.
+const MOCK_OUTPUT_DEVICES: [&str; 2] =
+    ["CABLE Input (VB-Audio Virtual Cable)", "Speakers (Realtek)"];
+
+#[test]
+fn config_editor_cycles_virtual_mic_device_forward() {
+    let mut editor = ConfigEditorState::from_config(
+        &AppConfig::default(),
+        Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Settings,
+    );
+    editor.set_virtual_mic_device_options(
+        MOCK_OUTPUT_DEVICES.iter().map(|s| s.to_string()).collect(),
+    );
+    editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+
+    // First advance: empty → first device.
+    editor.cycle_active_field();
+    assert_eq!(
+        editor.virtual_mic_device,
+        "CABLE Input (VB-Audio Virtual Cable)"
+    );
+
+    // Second advance: first → second device.
+    editor.cycle_active_field();
+    assert_eq!(editor.virtual_mic_device, "Speakers (Realtek)");
+
+    // Third advance: wraps back to first device.
+    editor.cycle_active_field();
+    assert_eq!(
+        editor.virtual_mic_device,
+        "CABLE Input (VB-Audio Virtual Cable)"
+    );
+}
+
+#[test]
+fn config_editor_cycles_virtual_mic_device_prev() {
+    let mut editor = ConfigEditorState::from_config(
+        &AppConfig::default(),
+        Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Settings,
+    );
+    editor.set_virtual_mic_device_options(
+        MOCK_OUTPUT_DEVICES.iter().map(|s| s.to_string()).collect(),
+    );
+    editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+
+    // Land on the first device first.
+    editor.cycle_virtual_mic_device();
+    assert_eq!(
+        editor.virtual_mic_device,
+        "CABLE Input (VB-Audio Virtual Cable)"
+    );
+
+    // Stepping backwards from the first wraps to the last.
+    editor.cycle_virtual_mic_device_prev();
+    assert_eq!(editor.virtual_mic_device, "Speakers (Realtek)");
+
+    // One more backwards step goes from second to first.
+    editor.cycle_virtual_mic_device_prev();
+    assert_eq!(
+        editor.virtual_mic_device,
+        "CABLE Input (VB-Audio Virtual Cable)"
+    );
+}
+
+#[test]
+fn config_editor_virtual_mic_device_empty_options_shows_status() {
+    let mut editor = ConfigEditorState::from_config(
+        &AppConfig::default(),
+        Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Settings,
+    );
+    // No options injected — simulates a machine without a virtual audio cable.
+    editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+
+    editor.cycle_active_field();
+
+    let msg = editor.status_message.as_deref().unwrap_or("");
+    assert!(
+        msg.contains("virtual") || msg.contains("VB-CABLE") || msg.contains("Voicemeeter"),
+        "cycling with no output device options should surface a helpful install hint, got: {msg:?}"
+    );
+    // The field value must remain empty / unchanged.
+    assert!(editor.virtual_mic_device.is_empty());
+}
+
+#[test]
+fn config_editor_cycle_active_field_dispatches_to_virtual_mic_when_active() {
+    let mut editor = ConfigEditorState::from_config(
+        &AppConfig::default(),
+        Path::new(r"C:\Users\demo\.tui-translator\config.json"),
+        ConfigEditorMode::Settings,
+    );
+    editor.set_virtual_mic_device_options(vec!["CABLE Input (VB-Audio Virtual Cable)".to_string()]);
+    editor.selected_field = ConfigEditorField::VirtualMicDevice.index();
+
+    editor.cycle_active_field();
+    assert_eq!(
+        editor.virtual_mic_device,
+        "CABLE Input (VB-Audio Virtual Cable)"
+    );
+}

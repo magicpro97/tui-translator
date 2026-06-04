@@ -566,3 +566,7 @@ pub fn capture_device_default_label() -> &'static str {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+
+mod output_devices;
+#[allow(unused_imports)]
+pub use output_devices::list_output_devices;
