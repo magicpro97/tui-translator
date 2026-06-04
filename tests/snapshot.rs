@@ -27,6 +27,9 @@ mod i18n;
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
+#[path = "../src/readiness.rs"]
+mod readiness;
+
 use metrics::{MtState, SttSource, SttState};
 use ratatui::{backend::TestBackend, Terminal};
 use tui::{
@@ -129,6 +132,11 @@ fn render_full_ui(width: u16, height: u16) -> String {
 }
 
 fn render_full_ui_with_state(state: &AppState, width: u16, height: u16) -> String {
+    // #716: deterministic readiness for snapshots — readiness is a
+    // process-global OnceLock; ensure full-UI snapshots always render the
+    // [READY] badge regardless of test ordering.
+    let _ = readiness::install();
+    readiness::publish(readiness::ReadinessState::Ready);
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -349,6 +357,7 @@ fn snapshot_status_strip_compact_idle() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!("status_strip_compact_idle", render_strip(&strip, 120, 3));
 }
@@ -392,6 +401,7 @@ fn snapshot_status_strip_compact_listening_tts_on() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!(
         "status_strip_compact_listening_tts_on",
@@ -438,6 +448,7 @@ fn snapshot_status_strip_compact_restart_notice() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!(
         "status_strip_compact_restart_notice",
@@ -486,6 +497,7 @@ fn snapshot_status_strip_compact_sending() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!("status_strip_compact_sending", render_strip(&strip, 120, 3));
 }
@@ -529,6 +541,7 @@ fn snapshot_status_strip_compact_waiting() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!("status_strip_compact_waiting", render_strip(&strip, 120, 3));
 }
@@ -572,6 +585,7 @@ fn snapshot_status_strip_compact_error() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!("status_strip_compact_error", render_strip(&strip, 120, 3));
 }
@@ -617,6 +631,7 @@ fn snapshot_status_strip_expanded_idle() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 80, 10);
     assert!(
@@ -665,6 +680,7 @@ fn snapshot_status_strip_expanded_listening() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 80, 10);
     assert!(
@@ -715,11 +731,12 @@ fn snapshot_status_strip_expanded_with_warning() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
-    let height = strip.expanded_height();
+    let height = strip.expanded_height(120);
     assert_eq!(
         height, 11,
-        "expanded_height() must be 11 when over_threshold; got {height}"
+        "expanded_height(120) must be 11 when over_threshold; got {height}"
     );
     insta::assert_snapshot!(
         "status_strip_expanded_with_warning",
@@ -769,6 +786,7 @@ fn snapshot_status_strip_narrow_abbreviated() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!(
         "status_strip_narrow_abbreviated",
@@ -816,6 +834,7 @@ fn snapshot_status_strip_wide_full_labels() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!(
         "status_strip_wide_full_labels",
@@ -1006,6 +1025,7 @@ fn stt_error_state_label_contains_message() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1054,6 +1074,7 @@ fn narrow_strip_uses_abbreviated_labels() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let narrow = render_strip(&strip, 60, 3);
     let wide = render_strip(&strip, 120, 3);
@@ -1073,7 +1094,7 @@ fn narrow_strip_uses_abbreviated_labels() {
 /// when `cost_usd` exceeds `cost_warning_usd` (issue #74).
 ///
 /// Verifies:
-/// 1. `expanded_height()` returns 11 (not 10) when over threshold (JV-14 adds
+/// 1. `expanded_height(120)` returns 11 (not 10) when over threshold (JV-14 adds
 ///    the MT state row, LF-02 adds local-runtime, SM-02 adds storage row).
 /// 2. `expanded_metrics_height(true, true)` matches that value.
 /// 3. The rendered text at 11 rows contains the warning.
@@ -1118,13 +1139,14 @@ fn expanded_warning_renders_when_over_threshold() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
 
     // Height accounting must be 11 when warning is active.
     assert_eq!(
-        strip.expanded_height(),
+        strip.expanded_height(120),
         11,
-        "expanded_height() must return 11 when cost exceeds threshold"
+        "expanded_height(120) must return 11 when cost exceeds threshold"
     );
     assert_eq!(
         expanded_metrics_height(true, true),
@@ -1201,6 +1223,7 @@ fn snapshot_status_strip_zero_state_narrow() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     insta::assert_snapshot!(
         "status_strip_zero_state_narrow",
@@ -1248,6 +1271,7 @@ fn snapshot_status_strip_zero_state_expanded() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 80, 10);
     assert!(
@@ -1342,6 +1366,7 @@ fn narrow_compact_strip_uses_lang_label() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1394,6 +1419,7 @@ fn narrow_compact_strip_uses_tts_label() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 60, 3);
     assert!(
@@ -1446,6 +1472,7 @@ fn compact_restart_notice_is_spelled_out() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -1498,6 +1525,7 @@ fn snapshot_status_strip_very_narrow_30cols() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 30, 3);
     // Must not be empty and must render borders at minimum.
@@ -1732,6 +1760,7 @@ fn expanded_metrics_narrow_uses_lang_label() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 60, 9);
     assert!(
@@ -2062,6 +2091,7 @@ fn snapshot_status_strip_compact_ram_warning() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -2120,11 +2150,12 @@ fn snapshot_status_strip_expanded_ram_warning() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
-    let height = strip.expanded_height();
+    let height = strip.expanded_height(120);
     assert_eq!(
         height, 11,
-        "expanded_height() must be 11 when ram_warning is true; got {height}"
+        "expanded_height(120) must be 11 when ram_warning is true; got {height}"
     );
     let rendered = render_strip(&strip, 80, height);
     assert!(
@@ -2179,9 +2210,10 @@ fn expanded_metrics_combines_cost_and_ram_warnings() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
-    assert_eq!(strip.expanded_height(), 11);
-    let rendered = render_strip(&strip, 120, strip.expanded_height());
+    assert_eq!(strip.expanded_height(120), 11);
+    let rendered = render_strip(&strip, 120, strip.expanded_height(120));
     assert!(
         rendered.contains("Cost warning") && rendered.contains("RAM warning"),
         "expanded warning row must include both cost and RAM warnings; got:\n{rendered}"
@@ -2228,11 +2260,12 @@ fn expanded_metrics_height_is_9_without_any_warning() {
         slot_b_tts_status: None,
         config_apply_status: None,
         config_apply_count: 0,
+        readiness: readiness::ReadinessState::Ready,
     };
     assert_eq!(
-        strip.expanded_height(),
+        strip.expanded_height(120),
         10,
-        "no warnings -> expanded_height() must be 10"
+        "no warnings -> expanded_height(120) must be 10"
     );
 }
 
@@ -2279,6 +2312,7 @@ fn snapshot_config_apply_status_ok_compact() {
             reason: "settings reloaded".to_string(),
         }),
         config_apply_count: 1,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 120, 3);
     assert!(
@@ -2329,8 +2363,9 @@ fn snapshot_config_apply_status_rolled_back_compact() {
             reason: "unsupported provider value".to_string(),
         }),
         config_apply_count: 2,
+        readiness: readiness::ReadinessState::Ready,
     };
-    let rendered = render_strip(&strip, 120, 3);
+    let rendered = render_strip(&strip, 140, 3);
     assert!(
         rendered.contains("rolled back"),
         "rolled back status missing from compact strip: {rendered:?}"
@@ -2379,8 +2414,9 @@ fn snapshot_config_apply_status_restart_required_compact() {
             reason: "stt_provider changed".to_string(),
         }),
         config_apply_count: 3,
+        readiness: readiness::ReadinessState::Ready,
     };
-    let rendered = render_strip(&strip, 120, 3);
+    let rendered = render_strip(&strip, 140, 3);
     assert!(
         rendered.contains("restart required"),
         "restart required status missing from compact strip: {rendered:?}"
@@ -2429,6 +2465,7 @@ fn snapshot_config_apply_status_restart_required_expanded_metrics_row() {
             reason: "stt_provider changed".to_string(),
         }),
         config_apply_count: 3,
+        readiness: readiness::ReadinessState::Ready,
     };
     let rendered = render_strip(&strip, 120, 10);
     assert!(
