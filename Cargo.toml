@@ -64,6 +64,9 @@ name = "qa8_slo_gate_checker"
 path = "src/bin/qa8_slo_gate_checker.rs"
 
 [dependencies]
+# Audio resampling: TTS 24 kHz mono → device native rate (used on all platforms)
+rubato = "0.15"
+
 # Terminal user interface
 ratatui = "0.30"
 crossterm = "0.29"
@@ -198,7 +201,6 @@ hw-smoke = []
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)
-rubato = "0.15"
 wasapi = "0.14"
 # Audio playback — TTS output via system default audio device (Windows only)
 rodio = "0.17"
@@ -208,8 +210,6 @@ windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_F
 [target.'cfg(target_os = "macos")'.dependencies]
 # CoreAudio loopback capture via BlackHole virtual device (macOS only)
 cpal = "0.15"
-# Audio resampling: native sample rate → 16 kHz mono (mirrors Windows rubato usage)
-rubato = "0.15"
 # ScreenCaptureKit audio capture — zero-install system-audio loopback (macOS 13.0+).
 # The macos_13_0 feature enables with_captures_audio / with_sample_rate / with_channel_count
 # and SCStreamOutputType::Audio. MACOS-10 (issue #641).
