@@ -26,8 +26,11 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::pcm_format::{
-    convert_i16_pcm, rms_i16 as pcm_rms_i16, PcmFormat, PcmFormatError, TTS_PCM_24K_MONO,
+    convert_i16_pcm, resample_i16_mono_to_f32_stereo, rms_f32 as pcm_rms_f32,
+    rms_i16 as pcm_rms_i16, PcmFormat, PcmFormatError, SampleEncoding, TTS_PCM_24K_MONO,
 };
+#[cfg(windows)]
+use crate::audio::pcm_format::{negotiate_device_format, NegotiatedPcmFormat};
 
 // ── Trait ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +83,27 @@ pub trait OemCablePcmWriter: Send + Sync + 'static {
         format: PcmFormat,
         samples: &[i16],
     ) -> Result<OemCableWriteSummary, ProductionSinkError>;
+
+    /// Write IEEE-float 32-bit PCM to the render endpoint.
+    ///
+    /// Default implementation converts f32 → i16 and delegates to
+    /// `write_pcm` so existing I16 writers remain compatible.
+    /// Override in `WasapiF32RenderPcmWriter` (Windows-only, see
+    /// `audio_sink_f32.rs`) for native F32 render.
+    fn write_f32_pcm(
+        &self,
+        device_name: &str,
+        format: PcmFormat,
+        samples: &[f32],
+    ) -> Result<OemCableWriteSummary, ProductionSinkError> {
+        use crate::audio::pcm_format::f32_to_i16_clamped;
+        let i16_samples: Vec<i16> = samples.iter().copied().map(f32_to_i16_clamped).collect();
+        self.write_pcm(
+            device_name,
+            PcmFormat::i16(format.sample_rate_hz, format.channels),
+            &i16_samples,
+        )
+    }
 }
 
 /// Failure modes surfaced by the production virtual-cable sink.
@@ -162,7 +186,20 @@ impl OemCableSink {
         if trimmed.is_empty() {
             return Err(ProductionSinkError::EmptyDeviceName);
         }
-        convert_i16_pcm(&[], TTS_PCM_24K_MONO, target_format)?;
+        // Validate that source → target format conversion is feasible.
+        // For I16 targets: dry-run convert_i16_pcm. For F32: dry-run resample.
+        match target_format.encoding {
+            SampleEncoding::I16 => {
+                convert_i16_pcm(&[], TTS_PCM_24K_MONO, target_format)?;
+            }
+            SampleEncoding::F32 => {
+                resample_i16_mono_to_f32_stereo(
+                    &[],
+                    TTS_PCM_24K_MONO.sample_rate_hz,
+                    target_format.sample_rate_hz,
+                )?;
+            }
+        }
         Ok(Self {
             device_name: trimmed.to_string(),
             target_format,
@@ -179,16 +216,23 @@ impl OemCableSink {
         if trimmed.is_empty() {
             return Err(ProductionSinkError::EmptyDeviceName);
         }
-        let device =
-            find_output_device_by_name(trimmed).map_err(ProductionSinkError::WriteFailed)?;
-        let provider = crate::audio::pcm_format::CpalDeviceFormatProvider::new(device);
-        let negotiated =
-            crate::audio::pcm_format::negotiate_device_format(&provider, TTS_PCM_24K_MONO)?;
+        use wasapi::{DeviceCollection, Direction};
+        let collection = DeviceCollection::new(&Direction::Render)
+            .map_err(|e| ProductionSinkError::WriteFailed(e.to_string()))?;
+        let wasapi_device = collection
+            .get_device_with_name(trimmed)
+            .map_err(|e| ProductionSinkError::WriteFailed(e.to_string()))?;
+        let provider = crate::audio::pcm_format::WasapiMixFormatProvider::new(wasapi_device);
+        let negotiated: NegotiatedPcmFormat = negotiate_device_format(&provider, TTS_PCM_24K_MONO)?;
+        let writer: Arc<dyn OemCablePcmWriter> = match negotiated.target.encoding {
+            SampleEncoding::I16 => Arc::new(WindowsRenderPcmWriter),
+            SampleEncoding::F32 => Arc::new(self::audio_sink_f32::WasapiF32RenderPcmWriter),
+        };
         Self::with_components(
             trimmed,
             negotiated.target,
             Arc::new(RodioTtsPcmDecoder),
-            Arc::new(WindowsRenderPcmWriter),
+            writer,
         )
     }
 
@@ -199,10 +243,31 @@ impl OemCableSink {
     ) -> Result<OemCableWriteEvidence, ProductionSinkError> {
         let started = Instant::now();
         let decoded = self.decoder.decode(&audio_bytes)?;
-        let converted = convert_i16_pcm(&decoded.samples, decoded.format, self.target_format)?;
-        let summary = self
-            .writer
-            .write_pcm(&self.device_name, self.target_format, &converted)?;
+        let (summary, converted_sample_count, rms) = match self.target_format.encoding {
+            SampleEncoding::I16 => {
+                let converted =
+                    convert_i16_pcm(&decoded.samples, decoded.format, self.target_format)?;
+                let rms = pcm_rms_i16(&converted);
+                let count = converted.len() as u64;
+                let s = self
+                    .writer
+                    .write_pcm(&self.device_name, self.target_format, &converted)?;
+                (s, count, rms)
+            }
+            SampleEncoding::F32 => {
+                let resampled = resample_i16_mono_to_f32_stereo(
+                    &decoded.samples,
+                    decoded.format.sample_rate_hz,
+                    self.target_format.sample_rate_hz,
+                )?;
+                let rms = pcm_rms_f32(&resampled);
+                let count = resampled.len() as u64;
+                let s =
+                    self.writer
+                        .write_f32_pcm(&self.device_name, self.target_format, &resampled)?;
+                (s, count, rms)
+            }
+        };
         let elapsed = started.elapsed();
         // QA8-07 (#505): mirror sink write latency + bytes into the
         // global backpressure telemetry; dropped frames reported by
@@ -210,7 +275,6 @@ impl OemCableSink {
         // evidence captures virtual-mic starvation. No-op when no
         // telemetry sink is installed.
         crate::pipeline::backpressure_hook::sink_write(
-            // 16-bit samples → 2 bytes each.
             summary.sample_count.saturating_mul(2),
             elapsed.as_nanos() as u64,
         );
@@ -222,10 +286,10 @@ impl OemCableSink {
             source_format: decoded.format,
             target_format: self.target_format,
             decoded_sample_count: decoded.samples.len() as u64,
-            converted_sample_count: converted.len() as u64,
+            converted_sample_count,
             written_sample_count: summary.sample_count,
             dropped_frames: summary.dropped_frames,
-            rms: pcm_rms_i16(&converted),
+            rms,
             latency_ms: elapsed.as_secs_f64() * 1_000.0,
         })
     }
@@ -373,8 +437,8 @@ impl OemCablePcmWriter for WindowsRenderPcmWriter {
         format: PcmFormat,
         samples: &[i16],
     ) -> Result<OemCableWriteSummary, ProductionSinkError> {
-        let (_stream, handle) =
-            open_output_stream(Some(device_name)).map_err(ProductionSinkError::WriteFailed)?;
+        let (_stream, handle) = audio_sink_rodio::open_output_stream(Some(device_name))
+            .map_err(ProductionSinkError::WriteFailed)?;
         let sink = rodio::Sink::try_new(&handle)
             .map_err(|err| ProductionSinkError::WriteFailed(err.to_string()))?;
         let source = rodio::buffer::SamplesBuffer::new(
@@ -389,153 +453,6 @@ impl OemCablePcmWriter for WindowsRenderPcmWriter {
             dropped_frames: 0,
         })
     }
-}
-
-// ── Windows and macOS: RodioSink ─────────────────────────────────────────────
-
-/// Plays MP3 audio via `rodio` (Windows WASAPI; macOS CoreAudio; Linux no-op).
-///
-/// **Must be constructed and used on the same OS thread** — `rodio::OutputStream`
-/// is `!Send` and therefore `RodioSink` does not implement [`AudioSink`].
-/// [`PlaybackService::new`] handles this by constructing `RodioSink` inside
-/// the dedicated playback thread.
-///
-/// [`PlaybackService::new`]: super::playback::PlaybackService::new
-#[cfg(any(windows, target_os = "macos"))]
-pub struct RodioSink {
-    _stream: rodio::OutputStream,
-    stream_handle: rodio::OutputStreamHandle,
-}
-
-/// Result of an interruptible `RodioSink` playback attempt.
-#[cfg(any(windows, target_os = "macos"))]
-pub(crate) enum RodioPlaybackOutcome {
-    /// The clip reached its natural end.
-    Completed,
-    /// Playback was stopped early by the caller.
-    Interrupted,
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-impl RodioSink {
-    /// Open an output stream for `output_device` (or the system default when
-    /// `None`) and verify that a rodio `Sink` can be created on it.
-    ///
-    /// Returns `Err(String)` on failure so the caller can propagate the
-    /// message back through a startup channel.
-    pub fn try_new(output_device: Option<&str>) -> Result<Self, String> {
-        let (_stream, stream_handle) = open_output_stream(output_device)?;
-
-        // Validate that a sink can be created on this device before reporting
-        // a successful startup to the caller.
-        rodio::Sink::try_new(&stream_handle)
-            .map_err(|e| format!("failed to create audio sink: {e}"))?;
-
-        Ok(Self {
-            _stream,
-            stream_handle,
-        })
-    }
-
-    /// Decode and play `audio_bytes` (MP3), blocking until playback completes.
-    pub fn play_bytes(&self, audio_bytes: Vec<u8>) {
-        if let Some(sink) = self.start_sink(audio_bytes) {
-            sink.sleep_until_end();
-        }
-    }
-
-    /// Decode and play `audio_bytes` while allowing the caller to interrupt playback.
-    ///
-    /// `should_interrupt` is called until the clip ends. It may block briefly
-    /// while polling for control messages.
-    pub(crate) fn play_bytes_until_interrupted<F>(
-        &self,
-        audio_bytes: Vec<u8>,
-        mut should_interrupt: F,
-    ) -> RodioPlaybackOutcome
-    where
-        F: FnMut() -> bool,
-    {
-        let Some(sink) = self.start_sink(audio_bytes) else {
-            return RodioPlaybackOutcome::Completed;
-        };
-
-        loop {
-            if sink.empty() {
-                return RodioPlaybackOutcome::Completed;
-            }
-            if should_interrupt() {
-                sink.stop();
-                return RodioPlaybackOutcome::Interrupted;
-            }
-        }
-    }
-
-    /// Decode `audio_bytes` and start a rodio sink without waiting for it to finish.
-    pub(crate) fn start_sink(&self, audio_bytes: Vec<u8>) -> Option<rodio::Sink> {
-        use std::io::Cursor;
-
-        let cursor = Cursor::new(audio_bytes);
-        let source = match rodio::Decoder::new(cursor) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("RodioSink: failed to decode audio: {e}");
-                return None;
-            }
-        };
-        match rodio::Sink::try_new(&self.stream_handle) {
-            Ok(sink) => {
-                // CTRL-01: apply real-time output volume.
-                sink.set_volume(crate::audio::audio_gain::output_volume_linear());
-                sink.append(source);
-                Some(sink)
-            }
-            Err(e) => {
-                tracing::error!("RodioSink: failed to create rodio sink: {e}");
-                None
-            }
-        }
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-fn open_output_stream(
-    output_device: Option<&str>,
-) -> Result<(rodio::OutputStream, rodio::OutputStreamHandle), String> {
-    match output_device {
-        Some(device_name) => {
-            let device = find_output_device_by_name(device_name)?;
-            rodio::OutputStream::try_from_device(&device).map_err(|e| {
-                format!("failed to open configured TTS output device '{device_name}': {e}")
-            })
-        }
-        None => rodio::OutputStream::try_default()
-            .map_err(|e| format!("failed to open default audio output device: {e}")),
-    }
-}
-
-#[cfg(any(windows, target_os = "macos"))]
-fn find_output_device_by_name(device_name: &str) -> Result<rodio::cpal::Device, String> {
-    use rodio::cpal::traits::{DeviceTrait, HostTrait};
-
-    let host = rodio::cpal::default_host();
-    let devices = host
-        .output_devices()
-        .map_err(|e| format!("failed to enumerate audio output devices: {e}"))?;
-
-    for device in devices {
-        match device.name() {
-            Ok(name) if name == device_name => return Ok(device),
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!("tts-playback: failed to read output-device name: {e}");
-            }
-        }
-    }
-
-    Err(format!(
-        "configured output render endpoint '{device_name}' was not found"
-    ))
 }
 
 // ── Cross-platform: MockAudioSink ────────────────────────────────────────────
@@ -598,3 +515,17 @@ impl AudioSink for MockAudioSink {
 #[cfg(test)]
 #[path = "audio_sink_tests.rs"]
 mod tests;
+
+// ── Extracted Windows-only render writers (kept under 600 LOC gate per #483) ──
+
+#[cfg(windows)]
+#[path = "audio_sink_f32.rs"]
+mod audio_sink_f32;
+
+#[cfg(any(windows, target_os = "macos"))]
+#[path = "audio_sink_rodio.rs"]
+mod audio_sink_rodio;
+#[cfg(any(windows, target_os = "macos"))]
+pub(crate) use audio_sink_rodio::RodioPlaybackOutcome;
+#[cfg(any(windows, target_os = "macos"))]
+pub use audio_sink_rodio::RodioSink;

@@ -18,7 +18,23 @@ pub const TTS_PCM_24K_MONO: PcmFormat = PcmFormat {
     sample_rate_hz: 24_000,
     channels: 1,
     bits_per_sample: 16,
+    encoding: SampleEncoding::I16,
 };
+
+/// PCM sample encoding variant -- integer vs. IEEE-float.
+///
+/// VB-CABLE and modern WASAPI shared-mode endpoints always advertise
+/// KSDATAFORMAT_SUBTYPE_IEEE_FLOAT (F32). Classic speaker outputs use
+/// signed 16-bit integer (I16). US-08 (issue #733) fixes the latent
+/// rejection of F32 that prevented TtsRouting::VirtualMic from working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SampleEncoding {
+    /// Signed 16-bit integer PCM (default; speaker and legacy sink paths).
+    #[default]
+    I16,
+    /// IEEE 754 32-bit float PCM (VB-CABLE and modern WASAPI shared mode).
+    F32,
+}
 
 /// Interleaved PCM stream format used by playback and virtual-mic sinks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,17 +43,33 @@ pub struct PcmFormat {
     pub sample_rate_hz: u32,
     /// Interleaved channel count.
     pub channels: u16,
-    /// Integer PCM bit depth.
+    /// PCM bit depth (16 for I16, 32 for F32).
     pub bits_per_sample: u16,
+    /// Sample encoding variant. Defaults to I16 for backwards-compatible
+    /// JSON deserialization of stored format objects that predate US-08.
+    #[serde(default)]
+    pub encoding: SampleEncoding,
 }
 
 impl PcmFormat {
     /// Create a 16-bit PCM format with the provided sample rate and channels.
+    /// Create a 16-bit integer PCM format with the given sample rate and channels.
     pub const fn i16(sample_rate_hz: u32, channels: u16) -> Self {
         Self {
             sample_rate_hz,
             channels,
             bits_per_sample: 16,
+            encoding: SampleEncoding::I16,
+        }
+    }
+
+    /// Create a 32-bit float PCM format with the given sample rate and channels.
+    pub const fn f32_format(sample_rate_hz: u32, channels: u16) -> Self {
+        Self {
+            sample_rate_hz,
+            channels,
+            bits_per_sample: 32,
+            encoding: SampleEncoding::F32,
         }
     }
 }
@@ -150,8 +182,9 @@ impl DeviceFormatProvider for CpalDeviceFormatProvider {
             .device
             .default_output_config()
             .map_err(|err| PcmFormatError::QueryFailed(err.to_string()))?;
-        let bits_per_sample = match config.sample_format() {
-            rodio::cpal::SampleFormat::I16 => 16,
+        let (bits_per_sample, encoding) = match config.sample_format() {
+            rodio::cpal::SampleFormat::I16 => (16, SampleEncoding::I16),
+            rodio::cpal::SampleFormat::F32 => (32, SampleEncoding::F32),
             sample_format => {
                 return Err(PcmFormatError::UnsupportedSampleFormat(format!(
                     "{sample_format:?}"
@@ -163,6 +196,7 @@ impl DeviceFormatProvider for CpalDeviceFormatProvider {
             sample_rate_hz: config.sample_rate().0,
             channels: config.channels(),
             bits_per_sample,
+            encoding,
         })
     }
 }
@@ -241,6 +275,15 @@ pub fn convert_i16_pcm(
     Ok(output)
 }
 
+/// Root-mean-square energy of IEEE-float PCM, normalized to `[0.0, 1.0]`.
+pub fn rms_f32(samples: &[f32]) -> f64 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_sq: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
+    (sum_sq / samples.len() as f64).sqrt()
+}
+
 /// Convert a normalized `[-1.0, 1.0]` sample into signed 16-bit PCM.
 pub fn f32_to_i16_clamped(sample: f32) -> i16 {
     clamp_f64_to_i16(sample.clamp(-1.0, 1.0) as f64 * 32_768.0)
@@ -261,6 +304,128 @@ pub fn rms_i16(samples: &[i16]) -> f64 {
     (sum_sq / samples.len() as f64).sqrt()
 }
 
+/// Resample signed 16-bit mono PCM to 32-bit float stereo using rubato Sinc.
+///
+/// Mirrors the BlackmanHarris2/sinc_len=64/oversampling_factor=64 parameters
+/// used by the loopback-capture path in wasapi_capture.rs.
+/// Returns interleaved L/R stereo by duplicating the mono channel.
+pub fn resample_i16_mono_to_f32_stereo(
+    samples: &[i16],
+    source_rate_hz: u32,
+    target_rate_hz: u32,
+) -> Result<Vec<f32>, PcmFormatError> {
+    use rubato::{
+        Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    };
+    if samples.is_empty() {
+        return Ok(Vec::new());
+    }
+    let input_f32: Vec<f32> = samples.iter().map(|&s| s as f32 / 32_768.0).collect();
+    let resample_ratio = target_rate_hz as f64 / source_rate_hz as f64;
+    let sinc_params = SincInterpolationParameters {
+        sinc_len: 64,
+        f_cutoff: 0.95,
+        interpolation: SincInterpolationType::Linear,
+        oversampling_factor: 64,
+        window: WindowFunction::BlackmanHarris2,
+    };
+    const FRAMES_PER_CHUNK: usize = 480;
+    let mut resampler =
+        SincFixedIn::<f32>::new(resample_ratio, 2.0, sinc_params, FRAMES_PER_CHUNK, 1)
+            .map_err(|e| PcmFormatError::QueryFailed(format!("rubato init: {e}")))?;
+    let mut output_mono: Vec<f32> =
+        Vec::with_capacity((input_f32.len() as f64 * resample_ratio * 1.02) as usize);
+    let mut pos = 0usize;
+    while pos + FRAMES_PER_CHUNK <= input_f32.len() {
+        let chunk = input_f32[pos..pos + FRAMES_PER_CHUNK].to_vec();
+        let out = resampler
+            .process(&[chunk], None)
+            .map_err(|e| PcmFormatError::QueryFailed(format!("rubato process: {e}")))?;
+        output_mono.extend_from_slice(&out[0]);
+        pos += FRAMES_PER_CHUNK;
+    }
+    if pos < input_f32.len() {
+        let mut padded = input_f32[pos..].to_vec();
+        padded.resize(FRAMES_PER_CHUNK, 0.0);
+        let out = resampler
+            .process(&[padded], None)
+            .map_err(|e| PcmFormatError::QueryFailed(format!("rubato flush: {e}")))?;
+        output_mono.extend_from_slice(&out[0]);
+    }
+    // Flush the sinc filter tail (delay ~= sinc_len/2 input frames).
+    {
+        let flush_zeros = vec![0.0f32; FRAMES_PER_CHUNK];
+        if let Ok(out) = resampler.process(&[flush_zeros], None) {
+            const SINC_HALF_LEN: usize = 64 / 2;
+            let tail_out = (SINC_HALF_LEN as f64 * resample_ratio).ceil() as usize;
+            let keep = tail_out.min(out[0].len());
+            output_mono.extend_from_slice(&out[0][..keep]);
+        }
+    }
+    // Clamp to mathematically expected output length.
+    let expected_frames = (input_f32.len() as f64 * resample_ratio).round() as usize;
+    output_mono.truncate(expected_frames);
+    while output_mono.len() < expected_frames {
+        output_mono.push(0.0);
+    }
+    let stereo: Vec<f32> = output_mono.iter().flat_map(|&s| [s, s]).collect();
+    Ok(stereo)
+}
+
+/// WasapiMixFormatProvider queries IAudioClient::GetMixFormat() directly.
+///
+/// Returns the device native shared-mode mix format without going through CPAL,
+/// preserving the SubFormat GUID that distinguishes I16 from F32.
+#[cfg(windows)]
+pub struct WasapiMixFormatProvider {
+    device: wasapi::Device,
+}
+
+#[cfg(windows)]
+impl WasapiMixFormatProvider {
+    /// Create a provider for the given WASAPI render device.
+    pub fn new(device: wasapi::Device) -> Self {
+        Self { device }
+    }
+}
+
+#[cfg(windows)]
+impl DeviceFormatProvider for WasapiMixFormatProvider {
+    fn device_format(&self) -> Result<PcmFormat, PcmFormatError> {
+        let audio_client = self
+            .device
+            .get_iaudioclient()
+            .map_err(|e| PcmFormatError::QueryFailed(e.to_string()))?;
+        let wave_fmt = audio_client
+            .get_mixformat()
+            .map_err(|e| PcmFormatError::QueryFailed(e.to_string()))?;
+        let sample_rate_hz = wave_fmt.get_samplespersec();
+        let channels = wave_fmt.get_nchannels();
+        let bits = wave_fmt.get_bitspersample();
+        tracing::debug!(
+            sample_rate_hz,
+            channels,
+            bits,
+            "WasapiMixFormatProvider: mix format"
+        );
+        match bits {
+            16 => Ok(PcmFormat {
+                sample_rate_hz,
+                channels,
+                bits_per_sample: 16,
+                encoding: SampleEncoding::I16,
+            }),
+            32 => Ok(PcmFormat {
+                sample_rate_hz,
+                channels,
+                bits_per_sample: 32,
+                encoding: SampleEncoding::F32,
+            }),
+            _ => Err(PcmFormatError::UnsupportedBitDepth(bits)),
+        }
+    }
+}
+
 fn validate_format(format: PcmFormat) -> Result<(), PcmFormatError> {
     if format.sample_rate_hz == 0 {
         return Err(PcmFormatError::InvalidSampleRate(format.sample_rate_hz));
@@ -268,8 +433,10 @@ fn validate_format(format: PcmFormat) -> Result<(), PcmFormatError> {
     if !matches!(format.channels, 1 | 2) {
         return Err(PcmFormatError::UnsupportedChannelCount(format.channels));
     }
-    if format.bits_per_sample != 16 {
-        return Err(PcmFormatError::UnsupportedBitDepth(format.bits_per_sample));
+    match (format.bits_per_sample, format.encoding) {
+        (16, SampleEncoding::I16) => {}
+        (32, SampleEncoding::F32) => {}
+        (bits, _) => return Err(PcmFormatError::UnsupportedBitDepth(bits)),
     }
     Ok(())
 }
@@ -318,6 +485,7 @@ mod tests {
             sample_rate_hz: 48_000,
             channels: 2,
             bits_per_sample: 24,
+            encoding: SampleEncoding::I16,
         });
 
         let err = negotiate_device_format(&provider, TTS_PCM_24K_MONO)
