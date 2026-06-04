@@ -173,3 +173,41 @@ fn vmic_b2_oem_registry_docs_separate_licensing_from_support() {
         assert_contains("VMIC-B2 evidence", &evidence, needle);
     }
 }
+
+#[test]
+fn usage_md_links_to_virtual_mic_setup() {
+    let usage = read_doc("USAGE.md");
+    let privacy = read_doc("PRIVACY.md");
+
+    assert_contains("USAGE.md", &usage, "## Use as a live interpreter");
+
+    // Find the section and count numbered steps within it
+    let section_start = usage
+        .find("## Use as a live interpreter")
+        .expect("USAGE.md must contain '## Use as a live interpreter' section");
+    let section_body = &usage[section_start..];
+    // Section ends at the next H2 or end of file
+    let section_end = section_body[1..]
+        .find("\n## ")
+        .map(|i| i + 1)
+        .unwrap_or(section_body.len());
+    let section = &section_body[..section_end];
+
+    let numbered_step_count = section
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            trimmed.len() >= 2
+                && trimmed.starts_with(|c: char| c.is_ascii_digit())
+                && trimmed[1..].starts_with('.')
+        })
+        .count();
+    assert!(
+        numbered_step_count >= 5,
+        "USAGE.md '## Use as a live interpreter' section must contain at least 5 numbered steps, found {numbered_step_count}"
+    );
+
+    assert_contains("USAGE.md", section, "docs/12-virtual-mic-setup.md");
+
+    assert_contains("PRIVACY.md", &privacy, "onboarding_completed_at");
+}

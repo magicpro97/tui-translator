@@ -34,6 +34,15 @@ Data flow depends on which providers are enabled in `config.json`.  Data stays
 on your device except when it is sent to the cloud providers you choose in that
 file.
 
+### Local state stored on your device
+
+The following fields are written to your local config and never leave your
+device:
+
+| Field | Storage | Sensitivity | Purpose |
+|-------|---------|-------------|---------|
+| `onboarding_completed_at` | `%APPDATA%\tui-translator\config.json` | Non-PII timestamp (ISO 8601 UTC) | Suppress re-showing first-run wizard |
+
 ### Default mode (local-first)
 
 | Data | Destination | When |
