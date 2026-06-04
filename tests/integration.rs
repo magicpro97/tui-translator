@@ -54,6 +54,9 @@ mod session;
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
+#[path = "../src/readiness.rs"]
+mod readiness;
+
 #[path = "../src/pipeline/mod.rs"]
 mod pipeline;
 

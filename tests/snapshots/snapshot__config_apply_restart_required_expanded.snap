@@ -3,7 +3,7 @@ source: tests/snapshot.rs
 expression: rendered
 ---
 ┌ Metrics ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│STT: local   TTS: off   Route: Speakers                                                                               │
+│[READY] STT: local   TTS: off   Route: Speakers                                                                       │
 │MT: idle                                                                                                              │
 │Target: vi   Pairs: 5   Audio: 30s   Cost: ~$0.010                                                                    │
 │Elapsed: 0:30   ⚠ Restart required for some settings   Config: 3 applies │ last: restart required: stt_provider change│

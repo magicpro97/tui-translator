@@ -298,8 +298,8 @@ const LANGUAGE_PRESETS: [&str; 12] = [
     "ja-JP", "vi", "en-US", "en-GB", "zh-CN", "zh-TW", "ko", "fr-FR", "de-DE", "es-ES", "it-IT",
     "pt-BR",
 ];
-const STT_PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
-const MT_PROVIDER_CHOICES: [&str; 3] = ["google", "local", "llm"];
+pub(crate) const STT_PROVIDER_CHOICES: [&str; 2] = ["google", "local"];
+pub(crate) const MT_PROVIDER_CHOICES: [&str; 3] = ["google", "local", "llm"];
 const BOOLEAN_CHOICES: [&str; 2] = ["false", "true"];
 const TTS_ROUTING_CHOICES: [&str; 3] = ["speakers", "virtual_mic", "both"];
 const STT_FALLBACK_CHOICES: [&str; 2] = ["none", "google-when-keyed"];
@@ -2532,11 +2532,13 @@ pub struct StatusMetricsStrip<'a> {
     /// Formatted TTS health label for slot B.  `None` in single-slot mode;
     /// when `Some`, the expanded metrics strip shows both slot labels.
     pub slot_b_tts_status: Option<String>,
-    // ── HC-05 (issue #390) — config apply status ──────────────────────────────
+    /// HC-05 (issue #390) — config apply status and count.
     /// Last config apply result; `None` when absent or auto-dismissed.
     pub config_apply_status: Option<ConfigApplyStatus>,
     /// Total apply attempts in this session (for the expanded metrics row).
     pub config_apply_count: u32,
+    /// #716 — app readiness badge state shown at the head of the strip.
+    pub readiness: crate::readiness::ReadinessState,
 }
 
 impl Widget for &StatusMetricsStrip<'_> {
@@ -2561,14 +2563,157 @@ fn format_stt_span(stt: &SttState, source: SttSource) -> String {
     }
 }
 
+/// #716 — return a styled badge span for the current readiness state.
+///
+/// Colour mapping (matches QA acceptance C4):
+/// * `INIT`  → grey (dim)
+/// * `LOAD`  → yellow
+/// * `READY` → green, bold
+/// * `ERROR` → red, bold
+fn readiness_badge_span(state: &crate::readiness::ReadinessState) -> Span<'static> {
+    use crate::readiness::ReadinessState as R;
+    let (label, style) = match state {
+        R::Init => ("[INIT] ".to_string(), Style::default().fg(Color::DarkGray)),
+        R::Loading {
+            component,
+            percent: Some(p),
+        } => (
+            format!("[LOAD {component} {p:>3}%] "),
+            Style::default().fg(Color::Yellow),
+        ),
+        R::Loading {
+            component,
+            percent: None,
+        } => (
+            format!("[LOAD {component}] "),
+            Style::default().fg(Color::Yellow),
+        ),
+        R::Ready => (
+            "[READY] ".to_string(),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        R::Error(_) => (
+            "[ERROR] ".to_string(),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+    };
+    Span::styled(label, style)
+}
+
+/// #715 — wrap a long STT error message into multiple `Line`s capped at
+/// [`STT_ERROR_MAX_WRAPPED_ROWS`] so a runaway provider error cannot eat the
+/// entire subtitle pane.  Each output line fits within `inner_width` cells
+/// (whitespace-preserving wrap; `…` ellipsis on the last line if truncated).
+///
+/// Pure function — unit-tested in `status_metrics_tests.rs`.
+pub(crate) fn format_stt_error_lines(msg: &str, inner_width: u16) -> Vec<Line<'static>> {
+    let width = inner_width.max(1) as usize;
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in msg.split_whitespace() {
+        if current.is_empty() {
+            if word.chars().count() > width {
+                // Hard-break very long single tokens.
+                let mut buf = String::new();
+                for ch in word.chars() {
+                    if buf.chars().count() == width {
+                        lines.push(buf.clone());
+                        buf.clear();
+                    }
+                    buf.push(ch);
+                }
+                if !buf.is_empty() {
+                    current = buf;
+                }
+            } else {
+                current.push_str(word);
+            }
+            continue;
+        }
+        if current.chars().count() + 1 + word.chars().count() <= width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut current));
+            if word.chars().count() > width {
+                let mut buf = String::new();
+                for ch in word.chars() {
+                    if buf.chars().count() == width {
+                        lines.push(buf.clone());
+                        buf.clear();
+                    }
+                    buf.push(ch);
+                }
+                current = buf;
+            } else {
+                current.push_str(word);
+            }
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    if lines.len() > STT_ERROR_MAX_WRAPPED_ROWS {
+        lines.truncate(STT_ERROR_MAX_WRAPPED_ROWS);
+        if let Some(last) = lines.last_mut() {
+            let cap = width.saturating_sub(1);
+            if last.chars().count() > cap {
+                let truncated: String = last.chars().take(cap).collect();
+                *last = truncated;
+            }
+            last.push('\u{2026}');
+        }
+    }
+    lines
+        .into_iter()
+        .map(|s| {
+            Line::from(Span::styled(
+                s,
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect()
+}
+
+/// #715 — maximum number of wrapped rows a long STT error may consume in the
+/// status strip before being truncated with an ellipsis.
+pub(crate) const STT_ERROR_MAX_WRAPPED_ROWS: usize = 5;
+
 impl StatusMetricsStrip<'_> {
     /// Row count needed for the expanded block, including the optional warning row.
     ///
+    /// `area_width` is required so multi-row STT error wrapping can be
+    /// accounted for (#715).
+    ///
     /// Call this to determine the layout constraint before rendering.
-    pub fn expanded_height(&self) -> u16 {
+    pub fn expanded_height(&self, area_width: u16) -> u16 {
         let cost_over = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
         let has_warning = cost_over || self.ram_warning;
-        expanded_metrics_height(true, has_warning)
+        let extra = self.stt_error_extra_rows(area_width);
+        expanded_metrics_height(true, has_warning).saturating_add(extra)
+    }
+
+    /// #715 — height of the compact bordered strip including any wrapped
+    /// STT error rows.  Returns `3` for the common case (1 content row +
+    /// 2 borders).
+    pub fn compact_height(&self, area_width: u16) -> u16 {
+        let extra = self.stt_error_extra_rows(area_width);
+        3u16.saturating_add(extra)
+    }
+
+    fn stt_error_extra_rows(&self, area_width: u16) -> u16 {
+        if let SttState::Error(msg) = self.stt {
+            let inner = area_width.saturating_sub(2);
+            let lines = format_stt_error_lines(msg, inner);
+            lines.len() as u16
+        } else {
+            0
+        }
     }
 
     /// Abbreviated STT label for narrow terminals (< 80 columns, issue #60).
@@ -2656,10 +2801,11 @@ impl StatusMetricsStrip<'_> {
 
         let over_threshold = self.cost_warning_usd > 0.0 && self.cost_usd > self.cost_warning_usd;
 
-        let mut spans = vec![Span::styled(
+        let mut spans = vec![readiness_badge_span(&self.readiness)];
+        spans.push(Span::styled(
             main_text,
             Style::default().fg(Color::DarkGray),
-        )];
+        ));
 
         if over_threshold {
             spans.push(Span::styled(
@@ -2708,7 +2854,16 @@ impl StatusMetricsStrip<'_> {
             ));
         }
 
-        Paragraph::new(Line::from(spans))
+        // #715 — when STT is in an error state, append the wrapped error
+        // payload on subsequent rows of the same bordered block instead of
+        // letting it be clipped by the border.
+        let mut compact_lines: Vec<Line<'_>> = vec![Line::from(spans)];
+        if let SttState::Error(msg) = self.stt {
+            let inner = area.width.saturating_sub(2);
+            compact_lines.extend(format_stt_error_lines(msg, inner));
+        }
+
+        Paragraph::new(compact_lines)
             .alignment(Alignment::Left)
             .block(Block::default().borders(Borders::ALL))
             .render(area, buf);
@@ -2758,6 +2913,7 @@ impl StatusMetricsStrip<'_> {
         let mut lines: Vec<Line<'_>> = vec![
             {
                 let mut spans = vec![
+                    readiness_badge_span(&self.readiness),
                     Span::styled(self.format_stt_span(), Style::default().fg(stt_color)),
                     Span::raw("   "),
                     Span::styled("TTS: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -2933,6 +3089,13 @@ impl StatusMetricsStrip<'_> {
             )));
         }
 
+        // #715 — render the full STT error as wrapped extra rows below the
+        // metrics so it isn't clipped by the border.
+        if let SttState::Error(msg) = self.stt {
+            let inner = area.width.saturating_sub(2);
+            lines.extend(format_stt_error_lines(msg, inner));
+        }
+
         Paragraph::new(lines)
             .block(
                 Block::default()
@@ -3093,7 +3256,17 @@ pub fn draw_ui_with_route(
     let over_threshold = expanded
         && ((cost_warning_usd > 0.0 && metrics.estimated_cost_usd > cost_warning_usd)
             || metrics.ram_warning);
-    let metrics_h = expanded_metrics_height(expanded, over_threshold);
+    let base_metrics_h = expanded_metrics_height(expanded, over_threshold);
+    // #715 — grow the strip vertically when STT is in an error state so the
+    // wrapped error payload (computed below by `StatusMetricsStrip`) is fully
+    // visible.  The pure helper avoids constructing the strip twice.
+    let stt_error_rows: u16 = if let SttState::Error(ref msg) = stt {
+        let inner = area.width.saturating_sub(2);
+        format_stt_error_lines(msg, inner).len() as u16
+    } else {
+        0
+    };
+    let metrics_h = base_metrics_h.saturating_add(stt_error_rows);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -3378,6 +3551,10 @@ pub fn draw_ui_with_route(
         // HC-05 (issue #390): config apply status and count.
         config_apply_status: state.config_apply_snapshot(),
         config_apply_count: state.config_apply_count_value(),
+        // #716: readiness badge subscriber snapshot.
+        readiness: crate::readiness::subscribe()
+            .map(|rx| rx.borrow().clone())
+            .unwrap_or(crate::readiness::ReadinessState::Init),
     };
     frame.render_widget(&strip, chunks[3]);
 
