@@ -27,14 +27,18 @@ fn rendered_buffer_rows(
         .collect()
 }
 
-/// Render a `StatusMetricsStrip` with the given `SttState` into an 80×24
+/// Render a `StatusMetricsStrip` with the given `SttState` into a minimal-height
 /// `TestBackend` terminal and return per-row strings.
+///
+/// Width is 80 (the documented compact-terminal target).  Height is intentionally
+/// small (6 rows) so the strip cannot mask a regression by re-using extra vertical
+/// space — if the wrap math is wrong, the assertions below will still fail.
 fn render_strip_rows(stt: SttState) -> Result<Vec<String>> {
     use ratatui::{backend::TestBackend, Terminal};
 
     static MT: std::sync::LazyLock<MtState> = std::sync::LazyLock::new(MtState::default);
 
-    let backend = TestBackend::new(80, 24);
+    let backend = TestBackend::new(80, 6);
     let mut terminal = Terminal::new(backend)?;
     terminal.draw(|frame| {
         let strip = StatusMetricsStrip {
