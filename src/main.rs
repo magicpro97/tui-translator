@@ -1153,7 +1153,7 @@ fn main() -> Result<()> {
                 ) {
                     Ok(p) => p,
                     Err(err) => {
-                        tracing::error!("failed to create STT provider: {err}");
+                        tracing::error!("failed to create STT provider: {err:#}");
                         let provider_msg = format!("Speech-to-text unavailable: {err}");
                         *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
                             metrics::SttState::Error(provider_msg.clone());
@@ -1205,7 +1205,7 @@ fn main() -> Result<()> {
                         Ok(p) => p,
                         Err(err) => {
                             llm_load_guard.finish_error(format!("llm-mt-slot-a: {err}"));
-                            tracing::error!("failed to create LLM MT provider: {err}");
+                            tracing::error!("failed to create LLM MT provider: {err:#}");
                             let provider_msg = format!("Machine translation unavailable: {err}");
                             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
                                 metrics::SttState::Error(provider_msg.clone());
@@ -1248,7 +1248,7 @@ fn main() -> Result<()> {
                     ) {
                         Ok(p) => p,
                         Err(err) => {
-                            tracing::error!("failed to create MT provider: {err}");
+                            tracing::error!("failed to create MT provider: {err:#}");
                             let provider_msg = format!("Machine translation unavailable: {err}");
                             *state.stt_state.lock().unwrap_or_else(|p| p.into_inner()) =
                                 metrics::SttState::Error(provider_msg.clone());
@@ -1294,7 +1294,7 @@ fn main() -> Result<()> {
                 ) {
                     Ok(p) => p,
                     Err(err) => {
-                        tracing::error!("failed to create TTS provider: {err}");
+                        tracing::error!("failed to create TTS provider: {err:#}");
                         spawn_metrics_only_audio_task(&rt, stream, &state, &loss_metrics);
                         orchestrator_join = None;
                         return finish_main(
