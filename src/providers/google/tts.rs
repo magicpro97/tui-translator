@@ -28,6 +28,29 @@ use crate::providers::{
 use super::sanitize_google_error_body;
 #[allow(unused_imports)]
 pub use super::tts_voices::{apply_voice_selection, builtin_voice_catalog};
+// -- Chunking support (US-10, issue #735) --------------------------------------
+
+/// Maximum characters per Google TTS synthesize request.
+///
+/// Google Cloud TTS hard-limits a single `text:synthesize` call to 5 000
+/// input characters.  We stay comfortably under by splitting at 4 900.
+const TTS_MAX_CHUNK_CHARS: usize = 4_900;
+
+// Include `segmentation.rs` locally so that any binary or test that compiles
+// this file via `#[path]` -- without a top-level `mod pipeline` declaration --
+// still has access to `split_all_at_boundaries`.  The segmentation module
+// has no `crate::` external dependencies so a local copy compiles cleanly
+// in every context.  (US-10, issue #735)
+// Intentionally loaded via #[path] in addition to the canonical
+// crate::pipeline::segmentation module so every binary / test that includes
+// providers via #[path] has access to split_all_at_boundaries without
+// needing to declare mod pipeline at its crate root.
+#[allow(clippy::duplicate_mod)]
+#[path = "../../pipeline/segmentation.rs"]
+#[allow(dead_code, rustdoc::broken_intra_doc_links)]
+mod _segmentation;
+
+use _segmentation::split_all_at_boundaries;
 
 #[cfg(test)]
 use crate::providers::VoiceGender;
@@ -226,6 +249,54 @@ impl GoogleTtsProvider {
             ProviderError::Unknown(format!("failed to serialise Google TTS request body: {e}"))
         })
     }
+
+    /// Send a single already-bounded text chunk to the Google TTS REST API and
+    /// return the decoded MP3 bytes.
+    ///
+    /// Callers are responsible for ensuring
+    /// `chunk.chars().count() <= TTS_MAX_CHUNK_CHARS`.  This method encapsulates
+    /// the full HTTP lifecycle for one chunk so that [`synthesise`] can iterate
+    /// cleanly over the split chunks produced by [`split_all_at_boundaries`].
+    ///
+    /// [`synthesise`]: TtsProvider::synthesise
+    async fn synthesise_chunk(
+        &self,
+        text: &str,
+        language_code: &str,
+    ) -> Result<Vec<u8>, ProviderError> {
+        tracing::info!(
+            chunk_chars = text.chars().count(),
+            "Google TTS synthesising chunk"
+        );
+
+        let body_json = self.build_synthesize_request_json(text, language_code)?;
+        let url = format!("{}{}", self.base_url, TTS_SYNTHESIZE_PATH);
+
+        let response = self
+            .client
+            .post(&url)
+            .query(&[("key", &self.api_key)])
+            .header("content-type", "application/json")
+            .body(body_json)
+            .send()
+            .await
+            .map_err(|e| ProviderError::NetworkError(e.to_string()))?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(classify_http_error(status, &body));
+        }
+
+        let resp: SynthesizeResponse = response.json().await.map_err(|e| {
+            ProviderError::NetworkError(format!("failed to parse Google TTS response: {e}"))
+        })?;
+
+        STANDARD.decode(&resp.audio_content).map_err(|e| {
+            ProviderError::NetworkError(format!("failed to base64-decode TTS audio content: {e}"))
+        })
+    }
 }
 
 fn looks_like_auth_error(status: StatusCode, body: &str) -> bool {
@@ -280,6 +351,12 @@ fn classify_http_error(status: StatusCode, body: &str) -> ProviderError {
 impl TtsProvider for GoogleTtsProvider {
     /// Synthesise `text` via the Google TTS REST API.
     ///
+    /// Long texts are automatically split at punctuation / word boundaries
+    /// into chunks of at most [`TTS_MAX_CHUNK_CHARS`] characters before being
+    /// sent as individual `text:synthesize` requests.  The MP3 audio from
+    /// every chunk is concatenated in order and returned as a single
+    /// [`TtsResult`] (US-10, issue #735).
+    ///
     /// Returns MP3 audio bytes in a [`TtsResult`] with
     /// `mime_type = "audio/mpeg"`.
     ///
@@ -298,42 +375,40 @@ impl TtsProvider for GoogleTtsProvider {
             ));
         }
 
-        // CTRL-02: snapshot the active voice at call time so any later
-        // `set_active_voice` only takes effect on the *next* call.
-        let body_json = self.build_synthesize_request_json(text, language_code)?;
-        let url = format!("{}{}", self.base_url, TTS_SYNTHESIZE_PATH);
+        // US-10 (issue #735): split long text at safe punctuation boundaries
+        // before sending to avoid Google TTS's 5 000-character hard limit.
+        // CTRL-02: the active-voice snapshot is taken inside synthesise_chunk
+        // so all chunks use the voice that was active at the time of this call.
+        let total_char_count = text.chars().count();
+        let chunks = split_all_at_boundaries(text, TTS_MAX_CHUNK_CHARS);
 
-        let response = self
-            .client
-            .post(&url)
-            .query(&[("key", &self.api_key)])
-            .header("content-type", "application/json")
-            .body(body_json)
-            .send()
-            .await
-            .map_err(|e| ProviderError::NetworkError(e.to_string()))?;
+        tracing::info!(
+            total_chars = total_char_count,
+            chunk_count = chunks.len(),
+            "Google TTS synthesise: {} char(s) → {} chunk(s)",
+            total_char_count,
+            chunks.len(),
+        );
 
-        let status = response.status();
-
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(classify_http_error(status, &body));
+        let mut all_audio_bytes: Vec<u8> = Vec::new();
+        for (idx, chunk) in chunks.iter().enumerate() {
+            let chunk_bytes = self.synthesise_chunk(chunk, language_code).await?;
+            all_audio_bytes.extend_from_slice(&chunk_bytes);
+            tracing::info!(
+                chunk_idx = idx,
+                chunk_chars = chunk.chars().count(),
+                "Google TTS chunk {}/{} synthesised",
+                idx + 1,
+                chunks.len(),
+            );
         }
 
-        let resp: SynthesizeResponse = response.json().await.map_err(|e| {
-            ProviderError::NetworkError(format!("failed to parse Google TTS response: {e}"))
-        })?;
-
-        let audio_bytes = STANDARD.decode(&resp.audio_content).map_err(|e| {
-            ProviderError::NetworkError(format!("failed to base64-decode TTS audio content: {e}"))
-        })?;
-
         if let Some(cc) = &self.cost_reporter {
-            cc.record_synthesized_characters(text.chars().count());
+            cc.record_synthesized_characters(total_char_count);
         }
 
         Ok(TtsResult {
-            audio_bytes,
+            audio_bytes: all_audio_bytes,
             mime_type: "audio/mpeg".to_string(),
         })
     }
@@ -395,206 +470,6 @@ impl TtsProvider for GoogleTtsProvider {
 impl TtsStreamProvider for GoogleTtsProvider {}
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn new_rejects_empty_api_key() {
-        let err = GoogleTtsProvider::new("").unwrap_err();
-        assert!(matches!(err, ProviderError::InvalidInput(_)));
-    }
-
-    #[test]
-    fn new_rejects_whitespace_only_api_key() {
-        let err = GoogleTtsProvider::new("   ").unwrap_err();
-        assert!(matches!(err, ProviderError::InvalidInput(_)));
-    }
-
-    #[test]
-    fn classify_http_error_maps_401_to_auth_error() {
-        let err = classify_http_error(StatusCode::UNAUTHORIZED, "missing credentials");
-        assert!(matches!(err, ProviderError::AuthError(_)));
-    }
-
-    #[test]
-    fn classify_http_error_maps_403_to_auth_error() {
-        let err = classify_http_error(StatusCode::FORBIDDEN, "permission denied");
-        assert!(matches!(err, ProviderError::AuthError(_)));
-    }
-
-    #[test]
-    fn classify_http_error_maps_invalid_key_400_to_auth_error() {
-        let err = classify_http_error(
-            StatusCode::BAD_REQUEST,
-            "API key not valid. Please pass a valid API key.",
-        );
-        assert!(matches!(err, ProviderError::AuthError(_)));
-    }
-
-    #[test]
-    fn classify_http_error_keeps_generic_400_as_network_error() {
-        let err = classify_http_error(StatusCode::BAD_REQUEST, "input text exceeds limit");
-        assert!(matches!(err, ProviderError::NetworkError(_)));
-    }
-
-    #[test]
-    fn classify_http_error_maps_429_to_rate_limit_error() {
-        let err = classify_http_error(StatusCode::TOO_MANY_REQUESTS, "quota exhausted");
-        assert!(matches!(err, ProviderError::RateLimitError(_)));
-    }
-
-    #[test]
-    fn classify_http_error_maps_503_to_service_unavailable() {
-        let err = classify_http_error(StatusCode::SERVICE_UNAVAILABLE, "backend overload");
-        assert!(matches!(err, ProviderError::ServiceUnavailable(_)));
-    }
-
-    #[tokio::test]
-    async fn synthesise_rejects_empty_text() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key should build provider");
-        let result = provider.synthesise("", "en-US").await;
-        assert!(result.is_err());
-        assert!(
-            matches!(result.unwrap_err(), ProviderError::InvalidInput(_)),
-            "expected InvalidInput for empty text"
-        );
-    }
-
-    #[tokio::test]
-    async fn synthesise_rejects_whitespace_only_text() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key should build provider");
-        let result = provider.synthesise("   ", "en-US").await;
-        assert!(matches!(
-            result.unwrap_err(),
-            ProviderError::InvalidInput(_)
-        ));
-    }
-
-    // ── CTRL-02 voice catalog & hot-swap tests (issue #455) ─────────────
-
-    fn pick_voice(provider: &GoogleTtsProvider, name: &str) -> VoiceSelection {
-        provider
-            .catalog
-            .read()
-            .expect("catalog lock not poisoned")
-            .iter()
-            .find(|v| v.name == name)
-            .cloned()
-            .unwrap_or_else(|| panic!("voice {name} not in catalog"))
-    }
-
-    /// `build_synthesize_request_json` MUST include the active voice's name
-    /// once `set_active_voice` is called — this is the deterministic proxy
-    /// for "the mocked Google TTS request contains the selected voice name".
-    #[test]
-    fn request_body_omits_voice_name_when_no_voice_is_selected() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key builds provider");
-        let body = provider
-            .build_synthesize_request_json("hello", "en-US")
-            .expect("body builds");
-        assert!(
-            !body.contains("\"name\""),
-            "no voice selection => body must not carry voice.name; got {body}"
-        );
-        assert!(body.contains("\"ssmlGender\":\"NEUTRAL\""));
-        assert!(body.contains("\"languageCode\":\"en-US\""));
-    }
-
-    #[test]
-    fn request_body_contains_selected_voice_name_after_set_active_voice() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key builds provider");
-        let voice = pick_voice(&provider, "vi-VN-Standard-A");
-        provider
-            .set_active_voice(Some(voice.clone()))
-            .expect("known voice accepted");
-
-        let body = provider
-            .build_synthesize_request_json("xin chào", "vi-VN")
-            .expect("body builds");
-        assert!(
-            body.contains("\"name\":\"vi-VN-Standard-A\""),
-            "request body must carry the selected voice name; got {body}"
-        );
-        assert!(body.contains("\"ssmlGender\":\"FEMALE\""));
-    }
-
-    /// Hot-swap MUST apply on the NEXT call only.  We capture two request
-    /// bodies — one before and one after `set_active_voice` — to mirror the
-    /// "current utterance finishes, new voice on next call" semantics in a
-    /// deterministic harness that requires no network or credentials.
-    #[test]
-    fn hot_swap_applies_to_next_synthesise_call_only() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key builds provider");
-
-        let body_before = provider
-            .build_synthesize_request_json("first utterance", "vi-VN")
-            .expect("body builds");
-        assert!(!body_before.contains("vi-VN-Standard-B"));
-
-        let voice = pick_voice(&provider, "vi-VN-Standard-B");
-        provider
-            .set_active_voice(Some(voice))
-            .expect("known voice accepted");
-
-        let body_after = provider
-            .build_synthesize_request_json("second utterance", "vi-VN")
-            .expect("body builds");
-        assert!(
-            body_after.contains("\"name\":\"vi-VN-Standard-B\""),
-            "hot-swap must affect next synthesise body; got {body_after}"
-        );
-    }
-
-    /// Invalid voice surfaces a visible error and DOES NOT silently
-    /// fall back to another voice.
-    #[test]
-    fn set_active_voice_rejects_voice_not_in_catalog() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key builds provider");
-        let bogus = VoiceSelection {
-            name: "xx-XX-Nonexistent".to_string(),
-            language: "xx-XX".to_string(),
-            gender: VoiceGender::Neutral,
-        };
-        let err = provider
-            .set_active_voice(Some(bogus))
-            .expect_err("unknown voice must be rejected");
-        assert!(
-            matches!(err, ProviderError::InvalidInput(ref m) if m.contains("not in the Google TTS catalog")),
-            "expected InvalidInput mentioning the catalog; got {err:?}"
-        );
-        // After a rejected swap, no voice must be active — i.e. no silent
-        // fallback to another voice.
-        assert!(provider.active_voice().is_none());
-    }
-
-    #[test]
-    fn set_active_voice_none_is_a_noop_and_clears_selection() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key builds provider");
-        let voice = pick_voice(&provider, "ja-JP-Standard-A");
-        provider
-            .set_active_voice(Some(voice.clone()))
-            .expect("known voice accepted");
-        assert_eq!(provider.active_voice(), Some(voice));
-
-        provider
-            .set_active_voice(None)
-            .expect("clearing voice is always allowed");
-        assert!(provider.active_voice().is_none());
-    }
-
-    #[tokio::test]
-    async fn list_voices_returns_builtin_catalog_when_uninjected() {
-        let provider =
-            GoogleTtsProvider::new("dummy_key_not_used").expect("dummy key builds provider");
-        let voices = provider.list_voices().await.expect("catalog read");
-        assert!(!voices.is_empty(), "builtin catalog must not be empty");
-        assert!(voices.iter().any(|v| v.name == "vi-VN-Standard-A"));
-    }
-}
+#[cfg(test)]
+#[path = "tts_tests.rs"]
+mod tests;
