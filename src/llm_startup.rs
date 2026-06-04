@@ -273,16 +273,28 @@ pub(crate) fn run_startup_llm_model_check(
                 Ok(())
             }
             Err(err) => {
-                writeln!(
-                    io::stdout(),
-                    "[tui-translator] LLM model pre-fetch failed: {err}.  Will retry when audio capture starts.",
-                )
-                .ok();
-                tracing::warn!(error = %err, "LLM-MT-05: startup pre-fetch failed; lazy path will retry");
+                writeln!(io::stdout(), "{}", format_prefetch_failure(&err)).ok();
+                tracing::warn!(
+                    error = format!("{err:#}").as_str(),
+                    "LLM-MT-05: startup pre-fetch failed; lazy path will retry"
+                );
                 Ok(())
             }
         }
     }
+}
+
+/// Format a user-facing message for an LLM model pre-fetch failure.
+///
+/// Uses `{err:#}` (anyhow alternate Display) so the full cause chain is
+/// visible on stdout, helping users self-diagnose TLS / DNS / filesystem
+/// errors without needing to enable `RUST_LOG=debug` (issue #720).
+#[cfg(any(feature = "local-llm-mt", test))]
+pub(crate) fn format_prefetch_failure(err: &anyhow::Error) -> String {
+    format!(
+        "[tui-translator] LLM model pre-fetch failed: {err:#}\n\
+         [tui-translator] Will retry when audio capture starts."
+    )
 }
 
 #[cfg(test)]
@@ -296,5 +308,37 @@ mod tests {
         assert!(run_startup_llm_model_check("google", None).is_ok());
         assert!(run_startup_llm_model_check("local", None).is_ok());
         assert!(run_startup_llm_model_check("", None).is_ok());
+    }
+
+    /// Asserts that `format_prefetch_failure` renders the full anyhow cause
+    /// chain so users can diagnose TLS / DNS / disk / permission failures
+    /// without enabling debug logging (issue #720).
+    #[test]
+    fn prefetch_failure_message_renders_full_anyhow_chain() {
+        use anyhow::Context as _;
+        let root: anyhow::Error = anyhow::anyhow!("invalid peer certificate: UnknownIssuer");
+        let wrapped: anyhow::Error = Err::<(), _>(root)
+            .context("HTTP GET failed for https://huggingface.co/...")
+            .context("failed to download Qwen2.5-0.5B-Instruct-Q4_K_M.gguf")
+            .unwrap_err();
+
+        let rendered = format_prefetch_failure(&wrapped);
+
+        assert!(
+            rendered.contains("failed to download"),
+            "top context missing in rendered message: {rendered}"
+        );
+        assert!(
+            rendered.contains("HTTP GET failed"),
+            "mid context missing — chain was truncated: {rendered}"
+        );
+        assert!(
+            rendered.contains("UnknownIssuer"),
+            "root cause missing — user cannot diagnose TLS: {rendered}"
+        );
+        assert!(
+            rendered.contains("Will retry"),
+            "retry hint missing from rendered message: {rendered}"
+        );
     }
 }
