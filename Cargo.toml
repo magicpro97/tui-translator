@@ -191,6 +191,10 @@ full = ["local-stt", "local-stt-metal", "local-mt", "local-tts", "local-llm-mt"]
 # Enable the local LLM-based MT provider (LLM-MT-01 to LLM-MT-03, issues #696/#698).
 # Requires mistralrs-core which pulls in a large build-time dependency tree.
 # Only needed for GGUF LLM inference; OPUS-MT local-mt is a lighter alternative.
+# US-11 (#736): hardware self-hosted runner smoke test for the VB-CABLE F32 path.
+# Requires a self-hosted Windows runner with VB-CABLE installed.
+# Build/run with: cargo test --features hw-smoke --test hw_smoke_vbcable -- --nocapture
+hw-smoke = []
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI loopback capture (Windows only)

@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: MIT
+#
+# US-11 (#736) — Hardware self-hosted runner smoke test for the VB-CABLE F32 path.
+#
+# Purpose
+# -------
+# US-08 (#733) fixes the F32 VB-CABLE sample-format bug in code.  Only a real
+# Windows machine with VB-CABLE installed can prove that TtsRouting::VirtualMic
+# actually routes audio end-to-end through the WASAPI render path.  This workflow
+# provides that evidence by running `tests/hw_smoke_vbcable.rs` on a dedicated
+# self-hosted runner.
+#
+# Triggers
+# --------
+# * pull_request — when the `needs-hw-smoke` label is added to a PR.
+# * workflow_dispatch — manual dispatch (e.g. pre-merge validation).
+#
+# Runner
+# ------
+# Runs on [self-hosted, windows, vb-cable].  The job will stay queued until a
+# runner with those labels comes online.  The workflow does NOT block PR merge —
+# the `if:` condition on the pull_request trigger means label-less PRs skip it.
+#
+# Non-blocking policy
+# -------------------
+# This workflow MUST NOT be added to the branch-protection required-checks list.
+# It is advisory evidence only; the Orchestrator / QA-leader owns the decision
+# to promote a PR after reviewing the smoke artefact.
+
+name: VB-CABLE F32 hardware smoke (US-11)
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vbcable-smoke-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vbcable-smoke:
+    name: VB-CABLE F32 smoke (self-hosted)
+    # For pull_request: only run when the needs-hw-smoke label was just added.
+    # For workflow_dispatch: always run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'needs-hw-smoke'))
+    runs-on: [self-hosted, windows, vb-cable]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-hw-smoke-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build release binary
+        run: cargo build --release --bin tui-translator
+
+      - name: Run VB-CABLE F32 smoke test
+        run: >-
+          cargo test
+          --features hw-smoke
+          --test hw_smoke_vbcable
+          -- --nocapture
+
+      - name: Emit step summary
+        if: always()
+        shell: pwsh
+        run: |
+          $status = if ($LastExitCode -eq 0) { "PASS" } else { "FAIL" }
+          @"
+          ## VB-CABLE F32 hardware smoke — $status
+
+          | Field             | Value                          |
+          |-------------------|-------------------------------|
+          | Runner            | ``${{ runner.name }}``         |
+          | Ref               | ``${{ github.ref }}``          |
+          | Commit            | ``${{ github.sha }}``          |
+          | Workflow run      | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} |
+
+          **US-11 (#736)**: Exercises ``OemCableSink::new_windows("CABLE Input")``
+          with a 1-second 440 Hz sine to prove the F32 VB-CABLE path (US-08 #733).
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
