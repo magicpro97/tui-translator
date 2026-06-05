@@ -52,15 +52,16 @@ impl PlaybackRoutePlan {
     ) -> std::io::Result<Self> {
         match routing {
             TtsRouting::Speakers => Ok(Self::speakers(tts_output_device)),
-            TtsRouting::VirtualMic => {
-                let device = virtual_mic_device.ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "tts_routing \"virtual_mic\" requires virtual_mic_device",
-                    )
-                })?;
-                Ok(Self::virtual_mic(device))
-            }
+            TtsRouting::VirtualMic => match virtual_mic_device {
+                Some(device) => Ok(Self::virtual_mic(device)),
+                None => {
+                    tracing::warn!(
+                        "tts_routing \"virtual_mic\" configured but virtual_mic_device \
+                         is unset; falling back to speakers"
+                    );
+                    Ok(Self::speakers(tts_output_device))
+                }
+            },
             TtsRouting::Both => {
                 let device = virtual_mic_device.ok_or_else(|| {
                     std::io::Error::new(
