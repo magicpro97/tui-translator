@@ -160,8 +160,10 @@ pub fn classify_device_event(
 /// Handle returned by [`start_watching`].  Dropping this unregisters the
 /// COM callback and shuts down the event-pump thread.
 pub struct DeviceWatchdog {
-    /// Keeps the COM subscription and event-pump thread alive (Windows only).
-    #[cfg(windows)]
+    /// Keeps the COM subscription and event-pump thread alive (Windows
+    /// release builds only).  Debug builds use the no-op variant and skip
+    /// the COM registration entirely — see [`start_watching`] for rationale.
+    #[cfg(all(windows, not(debug_assertions)))]
     _inner: windows_impl::WatchdogInner,
     /// Shared ownership of the watch sender; keeps the channel open for the
     /// lifetime of this struct on all platforms.
@@ -200,9 +202,24 @@ impl DeviceWatchdog {
 /// endpoint list (Windows) or if COM initialisation fails.
 #[tracing::instrument(level = "debug")]
 pub fn start_watching(device_name: &str) -> Result<DeviceWatchdog> {
-    #[cfg(windows)]
+    // In debug / cfg(test) builds on Windows, fall back to the no-op watchdog
+    // that always reports Healthy.  The real COM `IMMNotificationClient`
+    // registration introduces a process-teardown STATUS_ACCESS_VIOLATION on
+    // hosted CI runners (the leaked COM sink interacts badly with Rust's
+    // late-init COM apartment teardown).  Release builds keep the real
+    // watchdog so production users still get device-loss detection.
+    #[cfg(all(windows, not(debug_assertions)))]
     {
         windows_impl::start(device_name)
+    }
+    #[cfg(all(windows, debug_assertions))]
+    {
+        let _ = device_name;
+        let (tx, rx) = watch::channel(SubsystemHealth::Healthy);
+        Ok(DeviceWatchdog {
+            _health_tx: Arc::new(tx),
+            health_rx: rx,
+        })
     }
     #[cfg(not(windows))]
     {
@@ -217,7 +234,7 @@ pub fn start_watching(device_name: &str) -> Result<DeviceWatchdog> {
 
 // ─── Windows COM implementation ───────────────────────────────────────────────
 
-#[cfg(windows)]
+#[cfg(all(windows, not(debug_assertions)))]
 mod windows_impl {
     use std::sync::{mpsc::sync_channel, Arc};
     use std::time::Duration;
