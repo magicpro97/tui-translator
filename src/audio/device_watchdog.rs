@@ -327,17 +327,16 @@ mod windows_impl {
 
     impl Drop for WatchdogInner {
         fn drop(&mut self) {
-            // SAFETY: enumerator/sink are valid MTA COM objects; UnregisterEndpointNotificationCallback is safe to call from any MTA thread.
-            let result = unsafe {
-                self.enumerator
-                    .UnregisterEndpointNotificationCallback(&self.sink)
-            };
-            if let Err(e) = result {
-                tracing::warn!(
-                    error = %e,
-                    "DeviceWatchdog: failed to unregister IMMNotificationClient"
-                );
-            }
+            // We deliberately do NOT call ``UnregisterEndpointNotificationCallback``
+            // here.  On Windows hosted CI runners (and in any unit-test process
+            // where the COM apartment is torn down before our Drop runs), the
+            // Unregister call segfaults with STATUS_ACCESS_VIOLATION (0xC0000005)
+            // deep inside the OS MMDevice proxy.  ``catch_unwind`` cannot catch
+            // a hardware-level access violation, so the only safe option is to
+            // leak the registration and let the OS reclaim it at process exit.
+            //
+            // In long-running production use the watchdog lifetime equals the
+            // process lifetime, so the leak is bounded.
         }
     }
 
