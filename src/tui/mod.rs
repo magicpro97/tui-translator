@@ -2569,27 +2569,23 @@ fn format_stt_span(stt: &SttState, source: SttSource) -> String {
 ///
 /// Colour mapping (matches QA acceptance C4):
 /// * `INIT`  → grey (dim)
-/// * `LOAD`  → yellow
+/// * `LOAD`  → yellow; appends `(n/N)` count suffix when the interpreter
+///   aggregator has embedded a subsystem-ready count via
+///   [`crate::readiness::ReadinessState::loading_count_suffix`] (US-02b).
 /// * `READY` → green, bold
 /// * `ERROR` → red, bold
 fn readiness_badge_span(state: &crate::readiness::ReadinessState) -> Span<'static> {
     use crate::readiness::ReadinessState as R;
     let (label, style) = match state {
         R::Init => ("[INIT] ".to_string(), Style::default().fg(Color::DarkGray)),
-        R::Loading {
-            component,
-            percent: Some(p),
-        } => (
-            format!("[LOAD {component} {p:>3}%] "),
-            Style::default().fg(Color::Yellow),
-        ),
-        R::Loading {
-            component,
-            percent: None,
-        } => (
-            format!("[LOAD {component}] "),
-            Style::default().fg(Color::Yellow),
-        ),
+        R::Loading { component, .. } => {
+            // US-02b: append `(n/N)` when the aggregator has embedded a count.
+            let label = match state.loading_count_suffix() {
+                Some((n, total)) if total > 0 => format!("[LOAD ({n}/{total})] "),
+                _ => format!("[LOAD {component}] "),
+            };
+            (label, Style::default().fg(Color::Yellow))
+        }
         R::Ready => (
             "[READY] ".to_string(),
             Style::default()
