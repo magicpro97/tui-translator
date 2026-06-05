@@ -3695,6 +3695,20 @@ fn handle_wizard_outcome(
                     .unwrap_or_else(|p| p.into_inner()) = Some(format!("Setup failed: {e:#}"));
             }
         }
+        OnboardingOutcome::PlatformParityNoticeDismissed => {
+            state.close_wizard();
+            let next_cfg = {
+                let mut cfg = current_config.lock().unwrap_or_else(|p| p.into_inner());
+                cfg.platform_parity_notice_seen_at = Some(chrono::Utc::now());
+                cfg.clone()
+            };
+            if let Err(err) = config::write_config(cfg_path, &next_cfg) {
+                tracing::warn!(
+                    "US-07: failed to persist platform-parity notice dismissal: {err:#}"
+                );
+            }
+            tracing::info!("platform-parity notice acknowledged; won't show again");
+        }
     }
 }
 

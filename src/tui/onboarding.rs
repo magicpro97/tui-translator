@@ -106,6 +106,10 @@ pub enum OnboardingStep {
     GoogleKeyEntry,
     /// All inputs collected; awaiting final confirmation or back-navigation.
     Confirmation,
+    /// One-time informational banner shown on non-Windows platforms when
+    /// `AppConfig::platform_parity_notice_seen_at` is `None`.  Dismissed by
+    /// `Enter` or `Esc` → [`OnboardingOutcome::PlatformParityNoticeDismissed`].
+    PlatformParityNotice,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -170,6 +174,11 @@ pub enum OnboardingOutcome {
     Done(OnboardingConfigPatch),
     /// The user cancelled (pressed `Esc` at [`OnboardingStep::BranchSelection`]).
     Cancelled,
+    /// The user acknowledged the platform-parity notice (US-07, issue #732).
+    ///
+    /// Caller should write `Some(Utc::now())` to
+    /// `AppConfig::platform_parity_notice_seen_at` and persist the config.
+    PlatformParityNoticeDismissed,
 }
 
 // ── State machine ─────────────────────────────────────────────────────────────
@@ -240,6 +249,28 @@ impl OnboardingWizardState {
     }
 
     /// Return all branch variants in the canonical display order.
+    /// Create a wizard pre-positioned at [`OnboardingStep::PlatformParityNotice`].
+    ///
+    /// `Enter`/`Esc` produce [`OnboardingOutcome::PlatformParityNoticeDismissed`].
+    pub fn new_platform_parity_notice() -> Self {
+        Self {
+            branch: OnboardingBranch::LocalOnly,
+            step: OnboardingStep::PlatformParityNotice,
+            local_models: Vec::new(),
+            key_buffer: String::new(),
+            licenses_accepted: Vec::new(),
+            consent_only: false,
+        }
+    }
+
+    /// Returns `true` when the platform-parity banner should be shown.
+    /// Pass `seen_at = &config.platform_parity_notice_seen_at` and a synthetic
+    /// `is_windows` in tests to exercise both branches without conditional
+    /// compilation.
+    pub fn platform_parity_notice_needed<T>(seen_at: &Option<T>, is_windows: bool) -> bool {
+        !is_windows && seen_at.is_none()
+    }
+
     pub const fn branches() -> [OnboardingBranch; 3] {
         [
             OnboardingBranch::LocalOnly,
@@ -303,6 +334,9 @@ impl OnboardingWizardState {
                     google_api_key: key,
                 }))
             }
+            OnboardingStep::PlatformParityNotice => {
+                Some(OnboardingOutcome::PlatformParityNoticeDismissed)
+            }
         }
     }
 
@@ -350,6 +384,9 @@ impl OnboardingWizardState {
                     self.step = OnboardingStep::BranchSelection;
                 }
                 None
+            }
+            OnboardingStep::PlatformParityNotice => {
+                Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
         }
     }
@@ -429,6 +466,10 @@ impl OnboardingWizardState {
             OnboardingStep::Confirmation => match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
+                _ => None,
+            },
+            OnboardingStep::PlatformParityNotice => match event {
+                OnboardingEvent::Enter | OnboardingEvent::Escape => self.advance(),
                 _ => None,
             },
         }
@@ -540,6 +581,15 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 "  [Enter] Apply  [Esc] Back".to_owned(),
             ]
         }
+        OnboardingStep::PlatformParityNotice => vec![
+            "── Platform Notice ───────────────────────────────────────".to_owned(),
+            String::new(),
+            "  Virtual-mic interpreter mode is currently Windows-only".to_owned(),
+            "  (issue #734 tracks macOS BlackHole / Linux PipeWire).".to_owned(),
+            "  The app will run in speaker-only TTS mode on this platform.".to_owned(),
+            String::new(),
+            "  [Enter] Continue  [Esc] Dismiss".to_owned(),
+        ],
     }
 }
 

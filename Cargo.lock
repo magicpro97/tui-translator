@@ -6806,6 +6806,7 @@ dependencies = [
  "base64 0.22.1",
  "bzip2",
  "candle-core",
+ "chrono",
  "clap",
  "cpal",
  "crossterm 0.29.0",

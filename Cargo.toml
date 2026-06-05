@@ -136,6 +136,8 @@ candle-core = { version = "0.10", optional = true, default-features = false }
 clap = { version = "4", optional = true, features = ["derive"] }
 tui-input = { version = "0.15.3", default-features = false }
 directories = "5"
+# US-07 (#732): platform-parity notice timestamp in AppConfig
+chrono = { version = "0.4", features = ["serde"] }
 
 # I18N-01 (issue #481): cross-platform i18n via Project Fluent.
 # `fluent-bundle` provides the catalog runtime; `unic-langid` parses BCP-47
