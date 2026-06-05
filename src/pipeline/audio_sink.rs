@@ -540,6 +540,8 @@ mod audio_sink_f32;
 #[path = "audio_sink_rodio.rs"]
 mod audio_sink_rodio;
 #[cfg(any(windows, target_os = "macos"))]
+#[allow(unused_imports)]
 pub(crate) use audio_sink_rodio::RodioPlaybackOutcome;
 #[cfg(any(windows, target_os = "macos"))]
+#[allow(unused_imports)]
 pub use audio_sink_rodio::RodioSink;
