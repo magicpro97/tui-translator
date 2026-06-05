@@ -1179,6 +1179,19 @@ pub struct AppConfig {
     /// term protection entirely.
     #[serde(default, skip_serializing_if = "glossary_config_is_default")]
     pub glossary: GlossaryConfig,
+
+    /// Timestamp when the user acknowledged the platform-parity notice (US-07, issue #732).
+    ///
+    /// `None` means the notice has never been shown (or was shown before this
+    /// field existed in the schema — the `#[serde(default)]` ensures forward
+    /// compatibility).  Once the user dismisses the banner the integration
+    /// layer writes `Some(Utc::now())` here and persists the config; after
+    /// that the banner is never shown again.
+    ///
+    /// The field is omitted from the serialised JSON when `None` so existing
+    /// config files remain unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_parity_notice_seen_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -1250,6 +1263,7 @@ impl Default for AppConfig {
             locale: default_locale(),
             auto_update: AutoUpdateConfig::default(),
             glossary: GlossaryConfig::default(),
+            platform_parity_notice_seen_at: None,
         }
     }
 }
@@ -1293,6 +1307,10 @@ impl std::fmt::Debug for AppConfig {
             .field("locale", &self.locale)
             .field("auto_update", &self.auto_update)
             .field("glossary", &self.glossary)
+            .field(
+                "platform_parity_notice_seen_at",
+                &self.platform_parity_notice_seen_at,
+            )
             .finish()
     }
 }
