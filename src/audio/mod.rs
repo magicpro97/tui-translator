@@ -113,6 +113,13 @@ pub use virtual_device::{
 #[cfg(target_os = "macos")]
 pub mod screencapturekit_capture;
 
+// IMMNotificationClient watchdog for virtual-mic device-loss — US-09 (#734)
+pub mod device_watchdog;
+#[allow(unused_imports)]
+pub use device_watchdog::{
+    classify_device_event, data_flow, device_state, DeviceEvent, DeviceWatchdog, SubsystemHealth,
+};
+
 // ─── Core types ──────────────────────────────────────────────────────────────
 
 /// A single chunk of captured audio, ready to be sent to the STT pipeline.

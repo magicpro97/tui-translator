@@ -206,6 +206,10 @@ wasapi = "0.14"
 rodio = "0.17"
 # Windows thread-scheduling API (SetThreadPriority) for inference priority hints (#232)
 windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Media", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
+# IMMNotificationClient COM server impl for US-09 device-loss watchdog (#734)
+windows = { version = "0.61", features = ["Win32_Media_Audio", "Win32_System_Com", "Win32_Foundation"] }
+# Explicit dep required so #[implement] macro resolves windows_core at the correct version
+windows-core = { version = "0.61" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # CoreAudio loopback capture via BlackHole virtual device (macOS only)
