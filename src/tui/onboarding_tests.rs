@@ -6,20 +6,27 @@
 use super::*;
 
 fn make_wizard() -> OnboardingWizardState {
-    OnboardingWizardState::new(vec![])
+    let mut w = OnboardingWizardState::new(vec![], noop_probe);
+    w.gate_enabled = false;
+    w
 }
 
 fn make_wizard_with_models() -> OnboardingWizardState {
-    OnboardingWizardState::new(vec![
-        LocalModelLicense {
-            display_name: "Whisper Tiny".to_owned(),
-            license_text: "MIT License\n\nCopyright (c) OpenAI".to_owned(),
-        },
-        LocalModelLicense {
-            display_name: "OPUS-MT EN-VI".to_owned(),
-            license_text: "Apache License 2.0\n\nCopyright (c) Helsinki-NLP".to_owned(),
-        },
-    ])
+    let mut w = OnboardingWizardState::new(
+        vec![
+            LocalModelLicense {
+                display_name: "Whisper Tiny".to_owned(),
+                license_text: "MIT License\n\nCopyright (c) OpenAI".to_owned(),
+            },
+            LocalModelLicense {
+                display_name: "OPUS-MT EN-VI".to_owned(),
+                license_text: "Apache License 2.0\n\nCopyright (c) Helsinki-NLP".to_owned(),
+            },
+        ],
+        noop_probe,
+    );
+    w.gate_enabled = false;
+    w
 }
 
 // ── Default state ─────────────────────────────────────────────────────────
@@ -212,6 +219,8 @@ fn local_only_completion_produces_correct_patch() {
         Some(OnboardingOutcome::Done(OnboardingConfigPatch {
             branch: OnboardingBranch::LocalOnly,
             google_api_key: None,
+            virtual_mic_device: None,
+            virtual_mic_skipped: false,
         }))
     );
 }
@@ -231,6 +240,8 @@ fn google_cloud_completion_with_key_produces_correct_patch() {
         Some(OnboardingOutcome::Done(OnboardingConfigPatch {
             branch: OnboardingBranch::GoogleCloud,
             google_api_key: Some("key".to_owned()),
+            virtual_mic_device: None,
+            virtual_mic_skipped: false,
         }))
     );
 }
@@ -312,10 +323,13 @@ fn ignored_events_are_noop_in_confirmation() {
 #[test]
 fn license_text_stored_verbatim_in_state() {
     let long_text = "A".repeat(2000) + "\n" + &"B".repeat(2000);
-    let w = OnboardingWizardState::new(vec![LocalModelLicense {
-        display_name: "Test Model".to_owned(),
-        license_text: long_text.clone(),
-    }]);
+    let w = OnboardingWizardState::new(
+        vec![LocalModelLicense {
+            display_name: "Test Model".to_owned(),
+            license_text: long_text.clone(),
+        }],
+        noop_probe,
+    );
     assert_eq!(
         w.local_models[0].license_text, long_text,
         "license_text must be stored exactly as given"
@@ -325,10 +339,14 @@ fn license_text_stored_verbatim_in_state() {
 #[test]
 fn current_license_text_returns_verbatim() {
     let text = "MIT License\n\nCopyright (c) 2024";
-    let mut w = OnboardingWizardState::new(vec![LocalModelLicense {
-        display_name: "M".to_owned(),
-        license_text: text.to_owned(),
-    }]);
+    let mut w = OnboardingWizardState::new(
+        vec![LocalModelLicense {
+            display_name: "M".to_owned(),
+            license_text: text.to_owned(),
+        }],
+        noop_probe,
+    );
+    w.gate_enabled = false;
     w.handle(OnboardingEvent::Enter); // → LicenseReview[0]
     assert_eq!(w.current_license_text(), Some(text));
 }
@@ -336,10 +354,14 @@ fn current_license_text_returns_verbatim() {
 #[test]
 fn render_license_review_preserves_all_lines() {
     let source_text = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
-    let mut w = OnboardingWizardState::new(vec![LocalModelLicense {
-        display_name: "Test Model".to_owned(),
-        license_text: source_text.to_owned(),
-    }]);
+    let mut w = OnboardingWizardState::new(
+        vec![LocalModelLicense {
+            display_name: "Test Model".to_owned(),
+            license_text: source_text.to_owned(),
+        }],
+        noop_probe,
+    );
+    w.gate_enabled = false;
     w.handle(OnboardingEvent::Enter); // → LicenseReview[0]
     let rendered = render_wizard_lines(&w);
     for expected in source_text.lines() {
@@ -418,100 +440,133 @@ fn google_cloud_does_not_use_local_models() {
     assert!(!OnboardingBranch::GoogleCloud.uses_local_models());
 }
 
-// ── PlatformParityNotice — US-07 (#732) ───────────────────────────────────
+// PlatformParityNotice (US-07) tests extracted to sibling file (LOC gate).
+#[path = "onboarding_platform_parity_tests.rs"]
+mod platform_parity_tests;
 
-/// Helper: construct a wizard starting at PlatformParityNotice.
-fn make_platform_parity_wizard() -> OnboardingWizardState {
-    OnboardingWizardState::new_platform_parity_notice()
+// ── Cable-gate stubs + US-01 tests (WP-24 / issue #725) ─────────────────────
+
+fn no_cable() -> Vec<String> {
+    vec![]
 }
-
+fn has_cable() -> Vec<String> {
+    vec!["CABLE Output".to_string()]
+}
+fn has_vbaudio() -> Vec<String> {
+    vec!["VB-Audio Virtual Cable".to_string()]
+}
+fn has_cable_after_refresh() -> Vec<String> {
+    vec!["CABLE Input".to_string()]
+}
+fn make_gated(probe: fn() -> Vec<String>) -> OnboardingWizardState {
+    let mut w = OnboardingWizardState::new(vec![], probe);
+    w.gate_enabled = true;
+    w
+}
 #[test]
-fn platform_parity_notice_needed_false_on_windows() {
-    // Synthetic is_windows = true → never show, regardless of seen_at.
-    let seen_at: Option<u8> = None;
+fn gate_disabled_skips_to_confirmation() {
+    let mut w = make_wizard();
+    w.gate_enabled = false;
+    w.handle(OnboardingEvent::Enter);
+    assert_eq!(w.step, OnboardingStep::Confirmation);
+}
+#[test]
+fn non_windows_gate_never_produced() {
+    let mut w = OnboardingWizardState::new(vec![], has_cable);
+    w.gate_enabled = false;
+    w.handle(OnboardingEvent::Enter);
+    assert!(!matches!(w.step, OnboardingStep::VirtualCableGate { .. }));
+}
+#[test]
+fn windows_no_cable_shows_gate_step() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
     assert!(
-        !OnboardingWizardState::platform_parity_notice_needed(&seen_at, true),
-        "notice must NOT be needed on Windows even when seen_at is None"
+        matches!(&w.step, OnboardingStep::VirtualCableGate { available } if available.is_empty())
     );
 }
-
 #[test]
-fn platform_parity_notice_needed_true_on_non_windows_when_not_seen() {
-    let seen_at: Option<u8> = None;
-    assert!(
-        OnboardingWizardState::platform_parity_notice_needed(&seen_at, false),
-        "notice must be needed on non-Windows when seen_at is None"
-    );
+fn windows_no_cable_gate_outcome_is_none() {
+    assert!(make_gated(no_cable)
+        .handle(OnboardingEvent::Enter)
+        .is_none());
 }
-
 #[test]
-fn platform_parity_notice_needed_false_on_non_windows_when_already_seen() {
-    let seen_at: Option<u8> = Some(42);
-    assert!(
-        !OnboardingWizardState::platform_parity_notice_needed(&seen_at, false),
-        "notice must NOT be needed when seen_at is Some(_)"
-    );
+fn windows_cable_found_skips_gate_and_populates_device() {
+    let mut w = make_gated(has_cable);
+    w.handle(OnboardingEvent::Enter);
+    assert!(!matches!(w.step, OnboardingStep::VirtualCableGate { .. }));
+    assert_eq!(w.virtual_mic_device, Some("CABLE Output".to_string()));
 }
-
 #[test]
-fn platform_parity_notice_constructor_starts_at_correct_step() {
-    let w = make_platform_parity_wizard();
+fn windows_vb_audio_name_detected() {
+    let mut w = OnboardingWizardState::new(vec![], has_vbaudio);
+    w.gate_enabled = true;
+    w.handle(OnboardingEvent::Enter);
     assert_eq!(
-        w.step,
-        OnboardingStep::PlatformParityNotice,
-        "new_platform_parity_notice must start at PlatformParityNotice step"
+        w.virtual_mic_device,
+        Some("VB-Audio Virtual Cable".to_string())
     );
 }
-
 #[test]
-fn platform_parity_notice_enter_produces_dismissed_outcome() {
-    let mut w = make_platform_parity_wizard();
-    let outcome = w.handle(OnboardingEvent::Enter);
-    assert_eq!(
-        outcome,
-        Some(OnboardingOutcome::PlatformParityNoticeDismissed),
-        "Enter on PlatformParityNotice must produce PlatformParityNoticeDismissed"
-    );
+fn skip_sets_virtual_mic_skipped_and_no_device() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::SkipVirtualCable);
+    assert!(w.virtual_mic_skipped);
+    assert!(w.virtual_mic_device.is_none());
 }
-
 #[test]
-fn platform_parity_notice_escape_produces_dismissed_outcome() {
-    let mut w = make_platform_parity_wizard();
-    let outcome = w.handle(OnboardingEvent::Escape);
-    assert_eq!(
-        outcome,
-        Some(OnboardingOutcome::PlatformParityNoticeDismissed),
-        "Escape on PlatformParityNotice must produce PlatformParityNoticeDismissed"
-    );
+fn skip_advances_past_gate() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::SkipVirtualCable);
+    assert_eq!(w.step, OnboardingStep::Confirmation);
 }
-
 #[test]
-fn platform_parity_notice_ignored_event_is_noop() {
-    let mut w = make_platform_parity_wizard();
-    let outcome = w.handle(OnboardingEvent::Ignored);
-    assert!(
-        outcome.is_none(),
-        "Ignored event must be a no-op on PlatformParityNotice"
-    );
-    assert_eq!(w.step, OnboardingStep::PlatformParityNotice);
+fn skip_outcome_stamped_in_patch() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::SkipVirtualCable);
+    match w.handle(OnboardingEvent::Enter) {
+        Some(OnboardingOutcome::Done(patch)) => {
+            assert!(patch.virtual_mic_skipped);
+            assert!(patch.virtual_mic_device.is_none());
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
 }
-
 #[test]
-fn platform_parity_notice_render_contains_issue_reference() {
-    let w = make_platform_parity_wizard();
-    let combined = render_wizard_lines(&w).join("\n");
-    assert!(
-        combined.contains("#734"),
-        "PlatformParityNotice render must mention tracking issue #734; got:\n{combined}"
-    );
+fn refresh_re_enumerates_via_probe() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    w.cable_probe = has_cable_after_refresh;
+    assert!(w.handle(OnboardingEvent::RefreshVirtualCable).is_none());
+    match &w.step {
+        OnboardingStep::VirtualCableGate { available } => assert!(!available.is_empty()),
+        other => panic!("{other:?}"),
+    }
 }
-
 #[test]
-fn platform_parity_notice_render_mentions_windows_only() {
-    let w = make_platform_parity_wizard();
-    let combined = render_wizard_lines(&w).join("\n");
-    assert!(
-        combined.contains("Windows-only"),
-        "PlatformParityNotice render must mention Windows-only; got:\n{combined}"
-    );
+fn escape_at_gate_returns_to_branch_selection() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::Escape);
+    assert_eq!(w.step, OnboardingStep::BranchSelection);
+}
+#[test]
+fn render_no_cable_has_install_link() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    let s = render_wizard_lines(&w).join("\n");
+    assert!(s.contains("https://vb-audio.com/Cable/") && s.contains("Skip"));
+}
+#[test]
+fn render_cable_found_shows_device_and_confirm() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter);
+    w.cable_probe = has_cable;
+    w.handle(OnboardingEvent::RefreshVirtualCable);
+    let s = render_wizard_lines(&w).join("\n");
+    assert!(s.contains("CABLE Output") && s.contains("[Enter]"));
 }

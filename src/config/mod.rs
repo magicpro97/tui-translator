@@ -1192,6 +1192,12 @@ pub struct AppConfig {
     /// config files remain unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform_parity_notice_seen_at: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// Timestamp recorded when the user skipped VB-CABLE installation during
+    /// the onboarding wizard (WP-24 / US-01, issue #725).  `None` means the
+    /// gate was never shown or the config pre-dates this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_mic_skipped_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
@@ -1264,6 +1270,7 @@ impl Default for AppConfig {
             auto_update: AutoUpdateConfig::default(),
             glossary: GlossaryConfig::default(),
             platform_parity_notice_seen_at: None,
+            virtual_mic_skipped_at: None,
         }
     }
 }
@@ -1311,6 +1318,7 @@ impl std::fmt::Debug for AppConfig {
                 "platform_parity_notice_seen_at",
                 &self.platform_parity_notice_seen_at,
             )
+            .field("virtual_mic_skipped_at", &self.virtual_mic_skipped_at)
             .finish()
     }
 }

@@ -30,6 +30,7 @@
 //! - Issue #88: Windows console control handler catches forced terminal close.
 
 use anyhow::{bail, Context, Result};
+use chrono::Utc;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
@@ -820,7 +821,7 @@ fn main() -> Result<()> {
     }
     if onboarding_required {
         let local_licenses = build_local_model_licenses();
-        let wizard = OnboardingWizardState::new(local_licenses);
+        let wizard = OnboardingWizardState::new(local_licenses, crate::audio::list_output_devices);
         state.open_wizard(wizard);
         overwrite_device_name(&state.device_name, "first-run setup required");
         tracing::info!(
@@ -3403,14 +3404,16 @@ pub(crate) fn key_to_action(
             | KeyCode::Char('T')
             | KeyCode::Char('m')
             | KeyCode::Char('M')
-            | KeyCode::Char('s')
-            | KeyCode::Char('S')
-            | KeyCode::Char('r')
-            | KeyCode::Char('R')
             | KeyCode::Char('?')
             | KeyCode::Char('q')
             | KeyCode::Char('Q')
             | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                Some(UserAction::WizardKey(OnboardingEvent::RefreshVirtualCable))
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                Some(UserAction::WizardKey(OnboardingEvent::SkipVirtualCable))
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
             }
@@ -3617,7 +3620,10 @@ fn handle_wizard_outcome(
                 }
             };
             if config_missing {
-                state.open_wizard(OnboardingWizardState::new(build_local_model_licenses()));
+                state.open_wizard(OnboardingWizardState::new(
+                    build_local_model_licenses(),
+                    crate::audio::list_output_devices,
+                ));
                 *state
                     .startup_notice_msg
                     .lock()
@@ -3762,6 +3768,14 @@ fn apply_wizard_patch_to_config(
             cfg.google_api_key = patch.google_api_key.clone();
             cfg.tts_enabled = false;
         }
+    }
+
+    // WP-24 / US-01 (#725): persist virtual-mic gate outcome.
+    if patch.virtual_mic_skipped {
+        cfg.virtual_mic_skipped_at = Some(Utc::now());
+        tracing::info!("VB-CABLE installation skipped; speaker-only mode active");
+    } else if let Some(dev) = patch.virtual_mic_device.clone() {
+        cfg.virtual_mic_device = Some(dev);
     }
 
     config::apply_editor_defaults(cfg_path, &mut cfg)?;
