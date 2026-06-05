@@ -33,6 +33,14 @@
 
 use std::fmt;
 
+/// No-op cable probe for non-Windows and consent-review wizards.
+pub fn noop_probe() -> Vec<String> {
+    vec![]
+}
+fn is_cable_device(n: &str) -> bool {
+    let u = n.to_ascii_uppercase();
+    u.contains("CABLE") || u.contains("VB-AUDIO")
+}
 // ── Branch ────────────────────────────────────────────────────────────────────
 
 /// Which backend configuration branch the user selected.
@@ -97,6 +105,8 @@ pub struct LocalModelLicense {
 pub enum OnboardingStep {
     /// The user is choosing a backend branch (keys `1`/`2`/`3` or arrow + Enter).
     BranchSelection,
+    /// Windows-only VB-CABLE gate; skipped on non-Windows or when detected.
+    VirtualCableGate { available: Vec<String> },
     /// The user is reviewing the license for the local model at `model_index`.
     LicenseReview {
         /// Index into the `local_models` slice provided at construction.
@@ -144,6 +154,10 @@ pub enum OnboardingEvent {
     /// The caller must map the runtime shortcuts (`L`, `T`, `M`, `S`, `R`,
     /// `?`, `Q`, `Space`) to this variant so the wizard explicitly ignores them.
     Ignored,
+    /// Re-enumerate cable devices (VirtualCableGate step only).
+    RefreshVirtualCable,
+    /// Skip cable installation; proceed in speaker-only mode.
+    SkipVirtualCable,
 }
 
 // ── Config patch ──────────────────────────────────────────────────────────────
@@ -163,6 +177,10 @@ pub struct OnboardingConfigPatch {
     /// Full onboarding keeps this non-empty for key-required branches before
     /// returning a completed patch.
     pub google_api_key: Option<String>,
+    /// Auto-detected virtual-mic device from VirtualCableGate, or `None`.
+    pub virtual_mic_device: Option<String>,
+    /// `true` when the user pressed Skip at VirtualCableGate.
+    pub virtual_mic_skipped: bool,
 }
 
 // ── Outcome ───────────────────────────────────────────────────────────────────
@@ -207,6 +225,10 @@ pub struct OnboardingWizardState {
     /// [`OnboardingOutcome::Done`] without visiting `GoogleKeyEntry` or
     /// `Confirmation`.
     pub consent_only: bool,
+    pub(crate) cable_probe: fn() -> Vec<String>,
+    pub(crate) virtual_mic_device: Option<String>,
+    pub(crate) virtual_mic_skipped: bool,
+    pub(crate) gate_enabled: bool,
 }
 
 impl OnboardingWizardState {
@@ -215,7 +237,7 @@ impl OnboardingWizardState {
     /// `local_models` should contain one entry per local model whose license
     /// needs reviewing.  Pass an empty `Vec` when the user selects
     /// [`OnboardingBranch::GoogleCloud`] or when no local models are bundled.
-    pub fn new(local_models: Vec<LocalModelLicense>) -> Self {
+    pub fn new(local_models: Vec<LocalModelLicense>, cable_probe: fn() -> Vec<String>) -> Self {
         let n = local_models.len();
         Self {
             branch: OnboardingBranch::LocalOnly,
@@ -224,6 +246,10 @@ impl OnboardingWizardState {
             key_buffer: String::new(),
             licenses_accepted: vec![false; n],
             consent_only: false,
+            cable_probe,
+            virtual_mic_device: None,
+            virtual_mic_skipped: false,
+            gate_enabled: cfg!(windows),
         }
     }
 
@@ -245,6 +271,10 @@ impl OnboardingWizardState {
             key_buffer: String::new(),
             licenses_accepted: vec![false; n],
             consent_only: true,
+            cable_probe: noop_probe,
+            virtual_mic_device: None,
+            virtual_mic_skipped: false,
+            gate_enabled: false,
         }
     }
 
@@ -253,6 +283,9 @@ impl OnboardingWizardState {
     ///
     /// `Enter`/`Esc` produce [`OnboardingOutcome::PlatformParityNoticeDismissed`].
     pub fn new_platform_parity_notice() -> Self {
+        fn noop_probe() -> Vec<String> {
+            Vec::new()
+        }
         Self {
             branch: OnboardingBranch::LocalOnly,
             step: OnboardingStep::PlatformParityNotice,
@@ -260,6 +293,10 @@ impl OnboardingWizardState {
             key_buffer: String::new(),
             licenses_accepted: Vec::new(),
             consent_only: false,
+            cable_probe: noop_probe,
+            virtual_mic_device: None,
+            virtual_mic_skipped: false,
+            gate_enabled: false,
         }
     }
 
@@ -281,20 +318,39 @@ impl OnboardingWizardState {
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
+    fn advance_past_branch(&mut self) {
+        self.step = if self.branch.uses_local_models() && !self.local_models.is_empty() {
+            OnboardingStep::LicenseReview { model_index: 0 }
+        } else if self.branch.requires_google_key() {
+            OnboardingStep::GoogleKeyEntry
+        } else {
+            OnboardingStep::Confirmation
+        };
+    }
     fn advance(&mut self) -> Option<OnboardingOutcome> {
-        match &self.step {
+        match self.step.clone() {
             OnboardingStep::BranchSelection => {
-                if self.branch.uses_local_models() && !self.local_models.is_empty() {
-                    self.step = OnboardingStep::LicenseReview { model_index: 0 };
-                } else if self.branch.requires_google_key() {
-                    self.step = OnboardingStep::GoogleKeyEntry;
-                } else {
-                    self.step = OnboardingStep::Confirmation;
+                if self.gate_enabled {
+                    let d: Vec<_> = (self.cable_probe)()
+                        .into_iter()
+                        .filter(|d| is_cable_device(d))
+                        .collect();
+                    if d.is_empty() {
+                        self.step = OnboardingStep::VirtualCableGate { available: d };
+                        return None;
+                    }
+                    self.virtual_mic_device = d.into_iter().next();
                 }
+                self.advance_past_branch();
+                None
+            }
+            OnboardingStep::VirtualCableGate { available } => {
+                self.virtual_mic_device = available.into_iter().next();
+                self.advance_past_branch();
                 None
             }
             OnboardingStep::LicenseReview { model_index } => {
-                let idx = *model_index;
+                let idx = model_index;
                 if idx < self.licenses_accepted.len() {
                     self.licenses_accepted[idx] = true;
                 }
@@ -305,6 +361,8 @@ impl OnboardingWizardState {
                     return Some(OnboardingOutcome::Done(OnboardingConfigPatch {
                         branch: self.branch,
                         google_api_key: None,
+                        virtual_mic_device: self.virtual_mic_device.clone(),
+                        virtual_mic_skipped: self.virtual_mic_skipped,
                     }));
                 } else if self.branch.requires_google_key() {
                     self.step = OnboardingStep::GoogleKeyEntry;
@@ -332,6 +390,8 @@ impl OnboardingWizardState {
                 Some(OnboardingOutcome::Done(OnboardingConfigPatch {
                     branch: self.branch,
                     google_api_key: key,
+                    virtual_mic_device: self.virtual_mic_device.clone(),
+                    virtual_mic_skipped: self.virtual_mic_skipped,
                 }))
             }
             OnboardingStep::PlatformParityNotice => {
@@ -343,6 +403,10 @@ impl OnboardingWizardState {
     fn go_back(&mut self) -> Option<OnboardingOutcome> {
         match &self.step {
             OnboardingStep::BranchSelection => Some(OnboardingOutcome::Cancelled),
+            OnboardingStep::VirtualCableGate { .. } => {
+                self.step = OnboardingStep::BranchSelection;
+                None
+            }
             OnboardingStep::LicenseReview { model_index } => {
                 let idx = *model_index;
                 if idx == 0 {
@@ -445,6 +509,25 @@ impl OnboardingWizardState {
                 // All other keys (including Ignored, Char, Backspace) are no-ops.
                 _ => None,
             },
+            OnboardingStep::VirtualCableGate { ref available } => match event {
+                OnboardingEvent::RefreshVirtualCable => {
+                    self.step = OnboardingStep::VirtualCableGate {
+                        available: (self.cable_probe)()
+                            .into_iter()
+                            .filter(|d| is_cable_device(d))
+                            .collect(),
+                    };
+                    None
+                }
+                OnboardingEvent::SkipVirtualCable => {
+                    self.virtual_mic_skipped = true;
+                    self.advance_past_branch();
+                    None
+                }
+                OnboardingEvent::Enter if !available.is_empty() => self.advance(),
+                OnboardingEvent::Escape => self.go_back(),
+                _ => None,
+            },
             OnboardingStep::LicenseReview { .. } => match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
@@ -495,105 +578,12 @@ impl OnboardingWizardState {
     }
 }
 
-// ── Deterministic text renderer ───────────────────────────────────────────────
-
-/// Produce a deterministic list of display lines for the current wizard step.
-///
-/// This renderer is intentionally ratatui-free so it can be unit-tested
-/// without a terminal.  The integration layer may wrap each `String` in a
-/// `ratatui::text::Line` and display it inside a `Paragraph` widget.
-///
-/// License text is rendered verbatim — every source line becomes exactly one
-/// output line prefixed with `"│  "`.
-pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
-    match &state.step {
-        OnboardingStep::BranchSelection => {
-            let mut lines = vec![
-                "── Setup Wizard ──────────────────────────────────────────".to_owned(),
-                "  Choose your backend configuration:".to_owned(),
-                String::new(),
-            ];
-            for (i, branch) in OnboardingWizardState::branches().iter().enumerate() {
-                let n = i + 1;
-                let marker = if *branch == state.branch { "►" } else { " " };
-                lines.push(format!("  {marker} {n}. {}", branch.label()));
-            }
-            lines.push(String::new());
-            lines.push("  [Enter] Confirm  [↑↓ / 1 2 3] Select  [Esc] Cancel".to_owned());
-            lines
-        }
-        OnboardingStep::LicenseReview { model_index } => {
-            let idx = *model_index;
-            let name = state
-                .local_models
-                .get(idx)
-                .map(|m| m.display_name.as_str())
-                .unwrap_or("(unknown)");
-            let text = state
-                .local_models
-                .get(idx)
-                .map(|m| m.license_text.as_str())
-                .unwrap_or("");
-            let mut lines = vec![
-                format!(
-                    "── License ({}/{}) — {} ──────────────────────────────",
-                    idx + 1,
-                    state.local_models.len(),
-                    name
-                ),
-                String::new(),
-            ];
-            for raw_line in text.lines() {
-                lines.push(format!("│  {raw_line}"));
-            }
-            lines.push(String::new());
-            lines.push("  [Enter] Accept & continue  [Esc] Back".to_owned());
-            lines
-        }
-        OnboardingStep::GoogleKeyEntry => {
-            let masked: String = "*".repeat(state.key_buffer.len());
-            vec![
-                "── Google API Key ────────────────────────────────────────".to_owned(),
-                String::new(),
-                "  Enter your Google Cloud API key:".to_owned(),
-                format!("  Key ▸ {masked}▌"),
-                String::new(),
-                "  [Enter] Continue  [Esc] Back".to_owned(),
-            ]
-        }
-        OnboardingStep::Confirmation => {
-            let key_line = if state.branch.requires_google_key() {
-                if state.key_buffer.trim().is_empty() {
-                    "  API key : (none — will prompt at startup)".to_owned()
-                } else {
-                    let preview: String = state.key_buffer.chars().take(4).collect();
-                    format!("  API key : {preview}…")
-                }
-            } else {
-                "  API key : not required".to_owned()
-            };
-            vec![
-                "── Confirm Setup ─────────────────────────────────────────".to_owned(),
-                String::new(),
-                format!("  Branch  : {}", state.branch.label()),
-                key_line,
-                String::new(),
-                "  [Enter] Apply  [Esc] Back".to_owned(),
-            ]
-        }
-        OnboardingStep::PlatformParityNotice => vec![
-            "── Platform Notice ───────────────────────────────────────".to_owned(),
-            String::new(),
-            "  Virtual-mic interpreter mode is currently Windows-only".to_owned(),
-            "  (issue #734 tracks macOS BlackHole / Linux PipeWire).".to_owned(),
-            "  The app will run in speaker-only TTS mode on this platform.".to_owned(),
-            String::new(),
-            "  [Enter] Continue  [Esc] Dismiss".to_owned(),
-        ],
-    }
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+// Render helper extracted to onboarding_render.rs (600 LOC gate, STD-01).
+#[path = "onboarding_render.rs"]
+mod render_impl;
+pub use render_impl::render_wizard_lines;
 
 #[cfg(test)]
 #[path = "onboarding_tests.rs"]

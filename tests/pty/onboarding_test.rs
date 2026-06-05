@@ -112,6 +112,11 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
         session.send(b"3").expect("select google cloud branch");
         std::thread::sleep(Duration::from_millis(150));
         session.send(b"\r").expect("advance from branch selection");
+        // US-01: if VB-CABLE is not installed the VirtualCableGate step appears;
+        // skip it with 's' so the test reaches GoogleKeyEntry unconditionally.
+        if session.wait_for_text("Virtual Cable Gate", std::time::Duration::from_secs(2)) {
+            session.send(b"s").expect("skip virtual cable gate");
+        }
         assert!(
             session.wait_for_text("Google API Key", STARTUP_TIMEOUT),
             "after selecting GoogleCloud branch the key-entry step should appear"

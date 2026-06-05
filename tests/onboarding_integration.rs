@@ -21,7 +21,7 @@ use tempfile::TempDir;
 
 #[test]
 fn wizard_new_starts_at_branch_selection() {
-    let wizard = OnboardingWizardState::new(vec![]);
+    let wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
     assert_eq!(wizard.step, OnboardingStep::BranchSelection);
     assert_eq!(wizard.branch, OnboardingBranch::LocalOnly);
     assert!(!wizard.consent_only);
@@ -29,7 +29,8 @@ fn wizard_new_starts_at_branch_selection() {
 
 #[test]
 fn wizard_local_only_no_models_produces_confirmation() {
-    let mut wizard = OnboardingWizardState::new(vec![]);
+    let mut wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
+    wizard.gate_enabled = false;
     // Enter on BranchSelection → Confirmation (no local models)
     let result = wizard.handle(OnboardingEvent::Enter);
     assert!(result.is_none());
@@ -45,7 +46,8 @@ fn wizard_local_only_with_models_goes_through_license_review() {
         display_name: "Test Model".to_string(),
         license_text: "MIT License text".to_string(),
     };
-    let mut wizard = OnboardingWizardState::new(vec![license]);
+    let mut wizard = OnboardingWizardState::new(vec![license], onboarding::noop_probe);
+    wizard.gate_enabled = false;
     // Enter → LicenseReview
     wizard.handle(OnboardingEvent::Enter);
     assert!(matches!(
@@ -64,7 +66,8 @@ fn wizard_local_only_with_models_goes_through_license_review() {
 
 #[test]
 fn wizard_escape_at_branch_selection_cancels() {
-    let mut wizard = OnboardingWizardState::new(vec![]);
+    let mut wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
+    wizard.gate_enabled = false;
     let result = wizard.handle(OnboardingEvent::Escape);
     assert_eq!(result, Some(OnboardingOutcome::Cancelled));
 }
@@ -75,7 +78,8 @@ fn wizard_google_cloud_skips_license_review() {
         display_name: "Whisper".to_string(),
         license_text: "MIT text".to_string(),
     };
-    let mut wizard = OnboardingWizardState::new(vec![license]);
+    let mut wizard = OnboardingWizardState::new(vec![license], onboarding::noop_probe);
+    wizard.gate_enabled = false;
     // Select GoogleCloud
     wizard.handle(OnboardingEvent::SelectBranch3);
     assert_eq!(wizard.branch, OnboardingBranch::GoogleCloud);
@@ -86,7 +90,8 @@ fn wizard_google_cloud_skips_license_review() {
 
 #[test]
 fn wizard_google_cloud_key_entry_collects_key() {
-    let mut wizard = OnboardingWizardState::new(vec![]);
+    let mut wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
+    wizard.gate_enabled = false;
     wizard.handle(OnboardingEvent::SelectBranch3);
     wizard.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
     wizard.handle(OnboardingEvent::Char('A'));
@@ -156,12 +161,16 @@ fn consent_only_wizard_escape_cancels_at_first_model() {
 #[test]
 fn render_wizard_lines_includes_license_text() {
     let unique_text = "UNIQUE_LICENSE_SENTINEL_12345";
-    let wizard = OnboardingWizardState::new(vec![LocalModelLicense {
-        display_name: "Test Model".to_string(),
-        license_text: unique_text.to_string(),
-    }]);
+    let wizard = OnboardingWizardState::new(
+        vec![LocalModelLicense {
+            display_name: "Test Model".to_string(),
+            license_text: unique_text.to_string(),
+        }],
+        onboarding::noop_probe,
+    );
     // Move to LicenseReview
     let mut w = wizard;
+    w.gate_enabled = false;
     w.handle(OnboardingEvent::Enter);
     let lines = onboarding::render_wizard_lines(&w);
     let joined = lines.join("\n");
@@ -173,7 +182,7 @@ fn render_wizard_lines_includes_license_text() {
 
 #[test]
 fn render_wizard_lines_branch_selection_shows_all_branches() {
-    let wizard = OnboardingWizardState::new(vec![]);
+    let wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
     let lines = onboarding::render_wizard_lines(&wizard);
     let joined = lines.join("\n");
     assert!(
