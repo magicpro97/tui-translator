@@ -39,17 +39,19 @@ use std::collections::VecDeque;
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::time::{Duration, Instant};
 
+use super::{
+    windows_com::ComApartmentGuard, AudioChunk, CaptureDeviceInfo, CaptureInfo, SilenceDetector,
+    DEFAULT_SILENCE_GATE_MS,
+};
 use anyhow::{anyhow, Result};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use tokio::sync::mpsc;
 use wasapi::{
-    get_default_device, initialize_mta, AudioCaptureClient, Device, DeviceCollection, DeviceState,
-    Direction, ShareMode,
+    get_default_device, AudioCaptureClient, Device, DeviceCollection, DeviceState, Direction,
+    ShareMode,
 };
-
-use super::{AudioChunk, CaptureDeviceInfo, CaptureInfo, SilenceDetector, DEFAULT_SILENCE_GATE_MS};
 
 /// Target output sample rate (required by Google Speech-to-Text).
 const TARGET_RATE: u32 = 16_000;
@@ -104,8 +106,10 @@ fn capture_loop(
     silence_threshold: f32,
     init_tx: SyncSender<std::result::Result<CaptureInfo, String>>,
 ) -> Result<()> {
-    // COM must be initialized on every thread that uses WASAPI.
-    initialize_mta().map_err(|e| anyhow!("initialize COM MTA: {e}"))?;
+    // WP-24 (#723): COM must be initialized on every thread that uses WASAPI.
+    // The `ComApartmentGuard` pairs `initialize_mta` with `deinitialize` on
+    // Drop so the per-thread ref count stays balanced at process teardown.
+    let _com = ComApartmentGuard::enter()?;
 
     // WASAPI loopback reads from a render endpoint with Direction::Capture +
     // loopback=true. Blank selection means Windows default playback endpoint.
@@ -264,7 +268,7 @@ fn capture_loop(
 }
 
 pub(super) fn list_loopback_devices() -> Result<Vec<CaptureDeviceInfo>> {
-    initialize_mta().map_err(|e| anyhow!("initialize COM MTA: {e}"))?;
+    let _com = ComApartmentGuard::enter()?;
     let (default_id, default_name) = default_render_identity();
     active_render_devices(default_id.as_deref(), default_name.as_deref())
 }

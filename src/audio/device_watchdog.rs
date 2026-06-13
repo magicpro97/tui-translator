@@ -27,6 +27,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::sync::watch;
 
+#[cfg(windows)]
+use crate::audio::windows_com::ComApartmentGuard;
+
 // ─── Public cross-platform types ─────────────────────────────────────────────
 
 /// Health state of a monitored audio subsystem.
@@ -241,7 +244,6 @@ mod windows_impl {
 
     use anyhow::{anyhow, Result};
     use tokio::sync::watch;
-    use wasapi::initialize_mta;
     use windows::{
         core::{implement, PCWSTR},
         Win32::{
@@ -406,7 +408,18 @@ mod windows_impl {
         device_name: &str,
         event_tx: std::sync::mpsc::SyncSender<DeviceEvent>,
     ) -> Result<(WatchdogInner, String)> {
-        initialize_mta().map_err(|e| anyhow!("COM MTA init: {e}"))?;
+        // WP-24 (#723): use `leak()` here, not `enter()`. The COM objects
+        // we are about to create (MMDeviceEnumerator + NotificationSink)
+        // are constructed on the watchdog-event-pump thread and then
+        // SENT across the channel to the main thread via `init_tx`. The
+        // main thread eventually drops them in `WatchdogInner::drop`.
+        // A scoped `enter()` would tear down the COM apartment before
+        // the cross-thread Release, which segfaults inside the OS
+        // MMDevice proxy (this is the same failure mode the existing
+        // `WatchdogInner::drop` comment warns about). The apartment
+        // stays alive for the lifetime of the process — acceptable
+        // because the watchdog lifetime equals the process lifetime.
+        let _com = ComApartmentGuard::leak()?;
         let device_id = resolve_device_id(device_name)?;
 
         tracing::debug!(

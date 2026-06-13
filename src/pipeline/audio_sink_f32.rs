@@ -11,6 +11,7 @@
 #![cfg(windows)]
 
 use crate::audio::pcm_format::PcmFormat;
+use crate::audio::windows_com::ComApartmentGuard;
 use crate::pipeline::audio_sink::{OemCablePcmWriter, OemCableWriteSummary, ProductionSinkError};
 
 /// WASAPI render writer for IEEE-float 32-bit PCM endpoints (VB-CABLE shared mode).
@@ -41,9 +42,13 @@ impl OemCablePcmWriter for WasapiF32RenderPcmWriter {
     ) -> Result<OemCableWriteSummary, ProductionSinkError> {
         use std::collections::VecDeque;
         use wasapi::{calculate_period_100ns, DeviceCollection, Direction, ShareMode, WaveFormat};
-        // This method runs on the playback thread which may not have COM initialized.
-        // Repeated init returns RPC_E_CHANGED_MODE which is harmless; ignore it.
-        wasapi::initialize_mta().ok();
+        // WP-24 (#723): this method runs on the playback thread which may
+        // not have COM initialized. The `ComApartmentGuard` pairs init
+        // with deinitialize on Drop so the per-thread ref count stays
+        // balanced. `enter()` swallows `RPC_E_CHANGED_MODE` so the common
+        // case of COM already being initialised on this thread stays a
+        // no-op drop.
+        let _com = ComApartmentGuard::enter().ok();
         let collection = DeviceCollection::new(&Direction::Render)
             .map_err(|e| ProductionSinkError::WriteFailed(e.to_string()))?;
         let device = collection

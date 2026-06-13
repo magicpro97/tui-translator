@@ -1,0 +1,92 @@
+name: Windows selfhosted test
+
+# Verifies the Windows COM teardown fix (issue #723) on a real Windows machine.
+# Runs only on push to branches matching the fix-* pattern, and on manual
+# dispatch. Does NOT replace the hosted ci.yml workflow — that one keeps
+# guarding PRs and main with the same fail-soft toleration that is currently
+# shipping. This workflow is the additional safety net while the root-cause
+# fix is being validated against a real machine.
+
+on:
+  push:
+    branches:
+      - "fix/**"
+      - "ci/**"
+  pull_request:
+    branches:
+      - "fix/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Format check
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        shell: pwsh
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy (all features)
+    runs-on: self-hosted
+    env:
+      CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreaded
+      CMAKE_POLICY_DEFAULT_CMP0091: NEW
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: cargo clippy
+        shell: pwsh
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test-default:
+    name: Test (default features, debug)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test --bins
+        # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
+        # If the COM guard fix is in place the binary must exit 0 cleanly.
+        # Any STATUS_ACCESS_VIOLATION (0xC0000005) or exit code 1 fails the job.
+        shell: pwsh
+        run: |
+          $env:RUST_BACKTRACE = "1"
+          cargo test --bins -- --nocapture --skip real_api
+
+  test-all-features:
+    name: Test (all features, debug)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test --all-features
+        # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
+        shell: pwsh
+        run: |
+          $env:RUST_BACKTRACE = "1"
+          cargo test --all-features -- --nocapture --skip real_api
+
+  test-release:
+    name: Test (release build, smoke)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test --release --bins
+        # Release-mode smoke; release build was NOT exhibiting the crash per
+        # comment in device_watchdog.rs, but verify on real machine anyway.
+        shell: pwsh
+        run: |
+          $env:RUST_BACKTRACE = "1"
+          cargo test --release --bins -- --nocapture --skip real_api

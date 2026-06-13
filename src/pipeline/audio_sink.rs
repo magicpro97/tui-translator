@@ -31,6 +31,8 @@ use crate::audio::pcm_format::{
 };
 #[cfg(windows)]
 use crate::audio::pcm_format::{negotiate_device_format, NegotiatedPcmFormat};
+#[cfg(windows)]
+use crate::audio::windows_com::ComApartmentGuard;
 
 // ── Trait ────────────────────────────────────────────────────────────────────
 
@@ -216,9 +218,11 @@ impl OemCableSink {
         if trimmed.is_empty() {
             return Err(ProductionSinkError::EmptyDeviceName);
         }
-        // COM must be initialized before any WASAPI call on this thread.
-        // Repeated init returns RPC_E_CHANGED_MODE which is harmless; ignore it.
-        wasapi::initialize_mta().ok();
+        // WP-24 (#723): COM must be initialized before any WASAPI call on
+        // this thread. The `ComApartmentGuard` pairs the init with a
+        // matching `CoUninitialize` on Drop; `enter()` swallows
+        // `RPC_E_CHANGED_MODE` so repeat-init callers stay safe.
+        let _com = ComApartmentGuard::enter().ok();
         use wasapi::{DeviceCollection, Direction};
         let collection = DeviceCollection::new(&Direction::Render)
             .map_err(|e| ProductionSinkError::WriteFailed(e.to_string()))?;

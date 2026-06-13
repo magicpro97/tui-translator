@@ -13,16 +13,19 @@
 
 #[cfg(windows)]
 mod wasapi_probe {
-    use wasapi::{
-        get_default_device, initialize_mta, Device, DeviceCollection, DeviceState, Direction,
-    };
+    use wasapi::{get_default_device, Device, DeviceCollection, DeviceState, Direction};
 
-    fn initialize_or_skip() -> bool {
-        match initialize_mta() {
-            Ok(()) => true,
+    use tui_translator::audio::windows_com::ComApartmentGuard;
+
+    /// WP-24 (#723): RAII-based COM init. Returns `Some(guard)` on
+    /// success (the guard balances the per-thread COM ref count on
+    /// Drop) or `None` on headless / no-COM hosts (test body skips).
+    fn com_apartment_or_skip() -> Option<ComApartmentGuard> {
+        match ComApartmentGuard::enter() {
+            Ok(g) => Some(g),
             Err(err) => {
                 eprintln!("[wasapi-probe] skipping: COM MTA initialization failed: {err}");
-                false
+                None
             }
         }
     }
@@ -45,9 +48,9 @@ mod wasapi_probe {
     /// WASAPI loopback module will fail at runtime with the same error.
     #[test]
     fn default_render_endpoint_opens() {
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let Some(device) = default_render_device_or_skip() else {
             return;
@@ -69,9 +72,9 @@ mod wasapi_probe {
     /// user-facing display names while filtering devices that cannot be opened.
     #[test]
     fn active_render_endpoint_enumeration_exposes_stable_ids() {
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let collection = DeviceCollection::new(&Direction::Render)
             .expect("active render endpoint enumeration must succeed");
@@ -125,9 +128,9 @@ mod wasapi_probe {
     /// after opening the device.  If this fails the module cannot initialise.
     #[test]
     fn default_render_endpoint_format_is_queryable() {
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let Some(device) = default_render_device_or_skip() else {
             return;
@@ -170,9 +173,9 @@ mod wasapi_probe {
     #[test]
     fn default_render_endpoint_initialises_for_loopback() {
         use wasapi::ShareMode;
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let Some(device) = default_render_device_or_skip() else {
             return;
