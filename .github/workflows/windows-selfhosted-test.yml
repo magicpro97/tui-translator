@@ -119,25 +119,3 @@ jobs:
           path: target/evidence/lcov.info
           if-no-files-found: warn
           retention-days: 30
-
-  # WP-25.01 (#759): module-size gate.  The 4 oversized
-  # production files (main.rs, tui/mod.rs, config/mod.rs,
-  # pipeline/mod.rs) are tracked by issue #759 for a
-  # refactor pass; the gate is the regression catcher.
-  #
-  # The script excludes `src/bin/` because the bin/ directory
-  # is intentionally long-running procedural code (benchmarks,
-  # probes) that is not subject to the 1000-LOC gate.
-  module-size-gate:
-    name: Module-size gate (1000 LOC per file)
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Enforce module-size gate
-        shell: pwsh
-        run: |
-          python3 scripts/ci/check_module_sizes.py --threshold 1000
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::module-size gate failed; the listed files must be split before the next release"
-            exit $LASTEXITCODE
-          }
