@@ -133,10 +133,10 @@ fn status_bar_speakers_indicator() -> Result<()> {
 #[test]
 fn status_bar_virtual_mic_indicator() -> Result<()> {
     let rendered = render_status_strip(
-        TtsRouteStatus {
-            routing: TtsRouting::VirtualMic,
-            virtual_mic_device: Some("CABLE Input (VB-Audio Virtual Cable)".to_string()),
-        },
+        TtsRouteStatus::for_tests(
+            TtsRouting::VirtualMic,
+            Some("CABLE Input (VB-Audio Virtual Cable)".to_string()),
+        ),
         100,
     )?;
 
@@ -149,13 +149,8 @@ fn status_bar_virtual_mic_indicator() -> Result<()> {
 
 #[test]
 fn status_bar_missing_virtual_mic_warning() -> Result<()> {
-    let rendered = render_status_strip(
-        TtsRouteStatus {
-            routing: TtsRouting::VirtualMic,
-            virtual_mic_device: None,
-        },
-        160,
-    )?;
+    let rendered =
+        render_status_strip(TtsRouteStatus::for_tests(TtsRouting::VirtualMic, None), 160)?;
 
     assert!(
         rendered.contains("missing virtual mic"),

@@ -20,6 +20,7 @@ mod config_editor_cycle_tests;
 mod config_editor_render_tests;
 #[cfg(test)]
 mod config_editor_tests;
+pub mod control_hints;
 #[cfg(test)]
 mod draw_ui_tests;
 #[cfg(test)]
@@ -34,6 +35,7 @@ pub mod onboarding;
 pub mod rolling_frame_stats;
 #[cfg(test)]
 mod status_metrics_render_tests;
+pub mod status_metrics_route;
 #[cfg(test)]
 mod status_metrics_tests;
 #[cfg(test)]
@@ -2397,63 +2399,12 @@ pub fn record_config_apply_to(
 }
 
 // ── StatusMetricsStrip ────────────────────────────────────────────────────────
+//
+// WP-25.01 (#759): the `TtsRouteStatus` sub-struct was extracted to
+// `src/tui/status_metrics_route.rs`.  See that file for the
+// implementation and the issue history.
 
-/// Runtime TTS routing summary rendered in the status strip.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TtsRouteStatus {
-    routing: TtsRouting,
-    virtual_mic_device: Option<String>,
-}
-
-impl TtsRouteStatus {
-    /// Build a status summary from the active configuration.
-    pub fn from_config(config: &AppConfig) -> Self {
-        Self {
-            routing: config.tts_routing,
-            virtual_mic_device: config.virtual_mic_device.clone(),
-        }
-    }
-
-    fn compact_label(&self, max_device_cols: usize) -> String {
-        match self.routing {
-            TtsRouting::Speakers => "spk".to_string(),
-            TtsRouting::VirtualMic => self.virtual_label("vmic", max_device_cols),
-            TtsRouting::Both => self.virtual_label("both", max_device_cols),
-        }
-    }
-
-    fn expanded_label(&self, max_device_cols: usize) -> String {
-        match self.routing {
-            TtsRouting::Speakers => "Speakers".to_string(),
-            TtsRouting::VirtualMic => self.virtual_label("Virtual mic", max_device_cols),
-            TtsRouting::Both => self.virtual_label("Both", max_device_cols),
-        }
-    }
-
-    fn virtual_label(&self, prefix: &str, max_device_cols: usize) -> String {
-        match self.virtual_mic_device.as_deref() {
-            Some(device) if max_device_cols > 0 => {
-                format!("{prefix}:{}", truncate_device_name(device, max_device_cols))
-            }
-            Some(_) => prefix.to_string(),
-            None => format!("{prefix}:missing"),
-        }
-    }
-
-    fn missing_virtual_mic(&self) -> bool {
-        matches!(self.routing, TtsRouting::VirtualMic | TtsRouting::Both)
-            && self.virtual_mic_device.is_none()
-    }
-}
-
-impl Default for TtsRouteStatus {
-    fn default() -> Self {
-        Self {
-            routing: TtsRouting::Speakers,
-            virtual_mic_device: None,
-        }
-    }
-}
+pub use crate::tui::status_metrics_route::TtsRouteStatus;
 
 /// Compact (3-row) or expanded (8-row) metrics strip rendered below the
 /// subtitle pane.
@@ -3133,54 +3084,11 @@ impl StatusMetricsStrip<'_> {
 }
 
 // ── ControlHintsBar ───────────────────────────────────────────────────────────
+//
+// WP-25.01 (#759): extracted to `src/tui/control_hints.rs`.  See that
+// file for the implementation and the issue history.
 
-/// Single borderless row of keyboard hint labels.
-///
-/// Issue #65: this bar is **always shown**, one row high, and never scrolls.
-/// It replaces the hint text that was previously embedded in the compact
-/// metrics strip (which now shows only metrics).
-pub struct ControlHintsBar {
-    pub tts_on: bool,
-}
-
-impl Widget for &ControlHintsBar {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // Adaptive label width (issue #60):
-        //   < 80  cols → abbreviated
-        //  ≥ 80  cols → standard hints including all required controls (issue #64/#65)
-        // CTRL-01: the live `Mic ±N dB / TTS ±N dB` readout is only inlined at
-        // ≥ 120 cols.  Narrower terminals keep the pre-PR hint text verbatim so
-        // existing PTY snapshots (80×24, 110×30) still see "Q quit" at the end
-        // of the row.
-        let text = if area.width < 80 {
-            " ?  Spc  T  L  S  M  R  Tab  Q ".to_string()
-        } else if area.width < 96 {
-            let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit "
-                .to_string()
-        } else if area.width < 120 {
-            let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Tab pane  Q quit "
-                .to_string()
-        } else {
-            let _ = self.tts_on;
-            format!(
-                " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  \
-                 [/] mic {:+.0}dB  {{/}} tts {:+.0}dB  Tab pane  Q quit ",
-                crate::audio::audio_gain::input_gain_db(),
-                crate::audio::audio_gain::output_volume_db(),
-            )
-        };
-
-        buf.set_stringn(
-            area.x,
-            area.y,
-            &text,
-            area.width as usize,
-            Style::default().fg(Color::DarkGray),
-        );
-    }
-}
+pub use crate::tui::control_hints::ControlHintsBar;
 
 // ── Top-level draw routines ───────────────────────────────────────────────────
 
