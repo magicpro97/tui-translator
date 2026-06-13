@@ -21,8 +21,10 @@
 //   audio_gain        — none (only std)
 //   pcm_format        — none (only std + serde)
 //   vbcable_ci        — none (only std + serde)
+//   windows_com       — none (only std + windows) — WP-24 (#723) addition
 //   backpressure_hook — none (only std)
-//   audio_sink        — crate::audio::{audio_gain, pcm_format, vbcable_ci}
+//   audio_sink        — crate::audio::{audio_gain, pcm_format, vbcable_ci,
+//                                       windows_com}
 //                       crate::pipeline::backpressure_hook
 //                       (all provided below)
 
@@ -40,6 +42,13 @@ mod audio {
     #[path = "../../src/audio/audio_gain.rs"] pub mod audio_gain;
     #[path = "../../src/audio/pcm_format.rs"] pub mod pcm_format;
     #[path = "../../src/audio/vbcable_ci.rs"] pub mod vbcable_ci;
+    // WP-24 (#723): `audio_sink::OemCableSink::new_windows` imports
+    // `crate::audio::windows_com::ComApartmentGuard`. We must inline the
+    // module so the import resolves inside the test's own `mod audio`
+    // scope. The module is `#[cfg(windows)]` inside `src/audio/mod.rs`,
+    // and on `target_os = "windows"` it will be compiled and linked into
+    // the test binary just like the production code.
+    #[path = "../../src/audio/windows_com.rs"] pub mod windows_com;
 }
 
 #[cfg(all(target_os = "windows", feature = "hw-smoke"))]

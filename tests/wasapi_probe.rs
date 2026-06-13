@@ -15,16 +15,52 @@
 mod wasapi_probe {
     use wasapi::{get_default_device, Device, DeviceCollection, DeviceState, Direction};
 
-    use tui_translator::audio::windows_com::ComApartmentGuard;
+    // WP-24 (#723): integration tests cannot `use tui_translator::...`
+    // because this crate is binary-only (no [lib] target). Use a
+    // hand-rolled RAII guard inline that matches the production
+    // `ComApartmentGuard` semantics for the test's lifetime.
+    //
+    // We deliberately inline rather than share with the production
+    // module: integration tests compile in their own crate and can
+    // only reach `pub` items from the library, but this crate has
+    // no library target (see Cargo.toml — only `[[bin]]` entries).
+    mod com_apartment_guard {
+        use wasapi::initialize_mta;
+
+        pub struct Guard {
+            owns_apartment: bool,
+        }
+
+        pub fn enter() -> Result<Guard, ()> {
+            match initialize_mta() {
+                Ok(()) => Ok(Guard {
+                    owns_apartment: true,
+                }),
+                Err(_) => Ok(Guard {
+                    owns_apartment: false,
+                }),
+            }
+        }
+
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                if self.owns_apartment {
+                    wasapi::deinitialize();
+                }
+            }
+        }
+    }
+
+    use self::com_apartment_guard::Guard as ComApartmentGuard;
 
     /// WP-24 (#723): RAII-based COM init. Returns `Some(guard)` on
     /// success (the guard balances the per-thread COM ref count on
     /// Drop) or `None` on headless / no-COM hosts (test body skips).
     fn com_apartment_or_skip() -> Option<ComApartmentGuard> {
-        match ComApartmentGuard::enter() {
+        match com_apartment_guard::enter() {
             Ok(g) => Some(g),
-            Err(err) => {
-                eprintln!("[wasapi-probe] skipping: COM MTA initialization failed: {err}");
+            Err(()) => {
+                eprintln!("[wasapi-probe] skipping: COM MTA initialization failed");
                 None
             }
         }

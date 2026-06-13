@@ -27,9 +27,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::sync::watch;
 
-#[cfg(windows)]
-use crate::audio::windows_com::ComApartmentGuard;
-
 // ─── Public cross-platform types ─────────────────────────────────────────────
 
 /// Health state of a monitored audio subsystem.
