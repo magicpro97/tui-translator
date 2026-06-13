@@ -79,6 +79,33 @@ pub struct ComApartmentGuard {
 #[cfg(windows)]
 const RPC_E_CHANGED_MODE: i32 = 0x8001_0106_u32 as i32;
 
+/// Error returned by [`ComApartmentGuard::enter`] and
+/// [`ComApartmentGuard::leak`]. Stores the HRESULT code as `i32` so
+/// we don't have to thread the `wasapi` crate's `Error` type (which
+/// is `windows_core::error::Error` from `windows-core 0.54`) into
+/// our public API — the project depends on `windows-core 0.61` which
+/// has a structurally identical but nominally distinct `Error` type.
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComInitError {
+    /// The HRESULT returned by the failing `CoInitializeEx` call.
+    pub code: i32,
+}
+
+#[cfg(windows)]
+impl std::fmt::Display for ComInitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "COM apartment initialisation failed: HRESULT 0x{:08X}",
+            self.code
+        )
+    }
+}
+
+#[cfg(windows)]
+impl std::error::Error for ComInitError {}
+
 #[cfg(windows)]
 impl ComApartmentGuard {
     /// Initialise the current thread's COM apartment (MTA) and return a
@@ -94,10 +121,10 @@ impl ComApartmentGuard {
     ///
     /// # Errors
     ///
-    /// Returns `Err(windows::core::Error)` only for genuine initialisation
-    /// failures (e.g. `E_OUTOFMEMORY`, `CO_E_INIT_TLS`, or RPC errors
+    /// Returns `Err` only for genuine initialisation failures
+    /// (e.g. `E_OUTOFMEMORY`, `CO_E_INIT_TLS`, or RPC errors
     /// other than `RPC_E_CHANGED_MODE`).
-    pub fn enter() -> Result<Self, windows::core::Error> {
+    pub fn enter() -> Result<Self, ComInitError> {
         match wasapi::initialize_mta() {
             Ok(()) => Ok(Self {
                 _not_send_sync: PhantomData,
@@ -111,7 +138,7 @@ impl ComApartmentGuard {
                 // or caller's lifetime.
                 owns_apartment: false,
             }),
-            Err(e) => Err(e),
+            Err(e) => Err(ComInitError { code: e.code().0 }),
         }
     }
 
@@ -128,7 +155,7 @@ impl ComApartmentGuard {
     /// while the COM objects still hold cross-apartment proxies,
     /// causing a `STATUS_ACCESS_VIOLATION` inside the OS MMDevice
     /// proxy on the next cross-appartment Release.
-    pub fn leak() -> Result<Self, windows::core::Error> {
+    pub fn leak() -> Result<Self, ComInitError> {
         match wasapi::initialize_mta() {
             Ok(()) => Ok(Self {
                 _not_send_sync: PhantomData,
@@ -138,7 +165,7 @@ impl ComApartmentGuard {
                 _not_send_sync: PhantomData,
                 owns_apartment: false,
             }),
-            Err(e) => Err(e),
+            Err(e) => Err(ComInitError { code: e.code().0 }),
         }
     }
 }
