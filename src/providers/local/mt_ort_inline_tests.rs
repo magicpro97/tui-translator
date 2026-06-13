@@ -6,6 +6,7 @@
 // it locks down. Do not delete the comments; they are the audit
 // trail for why this mod exists.
 #[cfg(all(test, feature = "local-mt"))]
+#[allow(clippy::module_inception)]
 mod ort_inline_tests {
     use crate::providers::local::mt_ort::{
         map_ort_error, missing_model_file, next_token_id, read_generation_config, required_file,
