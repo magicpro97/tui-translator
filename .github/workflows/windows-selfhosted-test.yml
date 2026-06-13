@@ -21,15 +21,18 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+# Skip the dtolnay/rust-toolchain action on this self-hosted runner because
+# the action's default `shell: bash` step resolves the runner's temp dir to
+# ổ F: (a drive that does not exist on this machine) and fails before the
+# toolchain step runs. The runner already has rustc/cargo on PATH (installed
+# via rustup per the runner setup guide), so we invoke cargo directly.
+
 jobs:
   fmt:
     name: Format check
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
       - name: cargo fmt --check
         shell: pwsh
         run: cargo fmt --all -- --check
@@ -42,9 +45,6 @@ jobs:
       CMAKE_POLICY_DEFAULT_CMP0091: NEW
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - name: cargo clippy
         shell: pwsh
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -54,7 +54,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - name: cargo test --bins
         # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
         # If the COM guard fix is in place the binary must exit 0 cleanly.
@@ -69,7 +68,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - name: cargo test --all-features
         # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
         shell: pwsh
@@ -82,7 +80,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - name: cargo test --release --bins
         # Release-mode smoke; release build was NOT exhibiting the crash per
         # comment in device_watchdog.rs, but verify on real machine anyway.
