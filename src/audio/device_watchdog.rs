@@ -256,10 +256,8 @@ mod windows_impl {
         },
     };
 
-    use super::{
-        classify_device_event, windows_com::ComApartmentGuard, DeviceEvent, DeviceWatchdog,
-        SubsystemHealth,
-    };
+    use super::{classify_device_event, DeviceEvent, DeviceWatchdog, SubsystemHealth};
+    use crate::audio::windows_com::ComApartmentGuard;
 
     /// Maximum events buffered between COM callbacks and the event-pump thread.
     const EVENT_CHANNEL_CAP: usize = 64;
