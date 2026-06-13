@@ -20,9 +20,11 @@ on:
     branches:
       - "fix/**"
       - "ci/**"
+      - "debug/**"
   pull_request:
     branches:
       - "fix/**"
+      - "debug/**"
   workflow_dispatch:
 
 env:
@@ -71,3 +73,21 @@ jobs:
         run: |
           $env:RUST_BACKTRACE = "1"
           cargo test --release --bins -- --nocapture --skip real_api
+
+  # WP-24 v2: isolate the `src/main.rs` test binary in debug mode. This
+  # is the only binary that crashes with STATUS_ACCESS_VIOLATION (0xC0000005)
+  # on the hosted `windows-latest` runner after PR #755 was merged. If
+  # this also crashes on the self-hosted runner, the bug is reproducible
+  # here and the missing COM call site is in `src/main.rs`. If this
+  # passes on self-hosted, the hosted crash is environment-specific
+  # (Server 2022 vs Windows 11 image).
+  test-tui-translator-binary:
+    name: Test (tui-translator binary, debug)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo test --bin tui-translator (debug)
+        shell: pwsh
+        run: |
+          $env:RUST_BACKTRACE = "1"
+          cargo test --bin tui-translator -- --nocapture --skip real_api
