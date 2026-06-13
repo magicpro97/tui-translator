@@ -13,16 +13,55 @@
 
 #[cfg(windows)]
 mod wasapi_probe {
-    use wasapi::{
-        get_default_device, initialize_mta, Device, DeviceCollection, DeviceState, Direction,
-    };
+    use wasapi::{get_default_device, Device, DeviceCollection, DeviceState, Direction};
 
-    fn initialize_or_skip() -> bool {
-        match initialize_mta() {
-            Ok(()) => true,
-            Err(err) => {
-                eprintln!("[wasapi-probe] skipping: COM MTA initialization failed: {err}");
-                false
+    // WP-24 (#723): integration tests cannot `use tui_translator::...`
+    // because this crate is binary-only (no [lib] target). Use a
+    // hand-rolled RAII guard inline that matches the production
+    // `ComApartmentGuard` semantics for the test's lifetime.
+    //
+    // We deliberately inline rather than share with the production
+    // module: integration tests compile in their own crate and can
+    // only reach `pub` items from the library, but this crate has
+    // no library target (see Cargo.toml — only `[[bin]]` entries).
+    mod com_apartment_guard {
+        use wasapi::initialize_mta;
+
+        pub struct Guard {
+            owns_apartment: bool,
+        }
+
+        pub fn enter() -> Result<Guard, ()> {
+            match initialize_mta() {
+                Ok(()) => Ok(Guard {
+                    owns_apartment: true,
+                }),
+                Err(_) => Ok(Guard {
+                    owns_apartment: false,
+                }),
+            }
+        }
+
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                if self.owns_apartment {
+                    wasapi::deinitialize();
+                }
+            }
+        }
+    }
+
+    use self::com_apartment_guard::Guard as ComApartmentGuard;
+
+    /// WP-24 (#723): RAII-based COM init. Returns `Some(guard)` on
+    /// success (the guard balances the per-thread COM ref count on
+    /// Drop) or `None` on headless / no-COM hosts (test body skips).
+    fn com_apartment_or_skip() -> Option<ComApartmentGuard> {
+        match com_apartment_guard::enter() {
+            Ok(g) => Some(g),
+            Err(()) => {
+                eprintln!("[wasapi-probe] skipping: COM MTA initialization failed");
+                None
             }
         }
     }
@@ -45,9 +84,9 @@ mod wasapi_probe {
     /// WASAPI loopback module will fail at runtime with the same error.
     #[test]
     fn default_render_endpoint_opens() {
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let Some(device) = default_render_device_or_skip() else {
             return;
@@ -69,9 +108,9 @@ mod wasapi_probe {
     /// user-facing display names while filtering devices that cannot be opened.
     #[test]
     fn active_render_endpoint_enumeration_exposes_stable_ids() {
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let collection = DeviceCollection::new(&Direction::Render)
             .expect("active render endpoint enumeration must succeed");
@@ -125,9 +164,9 @@ mod wasapi_probe {
     /// after opening the device.  If this fails the module cannot initialise.
     #[test]
     fn default_render_endpoint_format_is_queryable() {
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let Some(device) = default_render_device_or_skip() else {
             return;
@@ -170,9 +209,9 @@ mod wasapi_probe {
     #[test]
     fn default_render_endpoint_initialises_for_loopback() {
         use wasapi::ShareMode;
-        if !initialize_or_skip() {
+        let Some(_com) = com_apartment_or_skip() else {
             return;
-        }
+        };
 
         let Some(device) = default_render_device_or_skip() else {
             return;

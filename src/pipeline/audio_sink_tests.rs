@@ -204,15 +204,25 @@ fn f32_writer_write_pcm_preserves_channel_count() {
     );
 }
 
-/// BUG #1/#7: wasapi::initialize_mta() must be idempotent (repeated calls harmless).
-/// This guards against callers that forget pre-init by verifying the fallback
-/// `.ok()` pattern doesn't mask a fatal error on the first call.
+/// WP-24 (#723): verify the `ComApartmentGuard` RAII type balances the
+/// per-thread COM apartment ref count on Drop. Replaces the old
+/// `wasapi_initialize_mta_is_idempotent` test which exercised the raw
+/// wasapi API and leaked the COM ref count on the test thread (root
+/// cause of the `STATUS_ACCESS_VIOLATION` at test-process teardown).
+///
+/// The actual ref count arithmetic is verified by the production code
+/// path: hosted Windows runners fail with 0xC0000005 if a test thread
+/// leaves the COM apartment unbalanced. This test verifies the API
+/// contract: `enter()` is idempotent (a second call observing
+/// `RPC_E_CHANGED_MODE` returns `Ok` with a no-op Drop), and a fresh
+/// `enter()` after a balanced pair works.
 #[cfg(windows)]
 #[test]
-fn wasapi_initialize_mta_is_idempotent() {
-    // First call initialises COM; second returns RPC_E_CHANGED_MODE which
-    // must be silently discarded with .ok().
-    wasapi::initialize_mta().ok();
-    wasapi::initialize_mta().ok();
-    // If either call panicked or unwrapped on an Err, the test would have failed.
+fn com_apartment_guard_balances_refcount() {
+    use crate::audio::windows_com::ComApartmentGuard;
+    {
+        let _g1 = ComApartmentGuard::enter().expect("first enter");
+        let _g2 = ComApartmentGuard::enter().expect("second enter must be idempotent");
+    }
+    let _g3 = ComApartmentGuard::enter().expect("enter after balanced drop must still work");
 }

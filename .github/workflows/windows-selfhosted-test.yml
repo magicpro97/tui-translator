@@ -1,0 +1,73 @@
+name: Windows selfhosted test
+
+# WP-24 (#723): verify the Windows COM teardown fix on a real Windows
+# machine via the self-hosted runner. This workflow deliberately omits
+# the --all-features jobs (clippy + test) because they require
+# libclang.dll for the whisper-rs-sys build dep, and the self-hosted
+# runner does not ship LLVM by default. Installing LLVM requires
+# Administrator rights, which the GitHub Actions service account does
+# not have; the fix for that is tracked separately.
+#
+# The three jobs that DO run (Format, Test default, Test release) are
+# sufficient to verify the COM teardown fix: they exercise all the
+# production code paths that the RAII ComApartmentGuard wraps, and
+# they run cargo test without --test-threads=1 or continue-on-error so
+# any residual STATUS_ACCESS_VIOLATION (0xC0000005) at teardown would
+# fail the build.
+
+on:
+  push:
+    branches:
+      - "fix/**"
+      - "ci/**"
+  pull_request:
+    branches:
+      - "fix/**"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# Skip the dtolnay/rust-toolchain action on this self-hosted runner because
+# the action's default `shell: bash` step resolves the runner's temp dir to
+# ổ F: (a drive that does not exist on this machine) and fails before the
+# toolchain step runs. The runner already has rustc/cargo on PATH (installed
+# via rustup per the runner setup guide), so we invoke cargo directly.
+
+jobs:
+  fmt:
+    name: Format check
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo fmt --check
+        shell: pwsh
+        run: cargo fmt --all -- --check
+
+  test-default:
+    name: Test (default features, debug)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo test --bins
+        # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
+        # If the COM guard fix is in place the binary must exit 0 cleanly.
+        # Any STATUS_ACCESS_VIOLATION (0xC0000005) or exit code 1 fails the job.
+        shell: pwsh
+        run: |
+          $env:RUST_BACKTRACE = "1"
+          cargo test --bins -- --nocapture --skip real_api
+
+  test-release:
+    name: Test (release build, smoke)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo test --release --bins
+        # Release-mode smoke; release build was NOT exhibiting the crash per
+        # comment in device_watchdog.rs, but verify on real machine anyway.
+        shell: pwsh
+        run: |
+          $env:RUST_BACKTRACE = "1"
+          cargo test --release --bins -- --nocapture --skip real_api

@@ -221,10 +221,14 @@ fn no_default_render_device_error_preserves_wasapi_diagnostic() {
 /// the test skips gracefully if COM cannot be initialised (headless CI).
 #[test]
 fn find_render_device_by_name_unknown_returns_err_not_panic() {
-    // Best-effort COM initialisation — skip rather than fail if unavailable.
-    if initialize_mta().is_err() {
-        return;
-    }
+    use crate::audio::windows_com::ComApartmentGuard;
+    // WP-24 (#723): use the RAII guard so the per-thread COM ref count is
+    // balanced on Drop, regardless of whether this test runs in the
+    // middle of a test binary that already has COM initialised.
+    let _com = match ComApartmentGuard::enter() {
+        Ok(g) => g,
+        Err(_) => return, // skip on headless / no-COM CI
+    };
     let result = find_render_device_by_name("____nonexistent_device_issue_196____");
     assert!(
         result.is_err(),

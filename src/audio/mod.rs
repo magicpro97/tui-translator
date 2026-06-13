@@ -36,6 +36,13 @@ use tokio::sync::mpsc;
 #[cfg(windows)]
 mod wasapi_capture;
 
+// WP-24 (#723): RAII guard that pairs `wasapi::initialize_mta()` with
+// `wasapi::deinitialize()` on Drop. Fixes the Windows test-process
+// teardown STATUS_ACCESS_VIOLATION (0xC0000005) caused by unbalanced
+// per-thread COM ref counts.
+#[cfg(windows)]
+pub mod windows_com;
+
 // Linux stub: PipeWire/PulseAudio loopback capture (LINUX-02, issue #469)
 #[cfg(target_os = "linux")]
 mod linux_capture;
