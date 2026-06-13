@@ -20,6 +20,7 @@ mod config_editor_cycle_tests;
 mod config_editor_render_tests;
 #[cfg(test)]
 mod config_editor_tests;
+pub mod control_hints;
 #[cfg(test)]
 mod draw_ui_tests;
 #[cfg(test)]
@@ -32,10 +33,9 @@ pub mod key_hint;
 mod layout_tests;
 pub mod onboarding;
 pub mod rolling_frame_stats;
-pub mod control_hints;
-pub mod status_metrics_route;
 #[cfg(test)]
 mod status_metrics_render_tests;
+pub mod status_metrics_route;
 #[cfg(test)]
 mod status_metrics_tests;
 #[cfg(test)]

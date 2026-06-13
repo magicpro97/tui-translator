@@ -149,10 +149,8 @@ fn status_bar_virtual_mic_indicator() -> Result<()> {
 
 #[test]
 fn status_bar_missing_virtual_mic_warning() -> Result<()> {
-    let rendered = render_status_strip(
-        TtsRouteStatus::for_tests(TtsRouting::VirtualMic, None),
-        160,
-    )?;
+    let rendered =
+        render_status_strip(TtsRouteStatus::for_tests(TtsRouting::VirtualMic, None), 160)?;
 
     assert!(
         rendered.contains("missing virtual mic"),

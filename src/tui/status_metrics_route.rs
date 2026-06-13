@@ -55,7 +55,10 @@ impl TtsRouteStatus {
     fn virtual_label(&self, prefix: &str, max_device_cols: usize) -> String {
         match self.virtual_mic_device.as_deref() {
             Some(device) if max_device_cols > 0 => {
-                format!("{prefix}:{}", crate::tui::truncate_device_name(device, max_device_cols))
+                format!(
+                    "{prefix}:{}",
+                    crate::tui::truncate_device_name(device, max_device_cols)
+                )
             }
             Some(_) => prefix.to_string(),
             None => format!("{prefix}:missing"),
