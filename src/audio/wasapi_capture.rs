@@ -340,6 +340,11 @@ fn capture_device_info(
 }
 
 fn default_render_identity() -> (Option<String>, Option<String>) {
+    // WP-24 (#723): WASAPI requires COM initialisation on the current
+    // thread. The guard maps RPC_E_CHANGED_MODE to Ok so calling this
+    // from a thread where COM is already initialised (e.g. via
+    // `capture_loop` or `list_loopback_devices`) stays safe.
+    let _com = ComApartmentGuard::enter().ok();
     let default_device = get_default_device(&Direction::Render).ok();
     let default_id = default_device
         .as_ref()
@@ -362,6 +367,11 @@ fn resolve_capture_device_name(requested: Option<&str>) -> Option<&str> {
 }
 
 fn select_render_device(requested: Option<&str>) -> Result<(Device, String)> {
+    // WP-24 (#723): WASAPI requires COM initialisation on the current
+    // thread. The guard is idempotent (RPC_E_CHANGED_MODE → Ok) so this
+    // is safe even when the caller (capture_loop, list_loopback_devices)
+    // has already initialised COM on the same thread.
+    let _com = ComApartmentGuard::enter()?;
     match resolve_capture_device_name(requested) {
         Some(name) => find_render_device_by_name(name),
         None => {
@@ -393,6 +403,11 @@ fn no_default_render_device_error(wasapi_error: &str) -> anyhow::Error {
 }
 
 fn find_render_device_by_name(name: &str) -> Result<(Device, String)> {
+    // WP-24 (#723): WASAPI requires COM initialisation on the current
+    // thread. The guard is idempotent so this is safe even when the
+    // caller (select_render_device, tests) has already initialised
+    // COM on the same thread.
+    let _com = ComApartmentGuard::enter()?;
     let collection = DeviceCollection::new(&Direction::Render)
         .map_err(|e| anyhow!("enumerate active render devices: {e}"))?;
     let count = collection
