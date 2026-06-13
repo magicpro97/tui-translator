@@ -33,6 +33,7 @@ mod layout_tests;
 pub mod onboarding;
 pub mod rolling_frame_stats;
 pub mod control_hints;
+pub mod status_metrics_route;
 #[cfg(test)]
 mod status_metrics_render_tests;
 #[cfg(test)]
@@ -2395,63 +2396,12 @@ pub fn record_config_apply_to(
 }
 
 // ── StatusMetricsStrip ────────────────────────────────────────────────────────
+//
+// WP-25.01 (#759): the `TtsRouteStatus` sub-struct was extracted to
+// `src/tui/status_metrics_route.rs`.  See that file for the
+// implementation and the issue history.
 
-/// Runtime TTS routing summary rendered in the status strip.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TtsRouteStatus {
-    routing: TtsRouting,
-    virtual_mic_device: Option<String>,
-}
-
-impl TtsRouteStatus {
-    /// Build a status summary from the active configuration.
-    pub fn from_config(config: &AppConfig) -> Self {
-        Self {
-            routing: config.tts_routing,
-            virtual_mic_device: config.virtual_mic_device.clone(),
-        }
-    }
-
-    fn compact_label(&self, max_device_cols: usize) -> String {
-        match self.routing {
-            TtsRouting::Speakers => "spk".to_string(),
-            TtsRouting::VirtualMic => self.virtual_label("vmic", max_device_cols),
-            TtsRouting::Both => self.virtual_label("both", max_device_cols),
-        }
-    }
-
-    fn expanded_label(&self, max_device_cols: usize) -> String {
-        match self.routing {
-            TtsRouting::Speakers => "Speakers".to_string(),
-            TtsRouting::VirtualMic => self.virtual_label("Virtual mic", max_device_cols),
-            TtsRouting::Both => self.virtual_label("Both", max_device_cols),
-        }
-    }
-
-    fn virtual_label(&self, prefix: &str, max_device_cols: usize) -> String {
-        match self.virtual_mic_device.as_deref() {
-            Some(device) if max_device_cols > 0 => {
-                format!("{prefix}:{}", truncate_device_name(device, max_device_cols))
-            }
-            Some(_) => prefix.to_string(),
-            None => format!("{prefix}:missing"),
-        }
-    }
-
-    fn missing_virtual_mic(&self) -> bool {
-        matches!(self.routing, TtsRouting::VirtualMic | TtsRouting::Both)
-            && self.virtual_mic_device.is_none()
-    }
-}
-
-impl Default for TtsRouteStatus {
-    fn default() -> Self {
-        Self {
-            routing: TtsRouting::Speakers,
-            virtual_mic_device: None,
-        }
-    }
-}
+pub use crate::tui::status_metrics_route::TtsRouteStatus;
 
 /// Compact (3-row) or expanded (8-row) metrics strip rendered below the
 /// subtitle pane.
