@@ -37,6 +37,8 @@
 //! paced start-to-start frame interval after sleeping so timer over-shoot is
 //! visible in the evidence.
 
+#[path = "frame_pacing_bench_config.rs"]
+mod config;
 #[path = "../tui/frame_pacer.rs"]
 mod frame_pacer;
 #[path = "../metrics/mod.rs"]
@@ -45,6 +47,7 @@ mod metrics;
 #[path = "frame_pacing_bench_output.rs"]
 mod output;
 
+use config::{p95_gate_ms, parse_gate_set, passes_gate, BenchMode, GateSet};
 use frame_pacer::{FramePacer, DROPPED_FRAME_THRESHOLD_MS, TARGET_FPS};
 use std::{
     fmt::Write as FmtWrite,
@@ -66,11 +69,11 @@ const WARMUP_FRAMES: u64 = 60; // 1 second at 60fps
 /// Number of frames to measure in each mode.
 const MEASURE_FRAMES: u64 = 360; // 6 seconds at 60fps
 
-/// Acceptance gate: p95 ≤ this value for single-pane mode (ms).
-const SINGLE_MODE_P95_GATE_MS: u64 = 20;
-
-/// Acceptance gate: p95 ≤ this value for dual-pane mode (ms).
-const DUAL_MODE_P95_GATE_MS: u64 = 25;
+// WP-25.03 (#761): the lenient-gate constants and the
+// `GateSet::Strict60Fps` constants live in
+// `frame_pacing_bench_config.rs` so the test module can lock them
+// down.  `main` resolves the right value for the requested
+// `GateSet` at runtime via `config::p95_gate_ms`.
 
 /// Capture-thread proxy period.  The real WASAPI capture path runs off the TUI
 /// thread; this background probe checks that the new 60fps pacer does not starve
@@ -108,7 +111,9 @@ fn simulate_dual_frame_work(frame: u64) -> (String, String) {
              [TGT…] Today's agenda is… (partial)\n\
              ╚════════════════════════════════════════════════════════════════╝\n\
              Status A: running | p95: {} ms",
-            frame, frame, SINGLE_MODE_P95_GATE_MS
+            frame,
+            frame,
+            config::SINGLE_MODE_P95_GATE_MS
         );
         buf
     };
@@ -123,7 +128,9 @@ fn simulate_dual_frame_work(frame: u64) -> (String, String) {
              [TGT…] The first topic is… (partial)\n\
              ╚════════════════════════════════════════════════════════════════╝\n\
              Status B: running | p95: {} ms",
-            frame, frame, DUAL_MODE_P95_GATE_MS
+            frame,
+            frame,
+            config::DUAL_MODE_P95_GATE_MS
         );
         buf
     };
@@ -427,6 +434,18 @@ fn main() {
         .windows(2)
         .find(|w| w[0] == "--json")
         .map(|w| PathBuf::from(&w[1]));
+    // WP-25.03 (#761): `--strict` flips the bench to the 60 FPS
+    // gate set (17 ms p95).  Without it, the legacy 20/25 ms
+    // gates from issue #383 apply.  The selected gate set is
+    // reported in the verdict so a CI log makes the choice
+    // obvious to whoever is reading it.
+    let gate_set = parse_gate_set(&args);
+    let single_gate = p95_gate_ms(gate_set, BenchMode::SinglePane);
+    let dual_gate = p95_gate_ms(gate_set, BenchMode::DualPane);
+    let gate_label = match gate_set {
+        GateSet::Lenient => "issue #383 lenient (20ms single / 25ms dual)",
+        GateSet::Strict60Fps => "60 FPS strict (17ms both modes)",
+    };
 
     // ISO timestamp (seconds precision, no sub-second to keep evidence redaction-safe)
     let ts_secs = SystemTime::now()
@@ -457,6 +476,7 @@ fn main() {
         " Frames per run: {} warm-up + {} measured",
         WARMUP_FRAMES, MEASURE_FRAMES
     );
+    println!(" Gate set: {gate_label}");
     println!("───────────────────────────────────────────────────────────────────");
     println!();
 
@@ -465,30 +485,34 @@ fn main() {
     output::print_result(&baseline);
 
     println!("[ BRANCH — single-pane mode ]");
-    let single = run_mode("branch-single", SINGLE_MODE_P95_GATE_MS, false);
+    let single = run_mode("branch-single", single_gate, false);
     output::print_result(&single);
 
     println!("[ BRANCH — dual-pane mode ]");
-    let dual = run_mode("branch-dual", DUAL_MODE_P95_GATE_MS, true);
+    let dual = run_mode("branch-dual", dual_gate, true);
     output::print_result(&dual);
 
-    // Overall verdict
-    let all_pass = single.passed == Some(true) && dual.passed == Some(true);
+    // Overall verdict — uses the centralised `passes_gate` predicate
+    // so the bench's pass/fail logic stays in sync with the test
+    // suite.  See `frame_pacing_bench_config::tests`.
+    let single_pass = passes_gate(single.p95_ms, gate_set, BenchMode::SinglePane);
+    let dual_pass = passes_gate(dual.p95_ms, gate_set, BenchMode::DualPane);
+    let all_pass = single_pass && dual_pass;
     println!("═══════════════════════════════════════════════════════════════════");
     if all_pass {
-        println!(" OVERALL: ✅ PASS — all p95 gates satisfied");
+        println!(" OVERALL: ✅ PASS — all p95 gates satisfied ({gate_label})");
     } else {
-        println!(" OVERALL: ❌ FAIL — one or more p95 gates exceeded");
-        if single.passed != Some(true) {
+        println!(" OVERALL: ❌ FAIL — one or more p95 gates exceeded ({gate_label})");
+        if !single_pass {
             println!(
                 "   single-mode p95 {} ms > gate {} ms",
-                single.p95_ms, SINGLE_MODE_P95_GATE_MS
+                single.p95_ms, single_gate
             );
         }
-        if dual.passed != Some(true) {
+        if !dual_pass {
             println!(
                 "   dual-mode   p95 {} ms > gate {} ms",
-                dual.p95_ms, DUAL_MODE_P95_GATE_MS
+                dual.p95_ms, dual_gate
             );
         }
     }

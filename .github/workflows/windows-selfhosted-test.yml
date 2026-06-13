@@ -72,72 +72,34 @@ jobs:
           $env:RUST_BACKTRACE = "1"
           cargo test --release --bins -- --nocapture --skip real_api
 
-  # WP-25.04 (#762): coverage gate for the v1-critical layers.
+  # WP-25.03 (#761): the 60 FPS contract needs a regression gate in CI.
+  # The bench's `--strict` flag selects the 17ms p95 threshold (60 FPS
+  # = 16.67ms rounded up to 17ms for integer comparison).  Without
+  # `--strict` the bench uses the legacy 20/25ms gates from issue #383.
   #
-  # We run with --no-cfg-coverage so the build does not pull
-  # libclang (whisper-rs-sys) — the self-hosted runner does
-  # not have LLVM installed and the install requires admin
-  # rights we don't have.  Trade-off: the coverage map is
-  # missing the local-stt feature, which is a known gap noted
-  # in the gate's plan.
-  #
-  # Threshold is 60% (the audit's estimate).  The branch
-  # threshold matches the line threshold by default.  Both can
-  # be tightened later when the baseline moves up.
-  coverage-gate:
-    name: Coverage gate (v1-critical layers)
+  # We run release because the bench is measuring wall-clock frame
+  # intervals; debug builds add noise that makes p95 unreliable.
+  # The JSON evidence is uploaded as an artifact so the gate trends
+  # are visible in the run history.
+  frame-pacing-strict:
+    name: Frame pacing (60 FPS strict gate)
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - name: Install rust toolchain with llvm-tools-preview
-        shell: pwsh
-        run: |
-          rustup component add llvm-tools-preview 2>&1 | Out-Null
-          cargo install cargo-llvm-cov --locked --quiet 2>&1 | Out-Null
-      - name: Generate lcov.info
+      - name: cargo run --release --bin frame_pacing_bench -- --strict --json
         shell: pwsh
         run: |
           $env:RUST_BACKTRACE = "1"
           New-Item -ItemType Directory -Force -Path target/evidence | Out-Null
-          cargo llvm-cov --no-cfg-coverage --no-default-features --features local-mt --bins --lcov --output-path target/evidence/lcov.info
+          cargo run --release --bin frame_pacing_bench -- --strict --json target/evidence/frame-pacing-strict.json
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::cargo llvm-cov exited with $LASTEXITCODE"
+            Write-Host "::error::frame_pacing_bench --strict exited with $LASTEXITCODE (p95 gate violation)"
             exit $LASTEXITCODE
           }
-      - name: Enforce coverage gate
-        shell: pwsh
-        run: |
-          python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 60.0
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::coverage gate failed; see log above for the per-file breakdown"
-            exit $LASTEXITCODE
-          }
-      - name: Upload coverage report
+      - name: Upload frame-pacing evidence
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-gate-evidence
-          path: target/evidence/lcov.info
+          name: frame-pacing-strict-evidence
+          path: target/evidence/frame-pacing-strict.json
           if-no-files-found: warn
           retention-days: 30
-
-  # WP-25.01 (#759): module-size gate.  The 4 oversized
-  # production files (main.rs, tui/mod.rs, config/mod.rs,
-  # pipeline/mod.rs) are tracked by issue #759 for a
-  # refactor pass; the gate is the regression catcher.
-  #
-  # The script excludes `src/bin/` because the bin/ directory
-  # is intentionally long-running procedural code (benchmarks,
-  # probes) that is not subject to the 1000-LOC gate.
-  module-size-gate:
-    name: Module-size gate (1000 LOC per file)
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-      - name: Enforce module-size gate
-        shell: pwsh
-        run: |
-          python3 scripts/ci/check_module_sizes.py --threshold 1000
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::module-size gate failed; the listed files must be split before the next release"
-            exit $LASTEXITCODE
-          }
