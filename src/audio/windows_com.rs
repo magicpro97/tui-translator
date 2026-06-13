@@ -66,24 +66,18 @@ pub struct ComApartmentGuard {
     owns_apartment: bool,
 }
 
-/// Error returned by [`ComApartmentGuard::enter`].
+/// HRESULT for `RPC_E_CHANGED_MODE` (0x80010106). Returned by
+/// `CoInitializeEx` when the calling thread already has a COM
+/// apartment initialised with a different apartment type. Per Microsoft
+/// docs, the second call does NOT increment the per-thread ref count,
+/// so the matching `CoUninitialize` from a guard is a no-op.
+///
+/// The constant is `u32` because `HRESULT` is a 32-bit value; we compare
+/// against the `.0` field of the `HRESULT` newtype (`.0` is `i32` per
+/// `windows-sys` convention, but the high bit is set so it fits in u32
+/// — we compare via `as i32` to keep the type straightforward).
 #[cfg(windows)]
-#[derive(Debug)]
-pub struct ComInitError(windows::core::Error);
-
-#[cfg(windows)]
-impl std::fmt::Display for ComInitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "COM apartment initialisation failed: {}", self.0)
-    }
-}
-
-#[cfg(windows)]
-impl std::error::Error for ComInitError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.0)
-    }
-}
+const RPC_E_CHANGED_MODE: i32 = 0x8001_0106_u32 as i32;
 
 #[cfg(windows)]
 impl ComApartmentGuard {
@@ -100,16 +94,16 @@ impl ComApartmentGuard {
     ///
     /// # Errors
     ///
-    /// Returns `Err(ComInitError)` only for genuine initialisation
+    /// Returns `Err(windows::core::Error)` only for genuine initialisation
     /// failures (e.g. `E_OUTOFMEMORY`, `CO_E_INIT_TLS`, or RPC errors
     /// other than `RPC_E_CHANGED_MODE`).
-    pub fn enter() -> Result<Self, ComInitError> {
+    pub fn enter() -> Result<Self, windows::core::Error> {
         match wasapi::initialize_mta() {
             Ok(()) => Ok(Self {
                 _not_send_sync: PhantomData,
                 owns_apartment: true,
             }),
-            Err(e) if is_rpc_e_changed_mode(&e) => Ok(Self {
+            Err(e) if e.code().0 == RPC_E_CHANGED_MODE => Ok(Self {
                 _not_send_sync: PhantomData,
                 // No matching CoInitializeEx succeeded on this call, so
                 // do NOT call CoUninitialize on Drop. The previous
@@ -117,7 +111,7 @@ impl ComApartmentGuard {
                 // or caller's lifetime.
                 owns_apartment: false,
             }),
-            Err(e) => Err(ComInitError(e)),
+            Err(e) => Err(e),
         }
     }
 
@@ -134,17 +128,17 @@ impl ComApartmentGuard {
     /// while the COM objects still hold cross-apartment proxies,
     /// causing a `STATUS_ACCESS_VIOLATION` inside the OS MMDevice
     /// proxy on the next cross-appartment Release.
-    pub fn leak() -> Result<Self, ComInitError> {
+    pub fn leak() -> Result<Self, windows::core::Error> {
         match wasapi::initialize_mta() {
             Ok(()) => Ok(Self {
                 _not_send_sync: PhantomData,
                 owns_apartment: false,
             }),
-            Err(e) if is_rpc_e_changed_mode(&e) => Ok(Self {
+            Err(e) if e.code().0 == RPC_E_CHANGED_MODE => Ok(Self {
                 _not_send_sync: PhantomData,
                 owns_apartment: false,
             }),
-            Err(e) => Err(ComInitError(e)),
+            Err(e) => Err(e),
         }
     }
 }
@@ -156,21 +150,6 @@ impl Drop for ComApartmentGuard {
             wasapi::deinitialize();
         }
     }
-}
-
-/// Returns true if the error code is `RPC_E_CHANGED_MODE` (0x80010106).
-///
-/// This is the documented "COM is already initialised on this thread
-/// with a different apartment type" error. We treat it as success
-/// because the apartment exists; a matching `CoUninitialize` is a no-op
-/// since the per-thread ref count was not incremented.
-#[cfg(windows)]
-fn is_rpc_e_changed_mode(err: &windows::core::Error) -> bool {
-    // windows::core::Error exposes the HRESULT via `code()`; compare
-    // against the well-known constant. Avoid pulling in the `windows`
-    // crate's HRESULT constants here to keep this module decoupled
-    // from specific windows crate versions.
-    err.code().0 == 0x8001_0106_u32 as i32
 }
 
 #[cfg(all(test, windows))]
