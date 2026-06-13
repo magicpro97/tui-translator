@@ -37,6 +37,9 @@ mod status_metrics_render_tests;
 #[cfg(test)]
 mod status_metrics_tests;
 #[cfg(test)]
+#[path = "status_metrics_tests_count_suffix.rs"]
+mod status_metrics_tests_count_suffix;
+#[cfg(test)]
 mod storage_metrics_tests;
 #[cfg(test)]
 mod subtitle_pane_tests;
