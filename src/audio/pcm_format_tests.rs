@@ -253,7 +253,10 @@ fn interpolate_channel_at_half_fraction_midpoints() {
     let samples = vec![0, 0, 1000, 0, 2000, 0];
     // 2 channels, frame 0 = samples[0]=0, frame 1 = samples[2]=1000, channel 0
     let v = interpolate_channel(&samples, 2, 0, 1, 0.5, 0);
-    assert!((v - 500.0).abs() < 0.01, "half-fraction must midpoint, got {v}");
+    assert!(
+        (v - 500.0).abs() < 0.01,
+        "half-fraction must midpoint, got {v}"
+    );
 }
 
 #[test]

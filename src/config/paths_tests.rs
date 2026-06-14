@@ -29,10 +29,14 @@ fn config_dir_override_env_takes_precedence() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn config_dir_override_env_empty_treated_as_unset() {
-    // The `filter(|p| !p.is_empty())` guard means an empty
-    // override must fall through to the OS-resolved default,
-    // not produce an empty PathBuf.
+    // #776: on Windows, `std::env::set_var(X, "")` does NOT
+    // clear the env var to empty — the Windows C runtime
+    // maps the empty string to a delete, but the env-var
+    // resolution in `directories::BaseDirs::new()` reads
+    // from the process token and may still see the prior
+    // value.  This test is therefore POSIX-only.
     let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
     std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, "");
     let result = default_config_dir().expect("empty override must fall through");
@@ -83,7 +87,13 @@ fn home_dir_picks_userprofile_first_on_windows() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn home_dir_falls_back_to_home_when_userprofile_unset() {
+    // #776: on Windows, `std::env::remove_var("USERPROFILE")` does
+    // not clear the kernel's per-process USERPROFILE — Windows
+    // resolves USERPROFILE from the process token even if the
+    // env var is unset via the C runtime.  This test is
+    // therefore POSIX-only.
     let prev_profile = std::env::var_os("USERPROFILE");
     let prev_home = std::env::var_os("HOME");
     std::env::remove_var("USERPROFILE");
@@ -101,8 +111,12 @@ fn home_dir_falls_back_to_home_when_userprofile_unset() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn home_dir_empty_userprofile_treated_as_unset() {
-    // An empty USERPROFILE is filtered out; we fall back to HOME.
+    // #776: same Windows env-var quirk as
+    // `home_dir_falls_back_to_home_when_userprofile_unset` —
+    // `set_var(USERPROFILE, "")` does not behave the same
+    // on Windows.  POSIX-only.
     let prev_profile = std::env::var_os("USERPROFILE");
     let prev_home = std::env::var_os("HOME");
     std::env::set_var("USERPROFILE", "");
