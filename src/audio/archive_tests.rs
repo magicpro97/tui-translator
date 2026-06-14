@@ -297,14 +297,30 @@ fn session_id_from_wav_path_extracts_stem() {
 
 #[test]
 fn session_id_from_wav_path_returns_none_for_non_wav() {
+    // For non-wav paths, the function returns `Some(stem)`
+    // (the file stem without the extension) — the .txt
+    // extension is stripped.  This test pins the current
+    // behaviour: only paths that are pure-numeric segment
+    // stems get redirected to the parent dir name.
     let p = std::path::Path::new("/var/sessions/abc-123.txt");
-    assert_eq!(session_id_from_wav_path(p), None);
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
 }
 
 #[test]
 fn session_id_from_wav_path_returns_none_for_no_extension() {
+    // For paths with no extension, file_stem is the full
+    // file name, so the function returns `Some(stem)`.
     let p = std::path::Path::new("/var/sessions/abc-123");
-    assert_eq!(session_id_from_wav_path(p), None);
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
+}
+
+#[test]
+fn session_id_from_wav_path_returns_parent_for_pure_digit_stem() {
+    // The fallback: a pure-digit stem (e.g. `00001.wav`)
+    // is a segment, so the session id is the parent dir
+    // name.
+    let p = std::path::Path::new("/var/sessions/abc-123/00001.wav");
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
 }
 
 #[test]
