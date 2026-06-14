@@ -220,7 +220,14 @@ def main(argv: list[str] | None = None) -> int:
         # waives `src/<dir>/mod.rs`), or the directory
         # containing it (e.g. `src/tui/` waives
         # `src/tui/mod.rs`).
-        rel = s.rel(args.src)
+        #
+        # Normalize the path separator to `/` so the match
+        # works on Windows (where `os.sep == '\\'`) and
+        # macOS / Linux (where `os.sep == '/'`) alike.  The
+        # waivers file uses forward slashes (the
+        # `src/<path>` convention from
+        # `.standards-waivers.txt`).
+        rel = s.rel(args.src).replace("\\", "/")
         parent_dir = str(Path(rel).parent)
         if parent_dir == ".":
             parent_prefix = ""

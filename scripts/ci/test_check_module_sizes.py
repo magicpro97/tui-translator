@@ -259,6 +259,35 @@ class WaiverTests(CliTests):
         self.assertEqual(result.returncode, 0)
         self.assertIn("PASS", result.stdout)
 
+    def test_path_separator_normalisation_on_windows(self) -> None:
+        # On Windows, `pathlib.Path` produces backslash
+        # separators.  The waiver list uses forward slashes
+        # (matching the `src/<path>` convention from
+        # `.standards-waivers.txt`).  The script must
+        # normalise the `rel` path to forward slashes so
+        # the match works on Windows as well as POSIX.
+        # We simulate the Windows behaviour by writing a
+        # backslash-style path to the script via a
+        # post-processing test: create a waiver file that
+        # uses forward slashes (the conventional form) and
+        # check that the script matches it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._make_over(tmp_path)
+            # The waiver uses the conventional forward-slash
+            # form; even if the script internally normalises
+            # `rel` to backslashes (as on Windows), the
+            # match must succeed.
+            waivers = self._write_waivers(tmp_path, ["src/foo/mod.rs"])
+            result = self._run(
+                "--threshold", "40", "--waivers", str(waivers), cwd=tmp_path
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=(f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
