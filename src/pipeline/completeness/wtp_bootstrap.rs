@@ -262,3 +262,6 @@ async fn emit(tx: &Option<mpsc::Sender<WtpDownloadEvent>>, event: WtpDownloadEve
 mod tests {
     // Tests are in tests/wtp_model_manager.rs
 }
+#[cfg(all(test, feature = "semantic-buffering-wtp"))]
+#[path = "wtp_bootstrap_tests.rs"]
+mod tests;
