@@ -72,15 +72,21 @@ fn compact_virtual_mic_with_device_uses_full_name_when_short() {
 
 #[test]
 fn compact_virtual_mic_with_device_truncates_to_max() {
+    // The ellipsis (U+2026) is 3 bytes in UTF-8 but 1
+    // display column.  We assert the display column
+    // budget, not the byte count, so the test is correct
+    // on both UTF-8 and Windows-1252 encodings.
     let s = TtsRouteStatus::for_tests(
         TtsRouting::VirtualMic,
         Some("CABLE Input (Very Long Name)".to_string()),
     );
     let out = s.compact_label(6);
-    // The total length is `vmic:` (5) + truncated device (≤ 6)
-    // = 11 max.  The truncation policy is in `truncate_device_name`.
+    // The total display width is `vmic:` (5) + truncated device
+    // (≤ 6 columns) = 11 max.  The truncation policy is in
+    // `truncate_device_name`.
     assert!(out.starts_with("vmic:"));
-    assert!(out.len() <= 5 + 6);
+    let total_cols = out.chars().count(); // ASCII chars only here
+    assert!(total_cols <= 5 + 6, "compact_label got {out:?}");
 }
 
 #[test]
@@ -153,9 +159,12 @@ fn expanded_virtual_mic_truncates_to_max() {
     );
     let out = s.expanded_label(8);
     // Prefix is "Virtual mic:" (12 chars); the device name is
-    // truncated to 8 chars.  Total max length 12 + 8 = 20.
+    // truncated to 8 columns.  Total max display width
+    // 12 + 8 = 20.  The byte length may exceed this because
+    // the ellipsis is 3 bytes in UTF-8, so we assert
+    // character count instead of byte length.
     assert!(out.starts_with("Virtual mic:"));
-    assert!(out.len() <= 12 + 8);
+    assert!(out.chars().count() <= 12 + 8, "expanded_label got {out:?}");
 }
 
 // ── Tests for missing_virtual_mic ───────────────────────────────────────────
