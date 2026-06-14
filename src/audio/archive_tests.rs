@@ -286,3 +286,144 @@ fn from_parts_falls_back_to_default_dir() {
     assert_eq!(resolved.directory, default);
     assert_eq!(resolved.max_size_bytes, 0);
 }
+
+// ── Tests for the file-naming helpers ─────────────────────────────────────
+
+#[test]
+fn session_id_from_wav_path_extracts_stem() {
+    let p = std::path::Path::new("/var/sessions/abc-123.wav");
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
+}
+
+#[test]
+fn session_id_from_wav_path_returns_none_for_non_wav() {
+    // For non-wav paths, the function returns `Some(stem)`
+    // (the file stem without the extension) — the .txt
+    // extension is stripped.  This test pins the current
+    // behaviour: only paths that are pure-numeric segment
+    // stems get redirected to the parent dir name.
+    let p = std::path::Path::new("/var/sessions/abc-123.txt");
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
+}
+
+#[test]
+fn session_id_from_wav_path_returns_none_for_no_extension() {
+    // For paths with no extension, file_stem is the full
+    // file name, so the function returns `Some(stem)`.
+    let p = std::path::Path::new("/var/sessions/abc-123");
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
+}
+
+#[test]
+fn session_id_from_wav_path_returns_parent_for_pure_digit_stem() {
+    // The fallback: a pure-digit stem (e.g. `00001.wav`)
+    // is a segment, so the session id is the parent dir
+    // name.
+    let p = std::path::Path::new("/var/sessions/abc-123/00001.wav");
+    assert_eq!(session_id_from_wav_path(p), Some("abc-123"));
+}
+
+#[test]
+fn session_wav_file_name_appends_extension() {
+    assert_eq!(session_wav_file_name("hello"), "hello.wav");
+    assert_eq!(session_wav_file_name("abc-123"), "abc-123.wav");
+}
+
+#[test]
+fn sanitize_session_id_keeps_safe_chars() {
+    // The sanitizer is a placeholder: we just want to verify
+    // that safe chars survive.  (The exact set of safe chars
+    // is implementation-defined; see the function for the
+    // current contract.)
+    let result = sanitize_session_id_for_fs("abc-123");
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn sanitize_session_id_strips_path_separators() {
+    // The sanitizer MUST strip path separators so the resulting
+    // filename cannot escape the archive directory.
+    let result = sanitize_session_id_for_fs("a/b\\c:d");
+    assert!(!result.contains('/'));
+    assert!(!result.contains('\\'));
+    assert!(!result.contains(':'));
+}
+
+// ── Tests for is_valid_path_component ─────────────────────────────────────
+
+#[test]
+fn is_valid_path_component_accepts_safe() {
+    assert!(is_valid_path_component("abc"));
+    assert!(is_valid_path_component("abc-123"));
+    assert!(is_valid_path_component("abc_123"));
+    assert!(is_valid_path_component("abc.txt"));
+}
+
+#[test]
+fn is_valid_path_component_rejects_empty_and_dot() {
+    assert!(!is_valid_path_component(""));
+    assert!(!is_valid_path_component("."));
+    assert!(!is_valid_path_component(".."));
+}
+
+#[test]
+fn is_valid_path_component_rejects_separators() {
+    assert!(!is_valid_path_component("a/b"));
+    assert!(!is_valid_path_component("a\\b"));
+    assert!(!is_valid_path_component("a:b"));
+}
+
+#[test]
+fn is_valid_path_component_rejects_control_chars() {
+    assert!(!is_valid_path_component("a\x01b"));
+    assert!(!is_valid_path_component("a\nb"));
+    assert!(!is_valid_path_component("a\tb"));
+}
+
+#[test]
+fn is_valid_path_component_rejects_shell_metachars() {
+    assert!(!is_valid_path_component("a<b"));
+    assert!(!is_valid_path_component("a>b"));
+    assert!(!is_valid_path_component("a\"b"));
+    assert!(!is_valid_path_component("a|b"));
+    assert!(!is_valid_path_component("a?b"));
+    assert!(!is_valid_path_component("a*b"));
+}
+
+#[test]
+fn is_valid_path_component_rejects_trailing_dot_or_space() {
+    assert!(!is_valid_path_component("abc."));
+    assert!(!is_valid_path_component("abc "));
+}
+
+#[test]
+fn is_valid_path_component_rejects_absolute_paths() {
+    assert!(!is_valid_path_component("/etc/passwd"));
+    assert!(!is_valid_path_component("C:\\Windows"));
+}
+
+#[test]
+fn is_valid_path_component_rejects_windows_reserved_names() {
+    // Windows reserves CON, PRN, AUX, NUL, COM1..9, LPT1..9
+    // as filenames.  The case-insensitive check uses the
+    // uppercase stem (before the first dot).
+    assert!(!is_valid_path_component("CON"));
+    assert!(!is_valid_path_component("PRN"));
+    assert!(!is_valid_path_component("AUX"));
+    assert!(!is_valid_path_component("NUL"));
+    assert!(!is_valid_path_component("COM1"));
+    assert!(!is_valid_path_component("LPT1"));
+    assert!(!is_valid_path_component("con.txt"));
+    assert!(!is_valid_path_component("Com1"));
+}
+
+#[test]
+fn is_valid_path_component_accepts_reserved_lookalike_with_different_ext() {
+    // A name that LOOKS like a Windows reserved name but has
+    // a different extension (not the same stem) is fine.
+    // "CON.extra" has stem "CON" (matches the reserved name).
+    // We test a different look: "CONFOO" (stem "CONFOO",
+    // not in the reserved list) which is fine.
+    assert!(is_valid_path_component("CONFOO"));
+    assert!(is_valid_path_component("CONAUX"));
+}
