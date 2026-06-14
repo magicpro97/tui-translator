@@ -64,6 +64,13 @@ name = "qa8_slo_gate_checker"
 path = "src/bin/qa8_slo_gate_checker.rs"
 
 [dependencies]
+# WP-25.06 (fix/pin-broken-lib-versions): native deps that
+# broke a previous build are pinned with `=X.Y.Z` (exact
+# version) to prevent `cargo update` from silently bumping
+# to a new minor.  Track the next upgrade in #758 and bump
+# intentionally.  See `references/cross-platform-ci-bugs.md`
+# in the `windows-rust-ci` skill for the original incident
+# (screencapturekit 6.1 / apple-cf 0.9.3 Swift lib).
 # Audio resampling: TTS 24 kHz mono → device native rate (used on all platforms)
 rubato = "0.15"
 
@@ -116,7 +123,7 @@ whisper-rs = { version = "0.12", optional = true, features = ["whisper-cpp-traci
 # ONNX Runtime + pure-Rust SentencePiece for the local OPUS-MT backend (#217).
 # Optional so default CI/release builds stay lightweight until local MT is enabled.
 ort = { version = "=2.0.0-rc.11", default-features = false, features = ["load-dynamic"], optional = true }
-sentencepiece-rs = { version = "0.2.1", optional = true }
+sentencepiece-rs = { version = "=0.2.2", optional = true }
 # Random number generation for Gaussian noise in Supertonic diffusion inference.
 rand = { version = "0.8", optional = true }
 # tar + bzip2 for Supertonic-3 archive extraction at startup (issue #692).
@@ -145,7 +152,7 @@ chrono = { version = "0.4", features = ["serde"] }
 fluent-bundle = "0.15"
 intl-memoizer = "0.5"
 unic-langid = { version = "0.9", features = ["macros"] }
-sys-locale = "0.3.2"
+sys-locale = "=0.3.2"
 
 [features]
 # Enable the local Whisper STT backend (requires whisper.cpp build toolchain).
@@ -205,7 +212,7 @@ hw-smoke = []
 # WASAPI loopback capture (Windows only)
 wasapi = "0.14"
 # Audio playback — TTS output via system default audio device (Windows only)
-rodio = "0.17"
+rodio = "=0.17.3"
 # Windows thread-scheduling API (SetThreadPriority) for inference priority hints (#232)
 windows-sys = { version = "0.52", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Media", "Win32_System_ProcessStatus", "Win32_System_Diagnostics_ToolHelp"] }
 # IMMNotificationClient COM server impl for US-09 device-loss watchdog (#734)
@@ -215,17 +222,17 @@ windows-core = { version = "0.61" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # CoreAudio loopback capture via BlackHole virtual device (macOS only)
-cpal = "0.15"
+cpal = "=0.15.3"
 # ScreenCaptureKit audio capture — zero-install system-audio loopback (macOS 13.0+).
 # The macos_13_0 feature enables with_captures_audio / with_sample_rate / with_channel_count
 # and SCStreamOutputType::Audio. MACOS-10 (issue #641).
 # Note: screencapturekit → apple-metal 0.8.x uses macOS 26 SDK APIs (MTLSamplerDescriptor),
 # requiring Xcode 26 / macos-26 CI runners to compile. Tracked in #679.
-screencapturekit = { version = "6", features = ["macos_13_0"] }
+screencapturekit = { version = "=6.1.0", features = ["macos_13_0"] }
 # TTS audio playback via CoreAudio (macOS only). MACOS-17 (issue #657).
 # rodio uses cpal internally; the same version as Windows is required so the
 # RodioSink shared implementation compiles on both platforms.
-rodio = "0.17"
+rodio = "=0.17.3"
 # whisper-rs with Metal GPU acceleration — merged with the base dep in [dependencies]
 # (which is optional = true without metal), so Metal is only activated on macOS.
 # Gated by `local-stt-metal` feature; see MACOS-19, issue #659.
