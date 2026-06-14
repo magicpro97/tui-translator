@@ -160,18 +160,70 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print the top-20 biggest files and exit (no gate)",
     )
+    parser.add_argument(
+        "--waivers",
+        type=Path,
+        default=None,
+        help=(
+            "path to a waiver file (one path per line, `# comments` "
+            "ignored). Files in the waiver list are exempted from "
+            "the threshold. Use sparingly; waivers are a regression "
+            "catcher for the pre-existing baseline, not a permanent "
+            "carve-out. Defaults to `.standards-waivers.txt` in the "
+            "repo root."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.src.is_dir():
         print(f"::error::src/ directory not found: {args.src}", file=sys.stderr)
         return 2
 
+    # Resolve the waiver list. Default to
+    # `.standards-waivers.txt` in the repo root (the same file
+    # the 600-LOC gate in `engineering-standards.md` uses).
+    if args.waivers is None:
+        default_waivers = Path(".standards-waivers.txt")
+        if default_waivers.is_file():
+            args.waivers = default_waivers
+    waived_paths: set[str] = set()
+    if args.waivers is not None and args.waivers.is_file():
+        with args.waivers.open("r", encoding="utf-8") as fp:
+            for raw in fp:
+                line = raw.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                # Strip the `src/` prefix so the waiver list
+                # matches the same path notation as
+                # `.standards-waivers.txt` (which uses
+                # `src/<path>`).
+                if line.startswith("src/"):
+                    line = line[len("src/") :]
+                if line:
+                    waived_paths.add(line)
+
     sizes = collect_sizes(args.src)
     if args.list:
         print(format_table(sizes, args.src))
         return 0
 
-    over: list[ModuleSize] = [s for s in sizes if s.loc > args.threshold]
+    over: list[ModuleSize] = []
+    for s in sizes:
+        if s.loc <= args.threshold:
+            continue
+        # Match the file directly, or its parent dir (which
+        # waives `src/<dir>/mod.rs`), or the directory
+        # containing it (e.g. `src/tui/` waives
+        # `src/tui/mod.rs`).
+        rel = s.rel(args.src)
+        parent_dir = str(Path(rel).parent)
+        if parent_dir == ".":
+            parent_prefix = ""
+        else:
+            parent_prefix = parent_dir + "/"
+        if rel in waived_paths or parent_prefix in waived_paths:
+            continue
+        over.append(s)
     if over:
         print(
             f"::error::module-size gate FAILED — {len(over)} file(s) > {args.threshold} LOC",
