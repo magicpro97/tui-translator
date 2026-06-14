@@ -5081,8 +5081,17 @@ mod tests {
     #[cfg(feature = "local-mt")]
     #[test]
     fn runtime_provider_error_allows_local_mt_with_feature() {
+        // #714: "local" must be accepted for the MT provider
+        // in builds that compile in local-mt.  We also set
+        // `stt_provider = "google"` because the default
+        // stt provider is "local" (which requires a
+        // local-stt build) — the coverage gate runs without
+        // the local-stt feature, so leaving the STT default
+        // would push "stt_provider="local"" onto the
+        // unsupported list and fail the assertion.
         let mut cfg = config::AppConfig::default();
         cfg.mt_provider = "local".to_string();
+        cfg.stt_provider = "google".to_string();
 
         assert!(runtime_provider_error(&cfg).is_none());
     }
