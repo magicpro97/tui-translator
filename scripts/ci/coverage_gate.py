@@ -174,7 +174,25 @@ def parse_lcov(lcov_path: Path) -> CoverageReport:
                 # `SF:` paths are relative to the project root
                 # in `cargo llvm-cov` output; the v1-critical
                 # layer filters assume that prefix.
-                current_path = m.group(1).decode("utf-8", errors="replace")
+                raw_path = m.group(1).decode("utf-8", errors="replace")
+                # Normalise path separators: on Windows, paths
+                # may use backslashes; the v1-critical layer
+                # filters assume forward slashes.
+                raw_path = raw_path.replace("\\", "/")
+                # If the path is absolute (e.g. on Windows the
+                # `cargo llvm-cov` output may include a
+                # `C:\...` prefix when the build is run from
+                # outside the project root), strip the
+                # absolute prefix and keep only the
+                # `src/<rest>` suffix.
+                if ":" in raw_path[:3]:
+                    # The colon in the first 3 characters is a
+                    # Windows drive-letter prefix.  Strip the
+                    # everything-before-`src/` portion.
+                    idx = raw_path.rfind("src/")
+                    if idx >= 0:
+                        raw_path = raw_path[idx:]
+                current_path = raw_path
             elif (m := _RE_LFD.match(raw)) is not None:
                 if current_path is None:
                     raise ValueError(f"line {line_count}: lfd before SF")

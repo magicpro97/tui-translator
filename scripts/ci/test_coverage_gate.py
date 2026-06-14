@@ -257,6 +257,50 @@ class CliTests(unittest.TestCase):
         finally:
             path.unlink()
 
+    def test_windows_drive_letter_path_is_normalised(self) -> None:
+        # On Windows, `cargo llvm-cov` may emit absolute paths
+        # like `C:\actions-runner\_work\tui-translator\src\audio\foo.rs`
+        # in the `SF:` records.  The gate filters the v1-critical
+        # layers by the `src/<layer>/` prefix, so the absolute
+        # prefix must be stripped.  This test pins that
+        # behaviour.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".info", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(
+                "TN:\n"
+                "SF:C:\\actions-runner\\_work\\tui-translator\\tui-translator"
+                "\\src\\audio\\probe.rs\n"
+                "lfd:10\nlhr:9\nend_of_record\n"
+            )
+            path = Path(f.name)
+        try:
+            files = coverage_gate.parse_lcov(path).files
+            self.assertEqual(
+                list(files.keys()),
+                ["src/audio/probe.rs"],
+            )
+        finally:
+            path.unlink()
+
+    def test_windows_backslash_separator_is_normalised(self) -> None:
+        # Even without a drive-letter prefix, Windows paths
+        # use backslashes.  The gate's layer filter uses
+        # forward slashes; the parser must normalise.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".info", delete=False, encoding="utf-8"
+        ) as f:
+            f.write("TN:\nSF:src\\audio\\probe.rs\nlfd:10\nlhr:9\nend_of_record\n")
+            path = Path(f.name)
+        try:
+            files = coverage_gate.parse_lcov(path).files
+            self.assertEqual(
+                list(files.keys()),
+                ["src/audio/probe.rs"],
+            )
+        finally:
+            path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()
