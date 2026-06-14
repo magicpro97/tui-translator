@@ -201,6 +201,11 @@ def main(argv: list[str] | None = None) -> int:
                     line = line[len("src/") :]
                 if line:
                     waived_paths.add(line)
+        print(
+            f"::notice::module-size gate: loaded {len(waived_paths)} "
+            f"waivers from {args.waivers}: {sorted(waived_paths)}",
+            file=sys.stderr,
+        )
 
     sizes = collect_sizes(args.src)
     if args.list:
