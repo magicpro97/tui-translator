@@ -199,19 +199,24 @@ fn pcm_format_error_display_includes_variant_context() {
 // ── Tests for the private resample / interpolate helpers ──────────────────
 
 #[test]
-fn resampled_frame_count_zero_source_returns_zero() {
+fn resampled_frame_count_zero_source_returns_min_one() {
     // The `validate_format` check at the top of
     // `resample_i16_mono_to_f32_stereo` rejects a 0 source rate
     // before this is called, but the function should still behave
-    // sensibly if invoked with a 0 source rate directly.
+    // sensibly if invoked with a 0 source rate directly.  The
+    // current contract: 0 source_frames returns 1 (the
+    // `rounded.max(1)` floor) so the caller's buffer-allocation
+    // math never panics on an underflow.
     let n = resampled_frame_count(0, 24_000, 48_000);
-    assert_eq!(n, 0);
+    assert_eq!(n, 1);
 }
 
 #[test]
-fn resampled_frame_count_zero_target_returns_zero() {
+fn resampled_frame_count_zero_target_returns_min_one() {
+    // Same defensive floor: 0 target_frames after the
+    // round-half-up is 0, so `.max(1)` returns 1.
     let n = resampled_frame_count(100, 24_000, 0);
-    assert_eq!(n, 0);
+    assert_eq!(n, 1);
 }
 
 #[test]
