@@ -51,7 +51,10 @@ fn kind_label_loopback_audio() {
 
 #[test]
 fn kind_label_pipewire_null_sink() {
-    assert_eq!(VirtualDeviceKind::PipeWireNullSink.label(), "PipeWire null-sink");
+    assert_eq!(
+        VirtualDeviceKind::PipeWireNullSink.label(),
+        "PipeWire null-sink"
+    );
 }
 
 #[test]
@@ -61,7 +64,10 @@ fn kind_label_snd_aloop() {
 
 #[test]
 fn kind_label_pulse_null_sink() {
-    assert_eq!(VirtualDeviceKind::PulseNullSink.label(), "PulseAudio null-sink");
+    assert_eq!(
+        VirtualDeviceKind::PulseNullSink.label(),
+        "PulseAudio null-sink"
+    );
 }
 
 // ── Tests for VirtualDevicePatternConfig ──────────────────────────────────────
@@ -89,59 +95,58 @@ fn config_labeled_sets_label() {
 
 #[test]
 fn registry_builtin_succeeds() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
     assert!(!registry.pattern_sources().is_empty());
 }
 
 #[test]
 fn registry_classifies_vb_cable_input() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
-    let matched = registry.classify("CABLE Input (VB-Audio Virtual Cable)")
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
+    let matched = registry
+        .classify("CABLE Input (VB-Audio Virtual Cable)")
         .expect("VB-CABLE input must match");
     assert_eq!(matched.kind, VirtualDeviceKind::VbCable);
 }
 
 #[test]
 fn registry_classifies_blackhole() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
-    let matched = registry.classify("BlackHole 2ch")
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
+    let matched = registry
+        .classify("BlackHole 2ch")
         .expect("BlackHole 2ch must match");
     assert_eq!(matched.kind, VirtualDeviceKind::BlackHole);
 }
 
 #[test]
 fn registry_classifies_voicemeeter() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
-    let matched = registry.classify("VoiceMeeter Output")
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
+    let matched = registry
+        .classify("VoiceMeeter Output")
         .expect("VoiceMeeter must match");
     assert_eq!(matched.kind, VirtualDeviceKind::Voicemeeter);
 }
 
 #[test]
 fn registry_classifies_pulse_null_sink() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
-    let matched = registry.classify("My Virtual Microphone (null-sink)")
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
+    let matched = registry
+        .classify("My Virtual Microphone (null-sink)")
         .expect("PulseAudio null-sink must match");
     assert_eq!(matched.kind, VirtualDeviceKind::PulseNullSink);
 }
 
 #[test]
 fn registry_classify_returns_none_for_non_virtual() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
     assert!(registry.classify("Realtek HD Audio Output").is_none());
-    assert!(registry.classify("Speakers (Realtek High Definition Audio)").is_none());
+    assert!(registry
+        .classify("Speakers (Realtek High Definition Audio)")
+        .is_none());
 }
 
 #[test]
 fn registry_classify_is_case_insensitive() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
     // The classifier is case-insensitive: lowercase,
     // uppercase, and mixed-case all match.
     assert!(registry.classify("cable input").is_some());
@@ -155,12 +160,13 @@ fn registry_custom_pattern_takes_precedence() {
     // patterns.  This test pins the precedence by
     // classifying a name that BOTH the custom and the
     // built-in would match; the custom match is first.
-    let registry = VirtualDevicePatternRegistry::with_custom_patterns(&[
-        VirtualDevicePatternConfig::new("CABLE", VirtualDeviceKind::GenericOem),
-    ])
-    .expect("custom + builtin registry must compile");
-    let matched = registry.classify("CABLE Input")
-        .expect("must match");
+    let registry =
+        VirtualDevicePatternRegistry::with_custom_patterns(&[VirtualDevicePatternConfig::new(
+            "CABLE",
+            VirtualDeviceKind::GenericOem,
+        )])
+        .expect("custom + builtin registry must compile");
+    let matched = registry.classify("CABLE Input").expect("must match");
     // The custom pattern matches first; without the
     // precedence, the built-in VbCable would match.
     assert_eq!(matched.kind, VirtualDeviceKind::GenericOem);
@@ -182,20 +188,30 @@ fn registry_custom_pattern_disabled_is_ignored() {
 
 #[test]
 fn registry_rejects_empty_pattern() {
-    let result = VirtualDevicePatternRegistry::with_custom_patterns(&[
-        VirtualDevicePatternConfig::new("", VirtualDeviceKind::VbCable),
-    ]);
+    let result =
+        VirtualDevicePatternRegistry::with_custom_patterns(&[VirtualDevicePatternConfig::new(
+            "",
+            VirtualDeviceKind::VbCable,
+        )]);
     let err = result.expect_err("empty pattern must fail");
-    assert!(matches!(err, VirtualDevicePatternError::EmptyPattern { .. }));
+    assert!(matches!(
+        err,
+        VirtualDevicePatternError::EmptyPattern { .. }
+    ));
 }
 
 #[test]
 fn registry_rejects_whitespace_only_pattern() {
-    let result = VirtualDevicePatternRegistry::with_custom_patterns(&[
-        VirtualDevicePatternConfig::new("   ", VirtualDeviceKind::VbCable),
-    ]);
+    let result =
+        VirtualDevicePatternRegistry::with_custom_patterns(&[VirtualDevicePatternConfig::new(
+            "   ",
+            VirtualDeviceKind::VbCable,
+        )]);
     let err = result.expect_err("whitespace pattern must fail");
-    assert!(matches!(err, VirtualDevicePatternError::EmptyPattern { .. }));
+    assert!(matches!(
+        err,
+        VirtualDevicePatternError::EmptyPattern { .. }
+    ));
 }
 
 #[test]
@@ -203,28 +219,40 @@ fn registry_rejects_pattern_with_internal_whitespace() {
     // The pattern must be exactly as given — leading or
     // trailing whitespace is rejected to avoid silent
     // regex behaviour divergence.
-    let result = VirtualDevicePatternRegistry::with_custom_patterns(&[
-        VirtualDevicePatternConfig::new("  CABLE  ", VirtualDeviceKind::VbCable),
-    ]);
+    let result =
+        VirtualDevicePatternRegistry::with_custom_patterns(&[VirtualDevicePatternConfig::new(
+            "  CABLE  ",
+            VirtualDeviceKind::VbCable,
+        )]);
     let err = result.expect_err("padded pattern must fail");
-    assert!(matches!(err, VirtualDevicePatternError::PatternHasWhitespace { .. }));
+    assert!(matches!(
+        err,
+        VirtualDevicePatternError::PatternHasWhitespace { .. }
+    ));
 }
 
 #[test]
 fn registry_rejects_invalid_regex() {
-    let result = VirtualDevicePatternRegistry::with_custom_patterns(&[
-        VirtualDevicePatternConfig::new("[unclosed", VirtualDeviceKind::VbCable),
-    ]);
+    let result =
+        VirtualDevicePatternRegistry::with_custom_patterns(&[VirtualDevicePatternConfig::new(
+            "[unclosed",
+            VirtualDeviceKind::VbCable,
+        )]);
     let err = result.expect_err("invalid regex must fail");
-    assert!(matches!(err, VirtualDevicePatternError::InvalidRegex { .. }));
+    assert!(matches!(
+        err,
+        VirtualDevicePatternError::InvalidRegex { .. }
+    ));
 }
 
 #[test]
 fn registry_pattern_sources_includes_both_custom_and_builtin() {
-    let registry = VirtualDevicePatternRegistry::with_custom_patterns(&[
-        VirtualDevicePatternConfig::new("CABLE", VirtualDeviceKind::GenericOem),
-    ])
-    .expect("registry must compile");
+    let registry =
+        VirtualDevicePatternRegistry::with_custom_patterns(&[VirtualDevicePatternConfig::new(
+            "CABLE",
+            VirtualDeviceKind::GenericOem,
+        )])
+        .expect("registry must compile");
     let sources = registry.pattern_sources();
     // The custom pattern is at index 0, followed by
     // built-in patterns.  Pin the position.
@@ -236,8 +264,7 @@ fn registry_pattern_sources_includes_both_custom_and_builtin() {
 
 #[test]
 fn classify_with_registry_returns_some() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
     assert_eq!(
         classify_virtual_device_with_registry("CABLE Input", &registry),
         Some(VirtualDeviceKind::VbCable),
@@ -246,8 +273,7 @@ fn classify_with_registry_returns_some() {
 
 #[test]
 fn classify_with_registry_returns_none_for_non_virtual() {
-    let registry = VirtualDevicePatternRegistry::builtin()
-        .expect("builtin registry must compile");
+    let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
     assert_eq!(
         classify_virtual_device_with_registry("Realtek HD Audio", &registry),
         None,
