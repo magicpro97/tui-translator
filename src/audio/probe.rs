@@ -187,3 +187,6 @@ impl ProbeReport {
         self
     }
 }
+#[cfg(test)]
+#[path = "probe_tests.rs"]
+mod tests;
