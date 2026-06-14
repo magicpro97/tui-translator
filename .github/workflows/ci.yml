@@ -77,15 +77,14 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Run all-features test suite
-        # WP-24 (#723): the test binary occasionally exits with
-        # STATUS_ACCESS_VIOLATION (0xC0000005) during process teardown on
-        # hosted ``windows-latest`` runners after all tests pass.  The crash is
-        # environment-specific (doesn't reproduce on real Windows machines or
-        # release builds).  ``--test-threads=1`` serialises Drop execution and
-        # avoids the race; ``continue-on-error`` is a belt-and-braces in case
-        # the serialised order still hits the bug.
-        continue-on-error: true
-        run: cargo test --all-features -- --nocapture --skip real_api --test-threads=1
+        # WP-24 (#723) fix: the previous `continue-on-error: true` +
+        # `--test-threads=1` workaround for the hosted-runner
+        # STATUS_ACCESS_VIOLATION at teardown has been replaced by
+        # the `ComApartmentGuard` RAII type in `src/audio/windows_com.rs`,
+        # which pairs `wasapi::initialize_mta()` with `CoUninitialize`
+        # on Drop. The fix has been verified on a real Windows
+        # self-hosted runner (PR #755) and on hosted runners.
+        run: cargo test --all-features -- --nocapture --skip real_api
 
   # ── Build & Test ─────────────────────────────────────────────────────────────
   test:
@@ -107,9 +106,9 @@ jobs:
       - name: Build (release)
         run: cargo build --release --bins
       - name: Run binary unit tests (skip future real_api cases)
-        # WP-24 (#723): see Lint job above — same hosted-runner exit crash.
-        continue-on-error: true
-        run: cargo test --bins -- --nocapture --skip real_api --test-threads=1
+        # WP-24 (#723) fix: removed `continue-on-error: true` and
+        # `--test-threads=1`. See the Lint job above for rationale.
+        run: cargo test --bins -- --nocapture --skip real_api
 
   # ── PTY tests (Issue #108) ───────────────────────────────────────────────────
   # Runs the dedicated `pty` integration-test binary on a real Windows
@@ -837,10 +836,12 @@ jobs:
       - name: Build (debug, --locked, default features)
         run: cargo build --locked --bins
       - name: Run binary unit tests (skip real_api)
-        # WP-24 (#723): hosted-runner-only STATUS_ACCESS_VIOLATION at
-        # test-process teardown — only triggered on windows-latest in matrix.
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
-        run: cargo test --locked --bins -- --nocapture --skip real_api --test-threads=1
+        # WP-24 (#723) fix: removed `continue-on-error` and
+        # `--test-threads=1`. The `ComApartmentGuard` RAII type
+        # in `src/audio/windows_com.rs` now balances the per-thread
+        # COM ref count on Drop, so the matrix can run with default
+        # parallelism and fail-closed on any regression.
+        run: cargo test --locked --bins -- --nocapture --skip real_api
 
   # ── CI-01 feature matrix (Issue #461) ───────────────────────────────────────
   # Compiles the hardware-free optional feature flags on Windows + the macOS-14
