@@ -111,8 +111,12 @@ fn home_dir_falls_back_to_home_when_userprofile_unset() {
 }
 
 #[test]
+#[cfg(not(windows))]
 fn home_dir_empty_userprofile_treated_as_unset() {
-    // An empty USERPROFILE is filtered out; we fall back to HOME.
+    // #776: same Windows env-var quirk as
+    // `home_dir_falls_back_to_home_when_userprofile_unset` —
+    // `set_var(USERPROFILE, "")` does not behave the same
+    // on Windows.  POSIX-only.
     let prev_profile = std::env::var_os("USERPROFILE");
     let prev_home = std::env::var_os("HOME");
     std::env::set_var("USERPROFILE", "");
