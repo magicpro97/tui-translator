@@ -164,3 +164,6 @@ pub(super) fn play_to_audio_sinks(
         sink.play_bytes(audio_bytes);
     }
 }
+#[cfg(test)]
+#[path = "playback_routing_tests.rs"]
+mod tests;
