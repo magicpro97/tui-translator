@@ -74,6 +74,7 @@ audio-archive/
 eval-session/
 
 scripts/standards/**/__pycache__/
+scripts/ci/**/__pycache__/
 
 *.orig\n*.rej
 src/audio/mod.rs.orig
