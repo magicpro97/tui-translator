@@ -193,6 +193,13 @@ def parse_lcov(lcov_path: Path) -> CoverageReport:
                     if idx >= 0:
                         raw_path = raw_path[idx:]
                 current_path = raw_path
+                # Debug: print first 5 paths so we can see
+                # what `cargo llvm-cov` actually emits.
+                if line_count <= 30:
+                    print(
+                        f"::notice::SF: {raw_path!r}",
+                        file=sys.stderr,
+                    )
             elif (m := _RE_LFD.match(raw)) is not None:
                 if current_path is None:
                     raise ValueError(f"line {line_count}: lfd before SF")
