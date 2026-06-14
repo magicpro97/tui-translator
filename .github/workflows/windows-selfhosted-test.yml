@@ -141,3 +141,26 @@ jobs:
             Write-Host "::error::module-size gate failed; the listed files must be split before the next release"
             exit $LASTEXITCODE
           }
+
+  # WP-25.05 (#763): panic-site cap for `src/main.rs`.
+  # The audit's top cực-gắt finding was 141 panic-prone
+  # sites in the binary entry point.  The acceptance
+  # criterion for the work is < 50 sites, so we cap the
+  # counter at 50 here.  The CI runner uses the same script
+  # (`scripts/ci/panic_sites.py`) as the unit tests, so any
+  # future change to the counting policy must come with a
+  # test update — preventing a malicious "fix" that simply
+  # under-counts the patterns.
+  panic-sites-gate:
+    name: Panic-sites gate (src/main.rs < 50)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce panic-site cap
+        shell: pwsh
+        run: |
+          python3 scripts/ci/panic_sites.py --path src/main.rs --max 50
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::panic-site cap exceeded for src/main.rs (see issue #763); reduce the count below 50 before merge"
+            exit $LASTEXITCODE
+          }
