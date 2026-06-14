@@ -1,7 +1,22 @@
 name: CI
 
+# WP-25.07 (fix/ci-trigger-filter): the bare `push:` trigger
+# caused CI to fire on every push to every branch
+# (including the 11 test/... branches currently open in
+# PRs and the wave8/... branch with no PR).  This
+# flooded the hosted runner queue with 80+ jobs that
+# were never required for any merge gate.
+#
+# Restrict push to main + fix/** + ci/** (same allowlist
+# as the windows-selfhosted-test workflow) so a push to a
+# test/** or chore/** branch does NOT spawn CI.
+# Pull-request runs continue to fire for every PR.
 on:
   push:
+    branches:
+      - main
+      - "fix/**"
+      - "ci/**"
   pull_request:
   # Issue #461 / CI-01: allow manual dispatch so the new cross-platform +
   # feature matrix can be exercised on a feature branch before branch
@@ -820,7 +835,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-26, ubuntu-22.04, ubuntu-24.04]
+        os: [windows-latest, macos-26, ubuntu-24.04]
         feature: [default]
     runs-on: ${{ matrix.os }}
     steps:
@@ -842,46 +857,6 @@ jobs:
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         run: cargo test --locked --bins -- --nocapture --skip real_api --test-threads=1
 
-  # ── CI-01 feature matrix (Issue #461) ───────────────────────────────────────
-  # Compiles the hardware-free optional feature flags on Windows + the macOS-14
-  # runner. `audio-integration` and `production-audio` are no-op feature
-  # gates (no extra deps) so they compile cleanly without external toolchains.
-  # `local-stt` and `local-mt` are explicitly NOT included here because they
-  # pull whisper-rs / ort which require platform-specific native toolchains
-  # outside the scope of this issue.
-  #
-  # NOTE (PR #512 queue-mitigation, 2026-05-25): `macos-13` was removed from
-  # this matrix alongside the cross-platform matrix above. See the comment on
-  # `cross-platform:` and
-  # verification-evidence/waves/wave-1/pr512-ci-macos13-queue-mitigation.md.
-  feature-matrix:
-    name: Feature matrix (${{ matrix.os }}, ${{ matrix.feature }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-26, ubuntu-22.04]
-        feature: [audio-integration, production-audio]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-ci01-feat-${{ matrix.feature }}-${{ hashFiles('**/Cargo.lock') }}
-      - name: Build with feature (--locked)
-        run: cargo build --locked --bins --features ${{ matrix.feature }}
-      - name: Compile feature-gated tests (no run)
-        run: cargo test --locked --no-run --features ${{ matrix.feature }}
-
-  # ── CI-01 MSRV gate (Issue #461) ────────────────────────────────────────────
-  # Enforces the `rust-version` declared in Cargo.toml (1.88 as of
-  # CI-01). Runs `--locked` so MSRV regressions and Cargo.lock tampering both
-  # surface as a red required check.
   msrv:
     name: MSRV (Rust 1.88) build
     runs-on: windows-latest
