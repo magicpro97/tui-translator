@@ -2559,6 +2559,12 @@ fn readiness_badge_span(state: &crate::readiness::ReadinessState) -> Span<'stati
 // to `src/tui/status_metrics_stt_error_render.rs`.  See that file
 // for the implementation and the issue history.
 
+// The `STT_ERROR_MAX_WRAPPED_ROWS` re-export is here for the
+// `super::STT_ERROR_MAX_WRAPPED_ROWS` reference in the
+// `status_metrics_tests.rs` integration test (which lives
+// at the `tui/` level, so `super` is `tui/mod.rs`).
+// `mod.rs` itself doesn't use the constant directly.
+#[allow(unused_imports)]
 use crate::tui::status_metrics_stt_error_render::{
     format_stt_error_lines, STT_ERROR_MAX_WRAPPED_ROWS,
 };
