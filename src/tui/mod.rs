@@ -21,6 +21,7 @@ mod config_editor_render_tests;
 #[cfg(test)]
 mod config_editor_tests;
 pub mod control_hints;
+#[cfg(test)]
 mod draw_ui_tests;
 #[cfg(test)]
 mod dual_pane_tests;
