@@ -145,10 +145,15 @@ class CoverageReport:
 # (10-50 MB for a project of this size) and re-compilation
 # would dominate the wall time.
 _RE_SF = re.compile(rb"^SF:(.+)$")
-_RE_LFD = re.compile(rb"^lfd:(\d+)$")
-_RE_LHR = re.compile(rb"^lhr:(\d+)$")
-_RE_BRF = re.compile(rb"^brf:(\d+)$")
-_RE_BRH = re.compile(rb"^brh:(\d+)$")
+# The LCOV tracefile format uses `LF:` and `LH:` for the
+# line-found / line-hit summary counters.  The script's
+# earlier `lfd:`/`lhr:` regexes (an old alias) only matched
+# when the tracefile was post-processed by `lcov -l`, which
+# is not what `cargo llvm-cov` emits by default.
+_RE_LFD = re.compile(rb"^LF:(\d+)$")
+_RE_LHR = re.compile(rb"^LH:(\d+)$")
+_RE_BRF = re.compile(rb"^BRF:(\d+)$")
+_RE_BRH = re.compile(rb"^BRH:(\d+)$")
 _RE_END = re.compile(rb"^end_of_record$")
 
 
@@ -193,13 +198,6 @@ def parse_lcov(lcov_path: Path) -> CoverageReport:
                     if idx >= 0:
                         raw_path = raw_path[idx:]
                 current_path = raw_path
-                # Debug: print first 5 paths so we can see
-                # what `cargo llvm-cov` actually emits.
-                if line_count <= 30:
-                    print(
-                        f"::notice::SF: {raw_path!r}",
-                        file=sys.stderr,
-                    )
             elif (m := _RE_LFD.match(raw)) is not None:
                 if current_path is None:
                     raise ValueError(f"line {line_count}: lfd before SF")
