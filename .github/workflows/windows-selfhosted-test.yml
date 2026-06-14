@@ -30,7 +30,7 @@ env:
   RUST_BACKTRACE: 1
 
 # Skip the dtolnay/rust-toolchain action on this self-hosted runner because
-# the action's default `shell: bash` step resolves the runner's temp dir to
+# the action's default `shell: pwsh` step resolves the runner's temp dir to
 # ổ F: (a drive that does not exist on this machine) and fails before the
 # toolchain step runs. The runner already has rustc/cargo on PATH (installed
 # via rustup per the runner setup guide), so we invoke cargo directly.
@@ -38,36 +38,36 @@ env:
 jobs:
   fmt:
     name: Format check
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
       - name: cargo fmt --check
-        shell: bash
+        shell: pwsh
         run: cargo fmt --all -- --check
 
   test-default:
     name: Test (default features, debug)
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
       - name: cargo test --bins
         # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
         # If the COM guard fix is in place the binary must exit 0 cleanly.
         # Any STATUS_ACCESS_VIOLATION (0xC0000005) or exit code 1 fails the job.
-        shell: bash
+        shell: pwsh
         run: |
           $env:RUST_BACKTRACE = "1"
           cargo test --bins -- --nocapture --skip real_api
 
   test-release:
     name: Test (release build, smoke)
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
       - name: cargo test --release --bins
         # Release-mode smoke; release build was NOT exhibiting the crash per
         # comment in device_watchdog.rs, but verify on real machine anyway.
-        shell: bash
+        shell: pwsh
         run: |
           $env:RUST_BACKTRACE = "1"
           cargo test --release --bins -- --nocapture --skip real_api
@@ -86,16 +86,16 @@ jobs:
   # be tightened later when the baseline moves up.
   coverage-gate:
     name: Coverage gate (v1-critical layers)
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain with llvm-tools-preview
-        shell: bash
+        shell: pwsh
         run: |
           rustup component add llvm-tools-preview 2>&1 | Out-Null
           cargo install cargo-llvm-cov --locked --quiet 2>&1 | Out-Null
       - name: Generate lcov.info
-        shell: bash
+        shell: pwsh
         run: |
           $env:RUST_BACKTRACE = "1"
           New-Item -ItemType Directory -Force -Path target/evidence | Out-Null
@@ -105,7 +105,7 @@ jobs:
             exit $LASTEXITCODE
           }
       - name: Enforce coverage gate
-        shell: bash
+        shell: pwsh
         run: |
           python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 60.0
           if ($LASTEXITCODE -ne 0) {
@@ -130,11 +130,11 @@ jobs:
   # probes) that is not subject to the 1000-LOC gate.
   module-size-gate:
     name: Module-size gate (1000 LOC per file)
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
       - name: Enforce module-size gate
-        shell: bash
+        shell: pwsh
         run: |
           python3 scripts/ci/check_module_sizes.py --threshold 1000
           if ($LASTEXITCODE -ne 0) {
