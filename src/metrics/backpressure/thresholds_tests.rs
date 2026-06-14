@@ -52,7 +52,10 @@ fn default_matches_production_field_by_field() {
     assert_eq!(d.max_capture_stalls, p.max_capture_stalls);
     assert_eq!(d.provider_max_queue_depth, p.provider_max_queue_depth);
     assert_eq!(d.provider_max_inflight, p.provider_max_inflight);
-    assert_eq!(d.provider_max_permanent_errors, p.provider_max_permanent_errors);
+    assert_eq!(
+        d.provider_max_permanent_errors,
+        p.provider_max_permanent_errors
+    );
     assert_eq!(d.cancel_p99_ms, p.cancel_p99_ms);
     assert_eq!(d.max_sink_underruns, p.max_sink_underruns);
     assert_eq!(d.sink_write_p99_ms, p.sink_write_p99_ms);
@@ -165,10 +168,8 @@ fn breach_threshold_keys_includes_all_to_json_keys() {
     // Reverse check: every key in the JSON form must appear
     // as a threshold in the mapping.
     let v = BackpressureThresholds::PRODUCTION.to_json();
-    let threshold_keys: std::collections::HashSet<&str> = BREACH_THRESHOLD_KEYS
-        .iter()
-        .map(|(_, t)| *t)
-        .collect();
+    let threshold_keys: std::collections::HashSet<&str> =
+        BREACH_THRESHOLD_KEYS.iter().map(|(_, t)| *t).collect();
     for k in v.as_object().unwrap().keys() {
         assert!(
             threshold_keys.contains(k.as_str()),

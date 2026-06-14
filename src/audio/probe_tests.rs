@@ -114,7 +114,10 @@ fn evaluate_fails_on_zero_chunks_delivered() {
     r.chunks.stall_windows = 0;
     let evaluated = r.evaluate();
     assert!(!evaluated.passed);
-    assert!(evaluated.failure_reasons.iter().any(|s| s.contains("zero chunks")));
+    assert!(evaluated
+        .failure_reasons
+        .iter()
+        .any(|s| s.contains("zero chunks")));
 }
 
 #[test]

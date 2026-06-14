@@ -168,7 +168,7 @@ jobs:
   # under-counts the patterns.
   panic-sites-gate:
     name: Panic-sites gate (src/main.rs < 50)
-    runs-on: self-hosted
+    runs-on: [self-hosted, Windows]
     steps:
       - uses: actions/checkout@v4
       - name: Enforce panic-site cap
