@@ -1,7 +1,11 @@
 # Engineering-standards LOC waivers (issue #483)
 #
 # Format: one path per line, optional `# reason` comment.
-# Files listed here are EXEMPT from the 600 LOC/file gate.
+# Files listed here are EXEMPT from BOTH:
+#   - the 600-LOC/file gate enforced by
+#     `scripts/standards/check_loc.py` (CI: `loc-gate`), and
+#   - the 1000-LOC/file gate enforced by
+#     `scripts/ci/check_module_sizes.py` (CI: `module-size gate`).
 # New files must NOT be added here; refactor instead.
 #
 # Each waiver should reference a tracking issue describing the

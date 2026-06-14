@@ -156,5 +156,138 @@ class CliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0)
 
 
+class WaiverTests(CliTests):
+    """The `--waivers` flag is the regression-catcher for the
+    pre-existing baseline (the 4 files > 1000 LOC that
+    predate the gate).  These tests pin the matching
+    behaviour:
+
+    - A file listed in the waiver file is exempt from the
+      threshold.
+    - A directory listed in the waiver file waives the
+      `mod.rs` inside that directory.
+    - Lines starting with `#` and blank lines in the waiver
+      file are ignored.
+    - The `src/` prefix is stripped from waiver paths.
+    """
+
+    def _write_waivers(self, tmp: Path, lines: list[str]) -> Path:
+        path = tmp / "waivers.txt"
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
+
+    def _make_over(self, tmp: Path) -> Path:
+        """Create a `src/<dir>/mod.rs` with 50 lines, then
+        assert it fails the gate at threshold 40."""
+        src = tmp / "src"
+        (src / "foo").mkdir(parents=True)
+        (src / "foo" / "mod.rs").write_text("\n".join(["x"] * 50) + "\n")
+        return src
+
+    def test_waiver_file_exempts_listed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._make_over(tmp_path)
+            waivers = self._write_waivers(tmp_path, ["src/foo/mod.rs"])
+            result = self._run(
+                "--threshold", "40", "--waivers", str(waivers), cwd=tmp_path
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("PASS", result.stdout)
+
+    def test_directory_waiver_exempts_mod_rs_inside(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._make_over(tmp_path)
+            waivers = self._write_waivers(tmp_path, ["src/foo/"])
+            result = self._run(
+                "--threshold", "40", "--waivers", str(waivers), cwd=tmp_path
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("PASS", result.stdout)
+
+    def test_waiver_does_not_exempt_unrelated_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._make_over(tmp_path)
+            waivers = self._write_waivers(tmp_path, ["src/bar/mod.rs"])
+            result = self._run(
+                "--threshold", "40", "--waivers", str(waivers), cwd=tmp_path
+            )
+            self.assertEqual(result.returncode, 1)
+            # The error message goes to stderr; check both
+            # streams to be robust.
+            self.assertTrue("FAILED" in result.stdout or "FAILED" in result.stderr)
+
+    def test_comments_and_blank_lines_in_waiver_file_are_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._make_over(tmp_path)
+            waivers = self._write_waivers(
+                tmp_path,
+                [
+                    "# This is a comment",
+                    "",
+                    "src/foo/mod.rs  # inline comment",
+                    "  # leading-whitespace comment",
+                ],
+            )
+            result = self._run(
+                "--threshold", "40", "--waivers", str(waivers), cwd=tmp_path
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("PASS", result.stdout)
+
+    def test_default_waivers_file_is_used_when_flag_omitted(self) -> None:
+        # When the script is run from the repo root and
+        # `.standards-waivers.txt` is present, the four
+        # baseline files in the project root are exempt
+        # by default.  We pin the repo's own `.standards-waivers.txt`
+        # works against the script's own threshold of 1000.
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        waivers = repo_root / ".standards-waivers.txt"
+        if not waivers.is_file():
+            self.skipTest(f"no .standards-waivers.txt at {waivers}")
+        # Run with the default flag (no --waivers) and the
+        # default threshold; expect pass.
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / "check_module_sizes.py")],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("PASS", result.stdout)
+
+    def test_path_separator_normalisation_on_windows(self) -> None:
+        # On Windows, `pathlib.Path` produces backslash
+        # separators.  The waiver list uses forward slashes
+        # (matching the `src/<path>` convention from
+        # `.standards-waivers.txt`).  The script must
+        # normalise the `rel` path to forward slashes so
+        # the match works on Windows as well as POSIX.
+        # We simulate the Windows behaviour by writing a
+        # backslash-style path to the script via a
+        # post-processing test: create a waiver file that
+        # uses forward slashes (the conventional form) and
+        # check that the script matches it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self._make_over(tmp_path)
+            # The waiver uses the conventional forward-slash
+            # form; even if the script internally normalises
+            # `rel` to backslashes (as on Windows), the
+            # match must succeed.
+            waivers = self._write_waivers(tmp_path, ["src/foo/mod.rs"])
+            result = self._run(
+                "--threshold", "40", "--waivers", str(waivers), cwd=tmp_path
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=(f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

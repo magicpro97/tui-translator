@@ -54,7 +54,7 @@ def _write_lcov(content: str) -> Path:
 class ParseLcovTests(unittest.TestCase):
     def test_parses_one_record_with_line_and_branch(self) -> None:
         path = _write_lcov(
-            "TN:test\nSF:src/audio/foo.rs\nlfd:10\nlhr:8\nbrf:4\nbrh:3\nend_of_record\n"
+            "TN:test\nSF:src/audio/foo.rs\nLF:10\nLH:8\nBRF:4\nBRH:3\nend_of_record\n"
         )
         try:
             report = coverage_gate.parse_lcov(path)
@@ -69,8 +69,8 @@ class ParseLcovTests(unittest.TestCase):
 
     def test_parses_two_records(self) -> None:
         path = _write_lcov(
-            "SF:src/audio/a.rs\nlfd:5\nlhr:5\nend_of_record\n"
-            "SF:src/session/b.rs\nlfd:10\nlhr:3\nend_of_record\n"
+            "SF:src/audio/a.rs\nLF:5\nLH:5\nend_of_record\n"
+            "SF:src/session/b.rs\nLF:10\nLH:3\nend_of_record\n"
         )
         try:
             report = coverage_gate.parse_lcov(path)
@@ -81,7 +81,7 @@ class ParseLcovTests(unittest.TestCase):
             path.unlink()
 
     def test_missing_branch_records_treated_as_full(self) -> None:
-        path = _write_lcov("SF:src/audio/c.rs\nlfd:10\nlhr:7\nend_of_record\n")
+        path = _write_lcov("SF:src/audio/c.rs\nLF:10\nLH:7\nend_of_record\n")
         try:
             report = coverage_gate.parse_lcov(path)
             f = report.files["src/audio/c.rs"]
@@ -96,8 +96,8 @@ class ParseLcovTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             coverage_gate.parse_lcov(Path("/tmp/definitely-not-here-12345.info"))
 
-    def test_malformed_lfd_before_sf_raises(self) -> None:
-        path = _write_lcov("lfd:1\n")
+    def test_malformed_lf_before_sf_raises(self) -> None:
+        path = _write_lcov("LF:1\n")
         try:
             with self.assertRaises(ValueError):
                 coverage_gate.parse_lcov(path)
@@ -110,7 +110,7 @@ class ParseLcovTests(unittest.TestCase):
         path = Path(tempfile.mkstemp(suffix=".info")[1])
         try:
             path.write_bytes(
-                b"SF:src/audio/\xe4\xf6\xfc.rs\nlfd:1\nlhr:1\nend_of_record\n"
+                b"SF:src/audio/\xe4\xf6\xfc.rs\nlfd:1\nLH:1\nend_of_record\n"
             )
             report = coverage_gate.parse_lcov(path)
             self.assertEqual(len(report.files), 1)
@@ -194,7 +194,7 @@ class CliTests(unittest.TestCase):
             path.unlink()
 
     def test_cli_passes_above_threshold(self) -> None:
-        path = _write_lcov("SF:src/audio/foo.rs\nlfd:10\nlhr:9\nend_of_record\n")
+        path = _write_lcov("SF:src/audio/foo.rs\nLF:10\nLH:9\nend_of_record\n")
         try:
             result = self._run_cli("--lcov", str(path), "--threshold", "60.0")
             self.assertEqual(result.returncode, 0)
@@ -203,7 +203,7 @@ class CliTests(unittest.TestCase):
             path.unlink()
 
     def test_cli_fails_below_threshold(self) -> None:
-        path = _write_lcov("SF:src/audio/foo.rs\nlfd:10\nlhr:1\nend_of_record\n")
+        path = _write_lcov("SF:src/audio/foo.rs\nLF:10\nLH:1\nend_of_record\n")
         try:
             result = self._run_cli("--lcov", str(path), "--threshold", "60.0")
             self.assertEqual(result.returncode, 1)
@@ -213,7 +213,7 @@ class CliTests(unittest.TestCase):
             path.unlink()
 
     def test_cli_list_does_not_gate(self) -> None:
-        path = _write_lcov("SF:src/audio/foo.rs\nlfd:10\nlhr:1\nend_of_record\n")
+        path = _write_lcov("SF:src/audio/foo.rs\nLF:10\nLH:1\nend_of_record\n")
         try:
             result = self._run_cli("--lcov", str(path), "--list")
             # --list bypasses the gate; exit 0 even though 10% < 60%.
@@ -233,8 +233,8 @@ class CliTests(unittest.TestCase):
         # because it is not in any v1-critical layer.  Only the
         # audio file counts; with 5/5 covered the overall is 100%.
         path = _write_lcov(
-            "SF:src/unrelated/x.rs\nlfd:1000\nlhr:0\nend_of_record\n"
-            "SF:src/audio/y.rs\nlfd:5\nlhr:5\nend_of_record\n"
+            "SF:src/unrelated/x.rs\nLF:1000\nLH:0\nend_of_record\n"
+            "SF:src/audio/y.rs\nLF:5\nLH:5\nend_of_record\n"
         )
         try:
             result = self._run_cli("--lcov", str(path), "--threshold", "60.0")
@@ -245,7 +245,7 @@ class CliTests(unittest.TestCase):
 
     def test_cli_custom_branch_threshold(self) -> None:
         path = _write_lcov(
-            "SF:src/audio/foo.rs\nlfd:10\nlhr:10\nbrf:10\nbrh:5\nend_of_record\n"
+            "SF:src/audio/foo.rs\nLF:10\nLH:10\nBRF:10\nBRH:5\nend_of_record\n"
         )
         try:
             # Line 100% passes, but branch 50% < 80% branch threshold.
@@ -254,6 +254,50 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 1)
             self.assertIn("branch coverage", result.stderr)
+        finally:
+            path.unlink()
+
+    def test_windows_drive_letter_path_is_normalised(self) -> None:
+        # On Windows, `cargo llvm-cov` may emit absolute paths
+        # like `C:\actions-runner\_work\tui-translator\src\audio\foo.rs`
+        # in the `SF:` records.  The gate filters the v1-critical
+        # layers by the `src/<layer>/` prefix, so the absolute
+        # prefix must be stripped.  This test pins that
+        # behaviour.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".info", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(
+                "TN:\n"
+                "SF:C:\\actions-runner\\_work\\tui-translator\\tui-translator"
+                "\\src\\audio\\probe.rs\n"
+                "LF:10\nLH:9\nend_of_record\n"
+            )
+            path = Path(f.name)
+        try:
+            files = coverage_gate.parse_lcov(path).files
+            self.assertEqual(
+                list(files.keys()),
+                ["src/audio/probe.rs"],
+            )
+        finally:
+            path.unlink()
+
+    def test_windows_backslash_separator_is_normalised(self) -> None:
+        # Even without a drive-letter prefix, Windows paths
+        # use backslashes.  The gate's layer filter uses
+        # forward slashes; the parser must normalise.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".info", delete=False, encoding="utf-8"
+        ) as f:
+            f.write("TN:\nSF:src\\audio\\probe.rs\nLF:10\nLH:9\nend_of_record\n")
+            path = Path(f.name)
+        try:
+            files = coverage_gate.parse_lcov(path).files
+            self.assertEqual(
+                list(files.keys()),
+                ["src/audio/probe.rs"],
+            )
         finally:
             path.unlink()
 
