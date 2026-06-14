@@ -456,3 +456,14 @@ pub(super) fn run_decoder(
     let (shape, data) = output.try_extract_tensor::<f32>().map_err(map_ort_error)?;
     Ok((shape.to_vec(), data.to_vec()))
 }
+
+// WP-25.08 (#766): inline pure-helper tests for the `pub(super)`
+// helpers in this file.  The sibling `mt_tests.rs` exercises the
+// public surface; the inline mod here covers the helpers that the
+// sibling cannot reach.
+//
+// This is loaded via `#[path = ...]` so the test mod does not
+// bloat `mt_ort.rs` past the 600-LOC engineering-standards gate.
+#[cfg(all(test, feature = "local-mt"))]
+#[path = "mt_ort_inline_tests.rs"]
+mod ort_inline_tests;
