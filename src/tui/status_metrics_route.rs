@@ -102,3 +102,7 @@ impl TtsRouteStatus {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "status_metrics_route_tests.rs"]
+mod tests;
