@@ -107,7 +107,7 @@ jobs:
       - name: Enforce coverage gate
         shell: pwsh
         run: |
-          python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 80.0
+          python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 100.0
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::coverage gate failed; see log above for the per-file breakdown"
             exit $LASTEXITCODE
