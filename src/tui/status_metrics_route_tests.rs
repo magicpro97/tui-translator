@@ -34,19 +34,13 @@ fn from_config_speakers_keeps_speakers() {
 
 #[test]
 fn from_config_virtual_mic_with_device_keeps_device() {
-    let s = TtsRouteStatus::from_config(&make_config(
-        TtsRouting::VirtualMic,
-        Some("CABLE Input"),
-    ));
+    let s = TtsRouteStatus::from_config(&make_config(TtsRouting::VirtualMic, Some("CABLE Input")));
     assert!(s.compact_label(20).contains("CABLE"));
 }
 
 #[test]
 fn from_config_both_with_device_keeps_device() {
-    let s = TtsRouteStatus::from_config(&make_config(
-        TtsRouting::Both,
-        Some("VB-Cable"),
-    ));
+    let s = TtsRouteStatus::from_config(&make_config(TtsRouting::Both, Some("VB-Cable")));
     assert!(s.compact_label(20).contains("VB-Cable"));
 }
 
@@ -63,10 +57,7 @@ fn compact_speakers_ignores_max_device_cols() {
 
 #[test]
 fn compact_virtual_mic_with_device_uses_full_name_when_short() {
-    let s = TtsRouteStatus::for_tests(
-        TtsRouting::VirtualMic,
-        Some("CABLE".to_string()),
-    );
+    let s = TtsRouteStatus::for_tests(TtsRouting::VirtualMic, Some("CABLE".to_string()));
     assert_eq!(s.compact_label(100), "vmic:CABLE");
 }
 
@@ -93,10 +84,7 @@ fn compact_virtual_mic_with_device_truncates_to_max() {
 fn compact_virtual_mic_with_device_and_zero_cols_omits_device() {
     // max_device_cols == 0 means "omit the device name
     // entirely"; useful for very-narrow compact strips.
-    let s = TtsRouteStatus::for_tests(
-        TtsRouting::VirtualMic,
-        Some("CABLE".to_string()),
-    );
+    let s = TtsRouteStatus::for_tests(TtsRouting::VirtualMic, Some("CABLE".to_string()));
     assert_eq!(s.compact_label(0), "vmic");
 }
 
@@ -130,10 +118,7 @@ fn expanded_speakers_label() {
 
 #[test]
 fn expanded_virtual_mic_label_includes_prefix() {
-    let s = TtsRouteStatus::for_tests(
-        TtsRouting::VirtualMic,
-        Some("CABLE Input".to_string()),
-    );
+    let s = TtsRouteStatus::for_tests(TtsRouting::VirtualMic, Some("CABLE Input".to_string()));
     let out = s.expanded_label(100);
     assert!(out.starts_with("Virtual mic:"));
     assert!(out.contains("CABLE"));
@@ -186,10 +171,7 @@ fn missing_virtual_mic_speakers_with_unused_device_is_false() {
 
 #[test]
 fn missing_virtual_mic_virtual_mic_with_device_is_false() {
-    let s = TtsRouteStatus::for_tests(
-        TtsRouting::VirtualMic,
-        Some("CABLE".to_string()),
-    );
+    let s = TtsRouteStatus::for_tests(TtsRouting::VirtualMic, Some("CABLE".to_string()));
     assert!(!s.missing_virtual_mic());
 }
 
