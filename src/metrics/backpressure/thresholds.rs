@@ -120,3 +120,6 @@ pub(crate) fn calibration_notes() -> Value {
         "follow_up": "Live wiring into wasapi_capture/audio_sink/pipeline + QA8-05 runner consumption + 30-min calibration soak — see PR #540 follow-up plan.",
     })
 }
+#[cfg(test)]
+#[path = "thresholds_tests.rs"]
+mod tests;
