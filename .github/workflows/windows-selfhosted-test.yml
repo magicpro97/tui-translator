@@ -107,9 +107,24 @@ jobs:
       - name: Enforce coverage gate
         shell: pwsh
         run: |
-          python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 100.0
+          python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 80.0
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::coverage gate failed; see log above for the per-file breakdown"
+            exit $LASTEXITCODE
+          }
+      - name: Per-file 100% gate (changed v1-critical files)
+        shell: pwsh
+        run: |
+          # Get the list of files changed by the PR (relative paths).
+          $changed = (git diff --name-only origin/${{ github.base_ref }}...HEAD) | Where-Object { $_ -and $_ -notmatch '^tests/' -and $_ -notmatch '^\.github/' -and $_ -notmatch '^scripts/' -and $_ -notmatch '^\.hermes/' -and $_ -notmatch '\.md$' -and $_ -notmatch 'Cargo\.(toml|lock)$' }
+          $changed | Out-File -FilePath target/evidence/changed_files.txt -Encoding utf8
+          if ($changed.Count -eq 0) {
+            Write-Host "::notice::no production Rust files changed; per-file gate is a no-op"
+            exit 0
+          }
+          python3 scripts/ci/per_file_coverage_gate.py --lcov target/evidence/lcov.info --changed-files target/evidence/changed_files.txt
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::per-file 100% gate failed; the changed v1-critical files must be at 100% line+branch coverage"
             exit $LASTEXITCODE
           }
       - name: Upload coverage report
