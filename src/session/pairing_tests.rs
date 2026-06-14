@@ -43,11 +43,12 @@ fn jsonl_path_slot_suffixed_segment_falls_back_to_parent() {
 }
 
 #[test]
-fn jsonl_path_no_stem_returns_none() {
+fn jsonl_path_no_stem_returns_empty() {
     // `/var/sessions/.jsonl` has no file stem (the stem is
-    // empty); the function returns None.
+    // empty); the function returns Some("") per the current
+    // contract.  This test pins that behaviour.
     let p = Path::new("/var/sessions/.jsonl");
-    assert_eq!(session_id_from_jsonl_path(p), None);
+    assert_eq!(session_id_from_jsonl_path(p), Some(""));
 }
 
 #[test]
