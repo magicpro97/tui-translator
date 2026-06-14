@@ -102,7 +102,10 @@ fn srt_timestamp_minutes() {
 #[test]
 fn srt_timestamp_hours() {
     assert_eq!(ms_to_srt_timestamp(60 * 60 * 1000), "01:00:00,000");
-    assert_eq!(ms_to_srt_timestamp(2 * 60 * 60 * 1000 + 5_000), "02:00:05,000");
+    assert_eq!(
+        ms_to_srt_timestamp(2 * 60 * 60 * 1000 + 5_000),
+        "02:00:05,000"
+    );
     // 10 hours = 600 minutes = 36,000 seconds = 36,000,000 ms
     assert_eq!(ms_to_srt_timestamp(10 * 60 * 60 * 1000), "10:00:00,000");
 }
@@ -137,7 +140,10 @@ fn srt_multiple_segments_are_sequentially_numbered() {
 #[test]
 fn srt_cue_block_uses_arrow_separator() {
     let out = export_srt(&[seg(0, 1_000, "x", "y")]);
-    assert!(out.contains(" --> "), "SRT cue must use ` --&gt; ` separator: {out}");
+    assert!(
+        out.contains(" --> "),
+        "SRT cue must use ` --&gt; ` separator: {out}"
+    );
 }
 
 #[test]
@@ -148,7 +154,11 @@ fn srt_preserves_source_and_target_separately() {
     let lines: Vec<&str> = out.split('\n').collect();
     let src_idx = lines.iter().position(|l| *l == "SRC_LINE").unwrap();
     let tgt_idx = lines.iter().position(|l| *l == "TGT_LINE").unwrap();
-    assert_eq!(tgt_idx, src_idx + 1, "source and target must be on adjacent lines");
+    assert_eq!(
+        tgt_idx,
+        src_idx + 1,
+        "source and target must be on adjacent lines"
+    );
 }
 
 // ── Tests for export_txt ──────────────────────────────────────────────────────
@@ -166,10 +176,7 @@ fn txt_single_segment_basic() {
 
 #[test]
 fn txt_multiple_segments_separated_by_blank_line() {
-    let out = export_txt(&[
-        seg(0, 1_000, "a", "A"),
-        seg(1_000, 2_000, "b", "B"),
-    ]);
+    let out = export_txt(&[seg(0, 1_000, "a", "A"), seg(1_000, 2_000, "b", "B")]);
     // First segment has no leading blank line; the second
     // segment is preceded by exactly one blank line.
     assert!(out.starts_with("[SRC] a\n[TGT] A\n"));
@@ -247,8 +254,8 @@ fn jsonl_skips_blank_lines_between_records() {
 
 #[test]
 fn jsonl_invalid_json_returns_invalid_json_error() {
-    let err = transcript_segments_from_jsonl("not valid json\n")
-        .expect_err("invalid JSON must fail");
+    let err =
+        transcript_segments_from_jsonl("not valid json\n").expect_err("invalid JSON must fail");
     match err {
         SessionExportError::InvalidJson { line, .. } => {
             assert_eq!(line, 1, "one-based line number");
@@ -275,7 +282,10 @@ fn jsonl_invalid_json_on_second_line_reports_line_two() {
 fn jsonl_error_message_includes_line_number() {
     let err = transcript_segments_from_jsonl("garbage").expect_err("garbage");
     let msg = err.to_string();
-    assert!(msg.contains("line 1"), "error message must include line: {msg}");
+    assert!(
+        msg.contains("line 1"),
+        "error message must include line: {msg}"
+    );
 }
 
 #[test]
@@ -283,9 +293,8 @@ fn jsonl_short_segment_with_zero_duration() {
     // audio_start_ms == audio_end_ms is allowed; it means
     // "instantaneous" rather than zero-length.  The export
     // produces a cue with `00:00:00,000 --> 00:00:00,000`.
-    let out = transcript_segments_from_jsonl(&to_jsonl(&[
-        segment_record(0, 0, "punc", "."),
-    ])).expect("zero duration");
+    let out = transcript_segments_from_jsonl(&to_jsonl(&[segment_record(0, 0, "punc", ".")]))
+        .expect("zero duration");
     assert_eq!(out.len(), 1);
     assert_eq!(
         export_srt(&out),
