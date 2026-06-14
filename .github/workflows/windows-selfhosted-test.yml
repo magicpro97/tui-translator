@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: cargo fmt --check
-        shell: pwsh
+        shell: bash
         run: cargo fmt --all -- --check
 
   test-default:
@@ -54,7 +54,7 @@ jobs:
         # NOTE: deliberately NO --test-threads=1, NO continue-on-error.
         # If the COM guard fix is in place the binary must exit 0 cleanly.
         # Any STATUS_ACCESS_VIOLATION (0xC0000005) or exit code 1 fails the job.
-        shell: pwsh
+        shell: bash
         run: |
           $env:RUST_BACKTRACE = "1"
           cargo test --bins -- --nocapture --skip real_api
@@ -67,7 +67,7 @@ jobs:
       - name: cargo test --release --bins
         # Release-mode smoke; release build was NOT exhibiting the crash per
         # comment in device_watchdog.rs, but verify on real machine anyway.
-        shell: pwsh
+        shell: bash
         run: |
           $env:RUST_BACKTRACE = "1"
           cargo test --release --bins -- --nocapture --skip real_api
@@ -90,12 +90,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain with llvm-tools-preview
-        shell: pwsh
+        shell: bash
         run: |
           rustup component add llvm-tools-preview 2>&1 | Out-Null
           cargo install cargo-llvm-cov --locked --quiet 2>&1 | Out-Null
       - name: Generate lcov.info
-        shell: pwsh
+        shell: bash
         run: |
           $env:RUST_BACKTRACE = "1"
           New-Item -ItemType Directory -Force -Path target/evidence | Out-Null
@@ -105,7 +105,7 @@ jobs:
             exit $LASTEXITCODE
           }
       - name: Enforce coverage gate
-        shell: pwsh
+        shell: bash
         run: |
           python3 scripts/ci/coverage_gate.py --lcov target/evidence/lcov.info --threshold 60.0
           if ($LASTEXITCODE -ne 0) {
@@ -134,7 +134,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Enforce module-size gate
-        shell: pwsh
+        shell: bash
         run: |
           python3 scripts/ci/check_module_sizes.py --threshold 1000
           if ($LASTEXITCODE -ne 0) {
