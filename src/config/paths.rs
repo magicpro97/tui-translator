@@ -142,3 +142,6 @@ pub fn legacy_model_cache_dir() -> Result<PathBuf> {
 pub fn migration_marker_path() -> Result<PathBuf> {
     Ok(local_data_dir()?.join(".lf01-migrated"))
 }
+#[cfg(test)]
+#[path = "paths_tests.rs"]
+mod tests;

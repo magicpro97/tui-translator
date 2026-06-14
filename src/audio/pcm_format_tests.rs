@@ -162,3 +162,114 @@ fn vmic_b1_evidence_artifact_records_format_metadata() {
         assert!(evidence.contains(term), "evidence must contain {term}");
     }
 }
+
+// ── Tests for the format construction helpers ─────────────────────────────
+
+#[test]
+fn pcm_format_i16_helper_sets_fields() {
+    let f = PcmFormat::i16(48_000, 2);
+    assert_eq!(f.sample_rate_hz, 48_000);
+    assert_eq!(f.channels, 2);
+    assert_eq!(f.bits_per_sample, 16);
+    assert_eq!(f.encoding, SampleEncoding::I16);
+}
+
+#[test]
+fn pcm_format_f32_helper_sets_fields() {
+    let f = PcmFormat::f32_format(24_000, 1);
+    assert_eq!(f.sample_rate_hz, 24_000);
+    assert_eq!(f.channels, 1);
+    assert_eq!(f.bits_per_sample, 32);
+    assert_eq!(f.encoding, SampleEncoding::F32);
+}
+
+// ── Tests for the PcmFormatError display ───────────────────────────────────
+
+#[test]
+fn pcm_format_error_display_includes_variant_context() {
+    let err = PcmFormatError::UnsupportedBitDepth(24);
+    let s = err.to_string();
+    assert!(s.contains("24"), "display must include the bit depth: {s}");
+
+    let err = PcmFormatError::InvalidSampleRate(0);
+    let s = err.to_string();
+    assert!(s.contains("0"), "display must include the rate: {s}");
+}
+
+// ── Tests for the private resample / interpolate helpers ──────────────────
+
+#[test]
+fn resampled_frame_count_zero_source_returns_min_one() {
+    // The `validate_format` check at the top of
+    // `resample_i16_mono_to_f32_stereo` rejects a 0 source rate
+    // before this is called, but the function should still behave
+    // sensibly if invoked with a 0 source rate directly.  The
+    // current contract: 0 source_frames returns 1 (the
+    // `rounded.max(1)` floor) so the caller's buffer-allocation
+    // math never panics on an underflow.
+    let n = resampled_frame_count(0, 24_000, 48_000);
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn resampled_frame_count_zero_target_returns_min_one() {
+    // Same defensive floor: 0 target_frames after the
+    // round-half-up is 0, so `.max(1)` returns 1.
+    let n = resampled_frame_count(100, 24_000, 0);
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn resampled_frame_count_upsamples() {
+    // 24kHz -> 48kHz doubles the frame count.
+    let n = resampled_frame_count(100, 24_000, 48_000);
+    assert_eq!(n, 200);
+}
+
+#[test]
+fn resampled_frame_count_downsamples() {
+    // 48kHz -> 24kHz halves the frame count.
+    let n = resampled_frame_count(100, 48_000, 24_000);
+    assert_eq!(n, 50);
+}
+
+#[test]
+fn interpolate_channel_at_zero_fraction_returns_lower() {
+    let samples = vec![100, 200, 300, 400, 500, 600];
+    // 2 channels, frame 0 = samples[0], frame 1 = samples[2]
+    let v = interpolate_channel(&samples, 2, 0, 1, 0.0, 0);
+    assert_eq!(v, 100.0);
+}
+
+#[test]
+fn interpolate_channel_at_one_fraction_returns_upper() {
+    let samples = vec![100, 200, 300, 400, 500, 600];
+    let v = interpolate_channel(&samples, 2, 0, 1, 1.0, 1);
+    assert_eq!(v, 400.0);
+}
+
+#[test]
+fn interpolate_channel_at_half_fraction_midpoints() {
+    let samples = vec![0, 0, 1000, 0, 2000, 0];
+    // 2 channels, frame 0 = samples[0]=0, frame 1 = samples[2]=1000, channel 0
+    let v = interpolate_channel(&samples, 2, 0, 1, 0.5, 0);
+    assert!((v - 500.0).abs() < 0.01, "half-fraction must midpoint, got {v}");
+}
+
+#[test]
+fn clamp_f64_to_i16_clamps_to_min_and_max() {
+    assert_eq!(clamp_f64_to_i16(-1e9), i16::MIN);
+    assert_eq!(clamp_f64_to_i16(1e9), i16::MAX);
+    assert_eq!(clamp_f64_to_i16(0.0), 0);
+    assert_eq!(clamp_f64_to_i16(-32768.0), i16::MIN);
+    assert_eq!(clamp_f64_to_i16(32767.0), i16::MAX);
+}
+
+#[test]
+fn clamp_f64_to_i16_rounds_before_clamps() {
+    // 0.4 rounds to 0; -0.4 rounds to 0; 0.5 rounds to 1; -0.5 rounds to -1.
+    assert_eq!(clamp_f64_to_i16(0.4), 0);
+    assert_eq!(clamp_f64_to_i16(0.5), 1);
+    assert_eq!(clamp_f64_to_i16(-0.5), -1);
+    assert_eq!(clamp_f64_to_i16(0.6), 1);
+}
