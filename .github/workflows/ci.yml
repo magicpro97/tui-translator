@@ -18,10 +18,19 @@ on:
       - "fix/**"
       - "ci/**"
   pull_request:
-  # Issue #461 / CI-01: allow manual dispatch so the new cross-platform +
-  # feature matrix can be exercised on a feature branch before branch
-  # protection is updated. Evidence URL: verification-evidence/ci/CI-01-matrix-run-url.json.
+  # WP-25.08 (fix/ci-concurrency): auto-cancel in-progress
+  # runs of CI when a new commit lands on the same branch
+  # (or PR).  Each push was previously queueing a fresh
+  # 84-job CI run; the concurrency group `ci-${{ github.workflow_ref }}-${{ github.event.pull_request.number || github.ref }}`
+  # means only the latest run survives.
+  #
+  # Note: workflow_dispatch is intentionally outside the
+  # concurrency group so a manual re-run is never
+  # auto-cancelled.
   workflow_dispatch:
+concurrency:
+  group: ci-${{ github.workflow_ref }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
