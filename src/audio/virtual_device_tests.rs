@@ -129,8 +129,15 @@ fn registry_classifies_voicemeeter() {
 #[test]
 fn registry_classifies_pulse_null_sink() {
     let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
+    // The PipeWire pattern is checked first; an input
+    // containing just "null-sink" matches the PipeWire
+    // pattern (which is a literal substring) and never
+    // reaches the PulseAudio pattern.  Use the
+    // PulseAudio-specific "Virtual Microphone" trigger,
+    // which the PulseAudio pattern matches and the
+    // PipeWire pattern does not.
     let matched = registry
-        .classify("PulseAudio null-sink (my-mic)")
+        .classify("PulseAudio Virtual Microphone (my-mic)")
         .expect("PulseAudio null-sink must match");
     assert_eq!(matched.kind, VirtualDeviceKind::PulseNullSink);
 }
