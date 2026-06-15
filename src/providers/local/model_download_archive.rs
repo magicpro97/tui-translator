@@ -149,9 +149,25 @@ pub(super) fn extract_archive_bz2(
     let decoder = BzDecoder::new(file);
     let mut archive = Archive::new(decoder);
 
-    let canonical_dest = dest_dir
-        .canonicalize()
-        .unwrap_or_else(|_| dest_dir.to_owned());
+    let canonical_dest = match dest_dir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            // `dest_dir` may not exist on first extraction — create it now
+            // and re-canonicalize.  Without this, the zip-slip check below
+            // would compare against an un-canonicalized path and `..`
+            // segments would slip through.
+            std::fs::create_dir_all(dest_dir).map_err(|source| ModelDownloadError::Io {
+                path: dest_dir.to_owned(),
+                source,
+            })?;
+            dest_dir
+                .canonicalize()
+                .map_err(|source| ModelDownloadError::Io {
+                    path: dest_dir.to_owned(),
+                    source,
+                })?
+        }
+    };
 
     for entry in archive.entries().map_err(|source| ModelDownloadError::Io {
         path: archive_path.to_owned(),
@@ -177,12 +193,40 @@ pub(super) fn extract_archive_bz2(
         }
 
         // Zip-slip check.
+        //
+        // Resolve the candidate path *lexically* first (so `..` and `.`
+        // collapse inside `dest_dir`), then ensure the parent exists and
+        // canonicalize it.  A pure `Path::starts_with` on the un-normalised
+        // join is not safe: an entry like `inner/../../../etc/passwd` would
+        // concatenate to `dest_dir/inner/../../../etc/passwd` and the
+        // lexical `starts_with(dest_dir)` check would pass even though the
+        // resolved path escapes `dest_dir`.
         let target = dest_dir.join(&stripped);
-        let canonical_target = target
-            .parent()
-            .and_then(|p| p.canonicalize().ok())
-            .map(|p| p.join(target.file_name().unwrap_or_default()))
-            .unwrap_or_else(|| target.clone());
+        let lexical_target = match target.strip_prefix(dest_dir) {
+            Ok(rel) if rel.as_os_str().is_empty() => dest_dir.to_path_buf(),
+            Ok(rel) => dest_dir.join(rel),
+            // `target` does not even start with `dest_dir` after stripping
+            // — guaranteed escape attempt.
+            Err(_) => {
+                return Err(ModelDownloadError::InvalidManifest(format!(
+                    "archive entry {:?} would escape the destination directory (zip-slip rejected)",
+                    raw_path.display()
+                )));
+            }
+        };
+        if let Some(parent) = lexical_target.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| ModelDownloadError::Io {
+                path: parent.to_owned(),
+                source,
+            })?;
+        }
+        let canonical_target =
+            lexical_target
+                .canonicalize()
+                .map_err(|source| ModelDownloadError::Io {
+                    path: lexical_target.clone(),
+                    source,
+                })?;
 
         if !canonical_target.starts_with(&canonical_dest) {
             return Err(ModelDownloadError::InvalidManifest(format!(
@@ -191,17 +235,10 @@ pub(super) fn extract_archive_bz2(
             )));
         }
 
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| ModelDownloadError::Io {
-                path: parent.to_owned(),
-                source,
-            })?;
-        }
-
         entry
-            .unpack(&target)
+            .unpack(&lexical_target)
             .map_err(|source| ModelDownloadError::Io {
-                path: target.clone(),
+                path: lexical_target.clone(),
                 source,
             })?;
     }
