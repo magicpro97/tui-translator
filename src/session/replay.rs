@@ -168,3 +168,6 @@ impl SessionReplayer {
         self.skipped_count
     }
 }
+#[cfg(test)]
+#[path = "replay_tests.rs"]
+mod tests;
