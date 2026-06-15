@@ -92,3 +92,6 @@ pub fn builtin_voice_catalog() -> Vec<VoiceSelection> {
         })
         .collect()
 }
+#[cfg(test)]
+#[path = "tts_voices_tests.rs"]
+mod tests;
