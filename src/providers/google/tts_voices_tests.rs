@@ -147,35 +147,50 @@ fn builtin_voice_catalog_has_unique_names() {
 fn builtin_voice_catalog_includes_vietnamese_voices() {
     let catalog = builtin_voice_catalog();
     let vi_count = catalog.iter().filter(|v| v.language == "vi-VN").count();
-    assert!(vi_count >= 3, "vietnamese voice catalog should have at least 3 voices");
+    assert!(
+        vi_count >= 3,
+        "vietnamese voice catalog should have at least 3 voices"
+    );
 }
 
 #[test]
 fn builtin_voice_catalog_includes_english_voices() {
     let catalog = builtin_voice_catalog();
     let en_count = catalog.iter().filter(|v| v.language == "en-US").count();
-    assert!(en_count >= 3, "english voice catalog should have at least 3 voices");
+    assert!(
+        en_count >= 3,
+        "english voice catalog should have at least 3 voices"
+    );
 }
 
 #[test]
 fn builtin_voice_catalog_includes_japanese_voices() {
     let catalog = builtin_voice_catalog();
     let ja_count = catalog.iter().filter(|v| v.language == "ja-JP").count();
-    assert!(ja_count >= 3, "japanese voice catalog should have at least 3 voices");
+    assert!(
+        ja_count >= 3,
+        "japanese voice catalog should have at least 3 voices"
+    );
 }
 
 #[test]
 fn builtin_voice_catalog_includes_chinese_voices() {
     let catalog = builtin_voice_catalog();
     let zh_count = catalog.iter().filter(|v| v.language == "zh-CN").count();
-    assert!(zh_count >= 3, "chinese voice catalog should have at least 3 voices");
+    assert!(
+        zh_count >= 3,
+        "chinese voice catalog should have at least 3 voices"
+    );
 }
 
 #[test]
 fn builtin_voice_catalog_includes_korean_voices() {
     let catalog = builtin_voice_catalog();
     let ko_count = catalog.iter().filter(|v| v.language == "ko-KR").count();
-    assert!(ko_count >= 3, "korean voice catalog should have at least 3 voices");
+    assert!(
+        ko_count >= 3,
+        "korean voice catalog should have at least 3 voices"
+    );
 }
 
 #[test]

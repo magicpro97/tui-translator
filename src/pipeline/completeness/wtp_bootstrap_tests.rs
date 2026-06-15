@@ -33,9 +33,8 @@ fn manifest_json_is_valid_json() {
     // `BootstrapManifest::from_str` call at startup
     // would fail with a parse error and the user would
     // see a confusing "manifest invalid" message.
-    let parsed: serde_json::Value =
-        serde_json::from_str(WTP_MANIFEST_JSON_FOR_TESTS)
-            .expect("embedded manifest must be valid JSON");
+    let parsed: serde_json::Value = serde_json::from_str(WTP_MANIFEST_JSON_FOR_TESTS)
+        .expect("embedded manifest must be valid JSON");
     // Sanity: the manifest must have a `models` field.
     assert!(parsed.get("models").is_some());
 }
@@ -75,7 +74,8 @@ fn sha256_of_file_known_string() {
 
     let hash = sha256_of_file(&path).expect("sha256 of existing file");
     assert_eq!(
-        hash, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        hash,
+        "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
     );
 }
 
@@ -88,7 +88,8 @@ fn sha256_of_file_empty_file() {
     std::fs::File::create(&path).expect("create");
     let hash = sha256_of_file(&path).expect("sha256 of empty file");
     assert_eq!(
-        hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        hash,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 }
 
@@ -112,8 +113,8 @@ fn sha256_of_file_multiblock() {
     // digest is not the focus; the focus is that the
     // multi-block read produces a stable result.
     assert_eq!(hash.len(), 64); // SHA-256 = 32 bytes = 64 hex chars
-    // Verify that two calls produce the same result
-    // (the function is deterministic).
+                                // Verify that two calls produce the same result
+                                // (the function is deterministic).
     let hash2 = sha256_of_file(&path).expect("sha256 second call");
     assert_eq!(hash, hash2);
 }
@@ -134,7 +135,9 @@ fn sha256_of_file_output_is_lowercase_hex() {
     let hash = sha256_of_file(&path).expect("sha256");
     // SHA-256 hex output is 64 chars, lowercase only.
     assert_eq!(hash.len(), 64);
-    assert!(hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    assert!(hash
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
 }
 
 // ── Tests for WtpDownloadEvent ───────────────────────────────────────────────

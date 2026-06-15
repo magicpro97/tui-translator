@@ -27,16 +27,14 @@ fn safe_relative_path_accepts_simple_filename() {
 
 #[test]
 fn safe_relative_path_accepts_nested_path() {
-    let result = safe_relative_path("models/whisper/model.bin")
-        .expect("nested path must be safe");
+    let result = safe_relative_path("models/whisper/model.bin").expect("nested path must be safe");
     assert_eq!(result, PathBuf::from("models/whisper/model.bin"));
 }
 
 #[test]
 fn safe_relative_path_accepts_dot_components() {
     // A single "." is a no-op and is dropped.
-    let result = safe_relative_path("./model.bin")
-        .expect("./ prefix must be safe");
+    let result = safe_relative_path("./model.bin").expect("./ prefix must be safe");
     assert_eq!(result, PathBuf::from("model.bin"));
 }
 
@@ -44,8 +42,8 @@ fn safe_relative_path_accepts_dot_components() {
 fn safe_relative_path_normalises_backslashes() {
     // Windows-style backslashes are normalised to forward
     // slashes; the function is cross-platform.
-    let result = safe_relative_path("models\\whisper\\model.bin")
-        .expect("backslashes must be normalised");
+    let result =
+        safe_relative_path("models\\whisper\\model.bin").expect("backslashes must be normalised");
     assert_eq!(result, PathBuf::from("models/whisper/model.bin"));
 }
 
@@ -102,8 +100,8 @@ fn safe_relative_path_rejects_double_parent_traversal() {
 
 #[test]
 fn safe_relative_path_rejects_mixed_dot_and_normal() {
-    let err = safe_relative_path("models/../etc/passwd")
-        .expect_err("mixed .. and normal must fail");
+    let err =
+        safe_relative_path("models/../etc/passwd").expect_err("mixed .. and normal must fail");
     assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
 }
 
@@ -122,8 +120,7 @@ fn safe_relative_path_rejects_only_dot() {
 #[test]
 fn safe_join_combines_base_and_relative() {
     let base = Path::new("/var/cache/models");
-    let result = safe_join(base, "whisper/model.bin")
-        .expect("nested relative must be safe");
+    let result = safe_join(base, "whisper/model.bin").expect("nested relative must be safe");
     assert_eq!(result, PathBuf::from("/var/cache/models/whisper/model.bin"));
 }
 
@@ -147,7 +144,10 @@ fn partial_path_appends_part_suffix() {
 fn corrupt_path_appends_arbitrary_suffix() {
     let path = Path::new("/var/cache/models/whisper.bin");
     let result = corrupt_path(path, "corrupt");
-    assert_eq!(result, PathBuf::from("/var/cache/models/whisper.bin.corrupt"));
+    assert_eq!(
+        result,
+        PathBuf::from("/var/cache/models/whisper.bin.corrupt")
+    );
 }
 
 #[test]
@@ -162,14 +162,14 @@ fn corrupt_path_supports_sha256_suffix() {
 
 #[test]
 fn suffixed_path_with_empty_input_falls_back_to_default() {
-    // When the input has no file_name (e.g. trailing
-    // slash), the function falls back to "model-file"
-    // as the prefix.
-    let path = Path::new("/var/cache/models/");
+    // When the input is the empty path, the function falls
+    // back to "model-file" as the prefix.  `Path::new("")`
+    // has `file_name() == None`, so the fallback triggers.
+    let path = Path::new("");
     let result = suffixed_path(path, "part");
-    // Path::new with trailing slash has file_name == None;
-    // the function falls back to "model-file".
-    assert_eq!(result, PathBuf::from("/var/cache/models/model-file.part"));
+    // Path::new("").file_name() is None; the function
+    // falls back to "model-file".
+    assert_eq!(result, PathBuf::from("model-file.part"));
 }
 
 #[test]
@@ -187,7 +187,10 @@ fn suffixed_path_preserves_extension() {
 #[test]
 fn human_readable_size_bytes_below_kb() {
     let s = human_readable_size(500).to_string();
-    assert!(s.contains("500") || s.contains("B"), "size must include the value or 'B': {s}");
+    assert!(
+        s.contains("500") || s.contains("B"),
+        "size must include the value or 'B': {s}"
+    );
 }
 
 #[test]

@@ -61,15 +61,23 @@ fn segment_line(start_ms: u64, end_ms: u64, src: &str, tgt: &str) -> String {
         chars_translated: 0,
         estimated_cost_usd: 0.0,
     };
-    serde_json::to_string(&seg).expect("serialize segment")
+    // Wrap the segment in the `SessionLogRecord` enum
+    // so the JSON carries the `record_type` discriminator
+    // field.  Without the wrapper, the serializer
+    // produces a flat struct (no `record_type` tag) and the
+    // deserializer can't tell `SessionHeader` from
+    // `TranscriptSegment`.  See
+    // `SessionLogRecord`'s `#[serde(tag = "record_type",
+    // rename_all = "snake_case")]` for the field name.
+    serde_json::to_string(&SessionLogRecord::TranscriptSegment(seg)).expect("serialize segment")
 }
 
 // ── Tests for transcript_segments_from_jsonl_lenient ─────────────────────────
 
 #[test]
 fn lenient_parses_empty_input() {
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient("")
-        .expect("empty input must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient("").expect("empty input must succeed");
     assert!(segs.is_empty());
     assert_eq!(skipped, 0);
 }
@@ -77,8 +85,8 @@ fn lenient_parses_empty_input() {
 #[test]
 fn lenient_parses_blank_lines_as_no_op() {
     let input = "\n\n   \n\n";
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient(input)
-        .expect("blank lines must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient(input).expect("blank lines must succeed");
     assert!(segs.is_empty());
     assert_eq!(skipped, 0);
 }
@@ -86,8 +94,8 @@ fn lenient_parses_blank_lines_as_no_op() {
 #[test]
 fn lenient_parses_header_only() {
     let input = header_line();
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient(&input)
-        .expect("header-only must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient(&input).expect("header-only must succeed");
     assert!(segs.is_empty());
     assert_eq!(skipped, 0, "header must NOT count as skipped");
 }
@@ -95,8 +103,8 @@ fn lenient_parses_header_only() {
 #[test]
 fn lenient_parses_single_segment() {
     let input = header_line() + "\n" + &segment_line(0, 1000, "hello", "xin chào");
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient(&input)
-        .expect("single segment must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient(&input).expect("single segment must succeed");
     assert_eq!(segs.len(), 1);
     assert_eq!(segs[0].source_text, "hello");
     assert_eq!(segs[0].target_text, "xin chào");
@@ -115,8 +123,8 @@ fn lenient_parses_multiple_segments() {
             &format!("tgt {i}"),
         ));
     }
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient(&input)
-        .expect("multiple segments must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient(&input).expect("multiple segments must succeed");
     assert_eq!(segs.len(), 5);
     assert_eq!(skipped, 0);
 }
@@ -131,8 +139,8 @@ fn lenient_skips_malformed_lines_and_counts_them() {
     let valid2 = segment_line(1000, 2000, "second", "thứ hai");
     let input = format!("{valid1}\n{malformed}\n{valid2}\n");
 
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient(&input)
-        .expect("lenient must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient(&input).expect("lenient must succeed");
     assert_eq!(segs.len(), 2);
     assert_eq!(skipped, 1, "the malformed line must be counted");
     assert_eq!(segs[0].source_text, "first");
@@ -151,8 +159,8 @@ fn lenient_skips_malformed_lines_in_any_position() {
         valid2 = segment_line(1000, 2000, "v2", "v2"),
         malformed3 = "garbage3",
     );
-    let (segs, skipped) = transcript_segments_from_jsonl_lenient(&input)
-        .expect("lenient must succeed");
+    let (segs, skipped) =
+        transcript_segments_from_jsonl_lenient(&input).expect("lenient must succeed");
     assert_eq!(segs.len(), 2);
     assert_eq!(skipped, 3);
 }
@@ -167,8 +175,7 @@ fn lenient_returns_unsupported_schema_error_for_future_version() {
         "record_type": "transcript_segment",
     })
     .to_string();
-    let err = transcript_segments_from_jsonl_lenient(&future)
-        .expect_err("future schema must fail");
+    let err = transcript_segments_from_jsonl_lenient(&future).expect_err("future schema must fail");
     match err {
         SessionReplayError::UnsupportedSchema { line: _, version } => {
             assert_eq!(version, 99);
@@ -186,8 +193,8 @@ fn lenient_returns_unsupported_schema_error_for_zero_version() {
         "record_type": "session_header",
     })
     .to_string();
-    let err = transcript_segments_from_jsonl_lenient(&zero)
-        .expect_err("schema_version 0 must fail");
+    let err =
+        transcript_segments_from_jsonl_lenient(&zero).expect_err("schema_version 0 must fail");
     match err {
         SessionReplayError::UnsupportedSchema { line: _, version } => {
             assert_eq!(version, 0);
@@ -199,8 +206,8 @@ fn lenient_returns_unsupported_schema_error_for_zero_version() {
 fn lenient_accepts_current_schema_version() {
     // Pin: the current schema_version is acceptable.
     let input = header_line() + "\n" + &segment_line(0, 1000, "x", "y");
-    let (segs, _) = transcript_segments_from_jsonl_lenient(&input)
-        .expect("current schema must succeed");
+    let (segs, _) =
+        transcript_segments_from_jsonl_lenient(&input).expect("current schema must succeed");
     assert_eq!(segs.len(), 1);
 }
 
@@ -216,8 +223,7 @@ fn lenient_unsupported_schema_error_includes_one_based_line_number() {
     })
     .to_string();
     input.push_str(&future);
-    let err = transcript_segments_from_jsonl_lenient(&input)
-        .expect_err("must fail");
+    let err = transcript_segments_from_jsonl_lenient(&input).expect_err("must fail");
     match err {
         SessionReplayError::UnsupportedSchema { line, version } => {
             assert_eq!(line, 2, "the bad line is line 2 (1-based)");
