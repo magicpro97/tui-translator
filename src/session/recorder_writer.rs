@@ -278,8 +278,16 @@ pub(crate) fn validate_slot_suffix(suffix: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Lenient sanitizer for a user-influenced session id that is going to
+/// appear in a directory or file name on disk.  Returns a string that
+/// is always a safe path component: every byte that is not ASCII
+/// alphanumeric, `-`, or `_` is replaced with `_`, an empty or pure
+/// underscore string is rewritten to `session`, and any result that
+/// would otherwise match a Windows reserved device name (case
+/// insensitive, before the first `.`) is prefixed with `_` so the OS
+/// does not route the call to a device driver.
 pub(super) fn sanitize_session_id_for_fs(session_id: &str) -> String {
-    session_id
+    let cleaned: String = session_id
         .chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
@@ -288,13 +296,27 @@ pub(super) fn sanitize_session_id_for_fs(session_id: &str) -> String {
                 '_'
             }
         })
-        .collect()
+        .collect();
+    let normalized = if cleaned.chars().all(|c| c == '_') {
+        "session".to_string()
+    } else {
+        cleaned
+    };
+    if crate::storage::is_windows_reserved_device_name(&normalized) {
+        let mut prefixed = String::with_capacity(normalized.len() + 1);
+        prefixed.push('_');
+        prefixed.push_str(&normalized);
+        prefixed
+    } else {
+        normalized
+    }
 }
 
 /// Local mirror of `storage::validate_path_component`'s acceptance rule —
 /// duplicated so that bin targets which only pull in `session/mod.rs`
 /// (e.g. `eval_session`) still build without a separate `storage` mount.
-/// The rule must stay in sync with `crate::storage::validate_path_component`.
+/// The rule must stay in sync with `crate::storage::validate_path_component`
+/// and `crate::storage::is_windows_reserved_device_name`.
 pub(super) fn is_valid_path_component(component: &str) -> bool {
     if component.is_empty() || component == "." || component == ".." {
         return false;
@@ -315,36 +337,7 @@ pub(super) fn is_valid_path_component(component: &str) -> bool {
         return false;
     }
     // Reject Windows reserved device names (case-insensitive, base stem).
-    let stem = component
-        .split('.')
-        .next()
-        .unwrap_or(component)
-        .to_ascii_uppercase();
-    !matches!(
-        stem.as_str(),
-        "CON"
-            | "PRN"
-            | "AUX"
-            | "NUL"
-            | "COM1"
-            | "COM2"
-            | "COM3"
-            | "COM4"
-            | "COM5"
-            | "COM6"
-            | "COM7"
-            | "COM8"
-            | "COM9"
-            | "LPT1"
-            | "LPT2"
-            | "LPT3"
-            | "LPT4"
-            | "LPT5"
-            | "LPT6"
-            | "LPT7"
-            | "LPT8"
-            | "LPT9"
-    )
+    !crate::storage::is_windows_reserved_device_name(component)
 }
 
 #[allow(dead_code)]

@@ -5,6 +5,9 @@
 #[path = "../src/session/mod.rs"]
 mod session;
 
+#[path = "../src/storage/mod.rs"]
+mod storage;
+
 use std::path::Path;
 
 use session::{

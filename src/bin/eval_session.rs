@@ -45,6 +45,9 @@ use std::{
 #[path = "../session/mod.rs"]
 mod session;
 
+#[path = "../storage/mod.rs"]
+mod storage;
+
 use session::{SessionHeader, SessionLogRecord, TranscriptSegment};
 
 // ── Constants ──────────────────────────────────────────────────────────────────
