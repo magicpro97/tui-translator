@@ -44,12 +44,12 @@ fn jsonl_path_slot_suffixed_segment_falls_back_to_parent() {
 
 #[test]
 fn jsonl_path_no_stem_returns_empty() {
-    // `/var/sessions/.jsonl` has no file stem (the stem is
-    // empty) on POSIX.  On Windows, `Path::file_stem()`
-    // treats `.jsonl` as the entire filename and returns
-    // `Some(".jsonl")`.  The test accepts either
-    // (matching the platform's actual behaviour) and pins
-    // the contract that the function never returns `None`.
+    // `/var/sessions/.jsonl` has no file stem on POSIX
+    // (the stem is empty) and Windows treats `.jsonl` as
+    // the entire filename (the dot-prefix is not stripped).
+    // The function never returns `None`; the test pins
+    // that contract rather than the platform-specific
+    // value, which differs between POSIX and Windows.
     let p = Path::new("/var/sessions/.jsonl");
     let result = session_id_from_jsonl_path(p);
     assert!(result.is_some(), "function must not return None");
