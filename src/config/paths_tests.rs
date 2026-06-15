@@ -18,10 +18,14 @@ use std::path::PathBuf;
 
 #[test]
 fn config_dir_override_env_takes_precedence() {
+    // Use a unique value per test run so parallel tests
+    // don't pollute the env var (tests run in parallel by
+    // default and `set_var` is process-global).
+    let unique = format!("/tmp/from-env-override-{}", std::process::id());
     let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, "/tmp/from-env-override");
+    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
     let result = default_config_dir().expect("override must produce a path");
-    assert_eq!(result, PathBuf::from("/tmp/from-env-override"));
+    assert_eq!(result, PathBuf::from(&unique));
     match prev {
         Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
         None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
