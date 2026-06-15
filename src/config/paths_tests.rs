@@ -16,6 +16,7 @@
 use super::*;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 // Monotonic counter for unique env-var test values.
 // Each test that mutates a process-global env var
@@ -26,12 +27,21 @@ fn env_test_counter() -> usize {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
+// Global mutex serialising the env-var tests in this
+// module.  `std::env::set_var` is process-global, not
+// thread-local, so the only way to keep the tests from
+// stepping on each other is to run them serially.  The
+// lock is uncontended in normal use (only the env-var
+// tests take it).
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
 #[test]
 fn config_dir_override_env_takes_precedence() {
     // Pin: when the env var is set, the override must
-    // win.  The other env-var tests in this module also
-    // set the env to a unique per-PID+counter value, so
-    // this test can run in parallel without a race.
+    // win.  Hold the module-level `ENV_MUTEX` so this
+    // test cannot race with the other env-var tests in
+    // this module.
+    let _guard = ENV_MUTEX.lock().unwrap();
     let unique = format!(
         "/tmp/from-env-override-{}-{}",
         std::process::id(),
@@ -77,7 +87,8 @@ fn config_dir_override_env_empty_treated_as_unset() {
 fn default_config_path_joins_config_json() {
     // Use a unique per-PID+counter value so this test
     // doesn't race with the other env-var tests in this
-    // module (which set the env to a hard-coded value).
+    // module.  Hold `ENV_MUTEX` for serialisation.
+    let _guard = ENV_MUTEX.lock().unwrap();
     let unique = format!(
         "/tmp/config-root-{}-{}",
         std::process::id(),
