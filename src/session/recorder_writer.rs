@@ -385,12 +385,19 @@ pub(super) fn prune_session_dirs(directory: &Path, max_sessions: usize) -> anyho
         let metadata = entry.metadata().map_err(|err| {
             anyhow::anyhow!("failed to inspect session entry {}: {err}", path.display())
         })?;
-        // Per-session subdirectories (LF-06 layout) are the canonical units to
-        // prune.  Legacy flat `*.jsonl` files are also considered so the count
-        // cap remains correct during the migration window.
-        let is_session_dir = metadata.is_dir();
-        let is_legacy_log =
-            metadata.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl");
+        // Per-session subdirectories (LF-06 layout) are the canonical units
+        // to prune.  We identify them structurally — the recorder always
+        // places a `00001.jsonl` segment inside — rather than by name, so
+        // callers may continue to use any `session_id` they want.
+        // Legacy flat `session-{epoch_ms}-{pid}.jsonl` files are also
+        // considered so the count cap remains accurate during the
+        // migration window.  Everything else is left untouched so user
+        // data, VCS metadata (`.git`, `.tmp`), or stray mounts under the
+        // session root are not deleted.
+        let is_session_dir = metadata.is_dir() && dir_looks_like_recorder_session(&path)?;
+        let is_legacy_log = metadata.is_file()
+            && path.extension().and_then(|ext| ext.to_str()) == Some("jsonl")
+            && legacy_jsonl_matches_recorder(&path);
         if !is_session_dir && !is_legacy_log {
             continue;
         }
@@ -425,3 +432,56 @@ pub(super) fn prune_session_dirs(directory: &Path, max_sessions: usize) -> anyho
     }
     Ok(())
 }
+
+/// Returns `true` when `path`'s final component matches the recorder's
+/// Returns `true` when `path` looks like a directory the recorder
+/// owns.  The recorder always places its first segment,
+/// `00001.jsonl` (or `00001-{slot_suffix}.jsonl` if a slot suffix is
+/// configured) at the top of every per-session directory, so we use
+/// that structural marker instead of pattern-matching the directory
+/// name itself — callers may pass any `session_id` string when
+/// starting a recorder.
+///
+/// Returns `Err` only when the directory cannot be inspected for the
+/// marker; the caller surfaces that as a hard failure (refusing to
+/// silently skip an unreadable entry is safer than risk-pruning).
+fn dir_looks_like_recorder_session(path: &Path) -> std::io::Result<bool> {
+    let names: std::collections::BTreeSet<String> = std::fs::read_dir(path)?
+        .filter_map(|entry| {
+            entry.ok().and_then(|e| {
+                e.file_name().into_string().ok().filter(|n| {
+                    n == "00001.jsonl" || (n.starts_with("00001-") && n.ends_with(".jsonl"))
+                })
+            })
+        })
+        .collect();
+    Ok(names
+        .iter()
+        .any(|n| n == "00001.jsonl" || n.starts_with("00001-")))
+}
+
+fn legacy_jsonl_matches_recorder(path: &Path) -> bool {
+    // The recorder always writes a session directory or a flat session
+    // log with the exact same name: `session-{epoch_ms}-{pid}[.jsonl]`.
+    // Strip the `.jsonl` extension so the dir and file variants share
+    // one validator.
+    let name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(name) => name,
+        None => return false,
+    };
+    let stem = name.strip_suffix(".jsonl").unwrap_or(name);
+    let Some(rest) = stem.strip_prefix("session-") else {
+        return false;
+    };
+    let Some((epoch_ms, pid)) = rest.split_once('-') else {
+        return false;
+    };
+    !epoch_ms.is_empty()
+        && epoch_ms.bytes().all(|b| b.is_ascii_digit())
+        && !pid.is_empty()
+        && pid.bytes().all(|b| b.is_ascii_digit())
+}
+
+#[cfg(test)]
+#[path = "recorder_writer_tests.rs"]
+mod tests;
