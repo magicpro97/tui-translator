@@ -30,6 +30,10 @@ pub use archive::install_archive_bundle;
 #[path = "model_download_tests.rs"]
 mod tests;
 
+#[cfg(all(test, feature = "local-tts"))]
+#[path = "model_download_archive_tests.rs"]
+mod archive_tests;
+
 /// File name written after a successful bundle installation.
 pub const INSTALLED_MANIFEST_FILE: &str = "manifest.json";
 
