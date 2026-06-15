@@ -10,12 +10,46 @@
 //! a terminal, without a ratatui `Buffer`, and without any
 //! I/O.
 
+// The types used by the tests live in
+// `src/tui/onboarding.rs`.  This test file is
+// `#[path]`-included from `src/tui/onboarding_render.rs`,
+// which itself is `#[path]`-included from two places:
+//   (a) the main `tui-translator` bin (where `tui` is
+//       declared as `pub mod` in `main.rs`), and
+//   (b) the `onboarding_integration` integration-test
+//       binary (where `tui` does NOT exist — instead, the
+//       integration test does
+//       `#[path = "../src/tui/onboarding.rs"] mod onboarding;`,
+//       exposing the module as `crate::onboarding`).
+//
+// `onboarding_render.rs` has `use super::*;` at the top,
+// which re-exports the types from the parent (whether
+// the parent is `crate::tui` or `crate::onboarding`).
+// Inheriting the same `use super::*;` here works in
+// both contexts — the types come from the parent of this
+// file, which is `onboarding_render`, which in turn
+// inherits from its own parent (the bin's root or
+// `crate::tui::onboarding`).
+//
+// Note: the local `#[path = "onboarding.rs"] mod onboarding;`
+// approach (used in earlier revisions of this file) was
+// rejected because it created a SECOND, distinct
+// `OnboardingWizardState` type that mismatched the one
+// `render_wizard_lines` expects, producing E0308
+// "mismatched types" errors.
 use super::*;
-use crate::tui::onboarding::{
-    LocalModelLicense, OnboardingBranch, OnboardingStep, OnboardingWizardState,
-};
 
 // ── Test helpers ────────────────────────────────────────────────────────────
+//
+// The `OnboardingBranch` / `OnboardingStep` / `OnboardingWizardState` /
+// `LocalModelLicense` types live in `src/tui/onboarding.rs` and are imported
+// above.  The `render_wizard_lines` function lives in `onboarding_render.rs`
+// (this file's `super`) and is brought in via the `use super::*;` glob.
+//
+// `#![path]` is set in the integration-test binary (see
+// `tests/onboarding_integration.rs`) so the `crate::tui::onboarding::`
+// path resolves to the onboarding module there as well.  This means the
+// same import works in both the binary and the integration-test crates.
 
 fn empty_state() -> OnboardingWizardState {
     OnboardingWizardState::new(vec![], cable_probe_no_devices)
