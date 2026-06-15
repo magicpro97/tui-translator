@@ -52,11 +52,17 @@ fn jsonl_path_no_stem_returns_empty() {
 }
 
 #[test]
+#[cfg(unix)]
 fn jsonl_path_non_utf8_stem_returns_none() {
     // The function must not panic on non-UTF-8 paths.
     // We construct a path that always has a non-empty
     // file-name component so the test exercises the
     // "stem is not valid UTF-8" branch.
+    //
+    // Unix-only: `std::os::unix::ffi::OsStrExt::from_bytes`
+    // does not exist on Windows; the test is therefore
+    // skipped on Windows where non-UTF-8 paths round-trip
+    // through `OsString` differently.
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
     let bytes = b"\xff\xfe";
