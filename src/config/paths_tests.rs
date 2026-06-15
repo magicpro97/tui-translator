@@ -18,9 +18,10 @@ use std::path::PathBuf;
 
 #[test]
 fn config_dir_override_env_takes_precedence() {
-    // Use a unique value per test run so parallel tests
-    // don't pollute the env var (tests run in parallel by
-    // default and `set_var` is process-global).
+    // Pin: when the env var is set, the override must
+    // win.  The other env-var tests in this module now
+    // use unique per-PID values too, so this test can
+    // run in parallel without a race.
     let unique = format!("/tmp/from-env-override-{}", std::process::id());
     let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
     std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
@@ -60,10 +61,14 @@ fn config_dir_override_env_empty_treated_as_unset() {
 
 #[test]
 fn default_config_path_joins_config_json() {
+    // Use a unique per-PID value so this test doesn't
+    // race with the other env-var tests in this module
+    // (which set the env to a hard-coded value).
+    let unique = format!("/tmp/config-root-{}", std::process::id());
     let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, "/tmp/config-root");
+    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
     let result = default_config_path().expect("config path must be derivable");
-    assert_eq!(result, PathBuf::from("/tmp/config-root/config.json"));
+    assert_eq!(result, PathBuf::from(format!("{unique}/config.json")));
     match prev {
         Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
         None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
