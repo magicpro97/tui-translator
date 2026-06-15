@@ -283,6 +283,65 @@ fn epoch_secs_to_ymd_known_dates() {
     assert_eq!(epoch_secs_to_ymd(1_700_000_000), (2023, 11, 14));
 }
 
+// ── Windows reserved-name helper (#798) ─────────────────────────────────
+
+#[test]
+fn is_windows_reserved_device_name_detects_canonical_names() {
+    for name in [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ] {
+        assert!(
+            is_windows_reserved_device_name(name),
+            "{name} should be detected as a reserved device name"
+        );
+    }
+}
+
+#[test]
+fn is_windows_reserved_device_name_is_case_insensitive() {
+    for name in ["con", "Con", "cOn", "com1", "Com1", "lpt9", "LPT9"] {
+        assert!(
+            is_windows_reserved_device_name(name),
+            "{name} should be detected as a reserved device name"
+        );
+    }
+}
+
+#[test]
+fn is_windows_reserved_device_name_matches_stem_with_extension() {
+    assert!(is_windows_reserved_device_name("CON.txt"));
+    assert!(is_windows_reserved_device_name("nul.log"));
+    assert!(is_windows_reserved_device_name("Com1.archived"));
+}
+
+#[test]
+fn is_windows_reserved_device_name_rejects_lookalikes() {
+    // `CONFOO` is not `CON.foo` and not the reserved name `CON`; it must
+    // be allowed.  Likewise `note`, `user_data`, and a CON-lookalike with
+    // a dash prefix.
+    for name in [
+        "CONFOO",
+        "CON-foo",
+        "note",
+        "user_data",
+        "PRINT",
+        "LPT10",
+        "COM0",
+        "LPT0",
+    ] {
+        assert!(
+            !is_windows_reserved_device_name(name),
+            "{name} must not be treated as a reserved device name"
+        );
+    }
+}
+
+#[test]
+fn is_windows_reserved_device_name_handles_empty_string() {
+    assert!(!is_windows_reserved_device_name(""));
+}
+
 fn set_mtime(path: &Path, when: SystemTime) {
     if let Ok(f) = std::fs::OpenOptions::new().write(true).open(path) {
         let _ = f.set_modified(when);

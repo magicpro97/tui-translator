@@ -51,6 +51,9 @@ mod i18n;
 #[path = "../src/session/mod.rs"]
 mod session;
 
+#[path = "../src/storage/mod.rs"]
+mod storage;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 

@@ -43,6 +43,24 @@ const WINDOWS_RESERVED_NAMES: &[&str] = &[
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
+/// Windows reserved device names that the OS treats specially even when a
+/// caller attempts to create a file or directory with that name.  The
+/// comparison uses the base stem of the component (i.e. everything before
+/// the first `.`) and is case-insensitive, mirroring the platform's own
+/// resolution rules.  Exposed for the session recorder's lenient
+/// sanitizer, which has to *neutralise* (not merely *reject*) these
+/// names because callers cannot change the id by the time it reaches
+/// disk.
+pub fn is_windows_reserved_device_name(component: &str) -> bool {
+    if component.is_empty() {
+        return false;
+    }
+    let stem = component.split('.').next().unwrap_or(component);
+    WINDOWS_RESERVED_NAMES
+        .iter()
+        .any(|reserved| stem.eq_ignore_ascii_case(reserved))
+}
+
 /// Strict sanitizer for a single path component that may contain
 /// user-influenced bytes (a session id, a filename, a directory name).
 ///

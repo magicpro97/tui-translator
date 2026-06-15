@@ -349,6 +349,38 @@ fn sanitize_session_id_strips_path_separators() {
     assert!(!result.contains(':'));
 }
 
+#[test]
+fn sanitize_session_id_neutralises_windows_reserved_names() {
+    // Issue #798: a session id that resolves to a Windows reserved
+    // device name (case-insensitive, before the first `.`) must be
+    // neutralised by prefixing `_` so the OS does not route the call
+    // to a device driver.  The check below only asserts the prefix
+    // invariant so the test stays self-contained without pulling in
+    // `crate::storage` from this sibling-module unit test.
+    for raw in ["CON", "PRN", "AUX", "NUL", "COM1", "LPT9", "con", "Com1"] {
+        let cleaned = sanitize_session_id_for_fs(raw);
+        assert!(
+            cleaned.starts_with('_'),
+            "{raw} sanitised to {cleaned} must be prefixed with `_`"
+        );
+    }
+}
+
+#[test]
+fn sanitize_session_id_keeps_lookalikes_intact() {
+    // `CONFOO` is not the reserved name `CON`; the sanitizer must not
+    // mangle it.  Likewise a CON-lookalike with a dash prefix and a
+    // `.txt` extension (which makes the whole name not a reserved
+    // device name per the platform rules).
+    for raw in ["CONFOO", "CON-foo", "CON.txt", "PRINT", "LPT10"] {
+        let cleaned = sanitize_session_id_for_fs(raw);
+        assert!(
+            !cleaned.starts_with('_'),
+            "{raw} sanitised to {cleaned} should not be prefixed with `_`"
+        );
+    }
+}
+
 // ── Tests for is_valid_path_component ─────────────────────────────────────
 
 #[test]

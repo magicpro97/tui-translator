@@ -429,6 +429,16 @@ fn segment_wav_file_name(segment_index: u32) -> String {
     format!("{segment_index:05}.wav")
 }
 
+/// Lenient sanitizer for a user-influenced session id that is going to
+/// appear in a directory or file name on disk.  Returns a string that
+/// is always a safe path component: every byte that is not ASCII
+/// alphanumeric, `-`, or `_` is replaced with `_`, an empty string is
+/// rewritten to `session`, and any result that would otherwise match a
+/// Windows reserved device name (case insensitive, before the first
+/// `.`) is prefixed with `_` so the OS does not route the call to a
+/// device driver.  The reserved-name set is duplicated here so this
+/// module builds without a separate `storage` mount; keep it in sync
+/// with `crate::storage::is_windows_reserved_device_name`.
 fn sanitize_session_id_for_fs(session_id: &str) -> String {
     let stem: String = session_id
         .chars()
@@ -440,41 +450,31 @@ fn sanitize_session_id_for_fs(session_id: &str) -> String {
             }
         })
         .collect();
-    if stem.is_empty() {
+    let normalized = if stem.is_empty() {
         "session".to_string()
     } else {
         stem
+    };
+    if is_windows_reserved_device_name_local(&normalized) {
+        let mut prefixed = String::with_capacity(normalized.len() + 1);
+        prefixed.push('_');
+        prefixed.push_str(&normalized);
+        prefixed
+    } else {
+        normalized
     }
 }
 
-/// Local mirror of `crate::storage::validate_path_component`'s acceptance rule.
-/// Duplicated so bin targets that only `#[path]`-mount `audio/archive.rs`
-/// build without a separate `storage` mount.  Must stay in sync.
-fn is_valid_path_component(component: &str) -> bool {
-    if component.is_empty() || component == "." || component == ".." {
+/// Windows reserved device names; mirrored from
+/// `crate::storage::is_windows_reserved_device_name` so this module
+/// builds without a separate `storage` mount.  Keep the two in sync.
+fn is_windows_reserved_device_name_local(component: &str) -> bool {
+    if component.is_empty() {
         return false;
     }
-    if component.contains('/') || component.contains('\\') || component.contains(':') {
-        return false;
-    }
-    if component.chars().any(|c| {
-        (c as u32) < 0x20 || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*'
-    }) {
-        return false;
-    }
-    if component.ends_with('.') || component.ends_with(' ') {
-        return false;
-    }
-    if std::path::Path::new(component).is_absolute() {
-        return false;
-    }
-    let stem = component
-        .split('.')
-        .next()
-        .unwrap_or(component)
-        .to_ascii_uppercase();
-    !matches!(
-        stem.as_str(),
+    let stem = component.split('.').next().unwrap_or(component);
+    matches!(
+        stem.to_ascii_uppercase().as_str(),
         "CON"
             | "PRN"
             | "AUX"
@@ -498,6 +498,31 @@ fn is_valid_path_component(component: &str) -> bool {
             | "LPT8"
             | "LPT9"
     )
+}
+
+/// Local mirror of `crate::storage::validate_path_component`'s acceptance rule.
+/// Duplicated so bin targets that only `#[path]`-mount `audio/archive.rs`
+/// build without a separate `storage` mount.  Must stay in sync with
+/// `crate::storage::validate_path_component`.
+fn is_valid_path_component(component: &str) -> bool {
+    if component.is_empty() || component == "." || component == ".." {
+        return false;
+    }
+    if component.contains('/') || component.contains('\\') || component.contains(':') {
+        return false;
+    }
+    if component.chars().any(|c| {
+        (c as u32) < 0x20 || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*'
+    }) {
+        return false;
+    }
+    if component.ends_with('.') || component.ends_with(' ') {
+        return false;
+    }
+    if std::path::Path::new(component).is_absolute() {
+        return false;
+    }
+    !is_windows_reserved_device_name_local(component)
 }
 
 #[allow(dead_code)]

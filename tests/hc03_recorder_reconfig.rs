@@ -17,6 +17,9 @@ mod session;
 #[path = "../src/audio/mod.rs"]
 mod audio;
 
+#[path = "../src/storage/mod.rs"]
+mod storage;
+
 use session::{
     SessionHeader, SessionLogRecord, SessionRecorder, SessionRecorderConfig, TranscriptSegment,
     SESSION_LOG_SCHEMA_VERSION,
