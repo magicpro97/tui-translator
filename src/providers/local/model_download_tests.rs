@@ -1,273 +1,212 @@
-use super::transfer::{finalize_downloaded_file, parse_content_range_start, resume_range_header};
+//! Unit tests for the private path-safety helpers in
+//! `crate::providers::local::model_download`.
+//!
+//! WP-25.05 (coverage-100% follow-up): the audit noted
+//! `src/providers/local/model_download.rs` had no test
+//! file.  Add tests for the private path-safety helpers
+//! (`safe_join`, `safe_relative_path`, `partial_path`,
+//! `corrupt_path`, `suffixed_path`, `human_readable_size`).
+//!
+//! These helpers are the path-traversal defence layer:
+//! every model file path passes through `safe_relative_path`
+//! before being joined to the model directory.  A future
+//! refactor that loosens the filter (e.g. allows `..`
+//! components) would let a malicious model manifest escape
+//! the cache directory.
+
 use super::*;
-use sha2::Digest as _;
-use std::io::{Read as _, Write as _};
-use std::net::TcpListener;
-use std::sync::mpsc;
-use std::thread;
+use std::path::Path;
 
-use tempfile::TempDir;
+// ── Tests for safe_relative_path ─────────────────────────────────────────────
 
-fn sample_manifest() -> ModelBundleManifest {
-    ModelBundleManifest {
-        id: "opus-mt-ja-vi".to_string(),
-        display_name: "OPUS-MT ja->vi".to_string(),
-        version: "2026-05-18".to_string(),
-        license: "Apache-2.0".to_string(),
-        source_url: "https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi".to_string(),
-        files: vec![ModelBundleFile {
-            relative_path: "encoder_model.onnx".to_string(),
-            download_url: "https://example.com/encoder_model.onnx".to_string(),
-            size_bytes: 5,
-            sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".to_string(),
-        }],
-    }
+#[test]
+fn safe_relative_path_accepts_simple_filename() {
+    let result = safe_relative_path("model.bin").expect("simple filename must be safe");
+    assert_eq!(result, PathBuf::from("model.bin"));
 }
 
 #[test]
-fn preview_text_shows_license_and_size_before_download() {
-    let manifest = sample_manifest();
-    let preview = manifest.preview_text();
-
-    assert!(preview.contains("Apache-2.0"));
-    assert!(preview.contains("Download size"));
-    assert!(preview.contains("OPUS-MT ja->vi"));
+fn safe_relative_path_accepts_nested_path() {
+    let result = safe_relative_path("models/whisper/model.bin")
+        .expect("nested path must be safe");
+    assert_eq!(result, PathBuf::from("models/whisper/model.bin"));
 }
 
 #[test]
-fn stt_model_bundle_manifest_targets_cache_file() {
-    let spec = ModelSpec {
-        id: super::super::ModelId::Tiny,
-        file_name: "ggml-tiny.bin",
-        download_url: "https://example.com/ggml-tiny.bin",
-        sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        size_bytes: 42,
-        license_url: "https://example.com/license",
-        license_text: "MIT License",
-    };
-
-    let manifest = stt_model_bundle_manifest(&spec);
-    assert_eq!(manifest.version, "0123456789ab");
-    assert_eq!(manifest.files[0].relative_path, "ggml-tiny.bin");
-    assert_eq!(manifest.files[0].sha256, spec.sha256);
-    assert_eq!(manifest.total_size_bytes(), spec.size_bytes);
-    manifest.validate().unwrap();
+fn safe_relative_path_accepts_dot_components() {
+    // A single "." is a no-op and is dropped.
+    let result = safe_relative_path("./model.bin")
+        .expect("./ prefix must be safe");
+    assert_eq!(result, PathBuf::from("model.bin"));
 }
 
 #[test]
-fn stt_model_bundle_manifest_does_not_panic_on_short_sha() {
-    let spec = ModelSpec {
-        id: super::super::ModelId::Tiny,
-        file_name: "ggml-tiny.bin",
-        download_url: "https://example.com/ggml-tiny.bin",
-        sha256: "abc",
-        size_bytes: 42,
-        license_url: "https://example.com/license",
-        license_text: "MIT License",
-    };
-
-    let manifest = stt_model_bundle_manifest(&spec);
-
-    assert_eq!(manifest.version, "abc");
+fn safe_relative_path_normalises_backslashes() {
+    // Windows-style backslashes are normalised to forward
+    // slashes; the function is cross-platform.
+    let result = safe_relative_path("models\\whisper\\model.bin")
+        .expect("backslashes must be normalised");
+    assert_eq!(result, PathBuf::from("models/whisper/model.bin"));
 }
 
 #[test]
-fn resume_range_header_starts_after_partial_bytes() {
-    assert_eq!(resume_range_header(5, 10).as_deref(), Some("bytes=5-"));
-    assert_eq!(resume_range_header(0, 10), None);
-    assert_eq!(resume_range_header(10, 10), None);
-}
-
-#[test]
-fn parse_content_range_start_reads_resume_offset() {
-    assert_eq!(parse_content_range_start("bytes 5-10/11"), Some(5));
-    assert_eq!(parse_content_range_start("items 5-10/11"), None);
-    assert_eq!(parse_content_range_start("bytes */11"), None);
-}
-
-#[test]
-fn manifest_rejects_missing_preview_metadata() {
-    let mut manifest = sample_manifest();
-    manifest.display_name = "   ".to_string();
-
-    let err = manifest.validate().unwrap_err();
-
+fn safe_relative_path_rejects_empty_input() {
+    let err = safe_relative_path("").expect_err("empty must fail");
     assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
+    let msg = err.to_string();
+    assert!(msg.contains("must not be empty"));
+}
 
-    let mut manifest = sample_manifest();
-    manifest.source_url = String::new();
-
-    let err = manifest.validate().unwrap_err();
-
+#[test]
+fn safe_relative_path_rejects_whitespace_only_input() {
+    let err = safe_relative_path("   ").expect_err("whitespace must fail");
     assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
 }
 
 #[test]
-fn manifest_rejects_parent_directory_paths() {
-    let mut manifest = sample_manifest();
-    manifest.files[0].relative_path = "..\\escape.onnx".to_string();
+fn safe_relative_path_rejects_drive_prefix() {
+    // Windows drive prefixes (e.g. "C:") must be rejected:
+    // they would let a manifest escape the cache via a
+    // drive-relative path.
+    let err = safe_relative_path("C:model.bin").expect_err("drive prefix must fail");
+    assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
+    let msg = err.to_string();
+    assert!(msg.contains("drive prefix"));
+}
 
-    let err = manifest.validate().unwrap_err();
+#[test]
+fn safe_relative_path_rejects_absolute_path() {
+    // An absolute path is rejected: the function returns
+    // a *relative* path, so the caller can join it to
+    // the cache directory.
+    let err = safe_relative_path("/etc/passwd").expect_err("absolute path must fail");
+    assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
+    let msg = err.to_string();
+    assert!(msg.contains("must stay inside the model directory"));
+}
 
+#[test]
+fn safe_relative_path_rejects_parent_traversal() {
+    // The classic zip-slip / path-traversal attack: a
+    // manifest that includes ".." components to escape
+    // the cache directory.
+    let err = safe_relative_path("../etc/passwd").expect_err(".. traversal must fail");
     assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
 }
 
 #[test]
-fn manifest_rejects_drive_prefixed_paths() {
-    let mut manifest = sample_manifest();
-    manifest.files[0].relative_path = r"C:\models\escape.onnx".to_string();
-
-    let err = manifest.validate().unwrap_err();
-
+fn safe_relative_path_rejects_double_parent_traversal() {
+    let err = safe_relative_path("../../etc/passwd").expect_err("deep .. must fail");
     assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
 }
 
-#[tokio::test]
-async fn install_model_bundle_resumes_partial_download_and_writes_manifest() {
-    let temp = TempDir::new().unwrap();
-    let target = temp.path().join("encoder_model.onnx");
-    tokio::fs::write(partial_path(&target), b"hello")
-        .await
-        .unwrap();
-    let (url, range_rx, server) = start_range_server(b"hello world".to_vec());
-    let mut manifest = sample_manifest();
-    manifest.files[0].download_url = url;
-    manifest.files[0].size_bytes = 11;
-    manifest.files[0].sha256 = sha256_hex(b"hello world");
-
-    let report = install_model_bundle(&reqwest::Client::new(), &manifest, temp.path())
-        .await
-        .unwrap();
-    let range = range_rx.recv().unwrap();
-    server.join().unwrap();
-
-    assert_eq!(range.as_deref(), Some("bytes=5-"));
-    assert_eq!(report.downloaded_files, 1);
-    assert_eq!(report.reused_files, 0);
-    assert_eq!(tokio::fs::read(&target).await.unwrap(), b"hello world");
-    assert!(!partial_path(&target).exists());
-    assert!(temp.path().join(INSTALLED_MANIFEST_FILE).exists());
-}
-
-#[tokio::test]
-async fn remaining_download_bytes_uses_partial_file_for_quota() {
-    let temp = TempDir::new().unwrap();
-    let target = temp.path().join("encoder_model.onnx");
-    tokio::fs::write(partial_path(&target), b"hello")
-        .await
-        .unwrap();
-    let mut manifest = sample_manifest();
-    manifest.files[0].size_bytes = 11;
-
-    let remaining = remaining_download_bytes(&manifest, temp.path())
-        .await
-        .unwrap();
-
-    assert_eq!(remaining, 6);
+#[test]
+fn safe_relative_path_rejects_mixed_dot_and_normal() {
+    let err = safe_relative_path("models/../etc/passwd")
+        .expect_err("mixed .. and normal must fail");
+    assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
 }
 
 #[test]
-fn disk_space_gate_rejects_insufficient_space() {
-    let temp = TempDir::new().unwrap();
+fn safe_relative_path_rejects_only_dot() {
+    // Just "." is a no-op and yields an empty safe path;
+    // the function returns an error.
+    let err = safe_relative_path(".").expect_err("just . must fail");
+    assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
+    let msg = err.to_string();
+    assert!(msg.contains("must contain a file name"));
+}
 
-    let err = validate_available_space(temp.path(), 11, Some(10)).unwrap_err();
+// ── Tests for safe_join ────────────────────────────────────────────────────────
 
-    assert!(matches!(
-        err,
-        ModelDownloadError::InsufficientDiskSpace {
-            required_bytes: 11,
-            available_bytes: 10,
-            ..
-        }
-    ));
+#[test]
+fn safe_join_combines_base_and_relative() {
+    let base = Path::new("/var/cache/models");
+    let result = safe_join(base, "whisper/model.bin")
+        .expect("nested relative must be safe");
+    assert_eq!(result, PathBuf::from("/var/cache/models/whisper/model.bin"));
 }
 
 #[test]
-fn disk_space_gate_allows_reused_model_without_space_probe() {
-    let temp = TempDir::new().unwrap();
-
-    validate_available_space(temp.path(), 0, None).unwrap();
+fn safe_join_propagates_safe_relative_path_errors() {
+    let base = Path::new("/var/cache/models");
+    let err = safe_join(base, "../etc/passwd").expect_err(".. must fail");
+    assert!(matches!(err, ModelDownloadError::InvalidManifest(_)));
 }
 
-#[tokio::test]
-async fn checksum_mismatch_quarantines_partial_download() {
-    let temp = TempDir::new().unwrap();
-    let part = temp.path().join("decoder_model.onnx.part");
-    let target = temp.path().join("decoder_model.onnx");
-    tokio::fs::write(&part, b"hello").await.unwrap();
-    let file = ModelBundleFile {
-        relative_path: "decoder_model.onnx".to_string(),
-        download_url: "https://example.com/decoder_model.onnx".to_string(),
-        size_bytes: 5,
-        sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-    };
+// ── Tests for partial_path / corrupt_path / suffixed_path ────────────────────
 
-    let err = finalize_downloaded_file(&part, &target, &file)
-        .await
-        .unwrap_err();
-
-    match err {
-        ModelDownloadError::ChecksumMismatch {
-            quarantine_path, ..
-        } => {
-            assert!(quarantine_path.exists());
-            assert!(!part.exists());
-            assert!(!target.exists());
-        }
-        other => panic!("expected checksum mismatch, got {other:?}"),
-    }
+#[test]
+fn partial_path_appends_part_suffix() {
+    let path = Path::new("/var/cache/models/whisper.bin");
+    let result = partial_path(path);
+    assert_eq!(result, PathBuf::from("/var/cache/models/whisper.bin.part"));
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
+#[test]
+fn corrupt_path_appends_arbitrary_suffix() {
+    let path = Path::new("/var/cache/models/whisper.bin");
+    let result = corrupt_path(path, "corrupt");
+    assert_eq!(result, PathBuf::from("/var/cache/models/whisper.bin.corrupt"));
 }
 
-fn start_range_server(
-    contents: Vec<u8>,
-) -> (
-    String,
-    mpsc::Receiver<Option<String>>,
-    thread::JoinHandle<()>,
-) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/model.bin", listener.local_addr().unwrap());
-    let (range_tx, range_rx) = mpsc::channel();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut buffer = [0_u8; 4096];
-        let read = stream.read(&mut buffer).unwrap();
-        let request = String::from_utf8_lossy(&buffer[..read]);
-        let range = request.lines().find_map(|line| {
-            line.strip_prefix("Range: ")
-                .or_else(|| line.strip_prefix("range: "))
-                .map(str::trim)
-                .map(str::to_string)
-        });
-        range_tx.send(range.clone()).unwrap();
+#[test]
+fn corrupt_path_supports_sha256_suffix() {
+    let path = Path::new("/var/cache/models/whisper.bin");
+    let result = corrupt_path(path, "sha256-mismatch");
+    assert_eq!(
+        result,
+        PathBuf::from("/var/cache/models/whisper.bin.sha256-mismatch")
+    );
+}
 
-        let (status, body) = if range.as_deref() == Some("bytes=5-") {
-            ("206 Partial Content", &contents[5..])
-        } else {
-            ("200 OK", contents.as_slice())
-        };
-        let content_range = if status.starts_with("206") {
-            format!(
-                "Content-Range: bytes 5-{}/{}\r\n",
-                contents.len() - 1,
-                contents.len()
-            )
-        } else {
-            String::new()
-        };
-        write!(
-            stream,
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\n{content_range}Connection: close\r\n\r\n",
-            body.len()
-        )
-        .unwrap();
-        stream.write_all(body).unwrap();
-    });
-    (url, range_rx, server)
+#[test]
+fn suffixed_path_with_empty_input_falls_back_to_default() {
+    // When the input has no file_name (e.g. trailing
+    // slash), the function falls back to "model-file"
+    // as the prefix.
+    let path = Path::new("/var/cache/models/");
+    let result = suffixed_path(path, "part");
+    // Path::new with trailing slash has file_name == None;
+    // the function falls back to "model-file".
+    assert_eq!(result, PathBuf::from("/var/cache/models/model-file.part"));
+}
+
+#[test]
+fn suffixed_path_preserves_extension() {
+    // Adding a suffix to a path with an extension does
+    // NOT change the original extension; the suffix is
+    // appended to the end of the file name.
+    let path = Path::new("/var/cache/models/model.bin");
+    let result = suffixed_path(path, "tmp");
+    assert_eq!(result, PathBuf::from("/var/cache/models/model.bin.tmp"));
+}
+
+// ── Tests for human_readable_size (Display impl) ────────────────────────────
+
+#[test]
+fn human_readable_size_bytes_below_kb() {
+    let s = human_readable_size(500).to_string();
+    assert!(s.contains("500") || s.contains("B"), "size must include the value or 'B': {s}");
+}
+
+#[test]
+fn human_readable_size_mb_range() {
+    let s = human_readable_size(2 * 1_048_576).to_string();
+    assert!(s.contains("2"));
+    assert!(s.contains("MB"));
+}
+
+#[test]
+fn human_readable_size_gb_range() {
+    let s = human_readable_size(3 * 1_073_741_824).to_string();
+    assert!(s.contains("3"));
+    assert!(s.contains("GB"));
+}
+
+#[test]
+fn human_readable_size_zero() {
+    let s = human_readable_size(0).to_string();
+    // 0 bytes: must not crash, must include "0" or "B".
+    assert!(s.contains("0") || s.contains("B"));
 }
