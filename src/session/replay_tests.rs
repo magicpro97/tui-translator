@@ -69,8 +69,7 @@ fn segment_line(start_ms: u64, end_ms: u64, src: &str, tgt: &str) -> String {
     // `TranscriptSegment`.  See
     // `SessionLogRecord`'s `#[serde(tag = "record_type",
     // rename_all = "snake_case")]` for the field name.
-    serde_json::to_string(&SessionLogRecord::TranscriptSegment(seg))
-        .expect("serialize segment")
+    serde_json::to_string(&SessionLogRecord::TranscriptSegment(seg)).expect("serialize segment")
 }
 
 // ── Tests for transcript_segments_from_jsonl_lenient ─────────────────────────
