@@ -61,7 +61,16 @@ fn segment_line(start_ms: u64, end_ms: u64, src: &str, tgt: &str) -> String {
         chars_translated: 0,
         estimated_cost_usd: 0.0,
     };
-    serde_json::to_string(&seg).expect("serialize segment")
+    // Wrap the segment in the `SessionLogRecord` enum
+    // so the JSON carries the `record_type` discriminator
+    // field.  Without the wrapper, the serializer
+    // produces a flat struct (no `record_type` tag) and the
+    // deserializer can't tell `SessionHeader` from
+    // `TranscriptSegment`.  See
+    // `SessionLogRecord`'s `#[serde(tag = "record_type",
+    // rename_all = "snake_case")]` for the field name.
+    serde_json::to_string(&SessionLogRecord::TranscriptSegment(seg))
+        .expect("serialize segment")
 }
 
 // ── Tests for transcript_segments_from_jsonl_lenient ─────────────────────────
