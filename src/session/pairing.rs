@@ -138,3 +138,6 @@ fn session_id_from_wav_path_local(path: &Path) -> Option<&str> {
         Some(stem)
     }
 }
+#[cfg(test)]
+#[path = "pairing_tests.rs"]
+mod tests;
