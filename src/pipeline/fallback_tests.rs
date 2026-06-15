@@ -15,7 +15,10 @@ use crate::providers::ProviderError;
 
 #[test]
 fn from_config_recognises_none() {
-    assert_eq!(SttFallbackPolicy::from_config("none"), Some(SttFallbackPolicy::None));
+    assert_eq!(
+        SttFallbackPolicy::from_config("none"),
+        Some(SttFallbackPolicy::None)
+    );
 }
 
 #[test]
@@ -23,7 +26,10 @@ fn from_config_recognises_local() {
     // The legacy "local" string is still parsed (the
     // config-validation layer rejects it earlier; this
     // parser is permissive).
-    assert_eq!(SttFallbackPolicy::from_config("local"), Some(SttFallbackPolicy::Local));
+    assert_eq!(
+        SttFallbackPolicy::from_config("local"),
+        Some(SttFallbackPolicy::Local)
+    );
 }
 
 #[test]
@@ -46,17 +52,23 @@ fn from_config_returns_none_for_unknown() {
 
 #[test]
 fn is_local_unavailable_true_for_model_not_found() {
-    assert!(is_local_unavailable(&ProviderError::ModelNotFound("missing".to_string())));
+    assert!(is_local_unavailable(&ProviderError::ModelNotFound(
+        "missing".to_string()
+    )));
 }
 
 #[test]
 fn is_local_unavailable_true_for_checksum_mismatch() {
-    assert!(is_local_unavailable(&ProviderError::ChecksumMismatch("bad".to_string())));
+    assert!(is_local_unavailable(&ProviderError::ChecksumMismatch(
+        "bad".to_string()
+    )));
 }
 
 #[test]
 fn is_local_unavailable_true_for_unimplemented() {
-    assert!(is_local_unavailable(&ProviderError::Unimplemented("todo".to_string())));
+    assert!(is_local_unavailable(&ProviderError::Unimplemented(
+        "todo".to_string()
+    )));
 }
 
 #[test]
@@ -70,7 +82,10 @@ fn is_local_unavailable_false_for_transient_errors() {
         ServiceUnavailable("svc".to_string()),
     ];
     for err in transient {
-        assert!(!is_local_unavailable(&err), "{err:?} should not be local-unavailable");
+        assert!(
+            !is_local_unavailable(&err),
+            "{err:?} should not be local-unavailable"
+        );
     }
 }
 
@@ -78,7 +93,9 @@ fn is_local_unavailable_false_for_transient_errors() {
 fn is_local_unavailable_false_for_auth_error() {
     // AuthError is a credentials issue, not a model issue.
     // It's a separate fallback trigger for the Local policy.
-    assert!(!is_local_unavailable(&ProviderError::AuthError("no key".to_string())));
+    assert!(!is_local_unavailable(&ProviderError::AuthError(
+        "no key".to_string()
+    )));
 }
 
 // ── Tests for should_activate_fallback (GoogleWhenKeyed policy) ───────────────
@@ -188,26 +205,98 @@ fn policy_matrix_coverage() {
     // Each cell states whether the fallback should activate.
     let cases: &[(SttFallbackPolicy, ProviderError, bool)] = &[
         // ── None: never ──
-        (SttFallbackPolicy::None, ProviderError::ModelNotFound("x".to_string()), false),
-        (SttFallbackPolicy::None, ProviderError::AuthError("x".to_string()), false),
-        (SttFallbackPolicy::None, ProviderError::NetworkError("x".to_string()), false),
-        (SttFallbackPolicy::None, ProviderError::RateLimitError("rate".to_string()), false),
-        (SttFallbackPolicy::None, ProviderError::ChecksumMismatch("x".to_string()), false),
-        (SttFallbackPolicy::None, ProviderError::Unimplemented("x".to_string()), false),
+        (
+            SttFallbackPolicy::None,
+            ProviderError::ModelNotFound("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::None,
+            ProviderError::AuthError("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::None,
+            ProviderError::NetworkError("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::None,
+            ProviderError::RateLimitError("rate".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::None,
+            ProviderError::ChecksumMismatch("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::None,
+            ProviderError::Unimplemented("x".to_string()),
+            false,
+        ),
         // ── Local (legacy Google-primary): AuthError only ──
-        (SttFallbackPolicy::Local, ProviderError::ModelNotFound("x".to_string()), false),
-        (SttFallbackPolicy::Local, ProviderError::AuthError("x".to_string()), true),
-        (SttFallbackPolicy::Local, ProviderError::NetworkError("x".to_string()), false),
-        (SttFallbackPolicy::Local, ProviderError::RateLimitError("rate".to_string()), false),
-        (SttFallbackPolicy::Local, ProviderError::ChecksumMismatch("x".to_string()), false),
-        (SttFallbackPolicy::Local, ProviderError::Unimplemented("x".to_string()), false),
+        (
+            SttFallbackPolicy::Local,
+            ProviderError::ModelNotFound("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::Local,
+            ProviderError::AuthError("x".to_string()),
+            true,
+        ),
+        (
+            SttFallbackPolicy::Local,
+            ProviderError::NetworkError("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::Local,
+            ProviderError::RateLimitError("rate".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::Local,
+            ProviderError::ChecksumMismatch("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::Local,
+            ProviderError::Unimplemented("x".to_string()),
+            false,
+        ),
         // ── GoogleWhenKeyed (LF-03 local-primary): permanent local only ──
-        (SttFallbackPolicy::GoogleWhenKeyed, ProviderError::ModelNotFound("x".to_string()), true),
-        (SttFallbackPolicy::GoogleWhenKeyed, ProviderError::AuthError("x".to_string()), false),
-        (SttFallbackPolicy::GoogleWhenKeyed, ProviderError::NetworkError("x".to_string()), false),
-        (SttFallbackPolicy::GoogleWhenKeyed, ProviderError::RateLimitError("rate".to_string()), false),
-        (SttFallbackPolicy::GoogleWhenKeyed, ProviderError::ChecksumMismatch("x".to_string()), true),
-        (SttFallbackPolicy::GoogleWhenKeyed, ProviderError::Unimplemented("x".to_string()), true),
+        (
+            SttFallbackPolicy::GoogleWhenKeyed,
+            ProviderError::ModelNotFound("x".to_string()),
+            true,
+        ),
+        (
+            SttFallbackPolicy::GoogleWhenKeyed,
+            ProviderError::AuthError("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::GoogleWhenKeyed,
+            ProviderError::NetworkError("x".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::GoogleWhenKeyed,
+            ProviderError::RateLimitError("rate".to_string()),
+            false,
+        ),
+        (
+            SttFallbackPolicy::GoogleWhenKeyed,
+            ProviderError::ChecksumMismatch("x".to_string()),
+            true,
+        ),
+        (
+            SttFallbackPolicy::GoogleWhenKeyed,
+            ProviderError::Unimplemented("x".to_string()),
+            true,
+        ),
     ];
     for (policy, err, expected) in cases {
         let actual = should_activate_fallback(*policy, err);

@@ -97,18 +97,16 @@ fn from_config_speakers_with_no_output_device() {
     assert_eq!(plan.targets().len(), 1);
     assert!(matches!(
         &plan.targets()[0],
-        PlaybackSinkTarget::Speakers { output_device: None }
+        PlaybackSinkTarget::Speakers {
+            output_device: None
+        }
     ));
 }
 
 #[test]
 fn from_config_speakers_with_output_device() {
-    let plan = PlaybackRoutePlan::from_config(
-        TtsRouting::Speakers,
-        Some("Realtek"),
-        None,
-    )
-    .expect("speakers + device must succeed");
+    let plan = PlaybackRoutePlan::from_config(TtsRouting::Speakers, Some("Realtek"), None)
+        .expect("speakers + device must succeed");
     assert_eq!(plan.label(), "speakers");
     assert!(matches!(
         &plan.targets()[0],
@@ -118,12 +116,8 @@ fn from_config_speakers_with_output_device() {
 
 #[test]
 fn from_config_virtual_mic_with_device() {
-    let plan = PlaybackRoutePlan::from_config(
-        TtsRouting::VirtualMic,
-        None,
-        Some("VB-Cable"),
-    )
-    .expect("virtual_mic + device must succeed");
+    let plan = PlaybackRoutePlan::from_config(TtsRouting::VirtualMic, None, Some("VB-Cable"))
+        .expect("virtual_mic + device must succeed");
     assert_eq!(plan.label(), "virtual_mic");
     assert!(matches!(
         &plan.targets()[0],
@@ -148,12 +142,8 @@ fn from_config_virtual_mic_without_device_falls_back_to_speakers() {
 
 #[test]
 fn from_config_both_with_device() {
-    let plan = PlaybackRoutePlan::from_config(
-        TtsRouting::Both,
-        Some("Realtek"),
-        Some("VB-Cable"),
-    )
-    .expect("both + devices must succeed");
+    let plan = PlaybackRoutePlan::from_config(TtsRouting::Both, Some("Realtek"), Some("VB-Cable"))
+        .expect("both + devices must succeed");
     assert_eq!(plan.label(), "both");
     assert_eq!(plan.targets().len(), 2);
     assert!(matches!(
@@ -195,7 +185,8 @@ fn from_config_speakers_ignores_virtual_mic_device() {
 #[test]
 fn build_sinks_for_targets_empty_targets_returns_error() {
     let targets: Vec<PlaybackSinkTarget> = vec![];
-    let result: Result<Vec<String>, _> = build_sinks_for_targets(&targets, |_| Ok("ok".to_string()));
+    let result: Result<Vec<String>, _> =
+        build_sinks_for_targets(&targets, |_| Ok("ok".to_string()));
     let err = result.expect_err("empty targets must fail");
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     let msg = err.to_string();
@@ -270,8 +261,5 @@ fn play_to_audio_sinks_signature_unchanged() {
     // signature, this assignment fails to compile, alerting
     // the maintainer to update both the function and its
     // callers.
-    let _: fn(
-        &[Box<dyn crate::pipeline::audio_sink::AudioSink>],
-        Vec<u8>,
-    ) = play_to_audio_sinks;
+    let _: fn(&[Box<dyn crate::pipeline::audio_sink::AudioSink>], Vec<u8>) = play_to_audio_sinks;
 }

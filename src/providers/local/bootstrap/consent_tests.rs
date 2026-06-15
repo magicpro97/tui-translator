@@ -23,7 +23,12 @@ use crate::providers::local::bootstrap::ModelBootstrapManifest;
 
 // ── Tests for ModelConsentManifest::validate ─────────────────────────────────
 
-fn manifest(name: &str, version: &str, license_url: &str, license_text: &str) -> ModelConsentManifest {
+fn manifest(
+    name: &str,
+    version: &str,
+    license_url: &str,
+    license_text: &str,
+) -> ModelConsentManifest {
     ModelConsentManifest {
         name: name.to_string(),
         version: version.to_string(),
@@ -34,7 +39,12 @@ fn manifest(name: &str, version: &str, license_url: &str, license_text: &str) ->
 
 #[test]
 fn validate_accepts_well_formed_manifest() {
-    let m = manifest("whisper-tiny", "1.0.0", "https://example.com/license", "MIT License");
+    let m = manifest(
+        "whisper-tiny",
+        "1.0.0",
+        "https://example.com/license",
+        "MIT License",
+    );
     m.validate().expect("well-formed manifest must validate");
 }
 
@@ -56,14 +66,24 @@ fn validate_rejects_whitespace_only_name() {
 
 #[test]
 fn validate_rejects_empty_version() {
-    let m = manifest("whisper-tiny", "", "https://example.com/license", "MIT License");
+    let m = manifest(
+        "whisper-tiny",
+        "",
+        "https://example.com/license",
+        "MIT License",
+    );
     let err = m.validate().expect_err("empty version must fail");
     assert!(matches!(err, BootstrapError::InvalidManifest(_)));
 }
 
 #[test]
 fn validate_rejects_whitespace_only_version() {
-    let m = manifest("whisper-tiny", "\t", "https://example.com/license", "MIT License");
+    let m = manifest(
+        "whisper-tiny",
+        "\t",
+        "https://example.com/license",
+        "MIT License",
+    );
     let err = m.validate().expect_err("whitespace-only version must fail");
     assert!(matches!(err, BootstrapError::InvalidManifest(_)));
 }

@@ -80,7 +80,10 @@ fn render_branch_selection_starts_with_header() {
     assert!(!lines.is_empty());
     // The first non-empty line is the section header.
     let first = lines.iter().find(|l| !l.is_empty()).unwrap();
-    assert!(first.contains("Setup Wizard"), "header must include 'Setup Wizard': {first}");
+    assert!(
+        first.contains("Setup Wizard"),
+        "header must include 'Setup Wizard': {first}"
+    );
 }
 
 #[test]
@@ -127,7 +130,10 @@ fn render_branch_selection_marker_follows_selected_branch() {
 fn render_branch_selection_ends_with_navigation_hint() {
     let lines = render_wizard_lines(&empty_state());
     let last = lines.last().expect("non-empty");
-    assert!(last.contains("Enter"), "last line must include Enter: {last}");
+    assert!(
+        last.contains("Enter"),
+        "last line must include Enter: {last}"
+    );
     assert!(last.contains("Esc"), "last line must include Esc: {last}");
 }
 
@@ -135,9 +141,9 @@ fn render_branch_selection_ends_with_navigation_hint() {
 
 #[test]
 fn render_virtual_cable_gate_empty_mentions_vb_cable() {
-    let lines = render_wizard_lines(&state_with_step(
-        OnboardingStep::VirtualCableGate { available: vec![] }
-    ));
+    let lines = render_wizard_lines(&state_with_step(OnboardingStep::VirtualCableGate {
+        available: vec![],
+    }));
     let text = lines.join("\n");
     assert!(text.contains("VB-CABLE"));
     assert!(text.contains("Refresh"));
@@ -146,11 +152,9 @@ fn render_virtual_cable_gate_empty_mentions_vb_cable() {
 
 #[test]
 fn render_virtual_cable_gate_with_device_mentions_detected_label() {
-    let lines = render_wizard_lines(&state_with_step(
-        OnboardingStep::VirtualCableGate {
-            available: vec!["CABLE Input (VB-Audio Virtual Cable)".to_string()],
-        }
-    ));
+    let lines = render_wizard_lines(&state_with_step(OnboardingStep::VirtualCableGate {
+        available: vec!["CABLE Input (VB-Audio Virtual Cable)".to_string()],
+    }));
     let text = lines.join("\n");
     assert!(text.contains("Detected"));
     assert!(text.contains("CABLE Input"));
@@ -178,17 +182,15 @@ fn state_with_license(model_index: usize, state: &OnboardingWizardState) -> Onbo
     let mut s = state.clone();
     s.step = OnboardingStep::LicenseReview { model_index };
     s
-}#[test]
+}
+#[test]
 fn render_license_review_out_of_range_index_uses_unknown_label() {
     // When `model_index` is out of range, the renderer
     // falls back to the "(unknown)" name and an empty
     // license body.  This is a defensive branch: the
     // caller is supposed to keep `model_index` in range,
     // but if it doesn't, the renderer must not panic.
-    let lines = render_wizard_lines(&state_with_license(
-        99,
-        &empty_state(),
-    ));
+    let lines = render_wizard_lines(&state_with_license(99, &empty_state()));
     let text = lines.join("\n");
     assert!(text.contains("(unknown)"));
 }
@@ -205,12 +207,18 @@ fn render_license_review_uses_one_based_index_in_header() {
     let text = lines.join("\n");
     // The header shows "License (1/3) — model-a" (1-based
     // index for the user).
-    assert!(text.contains("License (1/3)"), "header must show 1-based index: {text}");
+    assert!(
+        text.contains("License (1/3)"),
+        "header must show 1-based index: {text}"
+    );
     assert!(text.contains("model-a"));
 
     let lines = render_wizard_lines(&state_with_license(2, &state));
     let text = lines.join("\n");
-    assert!(text.contains("License (3/3)"), "header must show 1-based index: {text}");
+    assert!(
+        text.contains("License (3/3)"),
+        "header must show 1-based index: {text}"
+    );
     assert!(text.contains("model-c"));
 }
 
@@ -218,9 +226,7 @@ fn render_license_review_uses_one_based_index_in_header() {
 
 #[test]
 fn render_google_key_entry_empty_buffer_shows_blank_cursor() {
-    let lines = render_wizard_lines(&state_with_step(
-        OnboardingStep::GoogleKeyEntry
-    ));
+    let lines = render_wizard_lines(&state_with_step(OnboardingStep::GoogleKeyEntry));
     let text = lines.join("\n");
     assert!(text.contains("Key"));
     // The masked key area is empty; the cursor (▌) is
@@ -315,9 +321,7 @@ fn render_confirmation_short_key_still_masked() {
 
 #[test]
 fn render_platform_parity_notice_mentions_virtual_mic() {
-    let lines = render_wizard_lines(&state_with_step(
-        OnboardingStep::PlatformParityNotice
-    ));
+    let lines = render_wizard_lines(&state_with_step(OnboardingStep::PlatformParityNotice));
     let text = lines.join("\n");
     assert!(text.contains("Virtual-mic") || text.contains("virtual-mic"));
     assert!(text.contains("macOS") || text.contains("Linux"));
@@ -325,9 +329,7 @@ fn render_platform_parity_notice_mentions_virtual_mic() {
 
 #[test]
 fn render_platform_parity_notice_mentions_speaker_only_fallback() {
-    let lines = render_wizard_lines(&state_with_step(
-        OnboardingStep::PlatformParityNotice
-    ));
+    let lines = render_wizard_lines(&state_with_step(OnboardingStep::PlatformParityNotice));
     let text = lines.join("\n");
     assert!(text.contains("speaker-only"));
 }

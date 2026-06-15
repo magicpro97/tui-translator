@@ -130,7 +130,7 @@ fn registry_classifies_voicemeeter() {
 fn registry_classifies_pulse_null_sink() {
     let registry = VirtualDevicePatternRegistry::builtin().expect("builtin registry must compile");
     let matched = registry
-        .classify("My Virtual Microphone (null-sink)")
+        .classify("PulseAudio null-sink (my-mic)")
         .expect("PulseAudio null-sink must match");
     assert_eq!(matched.kind, VirtualDeviceKind::PulseNullSink);
 }
