@@ -15,13 +15,32 @@
 
 use super::*;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// Monotonic counter for unique env-var test values.
+// Each test that mutates a process-global env var
+// appends the counter so concurrent test threads cannot
+// race on the same value.
+fn env_test_counter() -> usize {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    COUNTER.fetch_add(1, Ordering::SeqCst)
+}
 
 #[test]
 fn config_dir_override_env_takes_precedence() {
+    // Pin: when the env var is set, the override must
+    // win.  The other env-var tests in this module also
+    // set the env to a unique per-PID+counter value, so
+    // this test can run in parallel without a race.
+    let unique = format!(
+        "/tmp/from-env-override-{}-{}",
+        std::process::id(),
+        env_test_counter()
+    );
     let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, "/tmp/from-env-override");
+    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
     let result = default_config_dir().expect("override must produce a path");
-    assert_eq!(result, PathBuf::from("/tmp/from-env-override"));
+    assert_eq!(result, PathBuf::from(&unique));
     match prev {
         Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
         None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
@@ -56,10 +75,18 @@ fn config_dir_override_env_empty_treated_as_unset() {
 
 #[test]
 fn default_config_path_joins_config_json() {
+    // Use a unique per-PID+counter value so this test
+    // doesn't race with the other env-var tests in this
+    // module (which set the env to a hard-coded value).
+    let unique = format!(
+        "/tmp/config-root-{}-{}",
+        std::process::id(),
+        env_test_counter()
+    );
     let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, "/tmp/config-root");
+    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
     let result = default_config_path().expect("config path must be derivable");
-    assert_eq!(result, PathBuf::from("/tmp/config-root/config.json"));
+    assert_eq!(result, PathBuf::from(format!("{unique}/config.json")));
     match prev {
         Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
         None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
