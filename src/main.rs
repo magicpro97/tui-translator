@@ -91,6 +91,9 @@ mod storage;
 pub mod sys_caps;
 #[cfg(test)]
 mod sys_caps_tests;
+mod system_info_cli;
+#[cfg(test)]
+mod system_info_cli_tests;
 mod tui;
 pub mod updater;
 
@@ -116,6 +119,7 @@ use runtime_providers::{
 use runtime_recording::{log_measurement_mode_status, start_audio_archive, start_session_recorder};
 use session_export_cli::{parse_session_export_args_from, run_session_export};
 use session_replay_cli::{parse_replay_args_from, ReplayArgs};
+use system_info_cli::{print_system_info_to_stdout, should_print_system_info};
 use tui::frame_pacer::FramePacer;
 use tui::onboarding::{
     LocalModelLicense, OnboardingBranch, OnboardingEvent, OnboardingOutcome, OnboardingWizardState,
@@ -581,6 +585,13 @@ fn main() -> Result<()> {
 
     if should_list_audio_devices() {
         print_audio_devices_to_stdout()?;
+        return Ok(());
+    }
+
+    // T15 (#821): dump host hardware summary for shell
+    // scripting / CI.  First-argv dispatch — no config load.
+    if should_print_system_info() {
+        print_system_info_to_stdout()?;
         return Ok(());
     }
 
