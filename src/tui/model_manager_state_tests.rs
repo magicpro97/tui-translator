@@ -167,3 +167,117 @@ fn state_is_clone_and_copy() {
     assert_eq!(s.current_tab(), s2.current_tab());
     assert_eq!(s.selected_index(), s2.selected_index());
 }
+
+// ── T14 (issue #820): Ctrl+P cycle integration test ──
+//
+// Joins 4 modules:
+//   T2  (QualityPreset::next / ALL ordering)
+//   T9  (ModelManagerState — the state stays still when Ctrl+P fires)
+//   T10 (render_model_manager_lines — the bar line reflects the
+//        resolved preset for each step of the cycle)
+//   T11 (keymap — Ctrl+P returns ModelManagerAction::CyclePreset,
+//        does not mutate ModelManagerState)
+//
+// A regression in any of the four would be caught here.
+#[cfg(test)]
+mod ctrl_p_cycle_integration {
+    use super::*;
+    use crate::quality_preset::QualityPreset;
+    use crate::sys_caps::SysCaps;
+    use crate::tui::model_manager_keymap::{handle_model_manager_key, ModelManagerAction};
+    use crate::tui::model_manager_render::render_model_manager_lines;
+    use crate::tui::model_manager_tokens::PresetBar;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    /// Synthetic high-RAM host so `Auto` resolves to `Best`.
+    fn hi_ram_caps() -> SysCaps {
+        SysCaps {
+            total_memory_bytes: 16 * 1024 * 1024 * 1024,
+            physical_cores: 8,
+            gpu: crate::sys_caps::GpuKind::None,
+        }
+    }
+
+    fn ctrl_p() -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char('p'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    /// Walk the 4-step cycle and check:
+    ///   1. the State has not moved (Tab/cursor untouched)
+    ///   2. the PresetBar's `preset()` matches the next QualityPreset
+    ///   3. the rendered bar line contains the new preset name
+    ///   4. after 4 presses we're back at Auto
+    #[test]
+    fn full_preset_cycle_through_ctrl_p() {
+        let caps = hi_ram_caps();
+        let mut preset = QualityPreset::Auto;
+        let mut state = ModelManagerState::default();
+
+        // Snapshot the state at t=0 to assert immutability later.
+        let tab_at_start = state.current_tab();
+        let idx_at_start = state.selected_index();
+
+        let expected = [
+            QualityPreset::Best, // Auto + high RAM resolves to Best
+            QualityPreset::Performance,
+            QualityPreset::Custom,
+            QualityPreset::Auto,
+        ];
+
+        for (press, want) in expected.iter().enumerate() {
+            // T11: Ctrl+P returns CyclePreset and leaves State alone.
+            let action = handle_model_manager_key(&mut state, ctrl_p());
+            assert!(
+                matches!(action, ModelManagerAction::CyclePreset),
+                "press #{press}: expected CyclePreset, got {action:?}",
+            );
+            assert_eq!(
+                state.current_tab(),
+                tab_at_start,
+                "press #{press}: Ctrl+P must not move the active tab",
+            );
+            assert_eq!(
+                state.selected_index(),
+                idx_at_start,
+                "press #{press}: Ctrl+P must not move the row cursor",
+            );
+
+            // T2: walk the QualityPreset cycle.
+            preset = preset.next();
+            assert_eq!(
+                &preset, want,
+                "press #{press}: QualityPreset::next() gave {preset:?}, want {want:?}",
+            );
+
+            // T10: rebuild the PresetBar and render. The bar
+            // shows the RESOLVED preset name (so `Auto` on
+            // high-RAM shows `Best`). Use the resolved name
+            // for the rendered-line assertion.
+            let bar = PresetBar::for_preset(preset, &caps);
+            assert_eq!(bar.preset(), preset);
+            let lines = render_model_manager_lines(&state, &bar);
+            let first = lines.first().expect("render produces at least 1 line");
+            // The bar shows resolved name. Compute the
+            // expected rendered name for this `preset`.
+            let resolved = preset.resolve_for(&caps);
+            let preset_name = match resolved {
+                QualityPreset::Auto => "Auto",
+                QualityPreset::Best => "Best",
+                QualityPreset::Performance => "Performance",
+                QualityPreset::Custom => "Custom",
+            };
+            assert!(
+                first.contains(preset_name),
+                "press #{press}: rendered bar {first:?} should mention resolved preset {preset_name:?}",
+            );
+        }
+
+        // After 4 presses, we're back at Auto.
+        assert_eq!(preset, QualityPreset::Auto);
+    }
+}
