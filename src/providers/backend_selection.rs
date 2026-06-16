@@ -44,8 +44,18 @@
 pub enum BackendKind {
     /// Google Cloud provider (`"google"`).
     Google,
-    /// CPU-local provider (`"local"`).
+    /// CPU-local provider (`"local"`).  Pre-v3 catch-all for any local
+    /// backend (whisper-rs, OPUS-MT, supertonic, …).  New configs
+    /// should prefer the more specific [`BackendKind::LocalWhisper`]
+    /// and [`BackendKind::LocalFunAsr`] variants so the ModelManager
+    /// history log can show which one the user picked.
     Local,
+    /// Local Whisper STT backend (`"local-whisper"`).  v3 (issue #818).
+    LocalWhisper,
+    /// Local FunASR STT backend (`"local-funasr"`).  v3 (issue #818).
+    /// T7's [`crate::providers::local::funasr`] wires the sherpa-onnx
+    /// FFI for the vi-fallback path.
+    LocalFunAsr,
     /// Any other / unrecognised string.  Callers MUST treat this as a
     /// configuration error, not as silent fallback to Google.
     Unknown,
@@ -57,13 +67,15 @@ impl BackendKind {
         match value.trim().to_ascii_lowercase().as_str() {
             "google" => Self::Google,
             "local" => Self::Local,
+            "local-whisper" => Self::LocalWhisper,
+            "local-funasr" => Self::LocalFunAsr,
             _ => Self::Unknown,
         }
     }
 
     /// `true` when this kind is the local backend family.
     pub fn is_local(self) -> bool {
-        matches!(self, Self::Local)
+        matches!(self, Self::Local | Self::LocalWhisper | Self::LocalFunAsr)
     }
 
     /// `true` when this kind crosses the privacy boundary (uses the network).
@@ -74,23 +86,31 @@ impl BackendKind {
 
 /// Per-stage cloud-fallback consent.
 ///
-/// Distinguishes the three observable states for any stage:
+/// Distinguishes the four observable states for any stage:
 ///
 /// * [`CloudFallbackConsent::None`] — operator did NOT configure a cloud
 ///   fallback for this stage.  Even if `google_api_key` is set, no cloud
 ///   call may happen as a result of a local failure or unsupported pair.
+/// * [`CloudFallbackConsent::LocalWhisperWhenUnsupported`] — operator
+///   opted into a **local** Whisper fallback for the unsupported-language
+///   case (issue #818).  No cloud call is reachable from this consent,
+///   even with a key configured.
 /// * [`CloudFallbackConsent::ExplicitWithKey`] — operator configured a cloud
 ///   fallback **and** the corresponding API key is available.  Cloud
 ///   fallback is permitted at runtime; a privacy-audit log/metric is
 ///   expected on use.
-/// * [`CloudFallbackConsent::ExplicitWithoutKey`] — operator configured a
-///   cloud fallback but no key is available.  This is rejected by
+/// * [`CloudFallbackConsent::ExplicitWithoutKey`] — operator configured a cloud
+///   fallback but no key is available.  This is rejected by
 ///   `AppConfig::validate`; the variant exists only so contract tests can
 ///   assert that this configuration never reaches a running pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloudFallbackConsent {
     /// Operator did not opt in.  No cloud call is allowed for this stage.
     None,
+    /// Operator opted into a local-Whisper fallback for the
+    /// unsupported-language case.  No cloud call is reachable.
+    /// v3 (issue #818).
+    LocalWhisperWhenUnsupported,
     /// Operator opted in **and** key is configured.  Cloud fallback is
     /// permitted; runtime MUST emit a visible audit log/metric per use.
     ExplicitWithKey,
@@ -170,11 +190,14 @@ impl BackendSelection {
         key_present: bool,
     ) -> Self {
         // STT cloud fallback is encoded as `stt_fallback_policy` taking the
-        // value `"google-when-keyed"` (issue #371).  Other values mean no
-        // fallback.
-        let stt_fallback_active = stt_fallback_policy
-            .trim()
-            .eq_ignore_ascii_case("google-when-keyed");
+        // value `"google-when-keyed"` (issue #371).  The v3 (issue #818)
+        // value `"local-whisper-when-unsupported"` opts into a LOCAL
+        // Whisper fallback (no cloud) for the unsupported-language case.
+        // Other values mean no fallback.
+        let stt_fallback_policy = stt_fallback_policy.trim();
+        let stt_fallback_active = stt_fallback_policy.eq_ignore_ascii_case("google-when-keyed");
+        let stt_local_fallback_active =
+            stt_fallback_policy.eq_ignore_ascii_case("local-whisper-when-unsupported");
 
         Self {
             stt: StageSelection {
@@ -185,6 +208,9 @@ impl BackendSelection {
                     } else {
                         CloudFallbackConsent::ExplicitWithoutKey
                     }
+                } else if stt_local_fallback_active {
+                    // v3: local-Whisper fallback never routes to cloud.
+                    CloudFallbackConsent::LocalWhisperWhenUnsupported
                 } else {
                     CloudFallbackConsent::None
                 },
@@ -415,5 +441,138 @@ mod tests {
             CloudFallbackConsent::ExplicitWithoutKey
         );
         assert!(!sel.mt.cloud_fallback.permits_cloud_call());
+    }
+
+    // ── T12 (issue #818): local-funasr + local-whisper-when-unsupported ──
+
+    #[test]
+    fn backend_kind_parses_local_funasr() {
+        // v3: STT now has a third local-family variant.
+        assert_eq!(BackendKind::parse("local-funasr"), BackendKind::LocalFunAsr);
+        assert_eq!(
+            BackendKind::parse("  LOCAL-FUNASR  "),
+            BackendKind::LocalFunAsr
+        );
+    }
+
+    #[test]
+    fn backend_kind_parses_local_whisper() {
+        // v3: distinguish whisper from funasr so the ModelManager
+        // tab + history log can show which one the user picked.
+        assert_eq!(
+            BackendKind::parse("local-whisper"),
+            BackendKind::LocalWhisper
+        );
+    }
+
+    #[test]
+    fn backend_kind_local_funasr_and_local_whisper_are_local() {
+        // Both new variants belong to the local family.
+        assert!(BackendKind::LocalFunAsr.is_local());
+        assert!(BackendKind::LocalWhisper.is_local());
+        assert!(!BackendKind::LocalFunAsr.is_cloud());
+        assert!(!BackendKind::LocalWhisper.is_cloud());
+    }
+
+    #[test]
+    fn stt_fallback_policy_accepts_local_whisper_when_unsupported() {
+        // New policy (issue #818): when local-funasr is selected and
+        // the input language is unsupported, fall back to local
+        // whisper.  This MUST NOT route to cloud even with a key
+        // configured (no-silent-cloud invariant).
+        let sel = BackendSelection::from_fields(
+            "local-funasr",
+            "local-whisper-when-unsupported",
+            "local",
+            None,
+            "supertonic",
+            None,
+            /* key_present = */ true,
+        );
+        assert_eq!(sel.stt.backend, BackendKind::LocalFunAsr);
+        assert_eq!(
+            sel.stt.cloud_fallback,
+            CloudFallbackConsent::LocalWhisperWhenUnsupported
+        );
+        assert!(!sel.stt.cloud_call_reachable());
+    }
+
+    #[test]
+    fn stt_local_funasr_with_no_fallback_does_not_enable_cloud() {
+        // Default policy: STT pinned to local-funasr with no
+        // fallback configured — cloud MUST NOT be reachable.
+        let sel = BackendSelection::from_fields(
+            "local-funasr",
+            "none",
+            "local",
+            None,
+            "supertonic",
+            None,
+            /* key_present = */ true,
+        );
+        assert_eq!(sel.stt.backend, BackendKind::LocalFunAsr);
+        assert!(!sel.stt.cloud_call_reachable());
+    }
+
+    #[test]
+    fn local_whisper_when_unsupported_does_not_enable_cloud_even_with_key() {
+        // The cross-stage no-silent-cloud invariant for the v3 path.
+        // Even with a Google API key set, a local-funasr +
+        // local-whisper-when-unsupported STT config must not be able
+        // to reach cloud.
+        let sel = BackendSelection::from_fields(
+            "local-funasr",
+            "local-whisper-when-unsupported",
+            "local",
+            None,
+            "local",
+            None,
+            /* key_present = */ true,
+        );
+        assert!(!sel.stt.cloud_call_reachable());
+        // All stages are local with no cloud fallback → fully local.
+        assert!(sel.is_fully_local());
+    }
+
+    #[test]
+    fn stt_local_whisper_with_explicit_cloud_fallback_still_works() {
+        // Backward-compat: existing local-whisper + google-when-keyed
+        // config (the pre-v3 default) still parses cleanly.
+        let sel = BackendSelection::from_fields(
+            "local-whisper",
+            "google-when-keyed",
+            "google",
+            None,
+            "google",
+            None,
+            /* key_present = */ true,
+        );
+        assert_eq!(sel.stt.backend, BackendKind::LocalWhisper);
+        assert!(sel.stt.cloud_call_reachable());
+    }
+
+    #[test]
+    fn stt_google_when_keyed_without_key_is_explicit_without_key() {
+        // Validator rejects this in practice, but the typed
+        // projection still classifies "google-when-keyed but no
+        // key" as `ExplicitWithoutKey` (and never as
+        // `ExplicitWithKey`) so a defence-in-depth test can
+        // assert the runtime never reaches a STT call from it.
+        // Also covers line 209 of `from_fields`.
+        let sel = BackendSelection::from_fields(
+            "local-whisper",
+            "google-when-keyed",
+            "local",
+            None,
+            "local",
+            None,
+            /* key_present = */ false,
+        );
+        assert_eq!(
+            sel.stt.cloud_fallback,
+            CloudFallbackConsent::ExplicitWithoutKey
+        );
+        assert!(!sel.stt.cloud_fallback.permits_cloud_call());
+        assert!(!sel.stt.cloud_call_reachable());
     }
 }
