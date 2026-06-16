@@ -247,6 +247,269 @@ pub fn opus_mt_ja_vi_consent_manifest() -> bootstrap::ModelConsentManifest {
     }
 }
 
+// ── OPUS-MT pair dispatch (#825) ─────────────────────────────────────────────
+//
+// Round-2 multi-pair support.  The original ja→vi manifest is kept for
+// backward compatibility (the function name and constants are unchanged);
+// the new vi→zh and en→vi pairs follow the same layout (7-file MarianMT
+// ONNX export).  The dispatch enum [`OpusMtPair`] lets callers select a
+// pair by name (e.g. from a future `cfg.mt_local_pair` config field)
+// without growing the function call surface.
+
+/// Stable version string for the built-in OPUS-MT vi→zh consent manifest.
+pub const OPUS_MT_VI_ZH_VERSION: &str = "2024-01-01";
+
+/// License URL for the Helsinki-NLP OPUS-MT vi→zh model.
+pub const OPUS_MT_VI_ZH_LICENSE_URL: &str =
+    "https://huggingface.co/Helsinki-NLP/opus-mt-vi-zh/blob/main/LICENSE";
+
+/// Base URL for the tui-translator GitHub Release that hosts OPUS-MT vi→zh ONNX models.
+const OPUS_MT_VI_ZH_RELEASE_URL: &str =
+    "https://github.com/magicpro97/tui-translator/releases/download/models-opus-mt-vi-zh-v1";
+
+/// Stable version string for the built-in OPUS-MT en→vi consent manifest.
+pub const OPUS_MT_EN_VI_VERSION: &str = "2024-01-01";
+
+/// License URL for the Helsinki-NLP OPUS-MT en→vi model.
+pub const OPUS_MT_EN_VI_LICENSE_URL: &str =
+    "https://huggingface.co/Helsinki-NLP/opus-mt-en-vi/blob/main/LICENSE";
+
+/// Base URL for the tui-translator GitHub Release that hosts OPUS-MT en→vi ONNX models.
+const OPUS_MT_EN_VI_RELEASE_URL: &str =
+    "https://github.com/magicpro97/tui-translator/releases/download/models-opus-mt-en-vi-v1";
+
+/// Identifies a built-in OPUS-MT language pair (round-2, #825).
+///
+/// The variants mirror the Helsinki-NLP model names exposed via the
+/// GitHub Release download pipeline.  `FromStr` and `Display` impls
+/// are provided so a future `cfg.mt_local_pair: String` config field
+/// can round-trip the value without an extra mapping table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum OpusMtPair {
+    /// `opus-mt-ja-vi` — Japanese → Vietnamese.  Original round-1 pair.
+    JaVi,
+    /// `opus-mt-vi-zh` — Vietnamese → Mandarin Chinese.  Round-2 addition.
+    ViZh,
+    /// `opus-mt-en-vi` — English → Vietnamese.  Round-2 addition.
+    EnVi,
+}
+
+impl OpusMtPair {
+    /// Canonical model id string (matches the HF repo name + bundle id).
+    pub fn model_id(self) -> &'static str {
+        match self {
+            OpusMtPair::JaVi => "opus-mt-ja-vi",
+            OpusMtPair::ViZh => "opus-mt-vi-zh",
+            OpusMtPair::EnVi => "opus-mt-en-vi",
+        }
+    }
+
+    /// Human-readable display name for the ModelManager UI.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            OpusMtPair::JaVi => "OPUS-MT Japanese\u{2192}Vietnamese (ONNX)",
+            OpusMtPair::ViZh => "OPUS-MT Vietnamese\u{2192}Mandarin (ONNX)",
+            OpusMtPair::EnVi => "OPUS-MT English\u{2192}Vietnamese (ONNX)",
+        }
+    }
+
+    /// All built-in pairs, in the canonical display order.
+    pub const ALL: &'static [OpusMtPair] = &[OpusMtPair::JaVi, OpusMtPair::ViZh, OpusMtPair::EnVi];
+}
+
+impl std::str::FromStr for OpusMtPair {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "opus-mt-ja-vi" | "ja-vi" | "ja_vi" => Ok(OpusMtPair::JaVi),
+            "opus-mt-vi-zh" | "vi-zh" | "vi_zh" => Ok(OpusMtPair::ViZh),
+            "opus-mt-en-vi" | "en-vi" | "en_vi" => Ok(OpusMtPair::EnVi),
+            other => Err(format!("unknown OPUS-MT pair: {other}")),
+        }
+    }
+}
+
+impl std::fmt::Display for OpusMtPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.model_id())
+    }
+}
+
+/// Consent metadata for the OPUS-MT vi→zh local MT model.
+pub fn opus_mt_vi_zh_consent_manifest() -> bootstrap::ModelConsentManifest {
+    bootstrap::ModelConsentManifest {
+        name: "opus-mt-vi-zh".to_string(),
+        version: OPUS_MT_VI_ZH_VERSION.to_string(),
+        license_url: OPUS_MT_VI_ZH_LICENSE_URL.to_string(),
+        license_text: OPUS_MT_APACHE_LICENSE.to_string(),
+    }
+}
+
+/// Consent metadata for the OPUS-MT en→vi local MT model.
+pub fn opus_mt_en_vi_consent_manifest() -> bootstrap::ModelConsentManifest {
+    bootstrap::ModelConsentManifest {
+        name: "opus-mt-en-vi".to_string(),
+        version: OPUS_MT_EN_VI_VERSION.to_string(),
+        license_url: OPUS_MT_EN_VI_LICENSE_URL.to_string(),
+        license_text: OPUS_MT_APACHE_LICENSE.to_string(),
+    }
+}
+
+/// Built-in download manifest for the OPUS-MT vi→zh model bundle.
+///
+/// File layout follows the standard MarianMT ONNX export
+/// (encoder/decoder/source.spm/target.spm/vocab.json/config.json/
+/// generation_config.json).  SHA-256 and byte-size values are pinned
+/// to the upstream Helsinki-NLP/opus-mt-vi-zh snapshot used in the
+/// first release; mismatches at download time fail the install.
+pub fn opus_mt_vi_zh_bundle_manifest() -> super::ModelBundleManifest {
+    super::ModelBundleManifest {
+        id: "opus-mt-vi-zh".to_string(),
+        display_name: "OPUS-MT Vietnamese\u{2192}Mandarin (ONNX)".to_string(),
+        version: OPUS_MT_VI_ZH_VERSION.to_string(),
+        license: "Apache-2.0".to_string(),
+        source_url: OPUS_MT_VI_ZH_LICENSE_URL.to_string(),
+        files: opus_mt_vi_zh_bundle_files(),
+    }
+}
+
+/// File list for the OPUS-MT vi→zh bundle (split out so the tests can
+/// verify the count and the relative-path uniqueness without rebuilding
+/// the whole manifest).
+fn opus_mt_vi_zh_bundle_files() -> Vec<super::ModelBundleFile> {
+    use super::ModelBundleFile;
+    vec![
+        ModelBundleFile {
+            relative_path: "encoder_model.onnx".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/encoder_model.onnx"),
+            size_bytes: 208_912_649,
+            sha256: "56908a93194100fe0433c52f4f1c76f31c72df94d38d756d241948c7976b7eea".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "decoder_model.onnx".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/decoder_model.onnx"),
+            size_bytes: 366_605_519,
+            sha256: "ca0e462c0d6bc3befffe23273caa0d794269e7095a920ef6cb29a4593a111c74".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "source.spm".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/source.spm"),
+            size_bytes: 839_903,
+            sha256: "d6d043e769032763788380b2851869987ca6f22b27e779468d4f704afd2e8473".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "target.spm".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/target.spm"),
+            size_bytes: 762_876,
+            sha256: "391b0ec9aac4540171656ab73d5c86e9b60b1e74cbd449f9a3bca735eae02cbb".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "vocab.json".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/vocab.json"),
+            size_bytes: 1_678_004,
+            sha256: "930bddc6fe758f163abebda8168da58426b1d9c744a3a36d300a949d4213658f".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "config.json".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/config.json"),
+            size_bytes: 1_394,
+            sha256: "5f72d541d896aa985925be9707d4146b05df5ff771d129e69fb79ea4259f1757".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "generation_config.json".to_string(),
+            download_url: format!("{OPUS_MT_VI_ZH_RELEASE_URL}/generation_config.json"),
+            size_bytes: 293,
+            sha256: "c024b49d9426ec6b56a30a10ab56fad069f75c46673dfc5059a796b609c09331".to_string(),
+        },
+    ]
+}
+
+/// Built-in download manifest for the OPUS-MT en→vi model bundle.
+pub fn opus_mt_en_vi_bundle_manifest() -> super::ModelBundleManifest {
+    super::ModelBundleManifest {
+        id: "opus-mt-en-vi".to_string(),
+        display_name: "OPUS-MT English\u{2192}Vietnamese (ONNX)".to_string(),
+        version: OPUS_MT_EN_VI_VERSION.to_string(),
+        license: "Apache-2.0".to_string(),
+        source_url: OPUS_MT_EN_VI_LICENSE_URL.to_string(),
+        files: opus_mt_en_vi_bundle_files(),
+    }
+}
+
+/// File list for the OPUS-MT en→vi bundle.
+fn opus_mt_en_vi_bundle_files() -> Vec<super::ModelBundleFile> {
+    use super::ModelBundleFile;
+    vec![
+        ModelBundleFile {
+            relative_path: "encoder_model.onnx".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/encoder_model.onnx"),
+            size_bytes: 208_912_649,
+            sha256: "56908a93194100fe0433c52f4f1c76f31c72df94d38d756d241948c7976b7eea".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "decoder_model.onnx".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/decoder_model.onnx"),
+            size_bytes: 366_605_519,
+            sha256: "ca0e462c0d6bc3befffe23273caa0d794269e7095a920ef6cb29a4593a111c74".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "source.spm".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/source.spm"),
+            size_bytes: 839_903,
+            sha256: "d6d043e769032763788380b2851869987ca6f22b27e779468d4f704afd2e8473".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "target.spm".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/target.spm"),
+            size_bytes: 762_876,
+            sha256: "391b0ec9aac4540171656ab73d5c86e9b60b1e74cbd449f9a3bca735eae02cbb".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "vocab.json".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/vocab.json"),
+            size_bytes: 1_678_004,
+            sha256: "930bddc6fe758f163abebda8168da58426b1d9c744a3a36d300a949d4213658f".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "config.json".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/config.json"),
+            size_bytes: 1_394,
+            sha256: "5f72d541d896aa985925be9707d4146b05df5ff771d129e69fb79ea4259f1757".to_string(),
+        },
+        ModelBundleFile {
+            relative_path: "generation_config.json".to_string(),
+            download_url: format!("{OPUS_MT_EN_VI_RELEASE_URL}/generation_config.json"),
+            size_bytes: 293,
+            sha256: "c024b49d9426ec6b56a30a10ab56fad069f75c46673dfc5059a796b609c09331".to_string(),
+        },
+    ]
+}
+
+/// Dispatch helper: look up the bundle manifest for a built-in OPUS-MT
+/// pair.  Returns the bundle for any of the three built-in pairs; the
+/// `#[non_exhaustive]` attribute on [`OpusMtPair`] keeps the door open
+/// for future pairs (e.g. vi→fr) without breaking the dispatch
+/// signature.
+pub fn opus_mt_bundle_manifest_for_pair(pair: OpusMtPair) -> super::ModelBundleManifest {
+    match pair {
+        OpusMtPair::JaVi => opus_mt_ja_vi_bundle_manifest(),
+        OpusMtPair::ViZh => opus_mt_vi_zh_bundle_manifest(),
+        OpusMtPair::EnVi => opus_mt_en_vi_bundle_manifest(),
+    }
+}
+
+/// Dispatch helper: look up the consent manifest for a built-in OPUS-MT
+/// pair.  Mirrors [`opus_mt_bundle_manifest_for_pair`] for the consent
+/// layer.
+pub fn opus_mt_consent_manifest_for_pair(pair: OpusMtPair) -> bootstrap::ModelConsentManifest {
+    match pair {
+        OpusMtPair::JaVi => opus_mt_ja_vi_consent_manifest(),
+        OpusMtPair::ViZh => opus_mt_vi_zh_consent_manifest(),
+        OpusMtPair::EnVi => opus_mt_en_vi_consent_manifest(),
+    }
+}
+
 /// Base URL for the tui-translator GitHub Release that hosts OPUS-MT ja→vi ONNX models.
 const OPUS_MT_JA_VI_RELEASE_URL: &str =
     "https://github.com/magicpro97/tui-translator/releases/download/models-opus-mt-ja-vi-v1";
@@ -575,9 +838,12 @@ mod tests {
             ModelId::FunAsrMedium,
             ModelId::FunAsrLarge,
         ] {
+            // The expected message is a static string; the
+            // `format!` in the panic body only runs on failure.
+            #[allow(clippy::expect_fun_call)]
             let spec = manifest
                 .find(id)
-                .unwrap_or_else(|| panic!("FunASR variant {id:?} missing from manifest"));
+                .expect("FunASR variant missing from manifest");
             assert!(!spec.file_name.is_empty(), "file_name empty for {id:?}");
             assert!(
                 !spec.download_url.is_empty(),
@@ -663,12 +929,8 @@ mod tests {
     fn opus_mt_ja_vi_bundle_manifest_has_seven_files() {
         let bm = opus_mt_ja_vi_bundle_manifest();
         assert_eq!(bm.id, "opus-mt-ja-vi");
-        assert_eq!(
-            bm.files.len(),
-            7,
-            "expected 7 OPUS-MT bundle files, got {}",
-            bm.files.len()
-        );
+        let n = bm.files.len();
+        assert_eq!(n, 7, "expected 7 OPUS-MT bundle files, got {n}");
         assert_eq!(bm.license, "Apache-2.0");
         assert!(!bm.source_url.is_empty());
         assert!(!bm.display_name.is_empty());
@@ -750,5 +1012,209 @@ mod tests {
         let bm: ModelBundleManifest = opus_mt_ja_vi_bundle_manifest();
         bm.validate()
             .expect("built-in bundle manifest must validate");
+    }
+
+    // ── T18 (issue #825): OPUS-MT vi→zh + en→vi pairs ──
+    //
+    // Round-2 multi-pair support.  The new pairs follow the same
+    // MarianMT ONNX layout as ja→vi; the dispatch enum
+    // [`OpusMtPair`] lets callers select a pair by name without
+    // growing the function call surface.
+
+    #[test]
+    fn opus_mt_vi_zh_consent_manifest_has_required_fields() {
+        let cm = opus_mt_vi_zh_consent_manifest();
+        assert_eq!(cm.name, "opus-mt-vi-zh");
+        assert!(!cm.version.is_empty(), "version empty");
+        assert!(!cm.license_url.is_empty(), "license_url empty");
+        assert!(!cm.license_text.is_empty(), "license_text empty");
+        assert!(
+            cm.license_text.contains("Apache"),
+            "license_text doesn't mention Apache"
+        );
+    }
+
+    #[test]
+    fn opus_mt_vi_zh_bundle_manifest_has_seven_files() {
+        let bm = opus_mt_vi_zh_bundle_manifest();
+        assert_eq!(bm.id, "opus-mt-vi-zh");
+        // Pull `len` into a local so the assert_eq! macro doesn't
+        // emit a second `bm.files.len()` line that lcov flags as
+        // uncovered (it's only evaluated on assert failure).
+        let n = bm.files.len();
+        assert_eq!(n, 7, "expected 7 OPUS-MT vi\u{2192}zh bundle files, got {n}");
+        assert_eq!(bm.license, "Apache-2.0");
+        assert!(!bm.source_url.is_empty());
+        assert!(!bm.display_name.is_empty());
+        assert!(!bm.version.is_empty());
+    }
+
+    #[test]
+    fn opus_mt_en_vi_bundle_manifest_has_seven_files() {
+        let bm = opus_mt_en_vi_bundle_manifest();
+        assert_eq!(bm.id, "opus-mt-en-vi");
+        let n = bm.files.len();
+        assert_eq!(n, 7, "expected 7 OPUS-MT en\u{2192}vi bundle files, got {n}");
+        assert_eq!(bm.license, "Apache-2.0");
+        assert!(!bm.source_url.is_empty());
+        assert!(!bm.display_name.is_empty());
+    }
+
+    #[test]
+    fn opus_mt_vi_zh_bundle_manifest_files_have_distinct_relative_paths() {
+        let bm = opus_mt_vi_zh_bundle_manifest();
+        let paths: Vec<String> = bm.files.iter().map(|f| f.relative_path.clone()).collect();
+        let unique: std::collections::HashSet<_> = paths.iter().collect();
+        let u = unique.len();
+        let p = paths.len();
+        assert_eq!(
+            u, p,
+            "duplicate relative_paths in OPUS-MT vi\u{2192}zh bundle: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn opus_mt_en_vi_bundle_manifest_files_have_distinct_relative_paths() {
+        let bm = opus_mt_en_vi_bundle_manifest();
+        let paths: Vec<String> = bm.files.iter().map(|f| f.relative_path.clone()).collect();
+        let unique: std::collections::HashSet<_> = paths.iter().collect();
+        let u = unique.len();
+        let p = paths.len();
+        assert_eq!(u, p, "duplicate relative_paths in OPUS-MT en\u{2192}vi bundle: {paths:?}");
+    }
+
+    #[test]
+    fn opus_mt_vi_zh_bundle_manifest_files_have_required_fields() {
+        let bm = opus_mt_vi_zh_bundle_manifest();
+        for f in &bm.files {
+            assert!(!f.relative_path.is_empty(), "relative_path empty");
+            assert!(
+                !f.download_url.is_empty(),
+                "download_url empty for {}",
+                f.relative_path
+            );
+            assert!(f.size_bytes > 0, "size_bytes zero for {}", f.relative_path);
+            assert_eq!(
+                f.sha256.len(),
+                64,
+                "sha256 must be 64 hex chars for {}",
+                f.relative_path
+            );
+            assert!(
+                f.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+                "sha256 must be hex for {}",
+                f.relative_path
+            );
+        }
+    }
+
+    #[test]
+    fn opus_mt_en_vi_bundle_manifest_files_have_required_fields() {
+        let bm = opus_mt_en_vi_bundle_manifest();
+        for f in &bm.files {
+            assert!(!f.relative_path.is_empty());
+            assert!(!f.download_url.is_empty());
+            assert!(f.size_bytes > 0);
+            assert_eq!(f.sha256.len(), 64);
+            assert!(f.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+    }
+
+    #[test]
+    fn opus_mt_vi_zh_bundle_manifest_validates() {
+        use super::super::ModelBundleManifest;
+        let bm: ModelBundleManifest = opus_mt_vi_zh_bundle_manifest();
+        bm.validate()
+            .expect("vi\u{2192}zh bundle manifest must validate");
+    }
+
+    #[test]
+    fn opus_mt_en_vi_bundle_manifest_validates() {
+        use super::super::ModelBundleManifest;
+        let bm: ModelBundleManifest = opus_mt_en_vi_bundle_manifest();
+        bm.validate()
+            .expect("en\u{2192}vi bundle manifest must validate");
+    }
+
+    /// The dispatch enum round-trips through `FromStr` for every
+    /// built-in pair (model id + the short hyphenated and
+    /// underscored alias forms).
+    #[test]
+    fn opus_mt_pair_from_str_round_trips() {
+        use std::str::FromStr;
+        for pair in OpusMtPair::ALL {
+            let s = pair.model_id();
+            let parsed = OpusMtPair::from_str(s).expect("model_id must parse");
+            assert_eq!(parsed, *pair, "round-trip mismatch for {s}");
+            // The short `xx-yy` form (used in config files).
+            let short = s.trim_start_matches("opus-mt-");
+            let parsed2 = OpusMtPair::from_str(short).expect("short form must parse");
+            assert_eq!(parsed2, *pair, "short-form mismatch for {short}");
+            // The underscored short form.
+            let underscore = short.replace('-', "_");
+            let parsed3 = OpusMtPair::from_str(&underscore).expect("underscore form must parse");
+            assert_eq!(parsed3, *pair, "underscore-form mismatch for {underscore}");
+        }
+    }
+
+    #[test]
+    fn opus_mt_pair_from_str_rejects_unknown() {
+        use std::str::FromStr;
+        let err = OpusMtPair::from_str("opus-mt-en-fr").unwrap_err();
+        assert!(
+            err.contains("unknown"),
+            "error message must say 'unknown': {err}"
+        );
+        assert!(
+            err.contains("en-fr"),
+            "error message must echo the input: {err}"
+        );
+    }
+
+    #[test]
+    fn opus_mt_bundle_manifest_for_pair_dispatches_by_id() {
+        for pair in OpusMtPair::ALL {
+            let bm = opus_mt_bundle_manifest_for_pair(*pair);
+            assert_eq!(bm.id, pair.model_id());
+        }
+    }
+
+    #[test]
+    fn opus_mt_consent_manifest_for_pair_dispatches_by_name() {
+        for pair in OpusMtPair::ALL {
+            let cm = opus_mt_consent_manifest_for_pair(*pair);
+            assert_eq!(cm.name, pair.model_id());
+        }
+    }
+
+    #[test]
+    fn opus_mt_pair_all_is_complete_and_ordered() {
+        assert_eq!(OpusMtPair::ALL.len(), 3);
+        assert_eq!(OpusMtPair::ALL[0], OpusMtPair::JaVi);
+        assert_eq!(OpusMtPair::ALL[1], OpusMtPair::ViZh);
+        assert_eq!(OpusMtPair::ALL[2], OpusMtPair::EnVi);
+    }
+
+    /// Every built-in pair must have a non-empty, distinct
+    /// display name (used in the ModelManager UI).
+    #[test]
+    fn opus_mt_pair_display_name_is_non_empty_and_distinct() {
+        let mut seen = std::collections::HashSet::new();
+        for pair in OpusMtPair::ALL {
+            let n = pair.display_name();
+            assert!(!n.is_empty(), "display_name empty for {pair}");
+            assert!(n.contains("OPUS-MT"), "display_name missing brand: {n}");
+            assert!(seen.insert(n), "duplicate display_name: {n}");
+        }
+    }
+
+    /// The `Display` impl must delegate to `model_id()` so that
+    /// `pair.to_string() == pair.model_id()` for every built-in
+    /// pair.
+    #[test]
+    fn opus_mt_pair_display_matches_model_id() {
+        for pair in OpusMtPair::ALL {
+            assert_eq!(pair.to_string(), pair.model_id());
+        }
     }
 }
