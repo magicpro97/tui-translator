@@ -168,6 +168,14 @@ impl ModelManagerState {
         self.current_tab = self.current_tab.previous();
     }
 
+    /// Jump directly to a specific tab. Resets the per-tab cursor
+    /// to 0.
+    pub fn select_tab(&mut self, tab: ModelManagerTab) {
+        if self.current_tab != tab {
+            self.current_tab = tab;
+        }
+    }
+
     /// Select the next model within the current tab. Returns `true`
     /// if the cursor advanced, `false` if it was already at the
     /// last entry (no wrap).
