@@ -68,6 +68,8 @@ mod pipeline;
 mod providers;
 mod quality_preset;
 #[cfg(test)]
+mod quality_preset_env_tests;
+#[cfg(test)]
 mod quality_preset_tests;
 mod readiness;
 mod runtime_providers;

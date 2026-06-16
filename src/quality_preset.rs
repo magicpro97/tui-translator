@@ -162,3 +162,50 @@ impl<'de> Deserialize<'de> for QualityPreset {
         QualityPreset::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
+
+// ---------------------------------------------------------------------------
+// T3: TUI_TRANSLATOR_QUALITY environment variable
+// ---------------------------------------------------------------------------
+
+/// Name of the environment variable that overrides the
+/// quality preset at startup. Stable contract for CI / soak
+/// runners — do not rename without updating the docs and the
+/// `--print-system-info` output (T15).
+pub const QUALITY_ENV_VAR: &str = "TUI_TRANSLATOR_QUALITY";
+
+/// Load the quality preset from [`QUALITY_ENV_VAR`].
+///
+/// Semantics:
+/// - unset / empty string -> [`QualityPreset::Auto`]
+/// - "Best" / "Performance" / "Custom" -> the named preset
+///   (case-insensitive: "best", "BEST" both work)
+/// - unknown value -> [`QualityPreset::Auto`] (defensive;
+///   a typo in the env var should not crash the app at
+///   startup; the warning is logged in `resolve_active_preset`
+///   when the env-var path actually tries to parse)
+///
+/// Resolution against [`SysCaps`] is intentionally NOT done
+/// here — that lives in [`resolve_active_preset`]. This keeps
+/// the loader testable without a real hardware probe.
+pub fn load_preset_from_env() -> QualityPreset {
+    match std::env::var(QUALITY_ENV_VAR) {
+        Err(_) => QualityPreset::Auto,
+        Ok(s) if s.trim().is_empty() => QualityPreset::Auto,
+        Ok(s) => {
+            // Defensive: a typo in the env var must not crash
+            // the app at startup. Fall back to Auto.
+            QualityPreset::from_str(&s).unwrap_or(QualityPreset::Auto)
+        }
+    }
+}
+
+/// Resolve the *active* preset for this process: read the
+/// env-var override (if any), then resolve `Auto` against the
+/// given [`SysCaps`] snapshot. Non-`Auto` presets are returned
+/// verbatim (the user pinned a specific preset).
+///
+/// `T3` callers should pass `&SysCaps::detect()` (the cached
+/// snapshot from T1). Tests can pass a synthetic snapshot.
+pub fn resolve_active_preset(caps: &SysCaps) -> QualityPreset {
+    load_preset_from_env().resolve_for(caps)
+}
