@@ -228,6 +228,12 @@ fn detect_gpu() -> GpuKind {
     detect_gpu_inner().unwrap_or(GpuKind::None)
 }
 
+/// Feature-gated GPU probe entry point.  With the `gpu-detect`
+/// feature enabled (and the host OS matching), returns
+/// `Some(kind)` from the platform-specific probe; otherwise
+/// `None`.  Used by `detect_gpu` so the per-file coverage gate
+/// sees all three arms (macos hit, linux/windows hit, fallback)
+/// even when the host happens to have a working GPU.
 #[cfg(any(
     all(feature = "gpu-detect", target_os = "macos"),
     all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows"))
@@ -244,6 +250,17 @@ fn detect_gpu_inner() -> Option<GpuKind> {
     #[cfg(all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows")))]
     return detect_cuda();
     #[cfg(not(any(feature = "gpu-detect", target_os = "macos", target_os = "linux", target_os = "windows")))]
+    None
+}
+
+/// No-feature / no-matching-OS fallback.  Always returns `None`
+/// so the default build (no `gpu-detect` feature) keeps the v3
+/// "no GPU detected" baseline.
+#[cfg(not(any(
+    all(feature = "gpu-detect", target_os = "macos"),
+    all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows"))
+)))]
+fn detect_gpu_inner() -> Option<GpuKind> {
     None
 }
 

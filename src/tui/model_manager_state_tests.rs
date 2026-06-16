@@ -280,4 +280,77 @@ mod ctrl_p_cycle_integration {
         // After 4 presses, we're back at Auto.
         assert_eq!(preset, QualityPreset::Auto);
     }
+
+    // ── T20 (issue #828): model_id_for catalog accessor ────────────────
+    //
+    // Round 2 enrichment: every catalog row now carries a
+    // `ModelId` so the orchestrator can write the chosen model
+    // into `AppConfig::stt_model` and trigger a provider reload
+    // on `Enter`.  These tests pin the per-row mapping so a
+    // refactor that drops an entry fails loudly.
+    use crate::providers::local::manifest::ModelId;
+
+    /// `model_id_for` returns the right `ModelId` for every
+    /// built-in Whisper row (8 of them).
+    #[test]
+    fn model_id_for_whisper_tab_covers_all_eight_variants() {
+        let s = ModelManagerState::default();
+        let expected = [
+            ModelId::TinyEn,
+            ModelId::Tiny,
+            ModelId::BaseEn,
+            ModelId::Base,
+            ModelId::SmallEn,
+            ModelId::Small,
+            ModelId::MediumEn,
+            ModelId::Medium,
+        ];
+        for (i, want) in expected.iter().enumerate() {
+            assert_eq!(
+                s.model_id_for(ModelManagerTab::Whisper, i),
+                Some(*want),
+                "whisper row {i} should map to {want:?}"
+            );
+        }
+    }
+
+    /// `model_id_for` returns the right `ModelId` for every
+    /// built-in FunASR row (3 of them).
+    #[test]
+    fn model_id_for_funasr_tab_covers_all_three_variants() {
+        let s = ModelManagerState::default();
+        let expected = [
+            ModelId::FunAsrSmall,
+            ModelId::FunAsrMedium,
+            ModelId::FunAsrLarge,
+        ];
+        for (i, want) in expected.iter().enumerate() {
+            assert_eq!(
+                s.model_id_for(ModelManagerTab::FunAsr, i),
+                Some(*want),
+                "funasr row {i} should map to {want:?}"
+            );
+        }
+    }
+
+    /// `model_id_for` returns `None` for the History tab (it's
+    /// read-only, no models).  This is the test the
+    /// orchestrator's `model_manager_apply` relies on to decide
+    /// between "apply selection" and "show read-only notice".
+    #[test]
+    fn model_id_for_history_tab_always_returns_none() {
+        let s = ModelManagerState::default();
+        assert_eq!(s.model_id_for(ModelManagerTab::History, 0), None);
+        assert_eq!(s.model_id_for(ModelManagerTab::History, 999), None);
+    }
+
+    /// `model_id_for` returns `None` for out-of-range indices on
+    /// model-providing tabs.
+    #[test]
+    fn model_id_for_out_of_range_returns_none() {
+        let s = ModelManagerState::default();
+        assert_eq!(s.model_id_for(ModelManagerTab::Whisper, 8), None);
+        assert_eq!(s.model_id_for(ModelManagerTab::Whisper, 9999), None);
+        assert_eq!(s.model_id_for(ModelManagerTab::FunAsr, 3), None);
+    }
 }

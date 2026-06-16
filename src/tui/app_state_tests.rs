@@ -58,3 +58,78 @@ fn capture_device_label_reflects_configured_device() {
     *state.capture_device_label.lock().unwrap() = "Speakers (Realtek Audio)".to_string();
     assert_eq!(state.capture_device_label(), "Speakers (Realtek Audio)");
 }
+
+// ── T20 (issue #828): ModelManager overlay helpers ───────────────────────
+
+#[test]
+fn model_manager_active_flag_defaults_to_false() {
+    let state = AppState::new();
+    assert!(!state.model_manager_active.load(Ordering::Relaxed));
+}
+
+#[test]
+fn open_model_manager_sets_active_flag_and_resets_state() {
+    let state = AppState::new();
+    // Mutate the state a bit so the reset has something to revert.
+    {
+        let mut mm = state.model_manager.lock().unwrap();
+        mm.next_tab(); // → FunAsr
+    }
+    state.open_model_manager();
+    assert!(state.model_manager_active.load(Ordering::Relaxed));
+    let mm = state.model_manager.lock().unwrap();
+    assert_eq!(mm.current_tab(), ModelManagerTab::Whisper);
+    assert_eq!(mm.selected_index(), 0);
+}
+
+#[test]
+fn close_model_manager_clears_active_flag() {
+    let state = AppState::new();
+    state.open_model_manager();
+    assert!(state.model_manager_active.load(Ordering::Relaxed));
+    state.close_model_manager();
+    assert!(!state.model_manager_active.load(Ordering::Relaxed));
+}
+
+#[test]
+fn model_manager_apply_returns_some_for_whisper_row() {
+    let state = AppState::new();
+    state.open_model_manager();
+    // Default: Whisper tab, row 0 (TinyEn).  The apply helper
+    // must return Some(short_name, label) so the orchestrator can
+    // persist `stt_provider=local` + `stt_model=tiny.en`.
+    let (tab, index, short_name, label) =
+        state.model_manager_apply().expect("expected apply on Whisper row 0");
+    assert_eq!(tab, ModelManagerTab::Whisper);
+    assert_eq!(index, 0);
+    assert_eq!(short_name, "tiny.en");
+    assert_eq!(label, "ggml-tiny.en.bin");
+}
+
+#[test]
+fn model_manager_apply_returns_some_for_funasr_row() {
+    let state = AppState::new();
+    state.open_model_manager();
+    // Jump to FunASr tab and pick the medium model.
+    {
+        let mut mm = state.model_manager.lock().unwrap();
+        mm.select_tab(ModelManagerTab::FunAsr);
+        mm.select_index(1);
+    }
+    let (tab, _index, short_name, label) =
+        state.model_manager_apply().expect("expected apply on FunASr row 1");
+    assert_eq!(tab, ModelManagerTab::FunAsr);
+    assert_eq!(short_name, "funasr-medium");
+    assert_eq!(label, "sherpa-onnx-funasr-medium");
+}
+
+#[test]
+fn model_manager_apply_returns_none_for_history_tab() {
+    let state = AppState::new();
+    state.open_model_manager();
+    {
+        let mut mm = state.model_manager.lock().unwrap();
+        mm.select_tab(ModelManagerTab::History);
+    }
+    assert!(state.model_manager_apply().is_none());
+}

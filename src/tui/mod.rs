@@ -75,6 +75,9 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::config::{AppConfig, TtsRouting};
 
+use crate::tui::model_manager_state::ModelManagerState;
+use crate::tui::model_manager_tokens::ModelManagerTab;
+
 pub use crate::metrics::{
     format_cost_or_zero_state, CostCounter, MetricsSnapshot, MtState, SessionMetrics, SttSource,
     SttState,
@@ -394,6 +397,11 @@ pub enum UserAction {
     ScrollBottom,
     /// A key event for the onboarding wizard overlay.
     WizardKey(onboarding::OnboardingEvent),
+    /// T20 (#828): open the ModelManager overlay.
+    OpenModelManager,
+    /// T20 (#828): a key event for the ModelManager overlay.
+    /// The orchestrator forwards it to `handle_model_manager_key`.
+    ModelManagerKey(crossterm::event::KeyEvent),
     /// Any other key that should wake generic "press any key" waits.
     AnyKey,
     /// Tab (normal mode) — cycle focus between pane A and pane B.
@@ -1857,6 +1865,18 @@ pub struct AppState {
     pub picker_field_active: Arc<AtomicBool>,
     /// State for the shared first-run / settings editor overlay.
     pub config_editor: Mutex<Option<ConfigEditorState>>,
+    // ── T20 (issue #828): ModelManager overlay ────────────────────────
+    /// `true` while the ModelManager overlay is visible (bound to
+    /// `B` / `Ctrl+B` in `key_to_action`).  The keyboard task
+    /// routes every keypress through `handle_model_manager_key`
+    /// while this flag is set, mirroring the
+    /// `config_editor_active` / `wizard_active` pattern.
+    pub model_manager_active: Arc<AtomicBool>,
+    /// Live state of the ModelManager (current tab, per-tab
+    /// cursor).  Kept in a `Mutex` because `ModelManagerState`
+    /// is `Copy` but the overlay's read path wants a consistent
+    /// snapshot while the keymap mutates it.
+    pub model_manager: Mutex<ModelManagerState>,
     /// BCP-47 source language code forwarded to the STT provider.
     /// Updated on hot-reload so the running orchestrator sees the new value.
     pub source_language: Arc<Mutex<String>>,
@@ -2007,6 +2027,9 @@ impl AppState {
             config_editor_active: Arc::new(AtomicBool::new(false)),
             picker_field_active: Arc::new(AtomicBool::new(false)),
             config_editor: Mutex::new(None),
+            // T20 (#828): ModelManager overlay starts hidden.
+            model_manager_active: Arc::new(AtomicBool::new(false)),
+            model_manager: Mutex::new(ModelManagerState::default()),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("vi".to_string())),
             capture_device_label: Arc::new(Mutex::new("Default device".to_string())),
@@ -2263,6 +2286,53 @@ impl AppState {
         self.config_editor_active.store(false, Ordering::Relaxed);
         self.picker_field_active.store(false, Ordering::Relaxed);
         *self.config_editor.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    // ── T20 (issue #828): ModelManager overlay helpers ────────────────
+    /// Open the ModelManager overlay (bound to `B` / `Ctrl+B` in
+    /// `key_to_action`).  Dismisses the help overlay and the
+    /// language prompt to keep the screen ownership simple.
+    pub fn open_model_manager(&self) {
+        self.show_help.store(false, Ordering::Relaxed);
+        self.lang_prompt_active.store(false, Ordering::Relaxed);
+        *self.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+        // Reset the cursor to a sensible default (Whisper tab, row
+        // 0) so reopening always lands on the same starting row.
+        *self
+            .model_manager
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = ModelManagerState::default();
+        self.model_manager_active.store(true, Ordering::Relaxed);
+    }
+
+    /// Close the ModelManager overlay (called on Esc inside the
+    /// overlay, and from the orchestrator when the underlying
+    /// config save fails).
+    pub fn close_model_manager(&self) {
+        self.model_manager_active.store(false, Ordering::Relaxed);
+    }
+
+    /// Apply a row selection in the ModelManager.  Returns
+    /// `Some(tab, index, model_id, label)` if the row is a
+    /// model-providing tab (Whisper / FunASR) so the orchestrator
+    /// can persist `stt_provider` + `stt_model` to the config and
+    /// trigger a provider reload.  Returns `None` for the
+    /// read-only History tab or for out-of-range indices.
+    pub fn model_manager_apply(&self) -> Option<(ModelManagerTab, usize, String, &'static str)> {
+        let state = self
+            .model_manager
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let tab = state.current_tab();
+        let index = state.selected_index();
+        let label = state.model_label(tab, index)?;
+        // `ModelId` only exists for model-providing tabs.
+        // History has no models → `model_id_for` returns None, and
+        // the caller treats the row as a no-op (status notice
+        // "History is read-only").
+        let model_id = state.model_id_for(tab, index)?;
+        let short_name = model_id.display_name().to_string();
+        Some((tab, index, short_name, label))
     }
 
     /// Update the audio-consent gate from the loaded config.

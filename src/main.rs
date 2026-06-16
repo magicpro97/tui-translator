@@ -447,6 +447,7 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
         let config_editor_flag = Arc::clone(&state.config_editor_active);
         let picker_field_active = Arc::clone(&state.picker_field_active);
         let wizard_active_kb = Arc::clone(&state.wizard_active);
+        let model_manager_flag = Arc::clone(&state.model_manager_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
             tokio::task::spawn_blocking(move || {
@@ -456,6 +457,7 @@ fn run_session_replay(args: &ReplayArgs) -> Result<()> {
                     config_editor_flag,
                     picker_field_active,
                     wizard_active_kb,
+                    model_manager_flag,
                     keyboard_shutdown,
                 )
             })
@@ -2067,6 +2069,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
         let config_editor_flag = Arc::clone(&state.config_editor_active);
         let picker_field_active = Arc::clone(&state.picker_field_active);
         let wizard_active_kb = Arc::clone(&state.wizard_active);
+        let model_manager_flag = Arc::clone(&state.model_manager_active);
         let keyboard_shutdown = Arc::clone(&keyboard_shutdown);
         rt.spawn(async move {
             tokio::task::spawn_blocking(move || {
@@ -2076,6 +2079,7 @@ fn finish_main(rt: tokio::runtime::Runtime, args: FinishMainArgs<'_>) -> Result<
                     config_editor_flag,
                     picker_field_active,
                     wizard_active_kb,
+                    model_manager_flag,
                     keyboard_shutdown,
                 )
             })
@@ -3136,6 +3140,58 @@ fn save_config_editor(
     Ok(())
 }
 
+/// T20 (issue #828): persist a ModelManager row selection to
+/// `AppConfig::stt_provider` + `AppConfig::stt_model` and
+/// surface a 5-second status notice.  No provider restart is
+/// required — the next `transcribe` call picks up the new
+/// config from `current_config`.
+///
+/// `short_name` is the `ModelId::display_name` value
+/// (e.g. `"tiny.en"`, `"funasr-medium"`) and `label` is the
+/// human-readable filename from the catalog
+/// (e.g. `"ggml-tiny.en.bin"`, `"sherpa-onnx-funasr-medium"`).
+/// Both are baked into the status notice so the operator can
+/// see exactly which model was picked.
+fn apply_model_manager_selection(
+    state: &AppState,
+    cfg_path: &Path,
+    current_config: &Arc<Mutex<config::AppConfig>>,
+    short_name: &str,
+    label: &'static str,
+) {
+    // Mutate the in-memory config first; `save_config_to_disk`
+    // reads from this same `current_config` lock, so a single
+    // critical section keeps the on-disk and in-memory
+    // snapshots consistent.
+    let mut next_cfg = {
+        let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        // Backend switch always lands on the local provider —
+        // Google STT is wired to fixed Google models, so picking
+        // a catalog row only makes sense for the local path.
+        current.stt_provider = "local".to_string();
+        current.stt_model = Some(short_name.to_string());
+        current.clone()
+    };
+    if let Err(err) = config::apply_editor_defaults(cfg_path, &mut next_cfg) {
+        tracing::warn!("model manager apply defaults failed: {err:#}");
+    }
+    {
+        let mut current = current_config.lock().unwrap_or_else(|p| p.into_inner());
+        *current = next_cfg.clone();
+    }
+    if let Err(err) = config::write_config(cfg_path, &next_cfg) {
+        tracing::warn!("model manager apply save_to_disk failed: {err:#}");
+        state.record_config_apply(tui::ConfigApplyStatus::RolledBack {
+            reason: format!("Backend switch failed: {err}"),
+        });
+        return;
+    }
+    // 5-second status notice (matches `CONFIG_APPLY_AUTO_DISMISS_SECS`).
+    let reason = format!("Backend switched → {label} ({short_name})");
+    state.record_config_apply(tui::ConfigApplyStatus::Ok { reason });
+    tracing::info!(stt_model = %short_name, label = %label, "model manager selection applied");
+}
+
 fn sync_playback_service_state(
     playback_service: &SharedPlaybackService,
     config: &config::AppConfig,
@@ -3401,13 +3457,11 @@ fn event_loop(
 ///
 /// `in_lang_prompt` and `in_config_editor` route character input to the active
 /// overlay instead of the normal command set.
-pub(crate) fn key_to_action(
-    key: &KeyEvent,
-    in_lang_prompt: bool,
-    in_config_editor: bool,
-    in_wizard: bool,
-    picker_field_active: bool,
-) -> Option<UserAction> {
+pub(crate) fn 
+key_to_action(    key: &KeyEvent,    in_lang_prompt: bool,    in_config_editor: bool,    in_wizard: bool,    picker_field_active: bool,    in_model_manager: bool,) -> Option<UserAction> {
+    if in_model_manager {
+        return Some(UserAction::ModelManagerKey(*key));
+    }
     if in_wizard {
         return match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -3542,6 +3596,8 @@ pub(crate) fn key_to_action(
         KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::ToggleMetrics),
         KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::PromptLanguage),
         KeyCode::Char('s') | KeyCode::Char('S') => Some(UserAction::OpenSettings),
+        // T20 (issue #828): open the ModelManager overlay.
+        KeyCode::Char('b') | KeyCode::Char('B') => Some(UserAction::OpenModelManager),
         KeyCode::Char('r') | KeyCode::Char('R') => Some(UserAction::ReloadConfig),
         KeyCode::Char('?') => Some(UserAction::ToggleHelp),
         // CTRL-01 — real-time gain/volume controls (issue #454).
@@ -3583,6 +3639,7 @@ fn keyboard_task(
     config_editor_active: Arc<AtomicBool>,
     picker_field_active: Arc<AtomicBool>,
     wizard_active: Arc<AtomicBool>,
+    model_manager_active: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
 ) {
     while !shutdown.load(Ordering::Relaxed) {
@@ -3601,13 +3658,9 @@ fn keyboard_task(
                 let in_config_editor = config_editor_active.load(Ordering::Relaxed);
                 let picker_active = picker_field_active.load(Ordering::Relaxed);
                 let in_wizard = wizard_active.load(Ordering::Relaxed);
-                if let Some(action) = key_to_action(
-                    &key,
-                    in_lang_prompt,
-                    in_config_editor,
-                    in_wizard,
-                    picker_active,
-                ) {
+                let in_model_manager = model_manager_active.load(Ordering::Relaxed);
+                if let Some(action) = 
+key_to_action(                    &key,                    in_lang_prompt,                    in_config_editor,                    in_wizard,                    picker_active,                    in_model_manager,                ) {
                     if key_tx.send(action).is_err() {
                         // Receiver dropped; app is shutting down.
                         break;
@@ -4176,6 +4229,69 @@ fn handle_action(
 
         UserAction::AnyKey => {}
 
+        // T20 (issue #828): open the ModelManager overlay.  The
+        // keymap layer (B / Ctrl+B) routes here so the same
+        // dismiss-other-overlays logic runs as for the
+        // config editor.
+        UserAction::OpenModelManager => {
+            state.open_model_manager();
+        }
+
+        // T20 (issue #828): forward a key event into the
+        // ModelManager keymap and act on the resulting
+        // `ModelManagerAction`.  `Enter` writes the chosen model
+        // into `AppConfig::stt_model`, flips `stt_provider` to
+        // `"local"`, saves the config, and surfaces a 5-second
+        // status notice.  `Esc` just closes the overlay.
+        UserAction::ModelManagerKey(key) => {
+            use crate::tui::model_manager_keymap::{handle_model_manager_key, ModelManagerAction};
+            let action = {
+                let mut mm_state = state
+                    .model_manager
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                handle_model_manager_key(&mut mm_state, *key)
+            };
+            match action {
+                ModelManagerAction::None => {}
+                ModelManagerAction::Close => {
+                    state.close_model_manager();
+                }
+                ModelManagerAction::CyclePreset => {
+                    // Preset cycle is already exposed via Ctrl+P
+                    // on the main keymap; the ModelManager's
+                    // identical binding is a no-op so the user
+                    // doesn't accidentally cycle while focused
+                    // on the overlay.
+                }
+                ModelManagerAction::Select { tab: _, index: _ } => {
+                    // The select came from the keymap, but the
+                    // orchestrator owns the actual config write
+                    // + provider reload.  Re-route through the
+                    // shared `model_manager_apply` helper so the
+                    // (tab, index) pair is read out of the live
+                    // state, not the (stale) keymap return.
+                    if let Some((_tab, _idx, short_name, label)) = state.model_manager_apply() {
+                        apply_model_manager_selection(
+                            state,
+                            cfg_path,
+                            current_config,
+                            &short_name,
+                            label,
+                        );
+                        state.close_model_manager();
+                    } else {
+                        // History tab (or out-of-range).  Show a
+                        // 5-second status notice and keep the
+                        // overlay open.
+                        state.record_config_apply(tui::ConfigApplyStatus::Ok {
+                            reason: "History tab is read-only — no model to apply".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
         // Tab — DM-04 dual-pane focus toggle.
         UserAction::TogglePaneFocus => {
             state.toggle_pane_focus();
@@ -4527,8 +4643,8 @@ mod tests {
         let key = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
 
         assert_eq!(
-            key_to_action(&key, false, true, false, false),
-            Some(UserAction::ConfigCycleCaptureDevice)
+            
+key_to_action(&key, false, true, false, false, false),            Some(UserAction::ConfigCycleCaptureDevice)
         );
     }
 
@@ -4545,39 +4661,39 @@ mod tests {
 
         // picker NOT active → Tab/Shift+Tab advance/retreat through fields
         assert_eq!(
-            key_to_action(&tab, false, true, false, false),
-            Some(UserAction::ConfigNextField)
+            
+key_to_action(&tab, false, true, false, false, false),            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            key_to_action(&shift_tab, false, true, false, false),
-            Some(UserAction::ConfigPrevField)
+            
+key_to_action(&shift_tab, false, true, false, false, false),            Some(UserAction::ConfigPrevField)
         );
         assert_eq!(
-            key_to_action(&down, false, true, false, false),
-            Some(UserAction::ConfigNextField)
+            
+key_to_action(&down, false, true, false, false, false),            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            key_to_action(&up, false, true, false, false),
-            Some(UserAction::ConfigPrevField)
+            
+key_to_action(&up, false, true, false, false, false),            Some(UserAction::ConfigPrevField)
         );
 
         // picker IS active → ↑/↓ cycle device picker; Tab/Shift+Tab still
         // advance/retreat (preserved so PTY tests that use Tab for navigation work)
         assert_eq!(
-            key_to_action(&tab, false, true, false, true),
-            Some(UserAction::ConfigNextField)
+            
+key_to_action(&tab, false, true, false, true, false),            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            key_to_action(&shift_tab, false, true, false, true),
-            Some(UserAction::ConfigPrevField)
+            
+key_to_action(&shift_tab, false, true, false, true, false),            Some(UserAction::ConfigPrevField)
         );
         assert_eq!(
-            key_to_action(&down, false, true, false, true),
-            Some(UserAction::ConfigPickerNext)
+            
+key_to_action(&down, false, true, false, true, false),            Some(UserAction::ConfigPickerNext)
         );
         assert_eq!(
-            key_to_action(&up, false, true, false, true),
-            Some(UserAction::ConfigPickerPrev)
+            
+key_to_action(&up, false, true, false, true, false),            Some(UserAction::ConfigPickerPrev)
         );
     }
 
@@ -4740,8 +4856,8 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
 
         assert_eq!(
-            key_to_action(&key, false, false, false, false),
-            Some(UserAction::AnyKey)
+            
+key_to_action(&key, false, false, false, false, false),            Some(UserAction::AnyKey)
         );
     }
 
@@ -4751,8 +4867,8 @@ mod tests {
             let key = KeyEvent::new(key_code, KeyModifiers::NONE);
 
             assert_eq!(
-                key_to_action(&key, false, false, false, false),
-                Some(UserAction::OpenSettings)
+                
+key_to_action(&key, false, false, false, false, false),                Some(UserAction::OpenSettings)
             );
         }
     }
@@ -4807,47 +4923,27 @@ mod tests {
     fn config_editor_keys_route_when_settings_are_open() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
         assert_eq!(
-            key_to_action(&key, false, true, false, false),
-            Some(UserAction::ConfigChar('x'))
+            
+key_to_action(&key, false, true, false, false, false),            Some(UserAction::ConfigChar('x'))
         );
         assert_eq!(
-            key_to_action(
-                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
-                false,
-                true,
-                false,
-                false
-            ),
+            
+key_to_action(                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),                false,                true,                false,                false,                false            ),
             Some(UserAction::Quit)
         );
         assert_eq!(
-            key_to_action(
-                &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
-                false,
-                true,
-                false,
-                false
-            ),
+            
+key_to_action(                &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),                false,                true,                false,                false,                false            ),
             Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            key_to_action(
-                &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
-                false,
-                true,
-                false,
-                false
-            ),
+            
+key_to_action(                &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),                false,                true,                false,                false,                false            ),
             Some(UserAction::ConfigInput(InputRequest::GoToPrevChar))
         );
         assert_eq!(
-            key_to_action(
-                &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
-                false,
-                true,
-                false,
-                false
-            ),
+            
+key_to_action(                &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),                false,                true,                false,                false,                false            ),
             Some(UserAction::ConfigInput(InputRequest::DeleteNextChar))
         );
     }

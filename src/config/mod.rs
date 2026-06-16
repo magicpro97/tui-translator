@@ -870,6 +870,17 @@ pub struct AppConfig {
     #[serde(default = "default_stt_provider")]
     pub stt_provider: String,
 
+    /// Optional model id for the local STT provider, set by the
+    /// T20 (#828) backend-switch wiring when the user presses
+    /// `Enter` in the ModelManager overlay.  Holds the
+    /// `ModelId::display_name` short name (e.g. `"tiny.en"`,
+    /// `"funasr-medium"`) so the next `transcribe` call uses the
+    /// chosen model without restarting the TUI.  `None` means
+    /// "let the local STT builder pick the default model from
+    /// the manifest" (legacy v3 behaviour).
+    #[serde(default)]
+    pub stt_model: Option<String>,
+
     /// Machine-translation provider backend.  Accepted values:
     /// - `"local"` *(default when built with `local-mt` feature, issue #421)* —
     ///   CPU-local OPUS-MT when built with `local-mt` and ONNX Runtime 1.20.x
@@ -1243,6 +1254,7 @@ impl Default for AppConfig {
             virtual_device_patterns: Vec::new(),
             capture_device: None,
             stt_provider: default_stt_provider(),
+            stt_model: None,
             mt_provider: default_mt_provider(),
             llm_model_path: None,
             mt_cloud_fallback: None,
@@ -1289,6 +1301,7 @@ impl std::fmt::Debug for AppConfig {
             .field("virtual_device_patterns", &self.virtual_device_patterns)
             .field("capture_device", &self.capture_device)
             .field("stt_provider", &self.stt_provider)
+            .field("stt_model", &self.stt_model)
             .field("mt_provider", &self.mt_provider)
             .field("llm_model_path", &self.llm_model_path)
             .field("mt_cloud_fallback", &self.mt_cloud_fallback)

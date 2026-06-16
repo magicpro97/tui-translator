@@ -18,8 +18,17 @@
 //! empty (T11 wires the history log).
 
 use super::model_manager_tokens::ModelManagerTab;
+use crate::providers::local::manifest::ModelId;
 
 /// A single row in a tab's catalog.
+///
+/// `model_id` is the stable, machine-readable identifier (one of
+/// the 11 built-in `ModelId` variants from
+/// `src/providers/local/manifest.rs`).  The orchestrator writes
+/// `model_id`'s short name (via `ModelId::display_name`) into the
+/// new `AppConfig::stt_model` field (T20, #828) so the chosen
+/// model survives a config save+reload and the next `transcribe`
+/// call uses it without restarting the TUI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
     /// Display label, e.g. `"ggml-medium.bin"`.
@@ -28,6 +37,11 @@ pub struct Entry {
     /// T11 history log, T12 backend selection). For v3 the value
     /// is the `ModelId::ALL_*` short name (`"Whisper"`, `"FunAsr"`).
     pub kind: &'static str,
+    /// Built-in model id.  Used by the T20 (#828) backend-switch
+    /// wiring: pressing Enter on this row writes `model_id`'s
+    /// short name to `AppConfig::stt_model` and triggers a
+    /// provider reload.
+    pub model_id: ModelId,
 }
 
 /// Tab catalog (per-tab).
@@ -40,34 +54,42 @@ const WHISPER_CATALOG: &[Entry] = &[
     Entry {
         label: "ggml-tiny.en.bin",
         kind: "Whisper",
+        model_id: ModelId::TinyEn,
     },
     Entry {
         label: "ggml-tiny.bin",
         kind: "Whisper",
+        model_id: ModelId::Tiny,
     },
     Entry {
         label: "ggml-base.en.bin",
         kind: "Whisper",
+        model_id: ModelId::BaseEn,
     },
     Entry {
         label: "ggml-base.bin",
         kind: "Whisper",
+        model_id: ModelId::Base,
     },
     Entry {
         label: "ggml-small.en.bin",
         kind: "Whisper",
+        model_id: ModelId::SmallEn,
     },
     Entry {
         label: "ggml-small.bin",
         kind: "Whisper",
+        model_id: ModelId::Small,
     },
     Entry {
         label: "ggml-medium.en.bin",
         kind: "Whisper",
+        model_id: ModelId::MediumEn,
     },
     Entry {
         label: "ggml-medium.bin",
         kind: "Whisper",
+        model_id: ModelId::Medium,
     },
 ];
 
@@ -75,14 +97,17 @@ const FUNASR_CATALOG: &[Entry] = &[
     Entry {
         label: "sherpa-onnx-funasr-small",
         kind: "FunAsr",
+        model_id: ModelId::FunAsrSmall,
     },
     Entry {
         label: "sherpa-onnx-funasr-medium",
         kind: "FunAsr",
+        model_id: ModelId::FunAsrMedium,
     },
     Entry {
         label: "sherpa-onnx-funasr-large",
         kind: "FunAsr",
+        model_id: ModelId::FunAsrLarge,
     },
 ];
 
@@ -154,6 +179,17 @@ impl ModelManagerState {
     pub fn model_kind(&self, tab: ModelManagerTab, idx: usize) -> Option<&'static str> {
         let entry = TABS[tab.tab_index()].entries.get(idx)?;
         Some(entry.kind)
+    }
+
+    /// `ModelId` for a specific `(tab, index)`. Returns `None` if
+    /// `index >= count`.  Used by the T20 (#828) backend-switch
+    /// wiring: pressing Enter on this row returns
+    /// `Some(model_id)` so the orchestrator can write
+    /// `ModelId::display_name` to `AppConfig::stt_model` and
+    /// trigger a provider reload.
+    pub fn model_id_for(&self, tab: ModelManagerTab, idx: usize) -> Option<ModelId> {
+        let entry = TABS[tab.tab_index()].entries.get(idx)?;
+        Some(entry.model_id)
     }
 
     /// Move to the next tab (cycles back to the first after the last).

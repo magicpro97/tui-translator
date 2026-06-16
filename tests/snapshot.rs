@@ -33,6 +33,9 @@ mod sys_caps;
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
+#[path = "../src/providers/mod.rs"]
+mod providers;
+
 #[path = "../src/readiness.rs"]
 mod readiness;
 
