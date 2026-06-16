@@ -31,6 +31,7 @@ mod help_overlay_locale_tests;
 pub mod key_hint;
 #[cfg(test)]
 mod layout_tests;
+pub mod model_manager_tokens;
 pub mod onboarding;
 pub mod rolling_frame_stats;
 #[cfg(test)]

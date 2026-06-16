@@ -68,7 +68,7 @@ mod metrics;
 mod metrics_export;
 mod pipeline;
 mod providers;
-mod quality_preset;
+pub mod quality_preset;
 #[cfg(test)]
 mod quality_preset_env_tests;
 #[cfg(test)]
@@ -86,7 +86,7 @@ mod session_replay_cli;
 #[cfg(test)]
 mod session_replay_cli_tests;
 mod storage;
-mod sys_caps;
+pub mod sys_caps;
 #[cfg(test)]
 mod sys_caps_tests;
 mod tui;

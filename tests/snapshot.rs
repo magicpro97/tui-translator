@@ -24,6 +24,12 @@ mod config;
 #[path = "../src/i18n/mod.rs"]
 mod i18n;
 
+#[path = "../src/quality_preset.rs"]
+mod quality_preset;
+
+#[path = "../src/sys_caps.rs"]
+mod sys_caps;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 

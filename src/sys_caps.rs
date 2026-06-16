@@ -39,7 +39,7 @@
 //! internal test refs (e.g. `detect_inner`, `detect_physical_cores`)
 //! still surface warnings in test builds.
 
-#![cfg_attr(not(test), allow(dead_code))]
+#![allow(dead_code)]
 
 use std::sync::OnceLock;
 
@@ -153,11 +153,12 @@ fn detect_physical_cores(sys: &System) -> usize {
 /// Fallback when [`sysinfo::System::physical_core_count`] returns
 /// `None` or `0`. Tries `std::thread::available_parallelism` (which
 /// usually reports logical cores) and finally `1`.
+#[allow(dead_code)]
 pub(crate) fn fallback_physical_cores() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .max(1)
+    match std::thread::available_parallelism() {
+        Ok(n) if n.get() > 0 => n.get(),
+        _ => 1,
+    }
 }
 
 /// Pure decision over a `physical_core_count` probe. Returns

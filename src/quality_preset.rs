@@ -26,7 +26,7 @@
 //! | Medium    | Performance      |
 //! | High      | Best             |
 
-#![cfg_attr(not(test), allow(dead_code))]
+#![allow(dead_code)]
 
 use std::fmt;
 use std::str::FromStr;
