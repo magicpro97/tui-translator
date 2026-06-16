@@ -70,6 +70,19 @@ impl ModelManagerTab {
             Self::History => "H",
         }
     }
+
+    /// Move to the next tab (cycles back to the first after the last).
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
+    /// Move to the previous tab (cycles forward to the last before
+    /// the first).
+    pub fn previous(self) -> Self {
+        let i = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(i + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
 }
 
 impl std::fmt::Display for ModelManagerTab {
