@@ -6,8 +6,9 @@
 //!
 //! # Responsibilities
 //!
-//! * [`ModelId`] — strongly-typed identifier for every Whisper variant the
-//!   application knows about.
+//! * [`ModelId`] — strongly-typed identifier for every Whisper / FunASR
+//!   model variant the application knows about (v3, #811 adds 3
+//!   FunASR variants).
 //! * [`ModelSpec`] — static metadata for a single model: file name, download
 //!   URL, expected size, SHA-256 checksum, and license info.
 //! * [`ModelManifest`] — the built-in catalogue; use [`ModelManifest::builtin`]
@@ -29,12 +30,28 @@ const WHISPER_MIT_LICENSE: &str = include_str!("../../../assets/licenses/whisper
 /// Verbatim Apache 2.0 license text bundled with the OPUS-MT model specs.
 const OPUS_MT_APACHE_LICENSE: &str = include_str!("../../../assets/licenses/opus-mt-apache.txt");
 
+/// Verbatim Apache 2.0 license text bundled with the FunASR / sherpa-onnx
+/// model specs.
+///
+/// FunASR (k2-fsa/sherpa-onnx) ships its model weights under Apache-2.0;
+/// see <https://github.com/k2-fsa/sherpa-onnx/blob/main/LICENSE>. The
+/// text is identical to the OPUS-MT Apache-2.0 license, so we
+/// reuse `opus-mt-apache.txt` rather than duplicating the body
+/// (the canonical Apache 2.0 license is a single fixed text;
+/// see <https://www.apache.org/licenses/LICENSE-2.0.txt>).
+const FUNASR_APACHE_LICENSE: &str = include_str!("../../../assets/licenses/opus-mt-apache.txt");
+
 /// Stable version string for the built-in OPUS-MT ja→vi consent manifest.
 pub const OPUS_MT_JA_VI_VERSION: &str = "2024-01-01";
 
 /// License URL for the Helsinki-NLP OPUS-MT ja→vi model.
 pub const OPUS_MT_JA_VI_LICENSE_URL: &str =
     "https://huggingface.co/Helsinki-NLP/opus-mt-ja-vi/blob/main/LICENSE";
+
+/// Base URL for the k2-fsa/sherpa-onnx HuggingFace organization where the
+/// FunASR model weights are published. T7 (LocalFunAsrSttProvider) pins
+/// the exact model ID; the URL is only used for license display here.
+const FUNASR_LICENSE_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/blob/main/LICENSE";
 
 // ── Model identifier ─────────────────────────────────────────────────────────
 
@@ -43,6 +60,11 @@ pub const OPUS_MT_JA_VI_LICENSE_URL: &str =
 /// The variants mirror the publicly available GGML-format weights published by
 /// the whisper.cpp project.  `*En` variants are English-only and faster;
 /// multi-lingual variants are suffixed with the parameter count only.
+///
+/// v3 (#811): adds 3 FunASR variants for the k2-fsa/sherpa-onnx
+/// backend. The FunASR variants are NOT used by the Whisper
+/// provider; they are exposed here so a single `ModelId` can
+/// drive the ModelManager UI (T8–T11).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ModelId {
@@ -62,11 +84,25 @@ pub enum ModelId {
     MediumEn,
     /// `ggml-medium.bin` — Multi-lingual medium, ~1.43 GB.
     Medium,
+    /// FunASR Paraformer-small (v3, #811). Multilingual, fast,
+    /// lower accuracy on long-form Vietnamese. Good for the
+    /// Performance preset.
+    FunAsrSmall,
+    /// FunASR Paraformer-medium (v3, #811). Multilingual, balanced
+    /// speed/accuracy. Good for the default Auto preset.
+    FunAsrMedium,
+    /// FunASR Paraformer-large (v3, #811). Multilingual, highest
+    /// accuracy, slowest. Good for the Best preset on a 16+ GiB
+    /// host.
+    FunAsrLarge,
 }
 
 impl ModelId {
-    /// Built-in Whisper model identifiers accepted by local STT configuration.
-    pub const ALL: [Self; 8] = [
+    /// Built-in model identifiers accepted by local STT configuration.
+    /// Includes both the 8 Whisper variants and the 3 FunASR variants
+    /// (v3, #811). Order matches the [`Self::display_name`] table
+    /// for stable, predictable iteration.
+    pub const ALL: [Self; 11] = [
         ModelId::TinyEn,
         ModelId::Tiny,
         ModelId::BaseEn,
@@ -75,6 +111,9 @@ impl ModelId {
         ModelId::Small,
         ModelId::MediumEn,
         ModelId::Medium,
+        ModelId::FunAsrSmall,
+        ModelId::FunAsrMedium,
+        ModelId::FunAsrLarge,
     ];
 
     /// Human-readable name used in log messages and error diagnostics.
@@ -88,6 +127,9 @@ impl ModelId {
             ModelId::Small => "small",
             ModelId::MediumEn => "medium.en",
             ModelId::Medium => "medium",
+            ModelId::FunAsrSmall => "funasr-small",
+            ModelId::FunAsrMedium => "funasr-medium",
+            ModelId::FunAsrLarge => "funasr-large",
         }
     }
 
@@ -102,11 +144,13 @@ impl ModelId {
             "small" => Some(ModelId::Small),
             "medium.en" => Some(ModelId::MediumEn),
             "medium" => Some(ModelId::Medium),
+            "funasr-small" => Some(ModelId::FunAsrSmall),
+            "funasr-medium" => Some(ModelId::FunAsrMedium),
+            "funasr-large" => Some(ModelId::FunAsrLarge),
             _ => None,
         }
     }
 }
-
 impl std::fmt::Display for ModelId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.display_name())
@@ -360,6 +404,41 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
         license_text: WHISPER_MIT_LICENSE,
     },
+    // ── v3 (#811): FunASR / sherpa-onnx variants ──────────────────────────
+    //
+    // Sizes and SHA-256 values are placeholders. T7
+    // (LocalFunAsrSttProvider) will pin the exact k2-fsa release
+    // URLs and the verified SHA-256 digests when it lands. The
+    // shape is locked now so the ModelManager UI (T8–T11) and
+    // the cache layer (manifest_find, model_download) can compile
+    // against the new variants.
+    ModelSpec {
+        id: ModelId::FunAsrSmall,
+        file_name: "sherpa-onnx-funasr-small.int8.onnx",
+        download_url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-funasr-small.int8.onnx",
+        size_bytes: 224_000_000,
+        sha256: "0000000000000000000000000000000000000000000000000000000000000001",
+        license_url: FUNASR_LICENSE_URL,
+        license_text: FUNASR_APACHE_LICENSE,
+    },
+    ModelSpec {
+        id: ModelId::FunAsrMedium,
+        file_name: "sherpa-onnx-funasr-medium.int8.onnx",
+        download_url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-funasr-medium.int8.onnx",
+        size_bytes: 600_000_000,
+        sha256: "0000000000000000000000000000000000000000000000000000000000000002",
+        license_url: FUNASR_LICENSE_URL,
+        license_text: FUNASR_APACHE_LICENSE,
+    },
+    ModelSpec {
+        id: ModelId::FunAsrLarge,
+        file_name: "sherpa-onnx-funasr-large.int8.onnx",
+        download_url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-funasr-large.int8.onnx",
+        size_bytes: 1_200_000_000,
+        sha256: "0000000000000000000000000000000000000000000000000000000000000003",
+        license_url: FUNASR_LICENSE_URL,
+        license_text: FUNASR_APACHE_LICENSE,
+    },
 ];
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -400,6 +479,9 @@ mod tests {
             ModelId::Small,
             ModelId::MediumEn,
             ModelId::Medium,
+            ModelId::FunAsrSmall,
+            ModelId::FunAsrMedium,
+            ModelId::FunAsrLarge,
         ] {
             assert!(
                 manifest.find(id).is_some(),
@@ -445,5 +527,228 @@ mod tests {
                 spec.sha256
             );
         }
+    }
+
+    // ── v3 (#811): 3 FunASR variants ─────────────────────────────────────
+
+    #[test]
+    fn funasr_variants_have_display_names() {
+        assert_eq!(ModelId::FunAsrSmall.display_name(), "funasr-small");
+        assert_eq!(ModelId::FunAsrMedium.display_name(), "funasr-medium");
+        assert_eq!(ModelId::FunAsrLarge.display_name(), "funasr-large");
+    }
+
+    #[test]
+    fn funasr_variants_parse_round_trip() {
+        for id in [
+            ModelId::FunAsrSmall,
+            ModelId::FunAsrMedium,
+            ModelId::FunAsrLarge,
+        ] {
+            let name = id.display_name();
+            assert_eq!(
+                ModelId::parse(name),
+                Some(id),
+                "round-trip failed for {name}"
+            );
+            assert_eq!(
+                format!("{id}"),
+                name,
+                "Display trait diverges from display_name() for {id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn funasr_variants_are_in_all_array() {
+        assert!(ModelId::ALL.contains(&ModelId::FunAsrSmall));
+        assert!(ModelId::ALL.contains(&ModelId::FunAsrMedium));
+        assert!(ModelId::ALL.contains(&ModelId::FunAsrLarge));
+        assert_eq!(ModelId::ALL.len(), 11);
+    }
+
+    #[test]
+    fn funasr_variants_have_specs_in_manifest() {
+        let manifest = ModelManifest::builtin();
+        for id in [
+            ModelId::FunAsrSmall,
+            ModelId::FunAsrMedium,
+            ModelId::FunAsrLarge,
+        ] {
+            let spec = manifest
+                .find(id)
+                .unwrap_or_else(|| panic!("FunASR variant {id:?} missing from manifest"));
+            assert!(!spec.file_name.is_empty(), "file_name empty for {id:?}");
+            assert!(
+                !spec.download_url.is_empty(),
+                "download_url empty for {id:?}"
+            );
+            assert!(spec.size_bytes > 0, "size_bytes zero for {id:?}");
+            assert_eq!(spec.sha256.len(), 64, "sha256 wrong length for {id:?}");
+            assert!(
+                spec.sha256
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                "sha256 not lowercase hex for {id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn funasr_variants_have_distinct_file_names() {
+        let manifest = ModelManifest::builtin();
+        let files: Vec<&str> = [
+            ModelId::FunAsrSmall,
+            ModelId::FunAsrMedium,
+            ModelId::FunAsrLarge,
+        ]
+        .iter()
+        .map(|id| manifest.find(*id).unwrap().file_name)
+        .collect();
+        let unique: std::collections::HashSet<_> = files.iter().collect();
+        assert_eq!(
+            unique.len(),
+            3,
+            "FunASR file_names are not all distinct: {files:?}"
+        );
+    }
+
+    #[test]
+    fn funasr_specs_cite_apache_license() {
+        // T5 deviates from "T6 licenses" by hard-coding the
+        // Apache-2.0 attribution now (T6 will add a generic
+        // notices file). Pin the contract here.
+        let manifest = ModelManifest::builtin();
+        for id in [
+            ModelId::FunAsrSmall,
+            ModelId::FunAsrMedium,
+            ModelId::FunAsrLarge,
+        ] {
+            let spec = manifest.find(id).unwrap();
+            assert!(
+                spec.license_text.contains("Apache"),
+                "license_text must cite Apache for {id:?}"
+            );
+            assert!(
+                spec.license_url.contains("k2-fsa"),
+                "license_url must point at k2-fsa for {id:?}"
+            );
+        }
+    }
+
+    // ── OPUS-MT helpers (previously uncovered L197-281) ──────────────────
+
+    #[test]
+    fn opus_mt_ja_vi_consent_manifest_has_required_fields() {
+        let cm = opus_mt_ja_vi_consent_manifest();
+        assert_eq!(cm.name, "opus-mt-ja-vi");
+        assert!(!cm.version.is_empty(), "version empty");
+        assert!(!cm.license_url.is_empty(), "license_url empty");
+        assert!(!cm.license_text.is_empty(), "license_text empty");
+        assert!(
+            cm.license_text.contains("Apache"),
+            "license_text doesn't mention Apache"
+        );
+    }
+
+    #[test]
+    fn opus_mt_ja_vi_consent_manifest_validates() {
+        use super::super::bootstrap::ModelConsentManifest;
+        let cm: ModelConsentManifest = opus_mt_ja_vi_consent_manifest();
+        cm.validate()
+            .expect("built-in consent manifest must validate");
+    }
+
+    #[test]
+    fn opus_mt_ja_vi_bundle_manifest_has_seven_files() {
+        let bm = opus_mt_ja_vi_bundle_manifest();
+        assert_eq!(bm.id, "opus-mt-ja-vi");
+        assert_eq!(
+            bm.files.len(),
+            7,
+            "expected 7 OPUS-MT bundle files, got {}",
+            bm.files.len()
+        );
+        assert_eq!(bm.license, "Apache-2.0");
+        assert!(!bm.source_url.is_empty());
+        assert!(!bm.display_name.is_empty());
+        assert!(!bm.version.is_empty());
+    }
+
+    #[test]
+    fn opus_mt_ja_vi_bundle_manifest_files_have_distinct_relative_paths() {
+        let bm = opus_mt_ja_vi_bundle_manifest();
+        let paths: Vec<String> = bm.files.iter().map(|f| f.relative_path.clone()).collect();
+        let unique: std::collections::HashSet<_> = paths.iter().collect();
+        assert_eq!(
+            unique.len(),
+            paths.len(),
+            "duplicate relative_paths in OPUS-MT bundle: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn opus_mt_ja_vi_bundle_manifest_files_have_required_fields() {
+        let bm = opus_mt_ja_vi_bundle_manifest();
+        for f in &bm.files {
+            assert!(!f.relative_path.is_empty(), "relative_path empty");
+            assert!(
+                !f.download_url.is_empty(),
+                "download_url empty for {}",
+                f.relative_path
+            );
+            assert!(f.size_bytes > 0, "size_bytes zero for {}", f.relative_path);
+            assert_eq!(
+                f.sha256.len(),
+                64,
+                "sha256 wrong length for {}",
+                f.relative_path
+            );
+            assert!(
+                f.sha256
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                "sha256 not lowercase hex for {}",
+                f.relative_path
+            );
+            assert!(
+                f.download_url
+                    .starts_with("https://github.com/magicpro97/tui-translator/releases/"),
+                "download_url not from the GitHub Release for {}: {}",
+                f.relative_path,
+                f.download_url
+            );
+        }
+    }
+
+    #[test]
+    fn opus_mt_ja_vi_bundle_manifest_expected_file_names() {
+        let bm = opus_mt_ja_vi_bundle_manifest();
+        let names: std::collections::HashSet<String> =
+            bm.files.iter().map(|f| f.relative_path.clone()).collect();
+        let expected: std::collections::HashSet<String> = [
+            "encoder_model.onnx",
+            "decoder_model.onnx",
+            "source.spm",
+            "target.spm",
+            "vocab.json",
+            "config.json",
+            "generation_config.json",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            names, expected,
+            "OPUS-MT bundle file names diverged from the canonical set"
+        );
+    }
+
+    #[test]
+    fn opus_mt_ja_vi_bundle_manifest_validates() {
+        use super::super::ModelBundleManifest;
+        let bm: ModelBundleManifest = opus_mt_ja_vi_bundle_manifest();
+        bm.validate()
+            .expect("built-in bundle manifest must validate");
     }
 }
