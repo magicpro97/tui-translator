@@ -4,6 +4,24 @@
 
 use super::*;
 
+/// Render a byte count as a human-readable string (e.g.
+/// `1.5 GiB`, `256 MiB`).  v3 (issue #819): used by the
+/// HardwareSurvey render arm.
+fn format_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    const GIB: u64 = 1024 * MIB;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 /// Produce a deterministic list of display lines for the current wizard step.
 ///
 /// This renderer is intentionally ratatui-free so it can be unit-tested
@@ -88,6 +106,43 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 String::new(),
                 "  [Enter] Continue  [Esc] Back".to_owned(),
             ]
+        }
+        OnboardingStep::HardwareSurvey {
+            caps,
+            selected_preset,
+        } => {
+            let recommended = crate::quality_preset::QualityPreset::Auto.resolve_for(caps);
+            let preset_label = selected_preset.as_label();
+            let mut lines = vec![
+                "── Hardware Survey ───────────────────────────────────────".to_owned(),
+                String::new(),
+                "  Detected system capabilities:".to_owned(),
+                format!("    RAM  : {}", format_bytes(caps.total_memory_bytes)),
+                format!("    Cores: {}", caps.physical_cores),
+                format!("    GPU  : {:?}", caps.gpu),
+                String::new(),
+                format!("  Recommended preset: {}", recommended.as_label()),
+                String::new(),
+                "  Choose your quality preset:".to_owned(),
+            ];
+            for (i, p) in crate::quality_preset::QualityPreset::ALL.iter().enumerate() {
+                let n = i + 1;
+                let marker = if *p == *selected_preset { "►" } else { " " };
+                let recommended_marker = if *p == recommended {
+                    " (recommended)"
+                } else {
+                    ""
+                };
+                lines.push(format!(
+                    "  {marker} {n}. {}{recommended_marker}",
+                    p.as_label()
+                ));
+            }
+            lines.push(String::new());
+            lines.push(format!(
+                "  Selection: {preset_label}  [1-4] Select  [r] Recommend  [Enter] Confirm  [↑↓] Cycle  [Esc] Back"
+            ));
+            lines
         }
         OnboardingStep::Confirmation => {
             let key_line = if state.branch.requires_google_key() {

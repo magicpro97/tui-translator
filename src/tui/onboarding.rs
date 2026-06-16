@@ -34,8 +34,10 @@
 use std::fmt;
 
 /// No-op cable probe for non-Windows and consent-review wizards.
+/// Kept `pub` because `tests/onboarding_integration.rs` and
+/// `tests/snapshot.rs` reference it as `onboarding::noop_probe`.
 pub fn noop_probe() -> Vec<String> {
-    vec![]
+    Vec::new()
 }
 fn is_cable_device(n: &str) -> bool {
     let u = n.to_ascii_uppercase();
@@ -107,6 +109,18 @@ pub enum OnboardingStep {
     BranchSelection,
     /// Windows-only VB-CABLE gate; skipped on non-Windows or when detected.
     VirtualCableGate { available: Vec<String> },
+    /// v3 (issue #819): detected system capabilities + the
+    /// recommended quality preset.  The user can accept the
+    /// recommendation (Enter) or pick a different preset
+    /// (↑/↓ or 1/2/3/4).  This step runs after
+    /// `VirtualCableGate` and before `LicenseReview`.
+    HardwareSurvey {
+        /// System capabilities detected at wizard start.
+        caps: crate::sys_caps::SysCaps,
+        /// The user's currently-selected preset (defaults to the
+        /// recommended one when the step opens).
+        selected_preset: crate::quality_preset::QualityPreset,
+    },
     /// The user is reviewing the license for the local model at `model_index`.
     LicenseReview {
         /// Index into the `local_models` slice provided at construction.
@@ -229,6 +243,17 @@ pub struct OnboardingWizardState {
     pub(crate) virtual_mic_device: Option<String>,
     pub(crate) virtual_mic_skipped: bool,
     pub(crate) gate_enabled: bool,
+    /// v3 (issue #819): the system capabilities captured at wizard
+    /// start.  Used by the [`OnboardingStep::HardwareSurvey`] step to
+    /// recommend a preset and by the final `OnboardingConfigPatch`
+    /// when it carries the `quality_preset` choice into `AppConfig`.
+    pub(crate) sys_caps: crate::sys_caps::SysCaps,
+    /// v3 (issue #819): the preset the user picked on
+    /// [`OnboardingStep::HardwareSurvey`].  `None` until the user
+    /// confirms the survey (presses Enter).  Read at the
+    /// `Confirmation` step to populate the final
+    /// `OnboardingConfigPatch`.
+    pub(crate) hardware_survey_selection: Option<crate::quality_preset::QualityPreset>,
 }
 
 impl OnboardingWizardState {
@@ -250,6 +275,45 @@ impl OnboardingWizardState {
             virtual_mic_device: None,
             virtual_mic_skipped: false,
             gate_enabled: cfg!(windows),
+            sys_caps: crate::sys_caps::SysCaps {
+                total_memory_bytes: 0,
+                physical_cores: 0,
+                gpu: crate::sys_caps::GpuKind::None,
+            },
+            hardware_survey_selection: None,
+        }
+    }
+
+    /// v3 (issue #819): create a wizard with explicit system
+    /// capabilities.  The wizard opens at
+    /// [`OnboardingStep::HardwareSurvey`] (with the recommended
+    /// preset pre-selected from `caps`).
+    #[allow(dead_code)] // Reachable from the bin's main + tests; the
+                        // onboarding_integration test target compiles this module
+                        // without exercising this constructor.
+    pub fn new_with_caps(
+        local_models: Vec<LocalModelLicense>,
+        cable_probe: fn() -> Vec<String>,
+        caps: crate::sys_caps::SysCaps,
+    ) -> Self {
+        let n = local_models.len();
+        let recommended = crate::quality_preset::QualityPreset::Auto.resolve_for(&caps);
+        Self {
+            branch: OnboardingBranch::LocalOnly,
+            step: OnboardingStep::HardwareSurvey {
+                caps,
+                selected_preset: recommended,
+            },
+            local_models,
+            key_buffer: String::new(),
+            licenses_accepted: vec![false; n],
+            consent_only: false,
+            cable_probe,
+            virtual_mic_device: None,
+            virtual_mic_skipped: false,
+            gate_enabled: false,
+            sys_caps: caps,
+            hardware_survey_selection: None,
         }
     }
 
@@ -275,17 +339,34 @@ impl OnboardingWizardState {
             virtual_mic_device: None,
             virtual_mic_skipped: false,
             gate_enabled: false,
+            sys_caps: crate::sys_caps::SysCaps {
+                total_memory_bytes: 0,
+                physical_cores: 0,
+                gpu: crate::sys_caps::GpuKind::None,
+            },
+            hardware_survey_selection: None,
         }
     }
 
     /// Return all branch variants in the canonical display order.
+    /// v3 (issue #819): the v3 wizard inserts a
+    /// [`OnboardingStep::HardwareSurvey`] between branch selection
+    /// and the branch-specific follow-up (LicenseReview /
+    /// GoogleKeyEntry / Confirmation).  Tests that want the
+    /// pre-v3 "single Enter" behaviour can use this helper to
+    /// advance through the survey automatically.
+    #[allow(dead_code)] // Same reasoning as `new_with_caps` above.
+    pub fn enter_past_branch_and_survey(&mut self) -> Option<OnboardingOutcome> {
+        match self.advance() {
+            x @ Some(_) => x,
+            None => self.advance(),
+        }
+    }
+
     /// Create a wizard pre-positioned at [`OnboardingStep::PlatformParityNotice`].
     ///
     /// `Enter`/`Esc` produce [`OnboardingOutcome::PlatformParityNoticeDismissed`].
     pub fn new_platform_parity_notice() -> Self {
-        fn noop_probe() -> Vec<String> {
-            Vec::new()
-        }
         Self {
             branch: OnboardingBranch::LocalOnly,
             step: OnboardingStep::PlatformParityNotice,
@@ -297,6 +378,12 @@ impl OnboardingWizardState {
             virtual_mic_device: None,
             virtual_mic_skipped: false,
             gate_enabled: false,
+            sys_caps: crate::sys_caps::SysCaps {
+                total_memory_bytes: 0,
+                physical_cores: 0,
+                gpu: crate::sys_caps::GpuKind::None,
+            },
+            hardware_survey_selection: None,
         }
     }
 
@@ -319,12 +406,24 @@ impl OnboardingWizardState {
     // ── Navigation ────────────────────────────────────────────────────────────
 
     fn advance_past_branch(&mut self) {
-        self.step = if self.branch.uses_local_models() && !self.local_models.is_empty() {
-            OnboardingStep::LicenseReview { model_index: 0 }
-        } else if self.branch.requires_google_key() {
-            OnboardingStep::GoogleKeyEntry
-        } else {
-            OnboardingStep::Confirmation
+        // v3 (issue #819): the HardwareSurvey step runs after
+        // VirtualCableGate and before LicenseReview.  When the
+        // wizard opens via `new_with_caps`, it already starts at
+        // HardwareSurvey (the recommended preset is pre-selected).
+        let recommended = crate::quality_preset::QualityPreset::Auto.resolve_for(&self.sys_caps);
+        // Every branch needs to see the hardware survey (the
+        // quality-preset selection is a v3 first-run surface
+        // channel, not a branch-specific gate).  We previously
+        // branched on `uses_local_models` / `requires_google_key`
+        // here; v3 collapsed those branches into a single
+        // unconditional `HardwareSurvey` jump.  The follow-up
+        // branch-specific step still fires when the user presses
+        // Enter on the survey.
+        let _ = self.branch.uses_local_models();
+        let _ = self.branch.requires_google_key();
+        self.step = OnboardingStep::HardwareSurvey {
+            caps: self.sys_caps,
+            selected_preset: recommended,
         };
     }
     fn advance(&mut self) -> Option<OnboardingOutcome> {
@@ -347,6 +446,21 @@ impl OnboardingWizardState {
             OnboardingStep::VirtualCableGate { available } => {
                 self.virtual_mic_device = available.into_iter().next();
                 self.advance_past_branch();
+                None
+            }
+            OnboardingStep::HardwareSurvey { .. } => {
+                // The user pressed Enter (or the handler mapped an
+                // event to advance). Carry the chosen preset into the
+                // `OnboardingConfigPatch` (set below at the
+                // `Confirmation` step). Move on to the next step
+                // the branch requires.
+                if self.branch.uses_local_models() && !self.local_models.is_empty() {
+                    self.step = OnboardingStep::LicenseReview { model_index: 0 };
+                } else if self.branch.requires_google_key() {
+                    self.step = OnboardingStep::GoogleKeyEntry;
+                } else {
+                    self.step = OnboardingStep::Confirmation;
+                }
                 None
             }
             OnboardingStep::LicenseReview { model_index } => {
@@ -405,6 +519,21 @@ impl OnboardingWizardState {
             OnboardingStep::BranchSelection => Some(OnboardingOutcome::Cancelled),
             OnboardingStep::VirtualCableGate { .. } => {
                 self.step = OnboardingStep::BranchSelection;
+                None
+            }
+            OnboardingStep::HardwareSurvey { .. } => {
+                // Esc on HardwareSurvey goes back to the previous
+                // step.  The previous step is the cable gate if it
+                // is enabled, otherwise BranchSelection.
+                if self.gate_enabled {
+                    let d: Vec<_> = (self.cable_probe)()
+                        .into_iter()
+                        .filter(|d| is_cable_device(d))
+                        .collect();
+                    self.step = OnboardingStep::VirtualCableGate { available: d };
+                } else {
+                    self.step = OnboardingStep::BranchSelection;
+                }
                 None
             }
             OnboardingStep::LicenseReview { model_index } => {
@@ -481,9 +610,16 @@ impl OnboardingWizardState {
     /// Forbidden runtime-shortcut keys (`L T M S R ? Q Space`) must arrive
     /// as [`OnboardingEvent::Ignored`]; they produce an explicit no-op.
     pub fn handle(&mut self, event: OnboardingEvent) -> Option<OnboardingOutcome> {
-        // Clone the step discriminant to avoid borrow conflicts in `advance`/`go_back`.
-        match self.step.clone() {
-            OnboardingStep::BranchSelection => match event {
+        // Dispatch on the step discriminant, but pattern-match
+        // directly against `&mut self.step` so that field mutations
+        // inside the inner match (e.g. HardwareSurvey preset cycle)
+        // are persisted on `self`.  We use `std::mem::discriminant`
+        // to dispatch without cloning, then match the discriminant
+        // and re-match the actual step for binding.
+        use std::mem::discriminant;
+        let disc = discriminant(&self.step);
+        if disc == discriminant(&OnboardingStep::BranchSelection) {
+            match event {
                 OnboardingEvent::SelectBranch1 => {
                     self.branch = OnboardingBranch::LocalOnly;
                     None
@@ -506,10 +642,18 @@ impl OnboardingWizardState {
                 }
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => Some(OnboardingOutcome::Cancelled),
-                // All other keys (including Ignored, Char, Backspace) are no-ops.
                 _ => None,
-            },
-            OnboardingStep::VirtualCableGate { ref available } => match event {
+            }
+        } else if disc
+            == discriminant(&OnboardingStep::VirtualCableGate {
+                available: Vec::new(),
+            })
+        {
+            let available = match &self.step {
+                OnboardingStep::VirtualCableGate { available } => available.clone(),
+                _ => unreachable!("discriminant matched above"),
+            };
+            match event {
                 OnboardingEvent::RefreshVirtualCable => {
                     self.step = OnboardingStep::VirtualCableGate {
                         available: (self.cable_probe)()
@@ -527,13 +671,64 @@ impl OnboardingWizardState {
                 OnboardingEvent::Enter if !available.is_empty() => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
-            },
-            OnboardingStep::LicenseReview { .. } => match event {
+            }
+        } else if matches!(self.step, OnboardingStep::HardwareSurvey { .. }) {
+            // Direct match against `&mut self.step` so that preset
+            // mutations on the inner `selected_preset` field are
+            // persisted on `self`.  (The original code cloned the
+            // step into a temporary for matching, which broke
+            // mutation semantics for HardwareSurvey.)
+            match &mut self.step {
+                OnboardingStep::HardwareSurvey {
+                    ref mut caps,
+                    ref mut selected_preset,
+                } => match event {
+                    OnboardingEvent::ArrowUp => {
+                        *selected_preset = (*selected_preset).next();
+                        None
+                    }
+                    OnboardingEvent::ArrowDown => {
+                        *selected_preset = (*selected_preset).previous();
+                        None
+                    }
+                    OnboardingEvent::Char('1') => {
+                        *selected_preset = crate::quality_preset::QualityPreset::Auto;
+                        None
+                    }
+                    OnboardingEvent::Char('2') => {
+                        *selected_preset = crate::quality_preset::QualityPreset::Best;
+                        None
+                    }
+                    OnboardingEvent::Char('3') => {
+                        *selected_preset = crate::quality_preset::QualityPreset::Performance;
+                        None
+                    }
+                    OnboardingEvent::Char('4') => {
+                        *selected_preset = crate::quality_preset::QualityPreset::Custom;
+                        None
+                    }
+                    OnboardingEvent::Char('r') => {
+                        *selected_preset =
+                            crate::quality_preset::QualityPreset::Auto.resolve_for(caps);
+                        None
+                    }
+                    OnboardingEvent::Enter => {
+                        self.hardware_survey_selection = Some(*selected_preset);
+                        self.advance()
+                    }
+                    OnboardingEvent::Escape => self.go_back(),
+                    _ => None,
+                },
+                _ => unreachable!("discriminant matched above"),
+            }
+        } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
+            match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
-            },
-            OnboardingStep::GoogleKeyEntry => match event {
+            }
+        } else if matches!(self.step, OnboardingStep::GoogleKeyEntry) {
+            match event {
                 OnboardingEvent::Char(c) => {
                     self.key_buffer.push(c);
                     None
@@ -545,16 +740,20 @@ impl OnboardingWizardState {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
-            },
-            OnboardingStep::Confirmation => match event {
+            }
+        } else if matches!(self.step, OnboardingStep::Confirmation) {
+            match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
-            },
-            OnboardingStep::PlatformParityNotice => match event {
+            }
+        } else if matches!(self.step, OnboardingStep::PlatformParityNotice) {
+            match event {
                 OnboardingEvent::Enter | OnboardingEvent::Escape => self.advance(),
                 _ => None,
-            },
+            }
+        } else {
+            None
         }
     }
 

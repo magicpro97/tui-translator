@@ -7,6 +7,12 @@ mod onboarding;
 #[path = "../src/providers/mod.rs"]
 mod providers;
 
+#[path = "../src/quality_preset.rs"]
+mod quality_preset;
+
+#[path = "../src/sys_caps.rs"]
+mod sys_caps;
+
 use onboarding::{
     LocalModelLicense, OnboardingBranch, OnboardingEvent, OnboardingOutcome, OnboardingStep,
     OnboardingWizardState,
@@ -31,7 +37,12 @@ fn wizard_new_starts_at_branch_selection() {
 fn wizard_local_only_no_models_produces_confirmation() {
     let mut wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
     wizard.gate_enabled = false;
-    // Enter on BranchSelection → Confirmation (no local models)
+    // Enter on BranchSelection → HardwareSurvey (T13 added a survey step
+    // between branch selection and confirmation).
+    let result = wizard.handle(OnboardingEvent::Enter);
+    assert!(result.is_none());
+    assert!(matches!(wizard.step, OnboardingStep::HardwareSurvey { .. }));
+    // Enter on HardwareSurvey → Confirmation (no local models).
     let result = wizard.handle(OnboardingEvent::Enter);
     assert!(result.is_none());
     assert_eq!(wizard.step, OnboardingStep::Confirmation);
@@ -48,6 +59,9 @@ fn wizard_local_only_with_models_goes_through_license_review() {
     };
     let mut wizard = OnboardingWizardState::new(vec![license], onboarding::noop_probe);
     wizard.gate_enabled = false;
+    // Enter → HardwareSurvey (T13 added the survey step).
+    wizard.handle(OnboardingEvent::Enter);
+    assert!(matches!(wizard.step, OnboardingStep::HardwareSurvey { .. }));
     // Enter → LicenseReview
     wizard.handle(OnboardingEvent::Enter);
     assert!(matches!(
@@ -83,6 +97,9 @@ fn wizard_google_cloud_skips_license_review() {
     // Select GoogleCloud
     wizard.handle(OnboardingEvent::SelectBranch3);
     assert_eq!(wizard.branch, OnboardingBranch::GoogleCloud);
+    // Enter → HardwareSurvey (T13).
+    wizard.handle(OnboardingEvent::Enter);
+    assert!(matches!(wizard.step, OnboardingStep::HardwareSurvey { .. }));
     // Enter → GoogleKeyEntry (skips LicenseReview)
     wizard.handle(OnboardingEvent::Enter);
     assert_eq!(wizard.step, OnboardingStep::GoogleKeyEntry);
@@ -93,6 +110,7 @@ fn wizard_google_cloud_key_entry_collects_key() {
     let mut wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
     wizard.gate_enabled = false;
     wizard.handle(OnboardingEvent::SelectBranch3);
+    wizard.handle(OnboardingEvent::Enter); // → HardwareSurvey
     wizard.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
     wizard.handle(OnboardingEvent::Char('A'));
     wizard.handle(OnboardingEvent::Char('I'));
@@ -168,10 +186,12 @@ fn render_wizard_lines_includes_license_text() {
         }],
         onboarding::noop_probe,
     );
-    // Move to LicenseReview
+    // Move to LicenseReview (T13 added HardwareSurvey between
+    // BranchSelection and LicenseReview).
     let mut w = wizard;
     w.gate_enabled = false;
-    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → LicenseReview
     let lines = onboarding::render_wizard_lines(&w);
     let joined = lines.join("\n");
     assert!(

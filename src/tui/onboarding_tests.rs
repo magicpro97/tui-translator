@@ -105,7 +105,8 @@ fn arrow_up_cycles_through_branches_with_wrap() {
 fn local_only_no_models_goes_directly_to_confirmation() {
     let mut w = make_wizard();
     assert_eq!(w.branch, OnboardingBranch::LocalOnly);
-    w.handle(OnboardingEvent::Enter); // BranchSelection → Confirmation
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → Confirmation
     assert_eq!(
         w.step,
         OnboardingStep::Confirmation,
@@ -116,7 +117,10 @@ fn local_only_no_models_goes_directly_to_confirmation() {
 #[test]
 fn local_only_with_models_reviews_licenses_then_goes_to_confirmation() {
     let mut w = make_wizard_with_models();
-    // BranchSelection → LicenseReview[0]
+    // BranchSelection → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter);
+    assert!(matches!(w.step, OnboardingStep::HardwareSurvey { .. }));
+    // HardwareSurvey → LicenseReview[0]
     w.handle(OnboardingEvent::Enter);
     assert_eq!(w.step, OnboardingStep::LicenseReview { model_index: 0 });
     // LicenseReview[0] → LicenseReview[1]
@@ -127,7 +131,7 @@ fn local_only_with_models_reviews_licenses_then_goes_to_confirmation() {
     assert_eq!(
         w.step,
         OnboardingStep::Confirmation,
-        "LocalOnly must skip GoogleKeyEntry after license review"
+        "LocalOnly with models must reach Confirmation after licenses"
     );
 }
 
@@ -137,6 +141,7 @@ fn local_only_with_models_reviews_licenses_then_goes_to_confirmation() {
 fn local_google_fallback_no_models_reaches_key_entry() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch2);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
 }
@@ -145,8 +150,11 @@ fn local_google_fallback_no_models_reaches_key_entry() {
 fn local_google_fallback_with_models_reaches_key_entry_after_licenses() {
     let mut w = make_wizard_with_models();
     w.handle(OnboardingEvent::SelectBranch2);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → LicenseReview[0]
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → LicenseReview[1]
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
     assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
 }
@@ -157,6 +165,7 @@ fn local_google_fallback_with_models_reaches_key_entry_after_licenses() {
 fn google_cloud_reaches_key_entry_step() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
 }
@@ -165,6 +174,7 @@ fn google_cloud_reaches_key_entry_step() {
 fn google_cloud_with_local_models_skips_license_review() {
     let mut w = make_wizard_with_models();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     assert_eq!(
         w.step,
@@ -179,6 +189,7 @@ fn google_cloud_with_local_models_skips_license_review() {
 fn key_entry_accumulates_characters() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     w.handle(OnboardingEvent::Char('A'));
     w.handle(OnboardingEvent::Char('B'));
@@ -190,6 +201,7 @@ fn key_entry_accumulates_characters() {
 fn backspace_removes_last_character() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     w.handle(OnboardingEvent::Char('X'));
     w.handle(OnboardingEvent::Char('Y'));
@@ -201,6 +213,7 @@ fn backspace_removes_last_character() {
 fn backspace_on_empty_buffer_is_noop() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     let outcome = w.handle(OnboardingEvent::Backspace);
     assert!(outcome.is_none());
@@ -212,6 +225,7 @@ fn backspace_on_empty_buffer_is_noop() {
 #[test]
 fn local_only_completion_produces_correct_patch() {
     let mut w = make_wizard();
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let outcome = w.handle(OnboardingEvent::Enter); // → Done
     assert_eq!(
@@ -229,10 +243,12 @@ fn local_only_completion_produces_correct_patch() {
 fn google_cloud_completion_with_key_produces_correct_patch() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
     w.handle(OnboardingEvent::Char('k'));
     w.handle(OnboardingEvent::Char('e'));
     w.handle(OnboardingEvent::Char('y'));
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let outcome = w.handle(OnboardingEvent::Enter); // → Done
     assert_eq!(
@@ -250,7 +266,11 @@ fn google_cloud_completion_with_key_produces_correct_patch() {
 fn google_cloud_completion_empty_key_stays_on_key_entry() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+
     w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry (empty key)
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let outcome = w.handle(OnboardingEvent::Enter); // → Done
     assert_eq!(outcome, None);
@@ -269,6 +289,7 @@ fn esc_at_branch_selection_cancels_wizard() {
 #[test]
 fn esc_at_confirmation_navigates_back_not_cancel() {
     let mut w = make_wizard();
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     w.handle(OnboardingEvent::Escape); // → BranchSelection
     assert_eq!(w.step, OnboardingStep::BranchSelection);
@@ -293,6 +314,7 @@ fn ignored_events_are_noop_in_branch_selection() {
 fn ignored_events_are_noop_in_key_entry() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     let outcome = w.handle(OnboardingEvent::Ignored);
     assert!(outcome.is_none());
@@ -303,6 +325,7 @@ fn ignored_events_are_noop_in_key_entry() {
 #[test]
 fn ignored_events_are_noop_in_license_review() {
     let mut w = make_wizard_with_models();
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → LicenseReview[0]
     let outcome = w.handle(OnboardingEvent::Ignored);
     assert!(outcome.is_none());
@@ -312,6 +335,7 @@ fn ignored_events_are_noop_in_license_review() {
 #[test]
 fn ignored_events_are_noop_in_confirmation() {
     let mut w = make_wizard();
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let outcome = w.handle(OnboardingEvent::Ignored);
     assert!(outcome.is_none());
@@ -347,6 +371,7 @@ fn current_license_text_returns_verbatim() {
         noop_probe,
     );
     w.gate_enabled = false;
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → LicenseReview[0]
     assert_eq!(w.current_license_text(), Some(text));
 }
@@ -362,6 +387,7 @@ fn render_license_review_preserves_all_lines() {
         noop_probe,
     );
     w.gate_enabled = false;
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → LicenseReview[0]
     let rendered = render_wizard_lines(&w);
     for expected in source_text.lines() {
@@ -377,6 +403,7 @@ fn render_license_review_preserves_all_lines() {
 #[test]
 fn render_confirmation_includes_branch_label() {
     let mut w = make_wizard(); // LocalOnly
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let combined = render_wizard_lines(&w).join("\n");
     assert!(
@@ -388,7 +415,8 @@ fn render_confirmation_includes_branch_label() {
 #[test]
 fn render_confirmation_shows_no_key_required_for_local_only() {
     let mut w = make_wizard();
-    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → Confirmation
     let combined = render_wizard_lines(&w).join("\n");
     assert!(
         combined.contains("not required"),
@@ -400,6 +428,7 @@ fn render_confirmation_shows_no_key_required_for_local_only() {
 fn render_confirmation_handles_multibyte_key_preview() {
     let mut w = make_wizard();
     w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter);
     for c in "aé🙂z".chars() {
         w.handle(OnboardingEvent::Char(c));
@@ -467,7 +496,8 @@ fn make_gated(probe: fn() -> Vec<String>) -> OnboardingWizardState {
 fn gate_disabled_skips_to_confirmation() {
     let mut w = make_wizard();
     w.gate_enabled = false;
-    w.handle(OnboardingEvent::Enter);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → Confirmation
     assert_eq!(w.step, OnboardingStep::Confirmation);
 }
 #[test]
@@ -519,16 +549,22 @@ fn skip_sets_virtual_mic_skipped_and_no_device() {
 #[test]
 fn skip_advances_past_gate() {
     let mut w = make_gated(no_cable);
-    w.handle(OnboardingEvent::Enter);
-    w.handle(OnboardingEvent::SkipVirtualCable);
+    w.handle(OnboardingEvent::Enter); // → VirtualCableGate
+    w.handle(OnboardingEvent::SkipVirtualCable); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → Confirmation
     assert_eq!(w.step, OnboardingStep::Confirmation);
 }
 #[test]
 fn skip_outcome_stamped_in_patch() {
+    // After the chain: gate → survey → confirmation → done.
+    // The patch on the LAST `handle(Enter)` returning Some(Done) is
+    // what we test below. The intermediate handles return None.
     let mut w = make_gated(no_cable);
-    w.handle(OnboardingEvent::Enter);
-    w.handle(OnboardingEvent::SkipVirtualCable);
-    match w.handle(OnboardingEvent::Enter) {
+    w.handle(OnboardingEvent::Enter); // → VirtualCableGate
+    w.handle(OnboardingEvent::SkipVirtualCable); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → Confirmation
+    let outcome = w.handle(OnboardingEvent::Enter);
+    match outcome {
         Some(OnboardingOutcome::Done(patch)) => {
             assert!(patch.virtual_mic_skipped);
             assert!(patch.virtual_mic_device.is_none());
