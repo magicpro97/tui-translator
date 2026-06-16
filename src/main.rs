@@ -54,6 +54,8 @@ mod audio_device_cli;
 mod audio_device_cli_tests;
 mod config;
 mod diagnostics;
+#[cfg(test)]
+mod feature_flag_tests;
 mod i18n;
 mod llm_startup;
 mod local_model_cli;

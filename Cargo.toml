@@ -141,6 +141,11 @@ mistralrs-core = { version = "0.8", optional = true, default-features = false }
 candle-core = { version = "0.10", optional = true, default-features = false }
 # clap is used by the llm_mt_bench benchmark binary for argument parsing.
 clap = { version = "4", optional = true, features = ["derive"] }
+# sherpa-onnx — Rust wrapper for k2-fsa/sherpa-onnx C++ library (v3, #810).
+# Used by the FunASR STT backend. Gated by `local-stt-funasr` so the
+# default build does not pull in C++ toolchain. Builds on macOS,
+# Linux, and Windows; CPU-only by default.
+sherpa-onnx = { version = "1.13", optional = true }
 tui-input = { version = "0.15.3", default-features = false }
 directories = "5"
 # US-07 (#732): platform-parity notice timestamp in AppConfig
@@ -189,6 +194,12 @@ production-audio = []
 # in the model cache directory.  Build requires no system libraries beyond the
 # Rust toolchain (pure-Rust path; no cmake or llama.cpp).
 local-llm-mt = ["dep:mistralrs-core", "dep:candle-core", "dep:clap"]
+# Enable the local FunASR STT backend via k2-fsa/sherpa-onnx (v3, #810).
+# Pulls in the C++ sherpa-onnx library; default build is unaffected.
+# The provider is wired in by T7 (LocalFunAsrSttProvider); the model-id
+# manifest is wired in by T5. Enable in addition to (not instead of)
+# `local-stt` if you want both Whisper and FunASR backends.
+local-stt-funasr = ["dep:sherpa-onnx"]
 
 # ── Release convenience aliases ───────────────────────────────────────────────
 # Use these in CI release builds to enable all local-model providers and
