@@ -72,7 +72,13 @@ pub fn render_model_manager_lines(state: &ModelManagerState, bar: &PresetBar) ->
     lines
 }
 
-fn clamp_line(s: &str) -> String {
+/// Clamp `s` to at most [`MAX_LINE_WIDTH`] characters, adding an
+/// ellipsis (`…`) at the end if truncation happened. Pulled out
+/// from the rendering body so the truncation branch is testable
+/// in isolation (the public `render_model_manager_lines` always
+/// produces short labels in v3, so the truncation arm would
+/// otherwise be dead code from the coverage gate's point of view).
+pub(crate) fn clamp_line(s: &str) -> String {
     if s.len() <= MAX_LINE_WIDTH {
         s.to_string()
     } else {

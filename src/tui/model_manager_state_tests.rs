@@ -125,6 +125,34 @@ fn model_label_returns_none_for_out_of_range() {
 }
 
 #[test]
+fn model_kind_returns_kind_tag() {
+    let s = ModelManagerState::default();
+    // Whisper[0] must be tagged "Whisper".
+    assert_eq!(s.model_kind(ModelManagerTab::Whisper, 0), Some("Whisper"));
+    // FunAsr[0] must be tagged "FunAsr".
+    assert_eq!(s.model_kind(ModelManagerTab::FunAsr, 0), Some("FunAsr"));
+    // Out-of-range returns None.
+    assert!(s.model_kind(ModelManagerTab::History, 0).is_none());
+    assert!(s.model_kind(ModelManagerTab::Whisper, 9999).is_none());
+}
+
+#[test]
+fn select_next_on_empty_tab_returns_false() {
+    // History tab is empty (0 models). `select_next` should
+    // return false (not advance) and not panic. This is the
+    // "count == 0" branch of `select_next`.
+    let mut s = ModelManagerState::default();
+    s.select_tab(ModelManagerTab::History);
+    let advanced = s.select_next();
+    assert!(!advanced, "select_next on empty tab must return false");
+    assert_eq!(s.selected_index(), 0);
+    // Also `select_prev` is harmless.
+    let advanced = s.select_prev();
+    assert!(!advanced);
+    assert_eq!(s.selected_index(), 0);
+}
+
+#[test]
 fn state_is_send_and_sync() {
     fn assert_send<T: Send>() {}
     fn assert_sync<T: Sync>() {}

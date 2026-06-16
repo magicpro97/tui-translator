@@ -165,6 +165,41 @@ fn pick_physical_cores_falls_back_on_zero() {
 }
 
 #[test]
+fn fallback_physical_cores_on_error_returns_one() {
+    // The Err/Ok(0) arm of `fallback_physical_cores` is unreachable
+    // from real sysinfo (it always reports >= 1 on supported
+    // platforms), so we exercise the dedicated pure helper
+    // directly. Pulled out for the per-file 100%-coverage gate.
+    let result = crate::sys_caps::fallback_physical_cores_on_error();
+    assert_eq!(result, 1, "fallback on error must be exactly 1");
+}
+
+#[test]
+fn fallback_physical_cores_from_ok_returns_count() {
+    use std::num::NonZeroUsize;
+    let n = NonZeroUsize::new(8).expect("8 is non-zero");
+    assert_eq!(
+        crate::sys_caps::fallback_physical_cores_from(Ok(n)),
+        8,
+        "Ok(8) must return 8"
+    );
+}
+
+#[test]
+fn fallback_physical_cores_from_err_returns_one() {
+    // Construct a synthetic io::Error to exercise the Err arm of
+    // `fallback_physical_cores_from`. On real platforms
+    // `available_parallelism` never returns Err, so this is the
+    // only way to cover that branch in unit tests.
+    let err = std::io::Error::other("synthetic");
+    assert_eq!(
+        crate::sys_caps::fallback_physical_cores_from(Err(err)),
+        1,
+        "Err(_) must return 1"
+    );
+}
+
+#[test]
 fn ram_tier_boundaries_around_8_gib() {
     // 7.99 GiB → Low; 8.00 GiB → still Low (≤ 8); 8.01 GiB → Medium.
     // The contract: ram_tier matches `GiB <= 8 → Low`, `8 < GiB <= 15 → Medium`, `> 15 → High`.

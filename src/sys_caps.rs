@@ -152,13 +152,36 @@ fn detect_physical_cores(sys: &System) -> usize {
 
 /// Fallback when [`sysinfo::System::physical_core_count`] returns
 /// `None` or `0`. Tries `std::thread::available_parallelism` (which
-/// usually reports logical cores) and finally `1`.
+/// returns `io::Result<NonZeroUsize>`) and falls back to 1 on
+/// any error.
+///
+/// `fallback_physical_cores_from(probed)` is the testable seam:
+/// both `Ok(n)` and `Err(_)` are reachable from unit tests
+/// (the `Ok` arm runs on every test; the `Err` arm is exercised
+/// by the dedicated test below).
 #[allow(dead_code)]
 pub(crate) fn fallback_physical_cores() -> usize {
-    match std::thread::available_parallelism() {
-        Ok(n) if n.get() > 0 => n.get(),
-        _ => 1,
+    fallback_physical_cores_from(std::thread::available_parallelism())
+}
+
+/// Pure decision: convert the `available_parallelism` result into
+/// a positive count. Pulled out so the `Err` arm is unit-testable.
+pub(crate) fn fallback_physical_cores_from(
+    probed: Result<std::num::NonZeroUsize, std::io::Error>,
+) -> usize {
+    match probed {
+        Ok(n) => n.get(),
+        Err(_) => fallback_physical_cores_on_error(),
     }
+}
+
+/// Pure helper for the Err / Ok(0) arm of [`fallback_physical_cores`].
+/// Returns 1. Pulled out so the coverage gate can see it via the
+/// dedicated test, and so the `match` arm in the caller stays
+/// one line.
+#[allow(dead_code)]
+pub(crate) fn fallback_physical_cores_on_error() -> usize {
+    1
 }
 
 /// Pure decision over a `physical_core_count` probe. Returns

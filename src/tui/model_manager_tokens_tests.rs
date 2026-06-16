@@ -199,6 +199,22 @@ fn preset_bar_preserves_explicit_preset() {
     assert_eq!(bar.resolved(), QualityPreset::Custom);
 }
 
+#[test]
+fn preset_bar_ram_tier_getter_matches_input_caps() {
+    // Exercises the `ram_tier()` accessor on `PresetBar` for each
+    // tier (Low / Medium / High). This is the public read API for
+    // the bar's RAM tier; without this test the accessor would
+    // be dead code (per the per-file 100%-coverage gate).
+    let low = PresetBar::for_preset(QualityPreset::Best, &caps(4 * 1024 * 1024 * 1024, 2));
+    assert_eq!(low.ram_tier(), crate::sys_caps::RamTier::Low);
+
+    let mid = PresetBar::for_preset(QualityPreset::Best, &caps(8 * 1024 * 1024 * 1024, 4));
+    assert_eq!(mid.ram_tier(), crate::sys_caps::RamTier::Medium);
+
+    let high = PresetBar::for_preset(QualityPreset::Best, &caps(32 * 1024 * 1024 * 1024, 8));
+    assert_eq!(high.ram_tier(), crate::sys_caps::RamTier::High);
+}
+
 // ============================================================================
 // helpers
 // ============================================================================
@@ -209,4 +225,38 @@ fn caps(ram_bytes: u64, cores: usize) -> SysCaps {
         physical_cores: cores,
         gpu: GpuKind::None,
     }
+}
+
+#[test]
+fn preset_bar_label_defensive_auto_branch() {
+    // The `label()` method is reachable in the normal path via
+    // `PresetBar::for_preset` (which resolves Auto upstream), so
+    // the `QualityPreset::Auto => "Auto"` arm in the helper
+    // `resolved_preset_name` is defensive. The test exercises
+    // the helper via the label's public path: build a `PresetBar`
+    // and read its label, then call the helper directly with
+    // `Auto` to hit the defensive arm.
+    let bar = PresetBar::for_preset(QualityPreset::Best, &caps(32 * 1024 * 1024 * 1024, 8));
+    let label = bar.label();
+    assert!(
+        label.contains("Best"),
+        "label must include Best, got {label:?}"
+    );
+
+    // Direct call to the helper covers the Auto defensive arm.
+    assert_eq!(super::resolved_preset_name(QualityPreset::Best), "Best");
+    assert_eq!(
+        super::resolved_preset_name(QualityPreset::Performance),
+        "Performance"
+    );
+    assert_eq!(super::resolved_preset_name(QualityPreset::Custom), "Custom");
+    assert_eq!(super::resolved_preset_name(QualityPreset::Auto), "Auto");
+
+    // And the ram_tier helper.
+    assert_eq!(super::ram_tier_name(crate::sys_caps::RamTier::Low), "Low");
+    assert_eq!(
+        super::ram_tier_name(crate::sys_caps::RamTier::Medium),
+        "Mid"
+    );
+    assert_eq!(super::ram_tier_name(crate::sys_caps::RamTier::High), "High");
 }

@@ -159,18 +159,34 @@ impl PresetBar {
     /// resolved name equals the configured name so the bar
     /// stays consistent.
     pub fn label(&self) -> String {
-        let resolved_name = match self.resolved {
-            QualityPreset::Best => "Best",
-            QualityPreset::Performance => "Performance",
-            QualityPreset::Custom => "Custom",
-            QualityPreset::Auto => "Auto", // Defensive: Auto must not reach here
-        };
-        let tier_name = match self.ram_tier {
-            RamTier::Low => "Low",
-            RamTier::Medium => "Mid",
-            RamTier::High => "High",
-        };
-        format!("Quality: {resolved_name} · RAM: {tier_name}")
+        format!(
+            "Quality: {} · RAM: {}",
+            resolved_preset_name(self.resolved),
+            ram_tier_name(self.ram_tier)
+        )
+    }
+}
+
+/// Map a [`QualityPreset`] to its short display name. Pure
+/// helper so the v3 `PresetBar` (which resolves `Auto` to
+/// `Best` / `Performance` / `Custom` upstream) only ever stores
+/// the 3 non-Auto variants, but the defensive `Auto` arm in
+/// `label()` is unit-testable in isolation.
+fn resolved_preset_name(p: QualityPreset) -> &'static str {
+    match p {
+        QualityPreset::Best => "Best",
+        QualityPreset::Performance => "Performance",
+        QualityPreset::Custom => "Custom",
+        QualityPreset::Auto => "Auto", // Defensive
+    }
+}
+
+/// Map a [`RamTier`] to its short display name.
+fn ram_tier_name(t: RamTier) -> &'static str {
+    match t {
+        RamTier::Low => "Low",
+        RamTier::Medium => "Mid",
+        RamTier::High => "High",
     }
 }
 

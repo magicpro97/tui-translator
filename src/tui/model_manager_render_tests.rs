@@ -172,3 +172,79 @@ fn width_clamps_long_labels() {
         );
     }
 }
+
+#[test]
+fn clamp_line_short_string_is_unchanged() {
+    use crate::tui::model_manager_render::clamp_line;
+    assert_eq!(clamp_line("hello"), "hello");
+    assert_eq!(clamp_line(""), "");
+    assert_eq!(clamp_line("x"), "x");
+}
+
+#[test]
+fn clamp_line_truncates_long_string_with_ellipsis() {
+    use crate::tui::model_manager_render::clamp_line;
+    let long: String = "a".repeat(500);
+    let out = clamp_line(&long);
+    // `len()` is bytes, not chars; the ellipsis is 3 bytes in UTF-8.
+    // The total byte length is at most 199 ASCII bytes + 3 bytes
+    // for the ellipsis = 202 bytes.
+    assert!(out.len() <= 202, "got {} bytes", out.len());
+    // The character count is at most MAX_LINE_WIDTH (200) = 199 'a' + 1 '…'.
+    assert!(
+        out.chars().count() <= 200,
+        "got {} chars",
+        out.chars().count()
+    );
+    // Must end with the ellipsis.
+    assert!(out.ends_with('…'), "must end with ellipsis, got {out:?}");
+    // Must contain at least 199 'a's (the original is 500, so 199 truncated + 1 ellipsis = 200 chars).
+    let a_count = out.chars().filter(|&c| c == 'a').count();
+    assert!(a_count >= 199, "expected ~199 'a's, got {a_count}");
+}
+
+#[test]
+fn clamp_line_truncates_at_char_boundary_for_multibyte() {
+    use crate::tui::model_manager_render::clamp_line;
+    // 250 ASCII + 100 multi-byte chars = ~550 bytes, ~350 chars
+    let s: String = "a".repeat(250) + &"日".repeat(100);
+    let out = clamp_line(&s);
+    // Must not panic on char boundary, must be valid UTF-8.
+    // The byte length is bounded by the number of bytes that fit
+    // in MAX_LINE_WIDTH characters (each multi-byte char is 3
+    // bytes), but the strict invariant is: char count <= 200.
+    assert!(
+        out.chars().count() <= 200,
+        "got {} chars",
+        out.chars().count()
+    );
+    assert!(out.ends_with('…'));
+}
+
+#[test]
+fn clamp_line_walks_back_to_char_boundary_for_multibyte() {
+    use crate::tui::model_manager_render::clamp_line;
+    // Force the while-loop body to run: a multi-byte char that
+    // straddles the MAX_LINE_WIDTH boundary. With 197 ASCII 'a's
+    // followed by '日' (3 bytes at positions 197, 198, 199), the
+    // candidate truncation point (position 199) is INSIDE the
+    // '日' char, so the loop must walk back to 197 (the actual
+    // char boundary).
+    let s: String = "a".repeat(197) + "日" + &"a".repeat(500);
+    let out = clamp_line(&s);
+    // The truncated result must end at a valid char boundary.
+    // The 197 'a's are preserved; the '日' is dropped because it
+    // would extend past position 199.
+    let a_count = out.chars().filter(|&c| c == 'a').count();
+    let has_ellipsis = out.ends_with('…');
+    assert!(has_ellipsis, "must end with ellipsis, got {out:?}");
+    // Either we kept all 197 'a's (and dropped the '日') OR we
+    // walked back further; the result must be a valid UTF-8 string
+    // of <= 200 chars.
+    assert!(a_count <= 197, "unexpected 'a' count: {a_count}");
+    assert!(
+        out.chars().count() <= 200,
+        "got {} chars",
+        out.chars().count()
+    );
+}
