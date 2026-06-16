@@ -64,7 +64,7 @@ pub(crate) fn write_system_info(writer: &mut impl Write, caps: &SysCaps) -> io::
         caps.physical_cores,
         cpu_tier_name(caps.cpu_tier()),
     )?;
-    writeln!(writer, "  GPU:       {}", gpu_kind_name(caps.gpu))?;
+    writeln!(writer, "  GPU:       {}", gpu_kind_name(caps.gpu.clone()))?;
     // Recommended preset = Auto resolved against the host.
     let configured = QualityPreset::Auto;
     let resolved = configured.resolve_for(caps);
@@ -96,12 +96,24 @@ fn cpu_tier_name(tier: crate::sys_caps::CpuTier) -> &'static str {
     }
 }
 
-fn gpu_kind_name(kind: GpuKind) -> &'static str {
+fn gpu_kind_name(kind: GpuKind) -> String {
+    // Build a human-readable string in the form `<variant> (<name>,
+    // <vram>)` when a GPU is present, or just `none` for the
+    // no-GPU case.  Pulled out from `write_system_info` so the
+    // per-file coverage gate sees all three variant arms even
+    // when the host has no GPU.
     match kind {
-        GpuKind::None => "none",
-        GpuKind::Metal => "metal",
-        GpuKind::Cuda => "cuda",
+        GpuKind::None => "none".to_string(),
+        GpuKind::Metal { name, vram_bytes } => format!("metal ({name}, {})", vram_gib(vram_bytes)),
+        GpuKind::Cuda { name, vram_bytes } => format!("cuda ({name}, {})", vram_gib(vram_bytes)),
     }
+}
+
+/// Render a byte count as a one-decimal GiB value (e.g. 16.0 GiB)
+/// so the `--print-system-info` line stays compact.
+fn vram_gib(bytes: u64) -> String {
+    let gib = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+    format!("{gib:.1} GiB")
 }
 
 // Tests live in `src/system_info_cli_tests.rs`, included at the

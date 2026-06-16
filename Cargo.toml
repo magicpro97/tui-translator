@@ -105,6 +105,20 @@ hdrhistogram = "7"
 # Process resource polling (CPU + RAM) — issues #79 and #82
 sysinfo = { version = "0.30", default-features = false }
 
+# GPU detection (T19, #826).
+# - `objc2-metal` exposes `MTLCreateSystemDefaultDevice()` on macOS
+#   so we can name the GPU and read the recommended working-set size
+#   (the closest portable proxy for VRAM on unified-memory Macs).
+# - `nvml-wrapper` exposes NVML on Linux + Windows so we can detect
+#   NVIDIA dGPUs and read real VRAM via `nvmlDeviceGetMemoryInfo`.
+# Both deps are gated behind the `gpu-detect` feature so the default
+# build stays slim; the macOS-only Apple Silicon path stays usable
+# in the dev shell.  The features themselves only enable the
+# `dep:`-gated dependencies below.
+objc2-metal = { version = "0.3.2", optional = true }
+objc2 = { version = "0.6", optional = true }
+nvml-wrapper = { version = "0.12", optional = true }
+
 # HTTP client — REST calls to Google Cloud APIs (STT, MT, TTS)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots"] }
 
@@ -200,6 +214,12 @@ local-llm-mt = ["dep:mistralrs-core", "dep:candle-core", "dep:clap"]
 # manifest is wired in by T5. Enable in addition to (not instead of)
 # `local-stt` if you want both Whisper and FunASR backends.
 local-stt-funasr = ["dep:sherpa-onnx"]
+
+# Enable GPU detection via Metal (macOS) and NVML (Linux + Windows).
+# Off by default to keep the default build slim; opt in for the
+# `release-macos-arm` / `release-linux-cuda` aliases and the
+# `--print-system-info` enrichment in #826.
+gpu-detect = ["dep:objc2", "dep:objc2-metal", "dep:nvml-wrapper"]
 
 # ── Release convenience aliases ───────────────────────────────────────────────
 # Use these in CI release builds to enable all local-model providers and

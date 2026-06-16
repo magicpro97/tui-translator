@@ -298,6 +298,12 @@ impl OnboardingWizardState {
     ) -> Self {
         let n = local_models.len();
         let recommended = crate::quality_preset::QualityPreset::Auto.resolve_for(&caps);
+        // Clone once so the `caps` value lives in both the
+        // `HardwareSurvey` step and the top-level `sys_caps` field.
+        // `SysCaps` was Copy until T19 (#826) added `String` GPU
+        // names; the `OnceLock` cache still hands out clones cheaply
+        // because the probe runs exactly once per process.
+        let caps_for_field = caps.clone();
         Self {
             branch: OnboardingBranch::LocalOnly,
             step: OnboardingStep::HardwareSurvey {
@@ -312,7 +318,7 @@ impl OnboardingWizardState {
             virtual_mic_device: None,
             virtual_mic_skipped: false,
             gate_enabled: false,
-            sys_caps: caps,
+            sys_caps: caps_for_field,
             hardware_survey_selection: None,
         }
     }
@@ -421,8 +427,13 @@ impl OnboardingWizardState {
         // Enter on the survey.
         let _ = self.branch.uses_local_models();
         let _ = self.branch.requires_google_key();
+        // Clone the cached `SysCaps` so we can hand it both to
+        // the `HardwareSurvey` step and keep it on the wizard for
+        // the `new_with_caps` field path.  T19 (#826) made
+        // `SysCaps` non-`Copy` to carry the GPU name `String`.
+        let caps_for_step = self.sys_caps.clone();
         self.step = OnboardingStep::HardwareSurvey {
-            caps: self.sys_caps,
+            caps: caps_for_step,
             selected_preset: recommended,
         };
     }

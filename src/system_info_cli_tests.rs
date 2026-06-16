@@ -19,7 +19,7 @@ fn write_system_info_includes_ram_cores_recommended() {
     // test deterministic and CI-portable (no real
     // `SysCaps::detect()`).
     let mut buf: Vec<u8> = Vec::new();
-    let c = caps(16, 8, GpuKind::Metal);
+    let c = caps(16, 8, GpuKind::Metal { name: "Apple M1 Pro".to_string(), vram_bytes: 25_000_000_000 });
     write_system_info(&mut buf, &c).expect("write_system_info ok");
     let out = String::from_utf8(buf).expect("utf-8 output");
     assert!(

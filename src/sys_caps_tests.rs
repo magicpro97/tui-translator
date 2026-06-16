@@ -217,4 +217,62 @@ fn ram_tier_boundaries_around_8_gib() {
     assert_eq!(near_8(9), RamTier::Medium);
     assert_eq!(near_8(15), RamTier::Medium);
     assert_eq!(near_8(16), RamTier::High);
-}
+} // end `ram_tier_boundaries_around_8_gib`
+
+    // ── T19 (issue #826): GPU detection + per-variant helpers ──
+    //
+    // Round 2 enrichment: the `GpuKind` enum gets struct variants
+    // carrying the GPU's display name and VRAM, and a coarse
+    // `GpuTier` enum summarises the host for the (future) LLM
+    // provider picker.  The `GpuKind` import is already in scope
+    // from the file-level `use` at line 8; we only need to bring
+    // `GpuTier` in.
+    use crate::sys_caps::GpuTier;
+
+    /// `GpuKind::None` reports no name and no VRAM.  This is the
+    /// non-GPU baseline (headless box, disabled feature flag, etc.).
+    #[test]
+    fn gpu_kind_none_has_no_name_or_vram() {
+        let k = GpuKind::None;
+        assert_eq!(k.name(), None);
+        assert_eq!(k.vram_bytes(), None);
+        assert_eq!(k.gpu_tier(), GpuTier::None);
+    }
+
+    /// `GpuKind::Metal` reports the device name and the recommended
+    /// working-set size as its VRAM proxy.  Maps to `GpuTier::Integrated`
+    /// (Apple Silicon / Intel iGPU are shared-memory).
+    #[test]
+    fn gpu_kind_metal_reports_name_and_vram() {
+        let k = GpuKind::Metal {
+            name: "Apple M1 Pro".to_string(),
+            vram_bytes: 25_000_000_000,
+        };
+        assert_eq!(k.name(), Some("Apple M1 Pro"));
+        assert_eq!(k.vram_bytes(), Some(25_000_000_000));
+        assert_eq!(k.gpu_tier(), GpuTier::Integrated);
+    }
+
+    /// `GpuKind::Cuda` reports the device name and the NVML-reported
+    /// `memoryInfo.total`.  Maps to `GpuTier::Discrete` (NVIDIA dGPU
+    /// has its own VRAM).
+    #[test]
+    fn gpu_kind_cuda_reports_name_and_vram() {
+        let k = GpuKind::Cuda {
+            name: "NVIDIA GeForce RTX 4090".to_string(),
+            vram_bytes: 25_000_000_000,
+        };
+        assert_eq!(k.name(), Some("NVIDIA GeForce RTX 4090"));
+        assert_eq!(k.vram_bytes(), Some(25_000_000_000));
+        assert_eq!(k.gpu_tier(), GpuTier::Discrete);
+    }
+
+    /// `gpu_tier()` is a pure decision over the variant — all three
+    /// arms are exercised above.  This test pins the new enum's
+    /// shape so a refactor that drops an arm fails loudly.
+    #[test]
+    fn gpu_tier_variants_are_distinct() {
+        assert_ne!(GpuTier::Integrated, GpuTier::Discrete);
+        assert_ne!(GpuTier::Discrete, GpuTier::None);
+        assert_ne!(GpuTier::Integrated, GpuTier::None);
+    }

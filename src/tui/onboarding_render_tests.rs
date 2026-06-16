@@ -393,13 +393,17 @@ fn hardware_survey_step_carries_syscaps_and_recommendation() {
         gpu: crate::sys_caps::GpuKind::None,
     };
     let recommended = crate::quality_preset::QualityPreset::Auto.resolve_for(&caps);
-    let w = OnboardingWizardState::new_with_caps(vec![], noop_probe, caps);
+    // `new_with_caps` takes `caps` by value, but we also need it
+    // for the `assert_eq!(*stored_caps, caps)` check below.  T19
+    // (#826) made `SysCaps` non-`Copy` to carry the GPU name
+    // `String`, so we have to clone here.
+    let w = OnboardingWizardState::new_with_caps(vec![], noop_probe, caps.clone());
     match &w.step {
         OnboardingStep::HardwareSurvey {
             caps: stored_caps,
             selected_preset,
         } => {
-            assert_eq!(*stored_caps, caps);
+            assert_eq!(stored_caps, &caps);
             assert_eq!(*selected_preset, recommended);
         }
         _ => panic!("expected HardwareSurvey as initial step"),
