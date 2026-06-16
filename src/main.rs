@@ -79,6 +79,9 @@ mod session_replay_cli;
 #[cfg(test)]
 mod session_replay_cli_tests;
 mod storage;
+mod sys_caps;
+#[cfg(test)]
+mod sys_caps_tests;
 mod tui;
 pub mod updater;
 
