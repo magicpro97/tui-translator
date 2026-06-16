@@ -78,15 +78,17 @@ async fn enabled_recorder_prunes_old_session_entries_to_max_sessions() {
     let temp = TempDir::new().expect("create tempdir");
     let sessions_dir = temp.path().join("sessions");
     std::fs::create_dir_all(&sessions_dir).expect("create sessions root");
-    // Mix of LF-06 per-session dirs and legacy flat .jsonl files: prune
-    // counts both so the cap stays accurate during the migration window.
+    // Mix of LF-06 per-session dirs and a legacy flat .jsonl file.
+    // Each per-session dir is seeded with its `00001.jsonl` first
+    // segment so the structural pruner recognises it.  The cap is
+    // 2, so all-but-one of these entries must be pruned.
     std::fs::create_dir_all(sessions_dir.join("old-a")).expect("create per-session dir A");
     std::fs::write(sessions_dir.join("old-a").join("00001.jsonl"), "{}\n")
         .expect("write segment A");
     std::fs::create_dir_all(sessions_dir.join("old-b")).expect("create per-session dir B");
     std::fs::write(sessions_dir.join("old-b").join("00001.jsonl"), "{}\n")
         .expect("write segment B");
-    std::fs::write(sessions_dir.join("old-c.jsonl"), "{}\n")
+    std::fs::write(sessions_dir.join("session-1710000000002-43.jsonl"), "{}\n")
         .expect("write legacy flat session file");
 
     let recorder = SessionRecorder::start(
