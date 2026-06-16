@@ -1,10 +1,18 @@
 //! Local FunASR STT provider (T7, #813).
 //!
 //! Wraps the k2-fsa/sherpa-onnx C++ library behind a pure-Rust
-//! `LocalFunAsrSttProvider` struct. Supports the v3 language set
-//! (`zh` / `en` / `ja` / `vi` / `ko` + `auto`) and falls back to
-//! `ProviderError::InvalidInput` (mapped from
-//! `FunAsrError::UnsupportedLanguage`) for any other language code.
+//! `LocalFunAsrSttProvider` struct. Supports the v3 SenseVoice
+//! language set (`zh` / `en` / `ja` / `ko` + `auto`).
+//!
+//! **v3 does NOT include `vi` in the supported set.**  Vi is
+//! intentionally routed to the cloud vi-fallback (Google
+//! STT) because the SenseVoice models in this build have not
+//! been validated for Vietnamese.  This is the
+//! `funasr_smoke vi-fallback + ja-accept` contract (T16, #822):
+//! a `transcribe("vi", …)` call returns
+//! `FunAsrError::UnsupportedLanguage("vi")` so the orchestrator
+//! can route to the cloud vi fallback, and a `transcribe("ja", …)`
+//! call must NOT return `UnsupportedLanguage`.
 //!
 //! # Why a stub `transcribe` body
 //!
@@ -20,10 +28,12 @@
 
 use thiserror::Error;
 
-/// Languages the v3 FunASR provider accepts. Mirrors the languages
-/// k2-fsa/sherpa-onnx supports via the Paraformer multilingual
-/// checkpoints.
-pub const SUPPORTED_LANGUAGES: &[&str] = &["zh", "en", "ja", "vi", "ko", "auto"];
+/// Languages the v3 FunASR provider accepts.  v3 deliberately
+/// omits `vi`: the SenseVoice models in this build have not
+/// been validated for Vietnamese, and vi audio is routed to
+/// the cloud vi-fallback (Google STT) instead.  This is the
+/// vi-fallback contract exercised by T16 (#822).
+pub const SUPPORTED_LANGUAGES: &[&str] = &["zh", "en", "ja", "ko", "auto"];
 
 /// Default model id when the provider is constructed without
 /// an explicit one (matches `ModelId::FunAsrSmall` from T5).
