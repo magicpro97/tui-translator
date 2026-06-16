@@ -44,6 +44,7 @@ use thiserror::Error;
 use crate::providers::ProviderError;
 
 pub mod bootstrap;
+mod funasr;
 mod inference_priority;
 pub mod manifest;
 mod model_download;
