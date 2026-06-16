@@ -60,6 +60,8 @@ mod i18n;
 mod llm_startup;
 mod local_model_cli;
 #[cfg(test)]
+mod local_model_cli_remove_tests;
+#[cfg(test)]
 mod local_model_cli_tests;
 mod local_model_startup;
 #[cfg(test)]

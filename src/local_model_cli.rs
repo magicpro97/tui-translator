@@ -515,3 +515,141 @@ pub(crate) fn run_model_verify(args: &ModelVerifyArgs) -> Result<()> {
     }
     Ok(())
 }
+
+// ============================================================================
+// T12b (issue #818): --remove-stt / --remove-mt / --remove-tts flags
+// ============================================================================
+
+/// Parsed arguments for the `--remove-*` family of flags.
+///
+/// v3 ModelManager wires a "Remove" keybind to this CLI surface
+/// so an operator can delete a downloaded local model without
+/// leaving the TUI.  Multiple stages can be requested in a
+/// single invocation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LocalRemoveArgs {
+    /// STT model id (e.g. `ggml-tiny.en.bin`, `sherpa-onnx-funasr-small`).
+    pub(crate) stt: Option<providers::local::ModelId>,
+    /// MT model id (e.g. `opus-mt-ja-vi`).
+    pub(crate) mt: Option<String>,
+    /// TTS model id (e.g. `supertonic-1`).
+    pub(crate) tts: Option<String>,
+    /// Skip the interactive confirmation prompt.
+    pub(crate) yes: bool,
+}
+
+/// Parse argv for the `--remove-{stt,mt,tts}` flags.
+///
+/// Returns:
+/// * `Ok(None)` when no `--remove-*` flag is present (other
+///   subcommands should be tried).
+/// * `Ok(Some(args))` when at least one `--remove-*` flag is
+///   present.
+/// * `Err(_)` when a flag is malformed (unknown model id, missing
+///   value, etc.).
+///
+/// `#[allow(dead_code)]` because the bin dispatcher wires this
+/// up in T11b; the function is reachable from the test suite
+/// today and from the bin dispatcher once the orchestrator
+/// hands it off.
+#[allow(dead_code)]
+pub(crate) fn parse_remove_args_from<I>(args: I) -> Result<Option<LocalRemoveArgs>>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
+    let mut out = LocalRemoveArgs::default();
+    let mut any = false;
+    for arg in args {
+        let s = arg.to_string_lossy();
+        if let Some(rest) = s.strip_prefix("--remove-stt=") {
+            out.stt = Some(parse_local_stt_model_id_or_funasr(rest)?);
+            any = true;
+        } else if let Some(rest) = s.strip_prefix("--remove-mt=") {
+            out.mt = Some(rest.to_string());
+            any = true;
+        } else if let Some(rest) = s.strip_prefix("--remove-tts=") {
+            out.tts = Some(rest.to_string());
+            any = true;
+        } else if s == "--yes" || s == "-y" {
+            out.yes = true;
+        }
+    }
+    Ok(if any { Some(out) } else { None })
+}
+
+/// Accept a local STT model id in either the legacy
+/// `ggml-*.bin` form OR the v3 FunASR `sherpa-onnx-funasr-*` form.
+#[allow(dead_code)]
+fn parse_local_stt_model_id_or_funasr(raw: &str) -> Result<providers::local::ModelId> {
+    if let Some(id) = providers::local::ModelId::parse(raw) {
+        return Ok(id);
+    }
+    anyhow::bail!(
+        "unknown local STT model {raw:?}; supported values: {}",
+        supported_local_stt_model_ids()
+    )
+}
+
+/// Run the remove command: delete the cache directory for each
+/// requested stage + model.  In v3 the actual directory layout
+/// is `<model_cache_root>/<stage>/<id>/`; we resolve it via
+/// [`providers::local::model_cache_dir`] and `fs::remove_dir_all`.
+///
+/// The function is **dry-run by default**: it prints what would be
+/// removed and asks for confirmation unless `args.yes` is set.
+///
+/// `#[allow(dead_code)]` because the v3 ModelManager "Remove"
+/// keybind wiring (T11b) is a follow-up; the function is reachable
+/// from the test suite today and from the bin dispatcher once the
+/// orchestrator hands it off.
+#[allow(dead_code)]
+pub(crate) fn run_local_remove(args: &LocalRemoveArgs) -> Result<()> {
+    let cache_root = providers::local::model_cache_dir()
+        .context("failed to resolve local model cache directory")?;
+    let mut stdout = io::stdout();
+
+    let targets: Vec<(&str, &str)> = [
+        args.stt
+            .as_ref()
+            .map(|id| ("stt", id.display_name() as &str)),
+        args.mt.as_ref().map(|id| ("mt", id.as_str())),
+        args.tts.as_ref().map(|id| ("tts", id.as_str())),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    if targets.is_empty() {
+        anyhow::bail!("--remove-* requires at least one stage and model id");
+    }
+
+    for (stage, id) in &targets {
+        let path = cache_root.join(stage).join(id);
+        writeln!(stdout, "Would remove {stage}/{id} at {}", path.display())
+            .context("failed to write dry-run line")?;
+    }
+    if !args.yes {
+        writeln!(stdout, "Pass --yes to actually remove.").context("failed to write hint")?;
+        return Ok(());
+    }
+    for (stage, id) in &targets {
+        let path = cache_root.join(stage).join(id);
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => {
+                writeln!(stdout, "Removed {stage}/{id}").context("failed to write remove line")?;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                writeln!(
+                    stdout,
+                    "Skipped {stage}/{id}: not found at {}",
+                    path.display()
+                )
+                .context("failed to write skip line")?;
+            }
+            Err(err) => {
+                anyhow::bail!("failed to remove {stage}/{id} at {}: {err}", path.display());
+            }
+        }
+    }
+    Ok(())
+}
