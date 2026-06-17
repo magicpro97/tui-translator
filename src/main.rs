@@ -4232,6 +4232,12 @@ fn handle_action(
 
         // Language prompt input (issue #64)
         UserAction::LangChar(c) => {
+            // Issue #843: any new keystroke clears the error so the
+            // user gets immediate feedback.
+            *state
+                .lang_prompt_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
             state
                 .lang_input
                 .lock()
@@ -4239,6 +4245,10 @@ fn handle_action(
                 .push(*c);
         }
         UserAction::LangBackspace => {
+            *state
+                .lang_prompt_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
             state
                 .lang_input
                 .lock()
@@ -4264,9 +4274,23 @@ fn handle_action(
                         tracing::info!("target language changed to {next_language}");
                         state.lang_prompt_active.store(false, Ordering::Relaxed);
                         *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                        // Issue #843: clear any previous error on success.
+                        *state
+                            .lang_prompt_error
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = None;
                     }
                     Err(err) => {
                         tracing::warn!("invalid target language entered from prompt: {err}");
+                        // Issue #843: surface the rejection so the user
+                        // knows why their input was bounced. The
+                        // lang prompt stays open and the error is
+                        // rendered inline.
+                        *state
+                            .lang_prompt_error
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) =
+                            Some(format!("invalid language code: {err}"));
                     }
                 }
             }
@@ -4274,6 +4298,11 @@ fn handle_action(
         UserAction::LangCancel => {
             state.lang_prompt_active.store(false, Ordering::Relaxed);
             *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+            // Issue #843: clear any pending error on cancel.
+            *state
+                .lang_prompt_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
         }
 
         UserAction::ConfigChar(c) => {
@@ -4851,6 +4880,33 @@ mod tests {
         assert_eq!(current_config.lock().unwrap().target_language, "vi");
         assert!(state.lang_prompt_active.load(Ordering::Relaxed));
         assert_eq!(state.lang_input.lock().unwrap().as_str(), "ja-JPdas");
+    }
+
+    #[test]
+    fn lang_apply_invalid_sets_visible_error_message() {
+        let state = AppState::new();
+        state.set_target_language("vi");
+        state.lang_prompt_active.store(true, Ordering::Relaxed);
+        *state.lang_input.lock().unwrap() = "ja-JPdas".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::LangApply,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        // New: an error message must be set so the user can see why their
+        // submission was rejected (#843).
+        assert!(state.lang_prompt_error.lock().unwrap().is_some());
+        // Prompt stays open so the user can correct the typo.
+        assert!(state.lang_prompt_active.load(Ordering::Relaxed));
     }
 
     #[test]
