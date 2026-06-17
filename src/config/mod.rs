@@ -2815,6 +2815,7 @@ pub(crate) mod test_env {
 mod tests {
     use super::test_env::{EnvVarGuard, ENV_LOCK};
     use super::*;
+    use crate::quality_preset::QualityPreset;
     use std::io::Write;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -2884,7 +2885,7 @@ mod tests {
         let cfg = AppConfig::default();
         assert_eq!(
             cfg.quality_preset,
-            crate::quality_preset::QualityPreset::Auto,
+            QualityPreset::Auto,
             "AppConfig::default() must default quality_preset to Auto"
         );
     }
@@ -2910,13 +2911,14 @@ mod tests {
     /// load.
     #[test]
     fn wizard_picked_preset_round_trips_through_json() {
-        use crate::quality_preset::QualityPreset;
-        let temp = NamedTempFile::new().expect("temp file");
-        let path = temp.path().to_path_buf();
+        let dir = TempDir::new().expect("temp dir");
+        let path = dir.path().join("wizard-preset.json");
         // Simulate `apply_wizard_patch_to_config` writing the
         // wizard's patch into a fresh config.
-        let mut cfg = AppConfig::default();
-        cfg.quality_preset = QualityPreset::Best; // patch.quality_preset = Some(Best)
+        let cfg = AppConfig {
+            quality_preset: QualityPreset::Best, // patch.quality_preset = Some(Best)
+            ..AppConfig::default()
+        };
         write_config(&path, &cfg).expect("write_config must succeed");
         // Reload and assert the preset survived.
         let (loaded, _state) = load_with_state(&path).expect("reload must succeed");
@@ -2939,17 +2941,21 @@ mod tests {
     /// switcher in the TUI cycles through all four.
     #[test]
     fn quality_preset_all_variants_round_trip() {
-        use crate::quality_preset::QualityPreset;
-        let temp = NamedTempFile::new().expect("temp file");
-        let path = temp.path().to_path_buf();
+        let dir = TempDir::new().expect("temp dir");
         for preset in [
             QualityPreset::Auto,
             QualityPreset::Best,
             QualityPreset::Performance,
             QualityPreset::Custom,
         ] {
-            let mut cfg = AppConfig::default();
-            cfg.quality_preset = preset;
+            // Use a unique path per iteration — on Windows, the atomic
+            // rename inside `write_config` can fail with `Access is denied`
+            // if the destination is still locked from the previous write.
+            let path = dir.path().join(format!("preset-{preset:?}.json"));
+            let cfg = AppConfig {
+                quality_preset: preset,
+                ..AppConfig::default()
+            };
             write_config(&path, &cfg).expect("write must succeed");
             let (loaded, _state) = load_with_state(&path).expect("reload must succeed");
             assert_eq!(loaded.quality_preset, preset, "round-trip lost {preset:?}");
