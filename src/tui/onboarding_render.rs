@@ -178,3 +178,7 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
 #[cfg(test)]
 #[path = "onboarding_render_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "onboarding_render_tests_hardware_survey.rs"]
+mod tests_hardware_survey;

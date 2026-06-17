@@ -653,16 +653,24 @@ impl OnboardingWizardState {
         use std::mem::discriminant;
         let disc = discriminant(&self.step);
         if disc == discriminant(&OnboardingStep::BranchSelection) {
+            // T18 follow-up (#836): the digit keys `1`/`2`/`3` (and
+            // `r`/`R` for symmetry with the global keymap) are now
+            // routed through the wizard as `OnboardingEvent::Char(c)`
+            // by the global keymap in `main::key_to_action`, and the
+            // wizard decides step-scoped behaviour.  We keep the
+            // explicit `SelectBranch1/2/3` and `RefreshVirtualCable`
+            // variants working for the test surface, but the live
+            // user input path uses the `Char` arms below.
             match event {
-                OnboardingEvent::SelectBranch1 => {
+                OnboardingEvent::SelectBranch1 | OnboardingEvent::Char('1') => {
                     self.branch = OnboardingBranch::LocalOnly;
                     None
                 }
-                OnboardingEvent::SelectBranch2 => {
+                OnboardingEvent::SelectBranch2 | OnboardingEvent::Char('2') => {
                     self.branch = OnboardingBranch::LocalGoogleFallback;
                     None
                 }
-                OnboardingEvent::SelectBranch3 => {
+                OnboardingEvent::SelectBranch3 | OnboardingEvent::Char('3') => {
                     self.branch = OnboardingBranch::GoogleCloud;
                     None
                 }
@@ -674,6 +682,7 @@ impl OnboardingWizardState {
                     self.rotate_branch_down();
                     None
                 }
+                OnboardingEvent::Char('r') | OnboardingEvent::Char('R') => None,
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => Some(OnboardingOutcome::Cancelled),
                 _ => None,
@@ -688,7 +697,9 @@ impl OnboardingWizardState {
                 _ => unreachable!("discriminant matched above"),
             };
             match event {
-                OnboardingEvent::RefreshVirtualCable => {
+                OnboardingEvent::RefreshVirtualCable
+                | OnboardingEvent::Char('r')
+                | OnboardingEvent::Char('R') => {
                     self.step = OnboardingStep::VirtualCableGate {
                         available: (self.cable_probe)()
                             .into_iter()
@@ -697,7 +708,9 @@ impl OnboardingWizardState {
                     };
                     None
                 }
-                OnboardingEvent::SkipVirtualCable => {
+                OnboardingEvent::SkipVirtualCable
+                | OnboardingEvent::Char('s')
+                | OnboardingEvent::Char('S') => {
                     self.virtual_mic_skipped = true;
                     self.advance_past_branch();
                     None
@@ -712,6 +725,15 @@ impl OnboardingWizardState {
             // persisted on `self`.  (The original code cloned the
             // step into a temporary for matching, which broke
             // mutation semantics for HardwareSurvey.)
+            //
+            // T18 follow-up (#836): also mirror the inner
+            // `selected_preset` into the top-level
+            // `hardware_survey_selection` on every change so the
+            // user's preset choice is captured immediately, not
+            // only on `Enter`.  This decouples the survey key
+            // handling from the `BranchSelection` digit keys
+            // (1/2/3 mean different things on the two steps) and
+            // also makes the field robust to back-navigation.
             match &mut self.step {
                 OnboardingStep::HardwareSurvey {
                     ref mut caps,
@@ -719,31 +741,38 @@ impl OnboardingWizardState {
                 } => match event {
                     OnboardingEvent::ArrowUp => {
                         *selected_preset = (*selected_preset).next();
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
                     OnboardingEvent::ArrowDown => {
                         *selected_preset = (*selected_preset).previous();
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
                     OnboardingEvent::Char('1') => {
                         *selected_preset = crate::quality_preset::QualityPreset::Auto;
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
                     OnboardingEvent::Char('2') => {
                         *selected_preset = crate::quality_preset::QualityPreset::Best;
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
                     OnboardingEvent::Char('3') => {
                         *selected_preset = crate::quality_preset::QualityPreset::Performance;
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
                     OnboardingEvent::Char('4') => {
                         *selected_preset = crate::quality_preset::QualityPreset::Custom;
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
-                    OnboardingEvent::Char('r') => {
+                    OnboardingEvent::Char('r') | OnboardingEvent::Char('R') => {
                         *selected_preset =
                             crate::quality_preset::QualityPreset::Auto.resolve_for(caps);
+                        self.hardware_survey_selection = Some(*selected_preset);
                         None
                     }
                     OnboardingEvent::Enter => {
