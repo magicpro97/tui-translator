@@ -900,6 +900,10 @@ fn snapshot_config_editor_onboarding() {
 
 #[test]
 fn snapshot_config_editor_onboarding_narrow() {
+    // Force Windows key-hint style so the snapshot is platform-independent.
+    // The config path above is already Windows-style; the key hint must match.
+    // The guard holds the shared key-os mutex for the full render duration.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     let mut app_config = config::AppConfig::default();
     app_config.mt_provider = "google".to_string();
     let editor = ConfigEditorState::from_config(
@@ -915,6 +919,10 @@ fn snapshot_config_editor_onboarding_narrow() {
 
 #[test]
 fn snapshot_config_editor_settings() {
+    // Force Windows key-hint style so the snapshot is platform-independent.
+    // The config path above is already Windows-style; the key hint must match.
+    // The guard holds the shared key-os mutex for the full render duration.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     let mut app_config = config::AppConfig::default();
     app_config.mt_provider = "google".to_string();
     let mut editor = ConfigEditorState::from_config(
@@ -933,6 +941,10 @@ fn snapshot_config_editor_settings() {
 
 #[test]
 fn snapshot_config_editor_settings_narrow() {
+    // Force Windows key-hint style so the snapshot is platform-independent.
+    // The config path above is already Windows-style; the key hint must match.
+    // The guard holds the shared key-os mutex for the full render duration.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     let mut app_config = config::AppConfig::default();
     app_config.mt_provider = "google".to_string();
     let mut editor = ConfigEditorState::from_config(
@@ -1859,6 +1871,10 @@ fn snapshot_help_overlay_80x8_top() {
 /// Snapshot: help overlay at 80×8, scrolled to bottom.
 #[test]
 fn snapshot_help_overlay_80x8_bottom() {
+    // Force Windows key-hint style so the snapshot is platform-independent.
+    // The config path above is already Windows-style; the key hint must match.
+    // The guard holds the shared key-os mutex for the full render duration.
+    let _key_guard = tui::key_hint::test_helpers::with_key_os_override("windows");
     insta::assert_snapshot!("help_overlay_80x8_bottom", render_help(80, 8, 9999));
 }
 
