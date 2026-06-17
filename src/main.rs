@@ -3585,16 +3585,18 @@ pub(crate) fn key_to_action(
             KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
             KeyCode::Esc => Some(UserAction::WizardKey(OnboardingEvent::Escape)),
             KeyCode::Backspace => Some(UserAction::WizardKey(OnboardingEvent::Backspace)),
-            KeyCode::Char('l')
-            | KeyCode::Char('L')
-            | KeyCode::Char('t')
-            | KeyCode::Char('T')
-            | KeyCode::Char('m')
-            | KeyCode::Char('M')
-            | KeyCode::Char('?')
-            | KeyCode::Char('q')
-            | KeyCode::Char('Q')
-            | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            // Issue #847: each forbidden runtime-shortcut key
+            // is mapped to a dedicated UserAction so the
+            // orchestrator can surface a "X unavailable in
+            // wizard" message.  Pre-fix these keys were mapped
+            // to OnboardingEvent::Ignored and the wizard
+            // silently no-op'd them.
+            KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::WizardKeyIgnored('L')),
+            KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::WizardKeyIgnored('T')),
+            KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::WizardKeyIgnored('M')),
+            KeyCode::Char('?') => Some(UserAction::WizardKeyIgnored('?')),
+            KeyCode::Char('q') | KeyCode::Char('Q') => Some(UserAction::WizardKeyIgnored('Q')),
+            KeyCode::Char(' ') => Some(UserAction::WizardKeyIgnored(' ')),
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
             }
@@ -4478,6 +4480,16 @@ fn handle_action(
             tracing::info!("input gain and output volume reset to 0 dB");
         }
 
+        // Issue #847: the user pressed a forbidden runtime
+        // shortcut key (L/T/M/S/R/?/Q/Space) inside the
+        // wizard.  Show feedback instead of silently
+        // dropping the key.
+        UserAction::WizardKeyIgnored(ch) => {
+            state.set_transient_feedback(format!(
+                " '{}' is unavailable in the wizard. Use ↑/↓ + Enter to pick a branch, or Esc to cancel.",
+                ch
+            ));
+        }
         UserAction::WizardKey(event) => {
             let outcome = state.with_wizard_mut(|wiz| wiz.handle(event.clone()));
             if let Some(Some(outcome)) = outcome {
@@ -5265,16 +5277,47 @@ mod tests {
         );
     }
 
+    // Issue #847: pressing a forbidden runtime-shortcut key
+    // (L/T/M/?/Q/Space) inside the wizard must produce
+    // observable feedback.  Pre-fix the keymap returned
+    // OnboardingEvent::Ignored and the wizard no-op'd it
+    // silently — the user thought the app was frozen.
+    //
+    // Note: S/R are excluded because the T18 follow-up
+    // (#836/#839) routes them to WizardKey(Char(c)) so the
+    // wizard can decide step-scoped behaviour.  They are NOT
+    // ignored — the wizard handles them.
+    #[test]
+    fn wizard_ignored_key_produces_user_feedback() {
+        for ch in ['l', 't', 'm', '?', ' '] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            let action = key_to_action(&key, false, false, true, false, false).unwrap();
+            match action {
+                UserAction::WizardKeyIgnored(_) => {}
+                other => panic!(
+                    "wizard {ch} must map to WizardKeyIgnored so the user gets feedback; got {other:?}"
+                ),
+            }
+        }
+    }
+
+    // Issue #847: forbidden runtime-shortcut keys inside the
+    // wizard produce observable feedback rather than being
+    // silently dropped.  L/T/M/?/Space route to
+    // UserAction::WizardKeyIgnored so the orchestrator can
+    // show "X unavailable in wizard".  Q was previously
+    // included but #849 routes it to Escape.
     #[test]
     fn wizard_keys_ignore_runtime_shortcut_chars() {
-        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', 'q', 'Q', ' '] {
+        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', ' '] {
             let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
-            assert_eq!(
-                key_to_action(&key, false, false, true, false, false),
-                Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
-                "wizard shortcut char {:?} must be Ignored",
-                ch
-            );
+            let action = key_to_action(&key, false, false, true, false, false).unwrap();
+            match action {
+                UserAction::WizardKeyIgnored(_) => {}
+                other => panic!(
+                    "wizard shortcut char {ch:?} must produce WizardKeyIgnored; got {other:?}"
+                ),
+            }
         }
     }
 
