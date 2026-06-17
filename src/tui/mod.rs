@@ -1863,6 +1863,12 @@ pub struct AppState {
     pub lang_prompt_active: Arc<AtomicBool>,
     /// Text being typed in the language-change prompt.
     pub lang_input: Mutex<String>,
+    /// Issue #843: transient error from the most recent LangApply
+    /// submit that failed `validate_language_code`. Rendered as a
+    /// red line in the lang prompt. Cleared on the next successful
+    /// submit, on `LangCancel`, or when the user types a new
+    /// character into the prompt.
+    pub lang_prompt_error: Mutex<Option<String>>,
     /// Whether the shared config editor overlay is active.
     pub config_editor_active: Arc<AtomicBool>,
     /// Whether the currently focused config-editor field is a picker-aware field.
@@ -2040,6 +2046,7 @@ impl AppState {
             paused: Arc::new(AtomicBool::new(false)),
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
+            lang_prompt_error: Mutex::new(None),
             config_editor_active: Arc::new(AtomicBool::new(false)),
             picker_field_active: Arc::new(AtomicBool::new(false)),
             config_editor: Mutex::new(None),
@@ -3559,7 +3566,12 @@ pub fn draw_ui_with_route(
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
-        render_language_prompt(frame, area, &input);
+        let lang_err = state
+            .lang_prompt_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        render_language_prompt(frame, area, &input, lang_err.as_deref());
     }
 
     if config_editor_active {
@@ -3732,9 +3744,16 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
 ///
 /// The user types a BCP-47 language code (e.g. `ja`, `fr`).
 /// Enter applies; Escape cancels.
-pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &str) {
+pub fn render_language_prompt(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    input: &str,
+    error: Option<&str>,
+) {
     let panel_w = 52u16.min(area.width);
-    let panel_h = 5u16.min(area.height);
+    // Issue #843: when an error is set we need an extra row for the
+    // red ✗ line.
+    let panel_h = if error.is_some() { 6u16 } else { 5u16 }.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -3748,18 +3767,25 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 
     // Show a blinking cursor approximation with a trailing underscore.
     let display = format!(" > {input}_");
-    let lines: Vec<Line<'static>> = vec![
+    let mut lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             " Target language code (e.g. ja, fr, de)",
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
-        Line::from(Span::raw(display)),
-        Line::from(Span::styled(
-            " Enter: apply   Esc: cancel",
-            Style::default().fg(Color::DarkGray),
-        )),
     ];
+    if let Some(err) = error {
+        // Issue #843: render the most recent rejection inline.
+        lines.push(Line::from(Span::styled(
+            format!(" ✗ {err}"),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+    lines.push(Line::from(Span::raw(display)));
+    lines.push(Line::from(Span::styled(
+        " Enter: apply   Esc: cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
 
     frame.render_widget(
         Paragraph::new(lines).block(

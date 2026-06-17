@@ -116,7 +116,7 @@ fn render_lang_prompt(input: &str, width: u16, height: u16) -> String {
     terminal
         .draw(|frame| {
             let area = frame.area();
-            render_language_prompt(frame, area, input);
+            render_language_prompt(frame, area, input, None);
         })
         .unwrap();
     buffer_to_string(terminal.backend().buffer())
