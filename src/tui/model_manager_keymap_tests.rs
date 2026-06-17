@@ -146,3 +146,19 @@ fn ctrl_p_does_not_advance_state() {
     );
     assert_eq!(s.selected_index(), 0);
 }
+
+// Issue #848: pressing Ctrl+C inside the ModelManager overlay
+// should close the overlay AND signal that the app should
+// quit.  Pre-fix the catch-all returned ModelManagerAction::None
+// and the user had to press Esc + Ctrl+C twice.
+#[test]
+fn ctrl_c_in_model_manager_quits_app() {
+    use crate::tui::model_manager_keymap::{handle_model_manager_key, ModelManagerAction};
+    use crate::tui::model_manager_state::ModelManagerState;
+    let mut state = ModelManagerState::default();
+    let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(
+        handle_model_manager_key(&mut state, key),
+        ModelManagerAction::Quit
+    );
+}

@@ -1984,6 +1984,11 @@ pub struct AppState {
 
     /// Whether the onboarding wizard overlay is active.
     pub wizard_active: Arc<AtomicBool>,
+    /// Issue #848: set to `true` by the ModelManager keymap when
+    /// the user presses Ctrl+C inside the overlay.  The main
+    /// event loop checks this flag every iteration and quits
+    /// when set.
+    pub quit_requested: Arc<AtomicBool>,
     /// State for the LF-05 onboarding wizard.
     pub wizard_state: Mutex<Option<onboarding::OnboardingWizardState>>,
     /// Whether the wizard is in consent-review-only mode (existing config).
@@ -2076,6 +2081,7 @@ impl AppState {
             audio_consent: Arc::new(AtomicBool::new(false)),
             stt_source: Arc::new(Mutex::new(SttSource::Local)),
             wizard_active: Arc::new(AtomicBool::new(false)),
+            quit_requested: Arc::new(AtomicBool::new(false)),
             wizard_state: Mutex::new(None),
             wizard_consent_only: Arc::new(AtomicBool::new(false)),
             slot_b_subtitle_pane: Mutex::new(None),
