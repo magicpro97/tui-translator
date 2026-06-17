@@ -3577,9 +3577,16 @@ pub(crate) fn key_to_action(
             | KeyCode::Char('m')
             | KeyCode::Char('M')
             | KeyCode::Char('?')
-            | KeyCode::Char('q')
-            | KeyCode::Char('Q')
             | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            // Issue #849: q/Q inside the wizard should bail out
+            // of the wizard (mapped to Escape so the wizard
+            // returns OnboardingOutcome::Cancelled).  Pre-fix
+            // the wizard silently swallowed q/Q as Ignored
+            // and a first-run user tapping q to quit the
+            // wizard saw nothing happen.
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                Some(UserAction::WizardKey(OnboardingEvent::Escape))
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
             }
@@ -5186,7 +5193,12 @@ mod tests {
 
     #[test]
     fn wizard_keys_ignore_runtime_shortcut_chars() {
-        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', 'q', 'Q', ' '] {
+        // Issue #849: q/Q were removed from this list.  They now
+        // route to OnboardingEvent::Escape (see
+        // wizard_keys_q_maps_to_escape_not_ignored) so a
+        // first-run user tapping q to quit the wizard sees
+        // something happen.
+        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', ' '] {
             let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
             assert_eq!(
                 key_to_action(&key, false, false, true, false, false),
@@ -5204,6 +5216,23 @@ mod tests {
             key_to_action(&key, false, false, true, false, false),
             Some(UserAction::Quit)
         );
+    }
+
+    // Issue #849: q/Q inside the wizard should also bail out of
+    // the wizard (mapped to OnboardingEvent::Escape) so a
+    // first-run user who taps q to quit the wizard sees
+    // something happen.  Pre-fix the wizard silently swallowed
+    // q/Q as OnboardingEvent::Ignored.
+    #[test]
+    fn wizard_keys_q_maps_to_escape_not_ignored() {
+        for ch in ['q', 'Q'] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Escape)),
+                "wizard {ch} must map to OnboardingEvent::Escape, not Ignored"
+            );
+        }
     }
 
     #[test]
