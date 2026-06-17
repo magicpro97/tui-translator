@@ -3539,8 +3539,14 @@ pub(crate) fn key_to_action(
     }
     if in_wizard {
         return match key.code {
+            // Issue #845: Ctrl+C in the wizard must NOT immediately
+            // quit — that bypasses the wizard's Cancelled path and
+            // drops any typed fields (Google API key, license
+            // acceptances, etc.).  Map to Escape so the wizard
+            // returns OnboardingOutcome::Cancelled and the typed
+            // fields are preserved for re-entry.
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(UserAction::Quit)
+                Some(UserAction::WizardKey(OnboardingEvent::Escape))
             }
             // T18 follow-up (#836): `1`/`2`/`3` (and `4`/`r`/`R`)
             // are routed to the wizard as `OnboardingEvent::Char(c)`
@@ -5197,12 +5203,19 @@ mod tests {
         }
     }
 
+    // Issue #845: Ctrl+C in the wizard must NOT immediately quit —
+    // that bypasses the wizard's OnboardingOutcome::Cancelled path
+    // and loses any typed fields (Google API key, license
+    // acceptances, etc.).  Instead, map Ctrl+C to a wizard
+    // OnboardingEvent::Escape so the wizard cancels cleanly and
+    // the typed fields are preserved in the wizard state for
+    // re-entry.
     #[test]
-    fn wizard_keys_ctrl_c_quits() {
+    fn wizard_keys_ctrl_c_maps_to_escape_not_quit() {
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert_eq!(
             key_to_action(&key, false, false, true, false, false),
-            Some(UserAction::Quit)
+            Some(UserAction::WizardKey(OnboardingEvent::Escape))
         );
     }
 
