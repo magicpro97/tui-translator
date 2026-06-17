@@ -30,6 +30,10 @@ mod audio;
 
 #[path = "../src/config/mod.rs"]
 mod config;
+#[path = "../src/quality_preset.rs"]
+mod quality_preset;
+#[path = "../src/sys_caps.rs"]
+mod sys_caps;
 
 // Pull in the routing module directly.
 #[path = "../src/providers/mod.rs"]

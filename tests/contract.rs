@@ -21,6 +21,10 @@ mod audio;
 
 #[path = "../src/config/mod.rs"]
 mod config;
+#[path = "../src/quality_preset.rs"]
+mod quality_preset;
+#[path = "../src/sys_caps.rs"]
+mod sys_caps;
 
 #[path = "contract/google_stt.rs"]
 mod google_stt;

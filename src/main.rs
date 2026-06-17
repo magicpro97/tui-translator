@@ -3935,6 +3935,15 @@ fn apply_wizard_patch_to_config(
         cfg.virtual_mic_device = Some(dev);
     }
 
+    // #835 (v3 #819 follow-up): persist the HardwareSurvey preset
+    // choice.  When the patch carries `None` (e.g. the consent-only
+    // review flow never visited the survey) the field is left at
+    // its `Auto` default so we don't clobber an existing user
+    // override on a re-run.
+    if let Some(preset) = patch.quality_preset {
+        cfg.quality_preset = preset;
+    }
+
     config::apply_editor_defaults(cfg_path, &mut cfg)?;
     config::write_config(cfg_path, &cfg)?;
     let (requires_restart, _) = apply_runtime_config(
