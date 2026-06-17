@@ -263,6 +263,11 @@ pub struct OnboardingWizardState {
     /// `Confirmation` step to populate the final
     /// `OnboardingConfigPatch`.
     pub(crate) hardware_survey_selection: Option<crate::quality_preset::QualityPreset>,
+    /// Issue #851: scroll offset (lines from the top) for the
+    /// license text shown in the LicenseReview step.  Reset to
+    /// 0 on every step transition so a long license for one
+    /// model doesn't bleed into the next.
+    pub license_scroll: usize,
 }
 
 impl OnboardingWizardState {
@@ -290,6 +295,7 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            license_scroll: 0,
         }
     }
 
@@ -329,6 +335,7 @@ impl OnboardingWizardState {
             gate_enabled: false,
             sys_caps: caps_for_field,
             hardware_survey_selection: None,
+            license_scroll: 0,
         }
     }
 
@@ -360,6 +367,7 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            license_scroll: 0,
         }
     }
 
@@ -399,6 +407,7 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            license_scroll: 0,
         }
     }
 
@@ -785,9 +794,21 @@ impl OnboardingWizardState {
                 _ => unreachable!("discriminant matched above"),
             }
         } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
+            // Issue #851: license text longer than the panel
+            // (~28 lines) was silently truncated.  Map ArrowUp
+            // /ArrowDown to license_scroll with saturating
+            // arithmetic; PageUp/PageDown jump 10 lines.
             match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::ArrowUp => {
+                    self.license_scroll = self.license_scroll.saturating_sub(1);
+                    None
+                }
+                OnboardingEvent::ArrowDown => {
+                    self.license_scroll = self.license_scroll.saturating_add(1);
+                    None
+                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::GoogleKeyEntry) {

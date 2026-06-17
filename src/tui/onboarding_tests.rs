@@ -924,3 +924,37 @@ fn virtual_cable_gate_r_refreshes_and_s_skips() {
         "Char('s') on VirtualCableGate must set virtual_mic_skipped"
     );
 }
+
+// Issue #851: long license text shown in the LicenseReview
+// step must be scrollable so a user can actually read a
+// license longer than the ~28-line panel.
+#[test]
+fn license_review_arrow_down_increments_scroll() {
+    let license_text = (0..100)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "Test Model".into(),
+        license_text,
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    // Drive to LicenseReview: BranchSelection → HardwareSurvey → LicenseReview
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::Enter);
+    // Sanity: we're on LicenseReview
+    assert!(matches!(wiz.step, OnboardingStep::LicenseReview { .. }));
+    // Initial scroll is 0
+    assert_eq!(wiz.license_scroll, 0);
+    // ArrowDown increments
+    wiz.handle(OnboardingEvent::ArrowDown);
+    assert_eq!(wiz.license_scroll, 1);
+    // ArrowUp decrements (saturating)
+    wiz.handle(OnboardingEvent::ArrowUp);
+    assert_eq!(wiz.license_scroll, 0);
+    wiz.handle(OnboardingEvent::ArrowUp);
+    assert_eq!(wiz.license_scroll, 0, "must saturate at 0");
+    // Other keys don't change scroll
+    wiz.handle(OnboardingEvent::Escape);
+    assert_eq!(wiz.license_scroll, 0);
+}

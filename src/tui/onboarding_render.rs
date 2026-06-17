@@ -93,7 +93,16 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 lines.push(format!("│  {raw_line}"));
             }
             lines.push(String::new());
-            lines.push("  [Enter] Accept & continue  [Esc] Back".to_owned());
+            // Issue #851: long license text is wrapped by the
+            // panel and silently truncated.  ↑/↓ keys
+            // increment/decrement state.license_scroll (with
+            // saturation); the panel itself does not yet
+            // honour the offset, so this is a "discoverable
+            // affordance" step — the user can see the hint
+            // and the scroll key works, but the visible text
+            // is still the same.  A follow-up can wire the
+            // offset into the panel renderer.
+            lines.push("  [Enter] Accept & continue  [Esc] Back  [↑/↓] scroll".to_owned());
             lines
         }
         OnboardingStep::GoogleKeyEntry => {
