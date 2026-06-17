@@ -108,18 +108,51 @@ fn first_run_setup_creates_per_user_config_and_stays_gone_after_restart() {
 
         // Select the GoogleCloud branch ('3'), advance to key entry, type an API
         // key that avoids wizard-level hotkey conflicts, then confirm.
-        // '3' → SelectBranch3 (GoogleCloud); '\r' × 3 = advance × 3 steps.
+        //
+        // Flow (post-#819):  BranchSelection → (VirtualCableGate on Windows) →
+        // HardwareSurvey → GoogleKeyEntry → Confirmation.
+        //
+        // '3' selects GoogleCloud; the first \r advances past BranchSelection
+        // (possibly through VirtualCableGate on Windows, skipped via 's' below);
+        // the second \r advances past HardwareSurvey to GoogleKeyEntry.
         session.send(b"3").expect("select google cloud branch");
         std::thread::sleep(Duration::from_millis(150));
         session.send(b"\r").expect("advance from branch selection");
-        // US-01: if VB-CABLE is not installed the VirtualCableGate step appears;
-        // skip it with 's' so the test reaches GoogleKeyEntry unconditionally.
-        if session.wait_for_text("Virtual Cable Gate", std::time::Duration::from_secs(2)) {
-            session.send(b"s").expect("skip virtual cable gate");
+
+        // US-01: if VB-CABLE is not installed the VirtualCableGate step appears
+        // (Windows only — `gate_enabled: cfg!(windows)` in src/tui/onboarding.rs).
+        // The Gate can take 5+ seconds to render on slow CI runners, so we poll
+        // for either the Gate or the next step and act on whichever appears
+        // first.  The previous 2s + 12s two-stage wait was racy because the Gate
+        // sometimes appeared AFTER the 2s window, leaving the test stuck on the
+        // subsequent "Google API Key" wait.
+        let post_branch_deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(STARTUP_TIMEOUT.as_secs() * 2);
+        // Check the Gate first — on Windows-no-cable it's the first step after
+        // branch selection, and we want to skip it ASAP.  On macOS/Linux the
+        // Gate is disabled (`cfg!(windows)`) so the check is a cheap 500ms
+        // timeout.  Inverting from the previous order saves ~500ms on Windows.
+        loop {
+            if session.wait_for_text("Virtual Cable Gate", std::time::Duration::from_millis(500)) {
+                session.send(b"s").expect("skip virtual cable gate");
+            }
+            if session.wait_for_text("Hardware Survey", std::time::Duration::from_millis(500)) {
+                break;
+            }
+            if std::time::Instant::now() >= post_branch_deadline {
+                panic!(
+                    "after selecting GoogleCloud branch neither Virtual Cable Gate \
+                     nor Hardware Survey appeared within {}s",
+                    STARTUP_TIMEOUT.as_secs() * 2
+                );
+            }
         }
+
+        // Advance past HardwareSurvey to GoogleKeyEntry.
+        session.send(b"\r").expect("advance from hardware survey");
         assert!(
             session.wait_for_text("Google API Key", STARTUP_TIMEOUT),
-            "after selecting GoogleCloud branch the key-entry step should appear"
+            "after passing Hardware Survey the Google API Key step should appear"
         );
 
         // Type an API key without wizard hotkey collisions (no l/t/m/s/r/q/1/2/3).
