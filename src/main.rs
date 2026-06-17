@@ -3585,18 +3585,23 @@ pub(crate) fn key_to_action(
             KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
             KeyCode::Esc => Some(UserAction::WizardKey(OnboardingEvent::Escape)),
             KeyCode::Backspace => Some(UserAction::WizardKey(OnboardingEvent::Backspace)),
-            // Issue #847: each forbidden runtime-shortcut key
-            // is mapped to a dedicated UserAction so the
-            // orchestrator can surface a "X unavailable in
-            // wizard" message.  Pre-fix these keys were mapped
-            // to OnboardingEvent::Ignored and the wizard
-            // silently no-op'd them.
-            KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::WizardKeyIgnored('L')),
-            KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::WizardKeyIgnored('T')),
-            KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::WizardKeyIgnored('M')),
-            KeyCode::Char('?') => Some(UserAction::WizardKeyIgnored('?')),
-            KeyCode::Char('q') | KeyCode::Char('Q') => Some(UserAction::WizardKeyIgnored('Q')),
-            KeyCode::Char(' ') => Some(UserAction::WizardKeyIgnored(' ')),
+            KeyCode::Char('l')
+            | KeyCode::Char('L')
+            | KeyCode::Char('t')
+            | KeyCode::Char('T')
+            | KeyCode::Char('m')
+            | KeyCode::Char('M')
+            | KeyCode::Char('?')
+            | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            // Issue #849: q/Q inside the wizard should bail out
+            // of the wizard (mapped to Escape so the wizard
+            // returns OnboardingOutcome::Cancelled).  Pre-fix
+            // the wizard silently swallowed q/Q as Ignored
+            // and a first-run user tapping q to quit the
+            // wizard saw nothing happen.
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                Some(UserAction::WizardKey(OnboardingEvent::Escape))
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
             }
@@ -5335,6 +5340,23 @@ mod tests {
             key_to_action(&key, false, false, true, false, false),
             Some(UserAction::WizardKey(OnboardingEvent::Escape))
         );
+    }
+
+    // Issue #849: q/Q inside the wizard should also bail out of
+    // the wizard (mapped to OnboardingEvent::Escape) so a
+    // first-run user who taps q to quit the wizard sees
+    // something happen.  Pre-fix the wizard silently swallowed
+    // q/Q as OnboardingEvent::Ignored.
+    #[test]
+    fn wizard_keys_q_maps_to_escape_not_ignored() {
+        for ch in ['q', 'Q'] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Escape)),
+                "wizard {ch} must map to OnboardingEvent::Escape, not Ignored"
+            );
+        }
     }
 
     #[test]
