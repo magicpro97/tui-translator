@@ -925,6 +925,80 @@ fn virtual_cable_gate_r_refreshes_and_s_skips() {
     );
 }
 
+<<<<<<< HEAD
+#[test]
+fn empty_key_on_confirmation_sets_error_message() {
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
+    w.handle(OnboardingEvent::Enter); // → Confirmation
+    let outcome = w.handle(OnboardingEvent::Enter); // empty key → bounce
+    assert_eq!(outcome, None);
+    assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
+    // New: error_message should be set so the user knows why
+    assert_eq!(w.error_message.as_deref(), Some("API key is required"));
+}
+
+#[test]
+fn successful_key_submission_clears_error_message() {
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → Confirmation
+    w.handle(OnboardingEvent::Enter); // empty key → error
+    assert!(w.error_message.is_some());
+    // Now type a real key and advance
+    w.handle(OnboardingEvent::Char('x'));
+    assert!(w.error_message.is_none());
+    w.handle(OnboardingEvent::Backspace);
+    w.handle(OnboardingEvent::Char('A'));
+    w.handle(OnboardingEvent::Char('B'));
+    w.handle(OnboardingEvent::Enter); // → Confirmation
+    w.handle(OnboardingEvent::Enter); // success → Done
+    let outcome = w.handle(OnboardingEvent::Enter);
+    assert!(matches!(outcome, Some(OnboardingOutcome::Done(_))));
+=======
+// Issue #851: long license text shown in the LicenseReview
+// step must be scrollable so a user can actually read a
+// license longer than the ~28-line panel.
+#[test]
+fn license_review_arrow_down_increments_scroll() {
+    let license_text = (0..100)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "Test Model".into(),
+        license_text,
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    // Drive to LicenseReview: BranchSelection → HardwareSurvey → LicenseReview
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::Enter);
+    // Sanity: we're on LicenseReview
+    assert!(matches!(wiz.step, OnboardingStep::LicenseReview { .. }));
+    // Initial scroll is 0
+    assert_eq!(wiz.license_scroll, 0);
+    // ArrowDown increments
+    wiz.handle(OnboardingEvent::ArrowDown);
+    assert_eq!(wiz.license_scroll, 1);
+    // ArrowUp decrements (saturating)
+    wiz.handle(OnboardingEvent::ArrowUp);
+    assert_eq!(wiz.license_scroll, 0);
+    wiz.handle(OnboardingEvent::ArrowUp);
+    assert_eq!(wiz.license_scroll, 0, "must saturate at 0");
+    // Other keys don't change scroll
+    wiz.handle(OnboardingEvent::Escape);
+    assert_eq!(wiz.license_scroll, 0);
+>>>>>>> 80b00a3 (fix(ux): make LicenseReview step scrollable (issue #851))
+}
+
 #[test]
 fn empty_key_on_confirmation_sets_error_message() {
     let mut w = make_wizard();

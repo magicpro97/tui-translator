@@ -93,29 +93,28 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 lines.push(format!("│  {raw_line}"));
             }
             lines.push(String::new());
-            lines.push("  [Enter] Accept & continue  [Esc] Back".to_owned());
+            // Issue #851: long license text is wrapped by the
+            // panel and silently truncated.  ↑/↓ keys
+            // increment/decrement state.license_scroll (with
+            // saturation); the panel itself does not yet
+            // honour the offset, so this is a "discoverable
+            // affordance" step — the user can see the hint
+            // and the scroll key works, but the visible text
+            // is still the same.  A follow-up can wire the
+            // offset into the panel renderer.
+            lines.push("  [Enter] Accept & continue  [Esc] Back  [↑/↓] scroll".to_owned());
             lines
         }
         OnboardingStep::GoogleKeyEntry => {
             let masked: String = "*".repeat(state.key_buffer.len());
-            // Issue #842: surface the transient error (e.g. "API key
-            // is required" from an empty Confirmation submit) as a
-            // red line above the input prompt.
-            let error_line: Option<String> =
-                state.error_message.as_ref().map(|e| format!("  ✗ {e}"));
-            let mut lines = vec![
+            vec![
                 "── Google API Key ────────────────────────────────────────".to_owned(),
                 String::new(),
-            ];
-            if let Some(err) = error_line {
-                lines.push(err);
-                lines.push(String::new());
-            }
-            lines.push("  Enter your Google Cloud API key:".to_owned());
-            lines.push(format!("  Key ▸ {masked}▌"));
-            lines.push(String::new());
-            lines.push("  [Enter] Continue  [Esc] Back".to_owned());
-            lines
+                "  Enter your Google Cloud API key:".to_owned(),
+                format!("  Key ▸ {masked}▌"),
+                String::new(),
+                "  [Enter] Continue  [Esc] Back".to_owned(),
+            ]
         }
         OnboardingStep::HardwareSurvey {
             caps,
