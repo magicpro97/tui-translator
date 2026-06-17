@@ -391,6 +391,11 @@ pub enum UserAction {
     DismissOverlay,
     /// Q or Ctrl+C — quit and show the session summary.
     Quit,
+    /// Issue #847: a forbidden runtime-shortcut key (L/T/M/S/R/
+    /// ?/Space) was pressed inside the wizard.  The orchestrator
+    /// surfaces a "key unavailable in wizard" message so the
+    /// user knows why the key did nothing.
+    WizardKeyIgnored(char),
     /// ↑ arrow — scroll the subtitle pane up.
     ScrollUp,
     /// ↓ arrow — scroll the subtitle pane down.
@@ -1936,6 +1941,11 @@ pub struct AppState {
     /// One-shot startup notice for non-error configuration events that the
     /// operator should see, such as a legacy config migration.
     pub startup_notice_msg: Arc<Mutex<Option<String>>>,
+    /// Issue #847: transient feedback shown when the user
+    /// presses a forbidden runtime-shortcut key (L/T/M/S/R/
+    /// ?/Q/Space) inside the wizard.  Cleared on the next
+    /// meaningful keypress or after a short timeout.
+    pub transient_feedback: Arc<Mutex<Option<String>>>,
 
     /// Operator-facing recovery hint for audio capture startup failures.
     ///
@@ -2026,6 +2036,18 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Issue #847: set a transient feedback message (e.g.
+    /// "X unavailable in wizard").  Works with `&self` so
+    /// callers in `handle_action` (which takes `&AppState`)
+    /// can surface the message without forcing a signature
+    /// change.
+    pub fn set_transient_feedback(&self, message: impl Into<String>) {
+        *self
+            .transient_feedback
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(message.into());
+    }
+
     /// Create a fresh state with level at zero and device name `"initializing…"`.
     pub fn new() -> Self {
         let (metrics_tx, metrics_rx) = tokio::sync::watch::channel(MetricsSnapshot::default());
@@ -2063,6 +2085,7 @@ impl AppState {
             metrics_rx,
             pipeline_error_msg: Arc::new(Mutex::new(None)),
             startup_notice_msg: Arc::new(Mutex::new(None)),
+            transient_feedback: Arc::new(Mutex::new(None)),
             capture_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
@@ -3214,6 +3237,12 @@ pub fn draw_ui_with_route(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
+    // Issue #847: read transient feedback for the title bar.
+    let transient_feedback = state
+        .transient_feedback
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     let capture_err = state
         .capture_error_msg
         .lock()
@@ -3289,6 +3318,17 @@ pub fn draw_ui_with_route(
             format!("   {msg}"),
             Style::default()
                 .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    // Issue #847: render the transient feedback message (e.g.
+    // "X unavailable in wizard") in the title bar so the user
+    // sees it.  Cleared on the next meaningful keypress.
+    if let Some(ref msg) = transient_feedback {
+        title_spans.push(Span::styled(
+            format!("   {msg}"),
+            Style::default()
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ));
     }
