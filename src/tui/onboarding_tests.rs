@@ -285,9 +285,22 @@ fn google_cloud_completion_empty_key_stays_on_key_entry() {
 
 // ── Cancellation ──────────────────────────────────────────────────────────
 
+// Issue #852: Esc on BranchSelection no longer cancels
+// the wizard immediately.  Instead it transitions to a
+// ConfirmCancel step (the user gets one more chance to
+// back out).  Only Esc or Enter on ConfirmCancel actually
+// cancels.
 #[test]
-fn esc_at_branch_selection_cancels_wizard() {
+fn esc_at_branch_selection_transitions_to_confirm_cancel() {
     let mut w = make_wizard();
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(outcome.is_none(), "1st Esc must NOT cancel the wizard");
+    assert!(
+        matches!(w.step, OnboardingStep::ConfirmCancel),
+        "1st Esc should transition to ConfirmCancel; got {:?}",
+        w.step
+    );
+    // 2nd Esc (now on ConfirmCancel) actually cancels.
     let outcome = w.handle(OnboardingEvent::Escape);
     assert_eq!(outcome, Some(OnboardingOutcome::Cancelled));
 }
@@ -923,4 +936,50 @@ fn virtual_cable_gate_r_refreshes_and_s_skips() {
         w.virtual_mic_skipped,
         "Char('s') on VirtualCableGate must set virtual_mic_skipped"
     );
+}
+
+// Issue #852: pressing Esc on BranchSelection immediately
+// cancelled the whole wizard.  Users accidentally exited
+// without realising.  Now the first Esc transitions to a
+// ConfirmCancel step, and only the second Esc (or Enter on
+// ConfirmCancel) actually exits the wizard.
+#[test]
+fn esc_on_branch_selection_requires_double_press_to_cancel() {
+    let mut w = make_wizard();
+    // 1st Esc: should NOT cancel, should go to ConfirmCancel
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(outcome.is_none(), "1st Esc must not cancel the wizard");
+    assert!(
+        matches!(w.step, OnboardingStep::ConfirmCancel),
+        "1st Esc should transition to ConfirmCancel; got {:?}",
+        w.step
+    );
+    // Enter on ConfirmCancel: actually cancels
+    let outcome = w.handle(OnboardingEvent::Enter);
+    assert!(
+        matches!(outcome, Some(OnboardingOutcome::Cancelled)),
+        "Enter on ConfirmCancel should cancel; got {:?}",
+        outcome
+    );
+    // 2nd Esc on ConfirmCancel: also cancels
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::Escape); // → ConfirmCancel
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(
+        matches!(outcome, Some(OnboardingOutcome::Cancelled)),
+        "2nd Esc on ConfirmCancel should cancel; got {:?}",
+        outcome
+    );
+    // Any other key on ConfirmCancel: goes back to BranchSelection
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::Escape); // → ConfirmCancel
+    w.handle(OnboardingEvent::Char('x')); // → BranchSelection (back)
+    assert!(
+        matches!(w.step, OnboardingStep::BranchSelection),
+        "non-Enter/Esc key must go back to BranchSelection; got {:?}",
+        w.step
+    );
+    // Then Enter: confirms branch, advances (not cancels)
+    w.handle(OnboardingEvent::Enter);
+    assert!(!matches!(w.step, OnboardingStep::BranchSelection));
 }

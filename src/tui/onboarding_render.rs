@@ -173,6 +173,18 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
             String::new(),
             "  [Enter] Continue  [Esc] Dismiss".to_owned(),
         ],
+        // Issue #852: confirmation step reached when the
+        // user presses Esc from BranchSelection.  Pressing
+        // Enter or Esc again cancels the whole wizard.
+        // Any other key returns to BranchSelection.
+        OnboardingStep::ConfirmCancel => vec![
+            "── Cancel wizard? ───────────────────────────────────────".to_owned(),
+            String::new(),
+            "  Are you sure you want to exit the first-run wizard?".to_owned(),
+            "  No settings will be saved.".to_owned(),
+            String::new(),
+            "  [Enter] / [Esc] Yes, cancel  [Any other key] Back".to_owned(),
+        ],
     }
 }
 #[cfg(test)]

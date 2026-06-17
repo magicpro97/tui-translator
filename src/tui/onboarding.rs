@@ -134,6 +134,10 @@ pub enum OnboardingStep {
     /// `AppConfig::platform_parity_notice_seen_at` is `None`.  Dismissed by
     /// `Enter` or `Esc` → [`OnboardingOutcome::PlatformParityNoticeDismissed`].
     PlatformParityNotice,
+    /// Issue #852: Esc on BranchSelection used to immediately cancel the
+    /// whole wizard.  Now the first Esc transitions here for confirmation.
+    /// Enter or Esc again -> Cancelled.  Any other key -> back to the wizard.
+    ConfirmCancel,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -545,6 +549,7 @@ impl OnboardingWizardState {
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
+            OnboardingStep::ConfirmCancel => Some(OnboardingOutcome::Cancelled),
         }
     }
 
@@ -615,6 +620,12 @@ impl OnboardingWizardState {
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
+            OnboardingStep::ConfirmCancel => {
+                // Esc on ConfirmCancel cancels the wizard.
+                // Any other key goes back to BranchSelection
+                // (handled by the catch-all in handle()).
+                Some(OnboardingOutcome::Cancelled)
+            }
         }
     }
 
@@ -684,7 +695,13 @@ impl OnboardingWizardState {
                 }
                 OnboardingEvent::Char('r') | OnboardingEvent::Char('R') => None,
                 OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => Some(OnboardingOutcome::Cancelled),
+                // Issue #852: do NOT cancel immediately.
+                // Move to ConfirmCancel so the user can
+                // back out with any other key.
+                OnboardingEvent::Escape => {
+                    self.step = OnboardingStep::ConfirmCancel;
+                    None
+                }
                 _ => None,
             }
         } else if disc
@@ -809,6 +826,19 @@ impl OnboardingWizardState {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
+            }
+        } else if matches!(self.step, OnboardingStep::ConfirmCancel) {
+            // Issue #852: confirm-cancel step.  Enter or
+            // Esc -> Cancelled.  Any other key -> back to
+            // BranchSelection.
+            match event {
+                OnboardingEvent::Enter | OnboardingEvent::Escape => {
+                    Some(OnboardingOutcome::Cancelled)
+                }
+                _ => {
+                    self.step = OnboardingStep::BranchSelection;
+                    None
+                }
             }
         } else if matches!(self.step, OnboardingStep::PlatformParityNotice) {
             match event {
