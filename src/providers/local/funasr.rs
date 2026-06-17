@@ -223,10 +223,7 @@ impl LocalFunAsrSttProvider {
     /// never `load()`-ed, or that was built without the
     /// `local-stt-funasr` feature, returns `false`.
     pub fn is_loaded(&self) -> bool {
-        let inner = self
-            .inner
-            .lock()
-            .expect("funasr provider mutex poisoned");
+        let inner = self.inner.lock().expect("funasr provider mutex poisoned");
         // The feature-off build never constructs a recognizer
         // (the field is always `None` after construction), so
         // `is_loaded` is always `false` in that build.
@@ -267,10 +264,9 @@ impl LocalFunAsrSttProvider {
         // minimal.
         let model_dir = std::env::var(FUNASR_MODEL_DIR_ENV)
             .map(PathBuf::from)
-            .map_err(|_| FunAsrError::ModelDirInvalid(format!(
-                "${} is not set",
-                FUNASR_MODEL_DIR_ENV
-            )))?;
+            .map_err(|_| {
+                FunAsrError::ModelDirInvalid(format!("${} is not set", FUNASR_MODEL_DIR_ENV))
+            })?;
 
         // Verify the three required files exist.  This is a
         // cheap pre-flight check that gives the caller a
@@ -315,15 +311,13 @@ impl LocalFunAsrSttProvider {
         config.decoding_method = Some("greedy_search".into());
         config.enable_endpoint = false;
 
-        let recognizer = sherpa_onnx::OnlineRecognizer::create(&config)
-            .ok_or_else(|| FunAsrError::Inference(
+        let recognizer = sherpa_onnx::OnlineRecognizer::create(&config).ok_or_else(|| {
+            FunAsrError::Inference(
                 "sherpa-onnx failed to construct OnlineRecognizer (see logs)".into(),
-            ))?;
+            )
+        })?;
 
-        let mut inner = self
-            .inner
-            .lock()
-            .expect("funasr provider mutex poisoned");
+        let mut inner = self.inner.lock().expect("funasr provider mutex poisoned");
         inner.recognizer = Some(OnlineSession {
             recognizer: Arc::new(recognizer),
             sample_rate: DEFAULT_SAMPLE_RATE,
@@ -354,10 +348,7 @@ impl LocalFunAsrSttProvider {
     fn transcribe_inner(&self, audio: &[i16]) -> Result<String, FunAsrError> {
         #[cfg(feature = "local-stt-funasr")]
         {
-            let inner = self
-                .inner
-                .lock()
-                .expect("funasr provider mutex poisoned");
+            let inner = self.inner.lock().expect("funasr provider mutex poisoned");
             let Some(session) = inner.recognizer.clone() else {
                 return Err(FunAsrError::SessionsNotLoaded);
             };
@@ -385,8 +376,7 @@ impl LocalFunAsrSttProvider {
         // 30ms at the configured sample rate (e.g. 480
         // samples at 16kHz).  Float arithmetic is used here
         // to support non-16kHz recognizers in the future.
-        let chunk_size =
-            (session.sample_rate as usize) * (STREAMING_CHUNK_MS as usize) / 1000;
+        let chunk_size = (session.sample_rate as usize) * (STREAMING_CHUNK_MS as usize) / 1000;
 
         let stream = session.recognizer.create_stream();
 

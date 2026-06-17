@@ -5,11 +5,11 @@
 //! is exercised in T7b (out of scope here; requires the
 //! sherpa-onnx model weights + audio fixtures).
 
+#[cfg(feature = "local-stt-funasr")]
+use crate::providers::local::funasr::FUNASR_MODEL_DIR_ENV;
 use crate::providers::local::funasr::{
     FunAsrError, LocalFunAsrSttProvider, DEFAULT_MODEL, SUPPORTED_LANGUAGES,
 };
-#[cfg(feature = "local-stt-funasr")]
-use crate::providers::local::funasr::FUNASR_MODEL_DIR_ENV;
 
 #[test]
 fn default_provider_uses_default_model() {
@@ -298,10 +298,7 @@ fn load_with_bogus_env_var_returns_model_dir_invalid_for_missing_file() {
     #[cfg(feature = "local-stt-funasr")]
     {
         // Use a tempdir to ensure the dir exists but is empty.
-        let tmp = std::env::temp_dir().join(format!(
-            "funasr-test-{}",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("funasr-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).expect("create tempdir");
         std::env::set_var(FUNASR_MODEL_DIR_ENV, &tmp);
         let mut p = LocalFunAsrSttProvider::default();

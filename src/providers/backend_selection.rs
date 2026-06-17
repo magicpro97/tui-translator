@@ -53,7 +53,8 @@ pub enum BackendKind {
     /// Local Whisper STT backend (`"local-whisper"`).  v3 (issue #818).
     LocalWhisper,
     /// Local FunASR STT backend (`"local-funasr"`).  v3 (issue #818).
-    /// T7's [`crate::providers::local::funasr`] wires the sherpa-onnx
+    /// T7's `LocalFunAsrSttProvider` (in
+    /// `src/providers/local/funasr.rs`) wires the sherpa-onnx
     /// FFI for the vi-fallback path.
     LocalFunAsr,
     /// Any other / unrecognised string.  Callers MUST treat this as a

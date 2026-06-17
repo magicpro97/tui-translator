@@ -1042,7 +1042,10 @@ mod tests {
         // emit a second `bm.files.len()` line that lcov flags as
         // uncovered (it's only evaluated on assert failure).
         let n = bm.files.len();
-        assert_eq!(n, 7, "expected 7 OPUS-MT vi\u{2192}zh bundle files, got {n}");
+        assert_eq!(
+            n, 7,
+            "expected 7 OPUS-MT vi\u{2192}zh bundle files, got {n}"
+        );
         assert_eq!(bm.license, "Apache-2.0");
         assert!(!bm.source_url.is_empty());
         assert!(!bm.display_name.is_empty());
@@ -1054,7 +1057,10 @@ mod tests {
         let bm = opus_mt_en_vi_bundle_manifest();
         assert_eq!(bm.id, "opus-mt-en-vi");
         let n = bm.files.len();
-        assert_eq!(n, 7, "expected 7 OPUS-MT en\u{2192}vi bundle files, got {n}");
+        assert_eq!(
+            n, 7,
+            "expected 7 OPUS-MT en\u{2192}vi bundle files, got {n}"
+        );
         assert_eq!(bm.license, "Apache-2.0");
         assert!(!bm.source_url.is_empty());
         assert!(!bm.display_name.is_empty());
@@ -1080,7 +1086,10 @@ mod tests {
         let unique: std::collections::HashSet<_> = paths.iter().collect();
         let u = unique.len();
         let p = paths.len();
-        assert_eq!(u, p, "duplicate relative_paths in OPUS-MT en\u{2192}vi bundle: {paths:?}");
+        assert_eq!(
+            u, p,
+            "duplicate relative_paths in OPUS-MT en\u{2192}vi bundle: {paths:?}"
+        );
     }
 
     #[test]

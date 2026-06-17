@@ -19,7 +19,7 @@
 //!
 //! * [`ModelManagerTab`] — enum of the 3 tabs (Whisper, FunASR,
 //!   History).
-//! * [`tab_label`], [`tab_glyph`] — pure functions used by T10's
+//! * `tab_label` and `tab_glyph` — pure helpers used by T10's
 //!   `render_model_manager`.
 //! * [`PresetBar`] — the always-visible quality indicator. The
 //!   bar is built with [`PresetBar::for_preset`] and emits its

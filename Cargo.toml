@@ -114,9 +114,13 @@ sysinfo = { version = "0.30", default-features = false }
 # Both deps are gated behind the `gpu-detect` feature so the default
 # build stays slim; the macOS-only Apple Silicon path stays usable
 # in the dev shell.  The features themselves only enable the
-# `dep:`-gated dependencies below.
-objc2-metal = { version = "0.3.2", optional = true }
-objc2 = { version = "0.6", optional = true }
+# `dep:`-gated dependencies below.  Both `objc2` and
+# `objc2-metal` are macOS-only crates (the `objc2`
+# crate fails to compile on non-Apple platforms with
+# `compile_error!`), so they live in the macOS-only
+# `[target.'cfg(target_os = "macos")'.dependencies]`
+# block further down to keep `cargo clippy --all-features`
+# green on the Windows + Linux CI runners.
 nvml-wrapper = { version = "0.12", optional = true }
 
 # HTTP client — REST calls to Google Cloud APIs (STT, MT, TTS)
@@ -268,6 +272,11 @@ rodio = "=0.17.3"
 # (which is optional = true without metal), so Metal is only activated on macOS.
 # Gated by `local-stt-metal` feature; see MACOS-19, issue #659.
 whisper-rs = { version = "=0.12.0", optional = true, features = ["metal", "whisper-cpp-tracing"] }
+# GPU detection (T19, #826) — macOS-only Metal probe via objc2.
+# Lives in the macOS-only target block because the objc2
+# crate `compile_error!`s on non-Apple platforms.
+objc2 = { version = "0.6", optional = true }
+objc2-metal = { version = "0.3.2", optional = true }
 
 [dev-dependencies]
 # Snapshot testing for the TUI layouts

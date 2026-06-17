@@ -2320,10 +2320,8 @@ impl AppState {
         *self.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
         // Reset the cursor to a sensible default (Whisper tab, row
         // 0) so reopening always lands on the same starting row.
-        *self
-            .model_manager
-            .lock()
-            .unwrap_or_else(|p| p.into_inner()) = ModelManagerState::default();
+        *self.model_manager.lock().unwrap_or_else(|p| p.into_inner()) =
+            ModelManagerState::default();
         self.model_manager_active.store(true, Ordering::Relaxed);
     }
 
@@ -2341,10 +2339,7 @@ impl AppState {
     /// trigger a provider reload.  Returns `None` for the
     /// read-only History tab or for out-of-range indices.
     pub fn model_manager_apply(&self) -> Option<(ModelManagerTab, usize, String, &'static str)> {
-        let state = self
-            .model_manager
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let state = self.model_manager.lock().unwrap_or_else(|p| p.into_inner());
         let tab = state.current_tab();
         let index = state.selected_index();
         let label = state.model_label(tab, index)?;

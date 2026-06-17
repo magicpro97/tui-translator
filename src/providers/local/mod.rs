@@ -231,11 +231,17 @@ pub fn verify_model_checksum(spec: &ModelSpec, path: &Path) -> Result<(), ModelC
                 size_hint: human_readable_size(spec.size_bytes),
             }
         } else {
-            ModelCacheError::Io { path: path.to_owned(), source: e }
+            ModelCacheError::Io {
+                path: path.to_owned(),
+                source: e,
+            }
         }
     })?;
 
-    let actual = sha256_of_reader(file).map_err(|e| ModelCacheError::Io { path: path.to_owned(), source: e })?;
+    let actual = sha256_of_reader(file).map_err(|e| ModelCacheError::Io {
+        path: path.to_owned(),
+        source: e,
+    })?;
 
     if actual != spec.sha256 {
         return Err(ModelCacheError::ChecksumMismatch {
@@ -268,7 +274,10 @@ pub fn check_model_present(spec: &ModelSpec, path: &Path) -> Result<(), ModelCac
             download_url: spec.download_url,
             size_hint: human_readable_size(spec.size_bytes),
         }),
-        Err(e) => Err(ModelCacheError::Io { path: path.to_owned(), source: e }),
+        Err(e) => Err(ModelCacheError::Io {
+            path: path.to_owned(),
+            source: e,
+        }),
     }
 }
 
@@ -522,9 +531,9 @@ mod tests {
     // uncovered.  These paths are exercised when file I/O fails
     // (non-existent file, directory on read, etc.) ────────────────
 
-    use std::io;
-    use crate::providers::ProviderError;
     use crate::providers::local::ModelCacheError;
+    use crate::providers::ProviderError;
+    use std::io;
 
     /// Constructing a `ModelCacheError::Io` and converting it into a
     /// `ProviderError` should hit the Io arm of the `From` impl.
@@ -577,7 +586,10 @@ mod tests {
         );
         if let Err(ModelCacheError::MissingModel { path, name, .. }) = result {
             assert_eq!(path, tmp, "expected path to round-trip in error");
-            assert!(name.contains("tiny"), "expected name to contain 'tiny', got {name}");
+            assert!(
+                name.contains("tiny"),
+                "expected name to contain 'tiny', got {name}"
+            );
         }
     }
 
@@ -609,7 +621,10 @@ mod tests {
         // unreachable panic arm is a single line that llvm-cov
         // counts correctly.
         assert!(
-            matches!(result, Err(ModelCacheError::Io { .. }) | Err(ModelCacheError::ChecksumMismatch { .. })),
+            matches!(
+                result,
+                Err(ModelCacheError::Io { .. }) | Err(ModelCacheError::ChecksumMismatch { .. })
+            ),
             "expected Io or ChecksumMismatch, got {result:?}"
         );
         let _ = std::fs::remove_dir(&dir);

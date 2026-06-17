@@ -98,8 +98,9 @@ fn model_manager_apply_returns_some_for_whisper_row() {
     // Default: Whisper tab, row 0 (TinyEn).  The apply helper
     // must return Some(short_name, label) so the orchestrator can
     // persist `stt_provider=local` + `stt_model=tiny.en`.
-    let (tab, index, short_name, label) =
-        state.model_manager_apply().expect("expected apply on Whisper row 0");
+    let (tab, index, short_name, label) = state
+        .model_manager_apply()
+        .expect("expected apply on Whisper row 0");
     assert_eq!(tab, ModelManagerTab::Whisper);
     assert_eq!(index, 0);
     assert_eq!(short_name, "tiny.en");
@@ -116,8 +117,9 @@ fn model_manager_apply_returns_some_for_funasr_row() {
         mm.select_tab(ModelManagerTab::FunAsr);
         mm.select_index(1);
     }
-    let (tab, _index, short_name, label) =
-        state.model_manager_apply().expect("expected apply on FunASr row 1");
+    let (tab, _index, short_name, label) = state
+        .model_manager_apply()
+        .expect("expected apply on FunASr row 1");
     assert_eq!(tab, ModelManagerTab::FunAsr);
     assert_eq!(short_name, "funasr-medium");
     assert_eq!(label, "sherpa-onnx-funasr-medium");
@@ -168,9 +170,11 @@ fn rebudget_preset_with_low_budget_downgrades_and_records_status() {
     let caps = sys_caps_for(32 * 1024 * 1024 * 1024);
     state.preset_recommender.lock().unwrap().recommend(&caps);
     // Swap in a low-RAM sampler (3.5 GiB free on a 32 GiB host).
-    state.provider_hints = crate::provider_hints::LocalProviderHints::for_test(Arc::new(
-        ConstBudget { ram_mb: 3500, cpu_pct: 50 },
-    ));
+    state.provider_hints =
+        crate::provider_hints::LocalProviderHints::for_test(Arc::new(ConstBudget {
+            ram_mb: 3500,
+            cpu_pct: 50,
+        }));
     let result = state.rebudget_preset(&caps);
     assert!(result.is_some());
     let (before, after) = result.unwrap();

@@ -87,7 +87,7 @@ impl QualityPreset {
     }
 
     /// Compact label (1-3 chars), shown in the status pill when
-    /// the status bar is too narrow for [`as_label`].
+    /// the status bar is too narrow for [`Self::as_label`].
     pub fn as_short(self) -> &'static str {
         match self {
             QualityPreset::Auto => "Auto",
@@ -308,9 +308,9 @@ mod recommender_tests {
     /// it's derived from `total_memory_bytes / GIB`).
     fn caps(ram_tier: RamTier) -> SysCaps {
         let total_bytes = match ram_tier {
-            RamTier::Low => 8 * 1024 * 1024 * 1024,        // 8 GiB → Low
-            RamTier::Medium => 12 * 1024 * 1024 * 1024,    // 12 GiB → Medium
-            RamTier::High => 32 * 1024 * 1024 * 1024,       // 32 GiB → High
+            RamTier::Low => 8 * 1024 * 1024 * 1024,     // 8 GiB → Low
+            RamTier::Medium => 12 * 1024 * 1024 * 1024, // 12 GiB → Medium
+            RamTier::High => 32 * 1024 * 1024 * 1024,   // 32 GiB → High
         };
         SysCaps {
             total_memory_bytes: total_bytes,

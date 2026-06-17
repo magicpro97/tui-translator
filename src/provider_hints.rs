@@ -145,7 +145,10 @@ impl LocalProviderHints {
     /// drift.
     #[cfg(test)]
     pub fn invalidate_cache(&self) {
-        self.inner.lock().unwrap_or_else(|p| p.into_inner()).last_sample = None;
+        self.inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .last_sample = None;
     }
 
     fn sample(&self) -> (u64, u8) {

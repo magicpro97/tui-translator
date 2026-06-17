@@ -358,7 +358,7 @@ pub(crate) fn check_screen_recording_permission() -> bool {
 
 /// List capture devices available via ScreenCaptureKit.
 ///
-/// Returns the display names from [`SCShareableContent`] when Screen Recording
+/// Returns the display names from `SCShareableContent` when Screen Recording
 /// permission is granted and the host is macOS 13.0+.  The first entry in the
 /// list corresponds to the display that [`spawn()`] uses by default.
 ///

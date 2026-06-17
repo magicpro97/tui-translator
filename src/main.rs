@@ -1827,11 +1827,8 @@ fn main() -> Result<()> {
                                 // `Arc::clone` is cheap.
                                 {
                                     let hints = state.provider_hints.clone();
-                                    let recommender =
-                                        Arc::clone(&state.preset_recommender);
-                                    let apply_status = Arc::clone(
-                                        &state.config_apply_status,
-                                    );
+                                    let recommender = Arc::clone(&state.preset_recommender);
+                                    let apply_status = Arc::clone(&state.config_apply_status);
                                     let caps = sys_caps::SysCaps::detect();
                                     rt.spawn(async move {
                                         let mut interval = tokio::time::interval(
@@ -3529,8 +3526,14 @@ fn event_loop(
 ///
 /// `in_lang_prompt` and `in_config_editor` route character input to the active
 /// overlay instead of the normal command set.
-pub(crate) fn 
-key_to_action(    key: &KeyEvent,    in_lang_prompt: bool,    in_config_editor: bool,    in_wizard: bool,    picker_field_active: bool,    in_model_manager: bool,) -> Option<UserAction> {
+pub(crate) fn key_to_action(
+    key: &KeyEvent,
+    in_lang_prompt: bool,
+    in_config_editor: bool,
+    in_wizard: bool,
+    picker_field_active: bool,
+    in_model_manager: bool,
+) -> Option<UserAction> {
     if in_model_manager {
         return Some(UserAction::ModelManagerKey(*key));
     }
@@ -3731,8 +3734,14 @@ fn keyboard_task(
                 let picker_active = picker_field_active.load(Ordering::Relaxed);
                 let in_wizard = wizard_active.load(Ordering::Relaxed);
                 let in_model_manager = model_manager_active.load(Ordering::Relaxed);
-                if let Some(action) = 
-key_to_action(                    &key,                    in_lang_prompt,                    in_config_editor,                    in_wizard,                    picker_active,                    in_model_manager,                ) {
+                if let Some(action) = key_to_action(
+                    &key,
+                    in_lang_prompt,
+                    in_config_editor,
+                    in_wizard,
+                    picker_active,
+                    in_model_manager,
+                ) {
                     if key_tx.send(action).is_err() {
                         // Receiver dropped; app is shutting down.
                         break;
@@ -4715,8 +4724,8 @@ mod tests {
         let key = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
 
         assert_eq!(
-            
-key_to_action(&key, false, true, false, false, false),            Some(UserAction::ConfigCycleCaptureDevice)
+            key_to_action(&key, false, true, false, false, false),
+            Some(UserAction::ConfigCycleCaptureDevice)
         );
     }
 
@@ -4733,39 +4742,39 @@ key_to_action(&key, false, true, false, false, false),            Some(UserActio
 
         // picker NOT active → Tab/Shift+Tab advance/retreat through fields
         assert_eq!(
-            
-key_to_action(&tab, false, true, false, false, false),            Some(UserAction::ConfigNextField)
+            key_to_action(&tab, false, true, false, false, false),
+            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            
-key_to_action(&shift_tab, false, true, false, false, false),            Some(UserAction::ConfigPrevField)
+            key_to_action(&shift_tab, false, true, false, false, false),
+            Some(UserAction::ConfigPrevField)
         );
         assert_eq!(
-            
-key_to_action(&down, false, true, false, false, false),            Some(UserAction::ConfigNextField)
+            key_to_action(&down, false, true, false, false, false),
+            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            
-key_to_action(&up, false, true, false, false, false),            Some(UserAction::ConfigPrevField)
+            key_to_action(&up, false, true, false, false, false),
+            Some(UserAction::ConfigPrevField)
         );
 
         // picker IS active → ↑/↓ cycle device picker; Tab/Shift+Tab still
         // advance/retreat (preserved so PTY tests that use Tab for navigation work)
         assert_eq!(
-            
-key_to_action(&tab, false, true, false, true, false),            Some(UserAction::ConfigNextField)
+            key_to_action(&tab, false, true, false, true, false),
+            Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            
-key_to_action(&shift_tab, false, true, false, true, false),            Some(UserAction::ConfigPrevField)
+            key_to_action(&shift_tab, false, true, false, true, false),
+            Some(UserAction::ConfigPrevField)
         );
         assert_eq!(
-            
-key_to_action(&down, false, true, false, true, false),            Some(UserAction::ConfigPickerNext)
+            key_to_action(&down, false, true, false, true, false),
+            Some(UserAction::ConfigPickerNext)
         );
         assert_eq!(
-            
-key_to_action(&up, false, true, false, true, false),            Some(UserAction::ConfigPickerPrev)
+            key_to_action(&up, false, true, false, true, false),
+            Some(UserAction::ConfigPickerPrev)
         );
     }
 
@@ -4928,8 +4937,8 @@ key_to_action(&up, false, true, false, true, false),            Some(UserAction:
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
 
         assert_eq!(
-            
-key_to_action(&key, false, false, false, false, false),            Some(UserAction::AnyKey)
+            key_to_action(&key, false, false, false, false, false),
+            Some(UserAction::AnyKey)
         );
     }
 
@@ -4939,8 +4948,8 @@ key_to_action(&key, false, false, false, false, false),            Some(UserActi
             let key = KeyEvent::new(key_code, KeyModifiers::NONE);
 
             assert_eq!(
-                
-key_to_action(&key, false, false, false, false, false),                Some(UserAction::OpenSettings)
+                key_to_action(&key, false, false, false, false, false),
+                Some(UserAction::OpenSettings)
             );
         }
     }
@@ -4995,27 +5004,51 @@ key_to_action(&key, false, false, false, false, false),                Some(User
     fn config_editor_keys_route_when_settings_are_open() {
         let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
         assert_eq!(
-            
-key_to_action(&key, false, true, false, false, false),            Some(UserAction::ConfigChar('x'))
+            key_to_action(&key, false, true, false, false, false),
+            Some(UserAction::ConfigChar('x'))
         );
         assert_eq!(
-            
-key_to_action(                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),                false,                true,                false,                false,                false            ),
+            key_to_action(
+                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                false,
+                true,
+                false,
+                false,
+                false
+            ),
             Some(UserAction::Quit)
         );
         assert_eq!(
-            
-key_to_action(                &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),                false,                true,                false,                false,                false            ),
+            key_to_action(
+                &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+                false,
+                true,
+                false,
+                false,
+                false
+            ),
             Some(UserAction::ConfigNextField)
         );
         assert_eq!(
-            
-key_to_action(                &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),                false,                true,                false,                false,                false            ),
+            key_to_action(
+                &KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+                false,
+                true,
+                false,
+                false,
+                false
+            ),
             Some(UserAction::ConfigInput(InputRequest::GoToPrevChar))
         );
         assert_eq!(
-            
-key_to_action(                &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),                false,                true,                false,                false,                false            ),
+            key_to_action(
+                &KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
+                false,
+                true,
+                false,
+                false,
+                false
+            ),
             Some(UserAction::ConfigInput(InputRequest::DeleteNextChar))
         );
     }

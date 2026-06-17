@@ -80,17 +80,11 @@ pub enum GpuKind {
     /// name (e.g. `"Apple M1 Pro"`); `vram_bytes` is the
     /// recommended maximum working-set size — the closest proxy
     /// to VRAM on unified-memory Macs.
-    Metal {
-        name: String,
-        vram_bytes: u64,
-    },
+    Metal { name: String, vram_bytes: u64 },
     /// NVIDIA GPU detected via NVML.  `name` is the device model
     /// string (e.g. `"NVIDIA GeForce RTX 4090"`); `vram_bytes` is
     /// `memoryInfo.total` from `nvmlDeviceGetMemoryInfo`.
-    Cuda {
-        name: String,
-        vram_bytes: u64,
-    },
+    Cuda { name: String, vram_bytes: u64 },
 }
 
 impl GpuKind {
@@ -106,7 +100,9 @@ impl GpuKind {
     pub fn vram_bytes(&self) -> Option<u64> {
         match self {
             GpuKind::None => None,
-            GpuKind::Metal { vram_bytes, .. } | GpuKind::Cuda { vram_bytes, .. } => Some(*vram_bytes),
+            GpuKind::Metal { vram_bytes, .. } | GpuKind::Cuda { vram_bytes, .. } => {
+                Some(*vram_bytes)
+            }
         }
     }
 }
@@ -236,7 +232,10 @@ fn detect_gpu() -> GpuKind {
 /// even when the host happens to have a working GPU.
 #[cfg(any(
     all(feature = "gpu-detect", target_os = "macos"),
-    all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows"))
+    all(
+        feature = "gpu-detect",
+        any(target_os = "linux", target_os = "windows")
+    )
 ))]
 fn detect_gpu_inner() -> Option<GpuKind> {
     // The cfg-gated probe calls are intentionally not wrapped in
@@ -247,9 +246,17 @@ fn detect_gpu_inner() -> Option<GpuKind> {
     // outermost control flow avoids that.
     #[cfg(all(feature = "gpu-detect", target_os = "macos"))]
     return detect_metal();
-    #[cfg(all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows")))]
+    #[cfg(all(
+        feature = "gpu-detect",
+        any(target_os = "linux", target_os = "windows")
+    ))]
     return detect_cuda();
-    #[cfg(not(any(feature = "gpu-detect", target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(
+        feature = "gpu-detect",
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )))]
     None
 }
 
@@ -258,7 +265,10 @@ fn detect_gpu_inner() -> Option<GpuKind> {
 /// "no GPU detected" baseline.
 #[cfg(not(any(
     all(feature = "gpu-detect", target_os = "macos"),
-    all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows"))
+    all(
+        feature = "gpu-detect",
+        any(target_os = "linux", target_os = "windows")
+    )
 )))]
 fn detect_gpu_inner() -> Option<GpuKind> {
     None
@@ -290,7 +300,10 @@ fn detect_metal() -> Option<GpuKind> {
 /// total memory.  Returns `None` when NVML is not loadable
 /// (no driver installed, no NVIDIA hardware, container without
 /// the device, etc.).
-#[cfg(all(feature = "gpu-detect", any(target_os = "linux", target_os = "windows")))]
+#[cfg(all(
+    feature = "gpu-detect",
+    any(target_os = "linux", target_os = "windows")
+))]
 fn detect_cuda() -> Option<GpuKind> {
     let nvml = nvml_wrapper::Nvml::init().ok()?;
     let count = nvml.device_count().ok()?;
