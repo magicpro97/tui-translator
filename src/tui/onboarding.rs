@@ -263,6 +263,10 @@ pub struct OnboardingWizardState {
     /// `Confirmation` step to populate the final
     /// `OnboardingConfigPatch`.
     pub(crate) hardware_survey_selection: Option<crate::quality_preset::QualityPreset>,
+    /// Transient error message surfaced in the wizard UI. Cleared when
+    /// the user types a character or advances past the step that
+    /// produced it.  Issue #842.
+    pub error_message: Option<String>,
 }
 
 impl OnboardingWizardState {
@@ -290,6 +294,7 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
         }
     }
 
@@ -329,6 +334,7 @@ impl OnboardingWizardState {
             gate_enabled: false,
             sys_caps: caps_for_field,
             hardware_survey_selection: None,
+            error_message: None,
         }
     }
 
@@ -360,6 +366,7 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
         }
     }
 
@@ -399,6 +406,7 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
         }
     }
 
@@ -518,9 +526,14 @@ impl OnboardingWizardState {
                 let key = if self.branch.requires_google_key() {
                     let k = self.key_buffer.trim().to_owned();
                     if k.is_empty() {
+                        // Issue #842: surface a visible error so the
+                        // user knows why they bounced back to the
+                        // key-entry step.
+                        self.error_message = Some("API key is required".to_owned());
                         self.step = OnboardingStep::GoogleKeyEntry;
                         return None;
                     } else {
+                        self.error_message = None;
                         Some(k)
                     }
                 } else {
@@ -793,15 +806,23 @@ impl OnboardingWizardState {
         } else if matches!(self.step, OnboardingStep::GoogleKeyEntry) {
             match event {
                 OnboardingEvent::Char(c) => {
+                    // Issue #842: any keystroke clears the error
+                    // banner so the user gets immediate feedback that
+                    // their input was received.
+                    self.error_message = None;
                     self.key_buffer.push(c);
                     None
                 }
                 OnboardingEvent::Backspace => {
+                    self.error_message = None;
                     self.key_buffer.pop();
                     None
                 }
                 OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::Escape => {
+                    self.error_message = None;
+                    self.go_back()
+                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::Confirmation) {
