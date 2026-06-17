@@ -228,6 +228,9 @@ fn local_only_completion_produces_correct_patch() {
     w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let outcome = w.handle(OnboardingEvent::Enter); // → Done
+                                                    // #835: the recommended preset (Auto resolved against the
+                                                    // default 0-byte SysCaps → Performance) is carried into the
+                                                    // patch.
     assert_eq!(
         outcome,
         Some(OnboardingOutcome::Done(OnboardingConfigPatch {
@@ -235,6 +238,7 @@ fn local_only_completion_produces_correct_patch() {
             google_api_key: None,
             virtual_mic_device: None,
             virtual_mic_skipped: false,
+            quality_preset: Some(crate::quality_preset::QualityPreset::Performance),
         }))
     );
 }
@@ -251,6 +255,7 @@ fn google_cloud_completion_with_key_produces_correct_patch() {
     w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
     w.handle(OnboardingEvent::Enter); // → Confirmation
     let outcome = w.handle(OnboardingEvent::Enter); // → Done
+                                                    // #835: same — recommended preset reaches the patch.
     assert_eq!(
         outcome,
         Some(OnboardingOutcome::Done(OnboardingConfigPatch {
@@ -258,6 +263,7 @@ fn google_cloud_completion_with_key_produces_correct_patch() {
             google_api_key: Some("key".to_owned()),
             virtual_mic_device: None,
             virtual_mic_skipped: false,
+            quality_preset: Some(crate::quality_preset::QualityPreset::Performance),
         }))
     );
 }
@@ -568,6 +574,103 @@ fn skip_outcome_stamped_in_patch() {
         Some(OnboardingOutcome::Done(patch)) => {
             assert!(patch.virtual_mic_skipped);
             assert!(patch.virtual_mic_device.is_none());
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+
+// ── HardwareSurvey quality-preset plumbing (#835) ────────────────────────
+
+/// v3 (#819, fix #835): the preset the user picks on
+/// `HardwareSurvey` must reach the final `OnboardingConfigPatch` so
+/// `main::apply_wizard_patch_to_config` can persist it to
+/// `AppConfig::quality_preset`.  Pre-fix, the field was
+/// `hardware_survey_selection: None` at `Confirmation` and the
+/// user's choice was silently discarded.
+#[test]
+fn hardware_survey_best_preset_propagates_to_done_patch() {
+    use crate::quality_preset::QualityPreset;
+    let mut w = make_wizard();
+    // BranchSelection → HardwareSurvey
+    w.handle(OnboardingEvent::Enter);
+    assert!(matches!(w.step, OnboardingStep::HardwareSurvey { .. }));
+    // User picks "Best" (key '2') then confirms.
+    w.handle(OnboardingEvent::Char('2'));
+    w.handle(OnboardingEvent::Enter);
+    // HardwareSurvey → Confirmation (LocalOnly, no models).
+    assert_eq!(w.step, OnboardingStep::Confirmation);
+    // Confirm → Done with quality_preset = Some(Best).
+    let outcome = w.handle(OnboardingEvent::Enter);
+    match outcome {
+        Some(OnboardingOutcome::Done(patch)) => {
+            assert_eq!(
+                patch.quality_preset,
+                Some(QualityPreset::Best),
+                "HardwareSurvey 'Best' selection must reach the OnboardingConfigPatch"
+            );
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+
+/// #835 (consent-only review path): the consent-only flow skips
+/// `HardwareSurvey` entirely, so the patch must carry
+/// `quality_preset: None` (i.e. "don't touch the existing
+/// `AppConfig::quality_preset`") rather than a synthesised value.
+#[test]
+fn consent_only_patch_has_quality_preset_none() {
+    let mut w = OnboardingWizardState::new_consent_review(
+        vec![LocalModelLicense {
+            display_name: "Whisper Tiny".to_owned(),
+            license_text: "MIT".to_owned(),
+        }],
+        OnboardingBranch::LocalOnly,
+    );
+    // LicenseReview[0] → Done (consent_only short-circuits).
+    let outcome = w.handle(OnboardingEvent::Enter);
+    match outcome {
+        Some(OnboardingOutcome::Done(patch)) => {
+            assert_eq!(
+                patch.quality_preset, None,
+                "consent-only flow must not synthesise a quality_preset"
+            );
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+
+/// #835 (GoogleCloud branch): the full GoogleCloud flow visits
+/// `HardwareSurvey` then `GoogleKeyEntry` then `Confirmation`.
+/// Picking "Performance" on the survey must reach the patch even
+/// when the branch requires a Google API key.
+#[test]
+fn google_cloud_hardware_survey_performance_preset_propagates() {
+    use crate::quality_preset::QualityPreset;
+    let mut w = make_wizard();
+    // Select GoogleCloud ('3'); advance to HardwareSurvey.
+    w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter);
+    assert!(matches!(w.step, OnboardingStep::HardwareSurvey { .. }));
+    // User picks "Performance" (key '3') then confirms.
+    w.handle(OnboardingEvent::Char('3'));
+    w.handle(OnboardingEvent::Enter);
+    // HardwareSurvey → GoogleKeyEntry (GoogleCloud skips LicenseReview).
+    assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
+    // Type a key and advance.
+    for c in "abc-key-xyz".chars() {
+        w.handle(OnboardingEvent::Char(c));
+    }
+    w.handle(OnboardingEvent::Enter);
+    assert_eq!(w.step, OnboardingStep::Confirmation);
+    let outcome = w.handle(OnboardingEvent::Enter);
+    match outcome {
+        Some(OnboardingOutcome::Done(patch)) => {
+            assert_eq!(patch.branch, OnboardingBranch::GoogleCloud);
+            assert_eq!(
+                patch.quality_preset,
+                Some(QualityPreset::Performance),
+                "GoogleCloud flow must carry the HardwareSurvey preset through"
+            );
         }
         other => panic!("expected Done, got {other:?}"),
     }

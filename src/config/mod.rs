@@ -1209,11 +1209,35 @@ pub struct AppConfig {
     /// gate was never shown or the config pre-dates this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub virtual_mic_skipped_at: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// #835 (v3 #819 follow-up): the quality preset the user picked on
+    /// the first-run HardwareSurvey step.  `Auto` (the default) means
+    /// "resolve from `SysCaps` at runtime"; the other three pin a
+    /// specific preset that the orchestrator honours verbatim.  The
+    /// integration layer in `main::apply_wizard_patch_to_config`
+    /// writes this field when the wizard completes; the field is
+    /// omitted from the serialised JSON when the value is the
+    /// default (`Auto`) so existing config files remain unchanged.
+    #[serde(
+        default = "default_quality_preset",
+        skip_serializing_if = "quality_preset_is_default"
+    )]
+    pub quality_preset: crate::quality_preset::QualityPreset,
 }
 
 #[allow(dead_code)] // referenced via #[serde(default = "...")] string attribute
 fn default_locale() -> String {
     "en-US".to_string()
+}
+
+#[allow(dead_code)] // #835: serde default attr on AppConfig::quality_preset
+fn default_quality_preset() -> crate::quality_preset::QualityPreset {
+    crate::quality_preset::QualityPreset::Auto
+}
+
+#[allow(dead_code)] // #835: serde skip_serializing_if on AppConfig::quality_preset
+fn quality_preset_is_default(value: &crate::quality_preset::QualityPreset) -> bool {
+    *value == crate::quality_preset::QualityPreset::Auto
 }
 
 fn is_default_locale(value: &String) -> bool {
@@ -1283,6 +1307,7 @@ impl Default for AppConfig {
             glossary: GlossaryConfig::default(),
             platform_parity_notice_seen_at: None,
             virtual_mic_skipped_at: None,
+            quality_preset: default_quality_preset(),
         }
     }
 }
@@ -1332,6 +1357,7 @@ impl std::fmt::Debug for AppConfig {
                 &self.platform_parity_notice_seen_at,
             )
             .field("virtual_mic_skipped_at", &self.virtual_mic_skipped_at)
+            .field("quality_preset", &self.quality_preset)
             .finish()
     }
 }
@@ -2845,6 +2871,89 @@ mod tests {
             load_with_state(&missing_path).expect("should return default, not error");
         assert_eq!(cfg.source_language, "ja-JP");
         assert_eq!(state, LoadState::Missing);
+    }
+
+    // ── #835: HardwareSurvey → AppConfig::quality_preset plumbing ──────────
+
+    /// #835: the default `AppConfig` must carry `quality_preset =
+    /// Auto` (the field is required, not optional — `Auto` is
+    /// the "resolve from SysCaps" sentinel).  This is the
+    /// pre-condition for the wizard patch write.
+    #[test]
+    fn default_quality_preset_is_auto() {
+        let cfg = AppConfig::default();
+        assert_eq!(
+            cfg.quality_preset,
+            crate::quality_preset::QualityPreset::Auto,
+            "AppConfig::default() must default quality_preset to Auto"
+        );
+    }
+
+    /// #835: `Auto` must be skipped from the serialised JSON so
+    /// existing config files (pre-#835) keep round-tripping without
+    /// noise.  The `skip_serializing_if` guard is what keeps
+    /// backwards compatibility for first-run users.
+    #[test]
+    fn default_quality_preset_is_omitted_from_json() {
+        let cfg = AppConfig::default();
+        let json = serde_json::to_string(&cfg).expect("default config should serialise");
+        assert!(
+            !json.contains("\"quality_preset\""),
+            "default (Auto) quality_preset must be omitted from JSON; got:\n{json}"
+        );
+    }
+
+    /// #835: the wizard writes a non-Auto preset (e.g. `Best`)
+    /// which must round-trip through JSON.  This mirrors what
+    /// `main::apply_wizard_patch_to_config` does end-to-end:
+    /// patch.quality_preset → cfg.quality_preset → write_config →
+    /// load.
+    #[test]
+    fn wizard_picked_preset_round_trips_through_json() {
+        use crate::quality_preset::QualityPreset;
+        let temp = NamedTempFile::new().expect("temp file");
+        let path = temp.path().to_path_buf();
+        // Simulate `apply_wizard_patch_to_config` writing the
+        // wizard's patch into a fresh config.
+        let mut cfg = AppConfig::default();
+        cfg.quality_preset = QualityPreset::Best; // patch.quality_preset = Some(Best)
+        write_config(&path, &cfg).expect("write_config must succeed");
+        // Reload and assert the preset survived.
+        let (loaded, _state) = load_with_state(&path).expect("reload must succeed");
+        assert_eq!(
+            loaded.quality_preset,
+            QualityPreset::Best,
+            "wizard-picked Best preset must round-trip through write_config + load"
+        );
+        // And the on-disk JSON contains the PascalCase form (issue #835
+        // explicitly requires the user-visible form "Best", not "best").
+        let raw = std::fs::read_to_string(&path).expect("read written config");
+        assert!(
+            raw.contains("\"quality_preset\": \"Best\""),
+            "saved config must contain `\"quality_preset\": \"Best\"`; got:\n{raw}"
+        );
+    }
+
+    /// #835: every `QualityPreset` variant (including `Custom`) must
+    /// survive a JSON round-trip — the orchestrator's preset
+    /// switcher in the TUI cycles through all four.
+    #[test]
+    fn quality_preset_all_variants_round_trip() {
+        use crate::quality_preset::QualityPreset;
+        let temp = NamedTempFile::new().expect("temp file");
+        let path = temp.path().to_path_buf();
+        for preset in [
+            QualityPreset::Auto,
+            QualityPreset::Best,
+            QualityPreset::Performance,
+            QualityPreset::Custom,
+        ] {
+            let mut cfg = AppConfig::default();
+            cfg.quality_preset = preset;
+            write_config(&path, &cfg).expect("write must succeed");
+            let (loaded, _state) = load_with_state(&path).expect("reload must succeed");
+            assert_eq!(loaded.quality_preset, preset, "round-trip lost {preset:?}");
+        }
     }
 
     #[test]

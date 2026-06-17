@@ -195,6 +195,15 @@ pub struct OnboardingConfigPatch {
     pub virtual_mic_device: Option<String>,
     /// `true` when the user pressed Skip at VirtualCableGate.
     pub virtual_mic_skipped: bool,
+    /// v3 (#819, fix #835): the quality preset the user picked on
+    /// the [`OnboardingStep::HardwareSurvey`] step (or `None` if
+    /// the wizard never reached that step — e.g. the consent-only
+    /// review flow).  `None` here means "do not touch the existing
+    /// `AppConfig::quality_preset` value" so the integration layer
+    /// can distinguish "user never saw the survey" from "user
+    /// explicitly chose Auto" (the latter surfaces as
+    /// `Some(Auto)`).
+    pub quality_preset: Option<crate::quality_preset::QualityPreset>,
 }
 
 // ── Outcome ───────────────────────────────────────────────────────────────────
@@ -488,6 +497,11 @@ impl OnboardingWizardState {
                         google_api_key: None,
                         virtual_mic_device: self.virtual_mic_device.clone(),
                         virtual_mic_skipped: self.virtual_mic_skipped,
+                        // #835: consent-only flow skips
+                        // HardwareSurvey; carry None so the
+                        // integration layer does not touch the
+                        // existing AppConfig::quality_preset.
+                        quality_preset: None,
                     }));
                 } else if self.branch.requires_google_key() {
                     self.step = OnboardingStep::GoogleKeyEntry;
@@ -517,6 +531,15 @@ impl OnboardingWizardState {
                     google_api_key: key,
                     virtual_mic_device: self.virtual_mic_device.clone(),
                     virtual_mic_skipped: self.virtual_mic_skipped,
+                    // #835: carry the user's HardwareSurvey
+                    // preset choice into the patch so the
+                    // integration layer can persist it to
+                    // AppConfig::quality_preset.  When the
+                    // survey was skipped (e.g. the wizard
+                    // pre-dates the v3 step) this is None
+                    // and the integration layer preserves the
+                    // existing config value.
+                    quality_preset: self.hardware_survey_selection,
                 }))
             }
             OnboardingStep::PlatformParityNotice => {
