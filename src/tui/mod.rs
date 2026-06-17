@@ -3588,6 +3588,41 @@ pub fn draw_ui_with_route(
 
     if wizard_active {
         let _ = state.with_wizard(|wiz| render_wizard_overlay(frame, area, wiz));
+
+        // Issue #844: render the startup notice ON TOP of the wizard
+        // overlay so the user can see it even while the wizard is
+        // covering the title bar.  Drawn as a single yellow line
+        // anchored to the top of the wizard panel.
+        if let Some(ref msg) = startup_notice {
+            // Anchor the notice 1 row above the wizard panel.
+            // Mirror the wizard's panel geometry so the notice
+            // lines up with the panel.
+            let panel_h = area.height.min(32);
+            let panel_y = area.y + area.height.saturating_sub(panel_h) / 2;
+            let notice_y = if panel_y > area.y {
+                panel_y.saturating_sub(1)
+            } else {
+                area.y
+            };
+            let notice_w = (msg.chars().count() as u16 + 4).min(area.width);
+            let notice_x = area.x + area.width.saturating_sub(notice_w) / 2;
+            let notice_rect = ratatui::layout::Rect {
+                x: notice_x,
+                y: notice_y,
+                width: notice_w,
+                height: 1,
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!(" ! {msg} "),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ))),
+                notice_rect,
+            );
+        }
     }
 
     // ── Help overlay ─────────────────────────────────────────────────────────
