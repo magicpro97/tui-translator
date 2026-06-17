@@ -133,3 +133,65 @@ fn model_manager_apply_returns_none_for_history_tab() {
     }
     assert!(state.model_manager_apply().is_none());
 }
+
+// ── T21 (issue #827): adaptive preset re-detection ───────────────
+
+#[test]
+fn rebudget_preset_with_no_pressure_keeps_initial_recommendation() {
+    let state = AppState::new();
+    let caps = sys_caps_for(32 * 1024 * 1024 * 1024);
+    // First call: no budget set (no_pressure defaults), so it
+    // mirrors `QualityPreset::Auto.resolve_for(caps)`.
+    // We use `recommend` here so the recommender has a baseline.
+    state.preset_recommender.lock().unwrap().recommend(&caps);
+    let result = state.rebudget_preset(&caps);
+    // No transition (no_pressure sentinel) — returns None.
+    assert!(result.is_none());
+}
+
+#[test]
+fn rebudget_preset_with_no_pressure_does_not_record_status() {
+    let state = AppState::new();
+    let caps = sys_caps_for(32 * 1024 * 1024 * 1024);
+    state.preset_recommender.lock().unwrap().recommend(&caps);
+    state.rebudget_preset(&caps);
+    // No notice recorded when nothing changed.
+    assert!(state.config_apply_status.lock().unwrap().is_none());
+}
+
+#[test]
+fn rebudget_preset_with_low_budget_downgrades_and_records_status() {
+    use crate::provider_hints::ConstBudget;
+    use std::sync::Arc;
+
+    let mut state = AppState::new();
+    let caps = sys_caps_for(32 * 1024 * 1024 * 1024);
+    state.preset_recommender.lock().unwrap().recommend(&caps);
+    // Swap in a low-RAM sampler (3.5 GiB free on a 32 GiB host).
+    state.provider_hints = crate::provider_hints::LocalProviderHints::for_test(Arc::new(
+        ConstBudget { ram_mb: 3500, cpu_pct: 50 },
+    ));
+    let result = state.rebudget_preset(&caps);
+    assert!(result.is_some());
+    let (before, after) = result.unwrap();
+    assert_eq!(before, QualityPreset::Best);
+    assert_eq!(after, QualityPreset::Performance);
+    // Status notice was recorded.
+    let guard = state.config_apply_status.lock().unwrap();
+    let (status, _ts) = guard.as_ref().expect("status notice");
+    if let ConfigApplyStatus::Ok { reason } = status {
+        assert!(reason.contains("Best"));
+        assert!(reason.contains("Performance"));
+        assert!(reason.contains("3500"));
+    } else {
+        panic!("expected Ok status with downgrade reason, got {status:?}");
+    }
+}
+
+fn sys_caps_for(total_bytes: u64) -> crate::sys_caps::SysCaps {
+    crate::sys_caps::SysCaps {
+        total_memory_bytes: total_bytes,
+        physical_cores: 8,
+        gpu: crate::sys_caps::GpuKind::None,
+    }
+}

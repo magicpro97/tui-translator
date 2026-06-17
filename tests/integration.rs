@@ -63,6 +63,9 @@ mod storage;
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
+#[path = "../src/provider_hints.rs"]
+mod provider_hints;
+
 #[path = "../src/readiness.rs"]
 mod readiness;
 

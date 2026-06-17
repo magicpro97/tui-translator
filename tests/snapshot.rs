@@ -36,6 +36,9 @@ mod tui;
 #[path = "../src/providers/mod.rs"]
 mod providers;
 
+#[path = "../src/provider_hints.rs"]
+mod provider_hints;
+
 #[path = "../src/readiness.rs"]
 mod readiness;
 

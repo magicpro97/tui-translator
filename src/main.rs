@@ -69,6 +69,8 @@ mod main_metrics_tests;
 mod metrics;
 mod metrics_export;
 mod pipeline;
+
+mod provider_hints;
 mod providers;
 pub mod quality_preset;
 #[cfg(test)]
@@ -1798,6 +1800,76 @@ fn main() -> Result<()> {
                                                 .unwrap_or_else(|p| p.into_inner())
                                                 .to_string();
                                             *label.lock().unwrap_or_else(|p| p.into_inner()) = s;
+                                        }
+                                    });
+                                }
+
+                                // T21 (issue #827): adaptive preset
+                                // re-detection.  Polls the
+                                // `LocalProviderHints` budget every 2s
+                                // and re-evaluates the `QualityPreset`
+                                // recommendation.  When the live
+                                // budget (e.g. RAM dropped below 4
+                                // GiB on a 32 GiB host) forces a
+                                // downgrade, the helper surfaces a
+                                // 3-second "Preset downgraded" status
+                                // notice via `record_config_apply`
+                                // which the TUI status bar already
+                                // renders.
+                                //
+                                // AppState itself isn't Clone so we
+                                // can't hand the whole struct to the
+                                // task.  Instead we clone the three
+                                // individual fields the rebudget
+                                // path touches — all of which are
+                                // either `Clone` (LocalProviderHints)
+                                // or wrapped in an `Arc<...>` so
+                                // `Arc::clone` is cheap.
+                                {
+                                    let hints = state.provider_hints.clone();
+                                    let recommender =
+                                        Arc::clone(&state.preset_recommender);
+                                    let apply_status = Arc::clone(
+                                        &state.config_apply_status,
+                                    );
+                                    let caps = sys_caps::SysCaps::detect();
+                                    rt.spawn(async move {
+                                        let mut interval = tokio::time::interval(
+                                            Duration::from_millis(
+                                                provider_hints::BUDGET_SAMPLE_TTL_MS,
+                                            ),
+                                        );
+                                        loop {
+                                            interval.tick().await;
+                                            let ram_mb = hints.ram_budget_mb();
+                                            let cpu_pct = hints.cpu_budget_pct();
+                                            let mut rec = recommender
+                                                .lock()
+                                                .unwrap_or_else(|p| p.into_inner());
+                                            let prev = rec.last_recommended();
+                                            let next = rec.recommend_with_budget(
+                                                &caps, ram_mb, cpu_pct,
+                                            );
+                                            if let (Some(before), after) = (prev, next) {
+                                                if before != after {
+                                                    let notice = format!(
+                                                        "Preset downgraded: {} → {} ({} MiB free, {}% CPU idle)",
+                                                        before.as_label(),
+                                                        after.as_label(),
+                                                        ram_mb,
+                                                        cpu_pct,
+                                                    );
+                                                    drop(rec);
+                                                    if let Ok(mut g) = apply_status.lock() {
+                                                        *g = Some((
+                                                            tui::ConfigApplyStatus::Ok {
+                                                                reason: notice,
+                                                            },
+                                                            std::time::Instant::now(),
+                                                        ));
+                                                    }
+                                                }
+                                            }
                                         }
                                     });
                                 }

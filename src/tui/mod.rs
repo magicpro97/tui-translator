@@ -78,6 +78,10 @@ use crate::config::{AppConfig, TtsRouting};
 use crate::tui::model_manager_state::ModelManagerState;
 use crate::tui::model_manager_tokens::ModelManagerTab;
 
+use crate::provider_hints::LocalProviderHints;
+use crate::quality_preset::{PresetRecommender, QualityPreset};
+use crate::sys_caps::SysCaps;
+
 pub use crate::metrics::{
     format_cost_or_zero_state, CostCounter, MetricsSnapshot, MtState, SessionMetrics, SttSource,
     SttState,
@@ -1877,6 +1881,18 @@ pub struct AppState {
     /// is `Copy` but the overlay's read path wants a consistent
     /// snapshot while the keymap mutates it.
     pub model_manager: Mutex<ModelManagerState>,
+    // ── T21 (issue #827): adaptive preset re-detection ──────────────
+    /// Runtime probe facade for the local provider's free-RAM
+    /// / idle-CPU budget.  Sampled lazily (2s TTL) so the
+    /// re-detection task in `main.rs` doesn't slam `sysinfo`
+    /// on every frame.  Defaults to `no_pressure()` so the
+    /// default build (no `local-stt-*` features) never
+    /// triggers a downgrade.
+    pub provider_hints: LocalProviderHints,
+    /// `PresetRecommender` used by the periodic re-detection
+    /// task.  Mutated only by the task; the UI reads the
+    /// `last_recommended` field to render the preset pill.
+    pub preset_recommender: Arc<Mutex<PresetRecommender>>,
     /// BCP-47 source language code forwarded to the STT provider.
     /// Updated on hot-reload so the running orchestrator sees the new value.
     pub source_language: Arc<Mutex<String>>,
@@ -2030,6 +2046,12 @@ impl AppState {
             // T20 (#828): ModelManager overlay starts hidden.
             model_manager_active: Arc::new(AtomicBool::new(false)),
             model_manager: Mutex::new(ModelManagerState::default()),
+            // T21 (#827): default to no-pressure sentinels; the
+            // periodic re-detection task in main.rs flips
+            // these on when the local-stt-* features are
+            // enabled.
+            provider_hints: LocalProviderHints::no_pressure(),
+            preset_recommender: Arc::new(Mutex::new(PresetRecommender::default())),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("vi".to_string())),
             capture_device_label: Arc::new(Mutex::new("Default device".to_string())),
@@ -2441,6 +2463,48 @@ impl AppState {
     /// Total number of config apply attempts in this session.
     pub fn config_apply_count_value(&self) -> u32 {
         self.config_apply_count.load(Ordering::Relaxed)
+    }
+
+    // ── T21 (issue #827): adaptive preset re-detection ──────────────
+    //
+    /// Sample the current local-provider budget and re-evaluate
+    /// the `QualityPreset` recommendation.  If the live budget
+    /// triggered a downgrade (e.g. RAM dropped below 4 GiB on a
+    /// 32 GiB High-tier host), surface a 3-second status notice
+    /// via `record_config_apply` so the user sees
+    /// "Preset downgraded: Best → Performance (RAM pressure)".
+    ///
+    /// Returns the new preset if a transition happened, `None`
+    /// otherwise.  Periodic callers (the 2s background task in
+    /// `main.rs`) can ignore the return value; tests assert on
+    /// it.
+    ///
+    /// `caps` is the static `SysCaps` snapshot.  Production
+    /// callers pass `&SysCaps::detect()`.
+    pub fn rebudget_preset(&self, caps: &SysCaps) -> Option<(QualityPreset, QualityPreset)> {
+        let ram_mb = self.provider_hints.ram_budget_mb();
+        let cpu_pct = self.provider_hints.cpu_budget_pct();
+        let mut rec = self
+            .preset_recommender
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let prev = rec.last_recommended();
+        let next = rec.recommend_with_budget(caps, ram_mb, cpu_pct);
+        match (prev, next) {
+            (Some(before), after) if before != after => {
+                let notice = format!(
+                    "Preset downgraded: {} → {} ({} MiB free, {}% CPU idle)",
+                    before.as_label(),
+                    after.as_label(),
+                    ram_mb,
+                    cpu_pct
+                );
+                drop(rec);
+                self.record_config_apply(ConfigApplyStatus::Ok { reason: notice });
+                Some((before, after))
+            }
+            _ => None,
+        }
     }
 }
 

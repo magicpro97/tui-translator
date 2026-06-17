@@ -204,8 +204,180 @@ pub fn load_preset_from_env() -> QualityPreset {
 /// given [`SysCaps`] snapshot. Non-`Auto` presets are returned
 /// verbatim (the user pinned a specific preset).
 ///
-/// `T3` callers should pass `&SysCaps::detect()` (the cached
+/// T3 callers should pass `&SysCaps::detect()` (the cached
 /// snapshot from T1). Tests can pass a synthetic snapshot.
 pub fn resolve_active_preset(caps: &SysCaps) -> QualityPreset {
     load_preset_from_env().resolve_for(caps)
+}
+
+/// `PresetRecommender` (#827, round 2) — wraps the
+/// `QualityPreset::resolve_for` logic in a struct so the
+/// adaptive re-detection path can keep a `last_recommended`
+/// field for the >20% change gate.
+///
+/// The round-1 wizard used the free function
+/// `resolve_active_preset` directly.  Round 2 needs:
+///
+///   * `recommend(caps)` — same logic as `resolve_for` (for
+///     the boot-time initial preset)
+///   * `recommend_with_budget(caps, ram_mb, cpu_pct)` — same
+///     logic but with a budget override that can downgrade
+///     the `Best` preset to `Performance` when the live free
+///     RAM drops below 4 GiB.
+///
+/// Why not just call `resolve_for` twice?  Two reasons:
+///
+///   1. The TUI status bar needs a *diff* ("downgraded from
+///      Best to Performance because RAM is 3.8 GiB") not just
+///      a new value, so we keep the previous recommendation.
+///   2. The CPU budget (round-2 only) is not part of
+///      `SysCaps::detect()`'s RAM-tier rule.  Future
+///      `recommend_with_budget` calls may take the CPU
+///      pressure into account.
+#[derive(Debug, Clone, Default)]
+pub struct PresetRecommender {
+    last_recommended: Option<QualityPreset>,
+}
+
+impl PresetRecommender {
+    /// Initial recommendation from a static `SysCaps` snapshot.
+    /// Mirrors `QualityPreset::Auto.resolve_for(caps)` but
+    /// stashes the result so `recommend_with_budget` can diff
+    /// against it.
+    pub fn recommend(&mut self, caps: &SysCaps) -> QualityPreset {
+        let next = QualityPreset::Auto.resolve_for(caps);
+        self.last_recommended = Some(next);
+        next
+    }
+
+    /// Round-2 budget-aware recommendation.  When
+    /// `ram_budget_mb` is below 4 GiB and the last
+    /// recommendation was `Best`, downgrade to `Performance`
+    /// regardless of `caps.ram_tier()` (the static snapshot
+    /// said "High" at boot, but the user has since closed all
+    /// their apps and the OS reclaimed everything — we now
+    /// have 3.8 GiB free, not 16).
+    ///
+    /// `cpu_pct` is reserved for future weighting (see module
+    /// docs).  The round-2 implementation ignores it; round 3
+    /// may add a "Best" → "Performance" downgrade when
+    /// `cpu_pct < 25` (saturated CPU pool).
+    pub fn recommend_with_budget(
+        &mut self,
+        caps: &SysCaps,
+        ram_budget_mb: u64,
+        cpu_pct: u8,
+    ) -> QualityPreset {
+        // Sentinel: no pressure → never downgrade.  Matches the
+        // `LocalProviderHints::no_pressure()` contract.
+        if ram_budget_mb == u64::MAX && cpu_pct == 100 {
+            return self.recommend(caps);
+        }
+
+        let baseline = QualityPreset::Auto.resolve_for(caps);
+        let next = if ram_budget_mb < 4 * 1024 && baseline == QualityPreset::Best {
+            QualityPreset::Performance
+        } else {
+            baseline
+        };
+
+        if self.last_recommended == Some(next) {
+            return next;
+        }
+        let _ = cpu_pct; // reserved for round-3 CPU weighting
+        self.last_recommended = Some(next);
+        next
+    }
+
+    /// What the last call returned.  Used by the orchestrator
+    /// to detect a transition and surface a "Preset downgraded"
+    /// status notice.
+    pub fn last_recommended(&self) -> Option<QualityPreset> {
+        self.last_recommended
+    }
+}
+
+#[cfg(test)]
+mod recommender_tests {
+    use super::*;
+    use crate::sys_caps::{RamTier, SysCaps};
+
+    /// Helper to build a `SysCaps` with the given RAM tier by
+    /// choosing an appropriate `total_memory_bytes` value
+    /// (SysCaps doesn't carry the `RamTier` field directly —
+    /// it's derived from `total_memory_bytes / GIB`).
+    fn caps(ram_tier: RamTier) -> SysCaps {
+        let total_bytes = match ram_tier {
+            RamTier::Low => 8 * 1024 * 1024 * 1024,        // 8 GiB → Low
+            RamTier::Medium => 12 * 1024 * 1024 * 1024,    // 12 GiB → Medium
+            RamTier::High => 32 * 1024 * 1024 * 1024,       // 32 GiB → High
+        };
+        SysCaps {
+            total_memory_bytes: total_bytes,
+            physical_cores: 8,
+            gpu: crate::sys_caps::GpuKind::None,
+        }
+    }
+
+    #[test]
+    fn recommend_on_high_ram_yields_best() {
+        let mut r = PresetRecommender::default();
+        let got = r.recommend(&caps(RamTier::High));
+        assert_eq!(got, QualityPreset::Best);
+    }
+
+    #[test]
+    fn recommend_on_low_ram_yields_performance() {
+        let mut r = PresetRecommender::default();
+        let got = r.recommend(&caps(RamTier::Low));
+        assert_eq!(got, QualityPreset::Performance);
+    }
+
+    #[test]
+    fn recommend_with_budget_no_pressure_keeps_baseline() {
+        let mut r = PresetRecommender::default();
+        r.recommend(&caps(RamTier::High));
+        // no_pressure: u64::MAX + 100 → no downgrade
+        let got = r.recommend_with_budget(&caps(RamTier::High), u64::MAX, 100);
+        assert_eq!(got, QualityPreset::Best);
+    }
+
+    #[test]
+    fn recommend_with_budget_low_ram_downgrades_best_to_performance() {
+        let mut r = PresetRecommender::default();
+        r.recommend(&caps(RamTier::High));
+        // 3.5 GiB free on a 32 GiB High-tier host → downgrade.
+        let got = r.recommend_with_budget(&caps(RamTier::High), 3500, 50);
+        assert_eq!(got, QualityPreset::Performance);
+    }
+
+    #[test]
+    fn recommend_with_budget_low_ram_keeps_performance() {
+        let mut r = PresetRecommender::default();
+        r.recommend(&caps(RamTier::Low));
+        // 3.5 GiB on Low → still Performance, no change.
+        let got = r.recommend_with_budget(&caps(RamTier::Low), 3500, 50);
+        assert_eq!(got, QualityPreset::Performance);
+        // no transition: last_recommended is still Performance.
+        assert_eq!(r.last_recommended(), Some(QualityPreset::Performance));
+    }
+
+    #[test]
+    fn recommend_with_budget_high_ram_keeps_best() {
+        let mut r = PresetRecommender::default();
+        r.recommend(&caps(RamTier::High));
+        // 12 GiB free on a 32 GiB host → no downgrade.
+        let got = r.recommend_with_budget(&caps(RamTier::High), 12 * 1024, 75);
+        assert_eq!(got, QualityPreset::Best);
+    }
+
+    /// Pin the `RamTier::Medium` arm of the `caps()` helper so
+    /// the per-file 100% line coverage gate doesn't trip.
+    /// (12 GiB → Medium — we want at least one test that
+    /// classifies a host as Medium.)
+    #[test]
+    fn caps_helper_classifies_medium_tier() {
+        let c = caps(RamTier::Medium);
+        assert_eq!(c.ram_tier(), RamTier::Medium);
+    }
 }
