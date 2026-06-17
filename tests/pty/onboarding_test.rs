@@ -390,6 +390,153 @@ fn onboarding_hardware_survey_persists_quality_preset_to_config() {
     );
 }
 
+// ── T18 follow-up (#836): 1/2/3 key-scope regression on the wire ─────────────
+//
+// Pre-fix, the global keymap in `main::key_to_action` mapped
+// `KeyCode::Char('2')` to `OnboardingEvent::SelectBranch2`
+// unconditionally.  On the `HardwareSurvey` step that event no-op'd,
+// so the user's preset choice was silently lost (and, on a
+// hypothetical keymap that also fired `Char('2')`, the branch would
+// flip to `LocalGoogleFallback` underneath them).  Post-fix, `2` is
+// routed to the wizard as `OnboardingEvent::Char('2')` and the
+// wizard decides step-scoped behaviour.  This test walks the full
+// first-run wizard on the GoogleCloud branch (so the flow is
+// BranchSelection → HardwareSurvey → GoogleKeyEntry → Confirmation),
+// presses `2` on the survey to pick `Best`, then asserts:
+//
+//   1. The saved config has `quality_preset = "Best"` (the user's
+//      survey pick was honoured).
+//   2. The saved config has `branch = "google_cloud"` — the digit
+//      key did NOT silently flip the branch to `LocalGoogleFallback`.
+//
+// PTY tests are gated to the `pty` integration-test target; on hosts
+// without a TTY allocator this test is skipped (see harness.rs).
+#[test]
+fn onboarding_hardware_survey_2_does_not_clobber_branch() {
+    let fake_home = TempDir::new().expect("temp home");
+    let home_str = fake_home
+        .path()
+        .to_str()
+        .expect("temp home path must be valid UTF-8")
+        .to_string();
+    let config_dir = fake_home.path().join("tui-config-key-scope");
+    let config_dir_str = config_dir
+        .to_str()
+        .expect("config dir path must be valid UTF-8")
+        .to_string();
+    let config_path = config_dir.join("config.json");
+
+    {
+        let mut session = PtySession::spawn(
+            110,
+            30,
+            &[
+                ("TUI_TRANSLATOR_SKIP_ONBOARDING", "0"),
+                ("TUI_TRANSLATOR_CONFIG_DIR", config_dir_str.as_str()),
+                ("USERPROFILE", home_str.as_str()),
+            ],
+        )
+        .expect("spawn onboarding session");
+        assert!(
+            session.wait_for_text("Setup Wizard", STARTUP_TIMEOUT),
+            "first launch should show the setup wizard"
+        );
+
+        // GoogleCloud (`3`) on BranchSelection.  The digit `3` is
+        // now routed as `OnboardingEvent::Char('3')` and the wizard
+        // resolves it to `OnboardingBranch::GoogleCloud` because we
+        // are still on the `BranchSelection` step.
+        session.send(b"3").expect("select google cloud branch");
+        std::thread::sleep(Duration::from_millis(150));
+        session.send(b"\r").expect("advance from branch selection");
+
+        // Same gate/survey polling pattern as the sibling test.
+        let post_branch_deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(STARTUP_TIMEOUT.as_secs() * 2);
+        loop {
+            if session.wait_for_text("Virtual Cable Gate", std::time::Duration::from_millis(500)) {
+                session.send(b"s").expect("skip virtual cable gate");
+            }
+            if session.wait_for_text("Hardware Survey", std::time::Duration::from_millis(500)) {
+                break;
+            }
+            if std::time::Instant::now() >= post_branch_deadline {
+                panic!(
+                    "after selecting GoogleCloud branch neither Virtual Cable Gate \
+                     nor Hardware Survey appeared within {}s",
+                    STARTUP_TIMEOUT.as_secs() * 2
+                );
+            }
+        }
+
+        // The key step: press `2` to pick `Best` on HardwareSurvey.
+        // Pre-fix this either no-op'd (the user's preset was lost)
+        // or, on the buggy keymap, also flipped the branch to
+        // `LocalGoogleFallback`.  Post-fix it sets
+        // `hardware_survey_selection = Some(Best)` and the branch
+        // stays `GoogleCloud`.
+        session.send(b"2").expect("press 2 to pick Best preset");
+        std::thread::sleep(Duration::from_millis(100));
+        session.send(b"\r").expect("advance from hardware survey");
+
+        assert!(
+            session.wait_for_text("Google API Key", STARTUP_TIMEOUT),
+            "after Hardware Survey the Google API Key step should appear"
+        );
+        session.send(b"abc-key-xyz").expect("type api key");
+        std::thread::sleep(Duration::from_millis(100));
+        session.send(b"\r").expect("advance from key entry");
+
+        assert!(
+            session.wait_for_text("Confirm Setup", STARTUP_TIMEOUT),
+            "after entering the API key the confirmation step should appear"
+        );
+        session.send(b"\r").expect("confirm wizard");
+
+        let deadline = std::time::Instant::now() + STARTUP_TIMEOUT;
+        while !config_path.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            config_path.exists(),
+            "completing the wizard must create a per-user config (waited up to {STARTUP_TIMEOUT:?})"
+        );
+        session.quit_cleanly().expect("quit session");
+        let exit = session.wait_exit(EXIT_TIMEOUT).expect("session exit");
+        assert_eq!(exit, 0, "session should exit cleanly");
+    }
+
+    // The saved config must record the user's preset choice.
+    let written = std::fs::read_to_string(&config_path).expect("read saved config");
+    assert!(
+        written.contains("\"quality_preset\": \"Best\""),
+        "saved config should contain \"quality_preset\": \"Best\" (the user pressed `2` on the survey); got:\n{written}"
+    );
+    // The bug's defining assertion: the digit `2` on the survey
+    // must NOT have flipped the branch from `google_cloud` to
+    // `local_google_fallback`.  The branch is encoded indirectly
+    // via `stt_provider` + `mt_provider` (no explicit `branch`
+    // field in AppConfig).  GoogleCloud ⇒ stt_provider="google",
+    // mt_provider="google", stt_fallback_policy="none".  LocalGoogle
+    // Fallback ⇒ stt_provider="local", mt_provider="local",
+    // stt_fallback_policy="google-when-keyed".  Use the
+    // fallback_policy as the discriminator since it's
+    // unambiguously different per branch.
+    assert!(
+        written.contains("\"stt_fallback_policy\": \"none\""),
+        "saved config should still have stt_fallback_policy=\"none\" (GoogleCloud); the digit `2` on the survey must not have flipped the branch to LocalGoogleFallback. got:\n{written}"
+    );
+    assert!(
+        !written.contains("\"stt_fallback_policy\": \"google-when-keyed\""),
+        "saved config must NOT have stt_fallback_policy=\"google-when-keyed\" (that was the pre-fix bug: pressing 2 on the survey silently overrode the branch). got:\n{written}"
+    );
+    // And the GoogleCloud branch's stt_provider must be set.
+    assert!(
+        written.contains("\"stt_provider\": \"google\""),
+        "saved config should set stt_provider to google for GoogleCloud branch; got:\n{written}"
+    );
+}
+
 #[test]
 fn settings_save_defaults_blank_file_audio_path_and_closes_overlay() {
     let temp = TempDir::new().expect("temp config dir");

@@ -709,3 +709,218 @@ fn render_cable_found_shows_device_and_confirm() {
     let s = render_wizard_lines(&w).join("\n");
     assert!(s.contains("CABLE Output") && s.contains("[Enter]"));
 }
+
+// ── Key-scope regression (#836 follow-up) ─────────────────────────────────
+//
+// Background (subagent audit on PR #836, T18 follow-up):
+//   `BranchSelection` and `HardwareSurvey` both use the digit keys
+//   `1`/`2`/`3`.  The global keymap in `main::key_to_action`
+//   unconditionally translated `1/2/3` to
+//   `OnboardingEvent::SelectBranch1/2/3`, and the wizard only
+//   matched the `SelectBranch*` variants on the `BranchSelection`
+//   step.  Pressing `2` while the wizard was on `HardwareSurvey`
+//   silently dropped the user's preset choice (it no-op'd in the
+//   wizard) AND, on a hypothetical keymap that also fired
+//   `Char('2')` for the survey, would have changed the branch
+//   underneath the user.  The fix is to route `1`/`2`/`3`/`4`/`r`/
+//   `R` to the wizard as `OnboardingEvent::Char(c)` and have the
+//   wizard decide step-scoped behaviour.  These three tests pin
+//   the wizard's per-step contract; the global-keymap side is
+//   covered by `main::key_to_action` tests and the PTY test in
+//   `tests/pty/onboarding_test.rs`.
+
+/// On `BranchSelection`, `Char('2')` must change the branch to
+/// `LocalGoogleFallback` AND must not mutate the
+/// `hardware_survey_selection` field.  Pre-fix, the
+/// `BranchSelection` arm of `apply_event` did not match
+/// `Char('2')`, so the event fell through to `_ => None` and
+/// the branch stayed `LocalOnly` (default).
+#[test]
+fn preset_key_2_on_branch_selection_ignores_preset_change() {
+    let mut w = make_wizard();
+    assert_eq!(w.step, OnboardingStep::BranchSelection);
+    assert_eq!(w.branch, OnboardingBranch::LocalOnly);
+    assert_eq!(w.hardware_survey_selection, None);
+    w.handle(OnboardingEvent::Char('2'));
+    assert_eq!(
+        w.branch,
+        OnboardingBranch::LocalGoogleFallback,
+        "Char('2') on BranchSelection must select LocalGoogleFallback"
+    );
+    assert_eq!(
+        w.hardware_survey_selection, None,
+        "Char('2') on BranchSelection must not touch hardware_survey_selection"
+    );
+}
+
+/// On `HardwareSurvey`, `Char('2')` must set
+/// `hardware_survey_selection` to `Some(Best)` AND must not change
+/// the branch.  Pre-fix, the wizard only set
+/// `hardware_survey_selection` on the `Enter` that confirmed the
+/// step, so pressing `2` alone left the field `None` (and, on
+/// the buggy global keymap, would also have changed the branch
+/// to `LocalGoogleFallback`).
+#[test]
+fn preset_key_2_on_hardware_survey_selects_best_and_ignores_branch_change() {
+    use crate::quality_preset::QualityPreset;
+    let mut w = make_wizard();
+    // BranchSelection: set the branch via the digit-key path so the
+    // test exercises the same surface the user touches.
+    w.handle(OnboardingEvent::Char('2'));
+    assert_eq!(w.branch, OnboardingBranch::LocalGoogleFallback);
+    // BranchSelection → HardwareSurvey.
+    w.handle(OnboardingEvent::Enter);
+    assert!(matches!(w.step, OnboardingStep::HardwareSurvey { .. }));
+    assert_eq!(w.hardware_survey_selection, None);
+    w.handle(OnboardingEvent::Char('2'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Best),
+        "Char('2') on HardwareSurvey must set hardware_survey_selection to Some(Best)"
+    );
+    assert_eq!(
+        w.branch,
+        OnboardingBranch::LocalGoogleFallback,
+        "Char('2') on HardwareSurvey must not change the branch"
+    );
+    // The inner step field must also reflect the new selection so
+    // the on-screen highlight tracks the key press.
+    match w.step {
+        OnboardingStep::HardwareSurvey {
+            selected_preset, ..
+        } => {
+            assert_eq!(selected_preset, QualityPreset::Best);
+        }
+        other => panic!("expected HardwareSurvey step, got {other:?}"),
+    }
+}
+
+/// Covers the full `1`/`2`/`3`/`4` mapping on `HardwareSurvey`:
+/// `1`→`Auto`, `2`→`Best`, `3`→`Performance`, `4`→`Custom`.  Each
+/// press must set `hardware_survey_selection` so the user's
+/// choice is captured even if they navigate back, and must never
+/// change the branch.  Pre-fix, `hardware_survey_selection` was
+/// only populated on `Enter`, so all four assertions on
+/// `Some(QualityPreset::...)` failed.
+#[test]
+fn preset_key_3_on_hardware_survey_selects_performance() {
+    use crate::quality_preset::QualityPreset;
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    assert!(matches!(w.step, OnboardingStep::HardwareSurvey { .. }));
+    let original_branch = w.branch;
+
+    // 1 → Auto
+    w.handle(OnboardingEvent::Char('1'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Auto),
+        "Char('1') on HardwareSurvey must set hardware_survey_selection to Some(Auto)"
+    );
+    assert_eq!(w.branch, original_branch);
+
+    // 2 → Best
+    w.handle(OnboardingEvent::Char('2'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Best),
+        "Char('2') on HardwareSurvey must set hardware_survey_selection to Some(Best)"
+    );
+    assert_eq!(w.branch, original_branch);
+
+    // 3 → Performance
+    w.handle(OnboardingEvent::Char('3'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Performance),
+        "Char('3') on HardwareSurvey must set hardware_survey_selection to Some(Performance)"
+    );
+    assert_eq!(w.branch, original_branch);
+
+    // 4 → Custom
+    w.handle(OnboardingEvent::Char('4'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Custom),
+        "Char('4') on HardwareSurvey must set hardware_survey_selection to Some(Custom)"
+    );
+    assert_eq!(w.branch, original_branch);
+}
+
+/// `Char('r')` / `Char('R')` on `BranchSelection` is a deliberate
+/// no-op (the `r` key is reserved for the survey's re-recommend
+/// action and the gate's refresh action).  This pins that
+/// behaviour so the keymap fix (#836) does not accidentally
+/// re-route `r` to a branch change.
+#[test]
+fn branch_selection_r_and_capital_r_are_noops() {
+    let mut w = make_wizard();
+    assert_eq!(w.branch, OnboardingBranch::LocalOnly);
+    w.handle(OnboardingEvent::Char('r'));
+    assert_eq!(w.branch, OnboardingBranch::LocalOnly);
+    w.handle(OnboardingEvent::Char('R'));
+    assert_eq!(w.branch, OnboardingBranch::LocalOnly);
+    assert_eq!(w.hardware_survey_selection, None);
+}
+
+/// `Char('r')` / `Char('R')` on `HardwareSurvey` re-runs the
+/// preset recommendation based on the current `sys_caps` (the
+/// `Auto.resolve_for(caps)` call).  After the re-recommend the
+/// top-level `hardware_survey_selection` must reflect the new
+/// choice and the branch must stay put.
+#[test]
+fn hardware_survey_r_recommends_and_keeps_branch() {
+    use crate::quality_preset::QualityPreset;
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::Char('2'));
+    assert_eq!(w.branch, OnboardingBranch::LocalGoogleFallback);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    assert!(matches!(w.step, OnboardingStep::HardwareSurvey { .. }));
+    // User overrides the recommended preset to Best via `2`.
+    w.handle(OnboardingEvent::Char('2'));
+    assert_eq!(w.hardware_survey_selection, Some(QualityPreset::Best));
+    // Pressing `r` (lowercase) and `R` (uppercase) re-recommends.
+    w.handle(OnboardingEvent::Char('r'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Auto.resolve_for(&w.sys_caps)),
+        "Char('r') on HardwareSurvey must re-recommend the preset"
+    );
+    assert_eq!(
+        w.branch,
+        OnboardingBranch::LocalGoogleFallback,
+        "Char('r') on HardwareSurvey must not change the branch"
+    );
+    w.handle(OnboardingEvent::Char('4')); // user picks Custom
+    assert_eq!(w.hardware_survey_selection, Some(QualityPreset::Custom));
+    w.handle(OnboardingEvent::Char('R'));
+    assert_eq!(
+        w.hardware_survey_selection,
+        Some(QualityPreset::Auto.resolve_for(&w.sys_caps)),
+        "Char('R') on HardwareSurvey must re-recommend the preset"
+    );
+}
+
+/// `Char('r')` / `Char('R')` and `Char('s')` / `Char('S')` on
+/// `VirtualCableGate` are the routed-char forms of
+/// `RefreshVirtualCable` and `SkipVirtualCable`.  This pins the
+/// route so the `main::key_to_action` change in #836 has a
+/// regression guard.
+#[test]
+fn virtual_cable_gate_r_refreshes_and_s_skips() {
+    let mut w = make_gated(no_cable);
+    w.handle(OnboardingEvent::Enter); // → VirtualCableGate (no cable)
+    assert!(matches!(w.step, OnboardingStep::VirtualCableGate { .. }));
+    // Char('r') / Char('R') → refresh (no-op when no cable, but
+    // the function should still match and not error).
+    w.handle(OnboardingEvent::Char('r'));
+    assert!(matches!(w.step, OnboardingStep::VirtualCableGate { .. }));
+    w.handle(OnboardingEvent::Char('R'));
+    assert!(matches!(w.step, OnboardingStep::VirtualCableGate { .. }));
+    // Char('s') / Char('S') → skip the gate.
+    w.handle(OnboardingEvent::Char('s'));
+    assert!(
+        w.virtual_mic_skipped,
+        "Char('s') on VirtualCableGate must set virtual_mic_skipped"
+    );
+}

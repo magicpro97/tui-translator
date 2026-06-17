@@ -3542,9 +3542,29 @@ pub(crate) fn key_to_action(
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::Quit)
             }
-            KeyCode::Char('1') => Some(UserAction::WizardKey(OnboardingEvent::SelectBranch1)),
-            KeyCode::Char('2') => Some(UserAction::WizardKey(OnboardingEvent::SelectBranch2)),
-            KeyCode::Char('3') => Some(UserAction::WizardKey(OnboardingEvent::SelectBranch3)),
+            // T18 follow-up (#836): `1`/`2`/`3` (and `4`/`r`/`R`)
+            // are routed to the wizard as `OnboardingEvent::Char(c)`
+            // so the wizard can decide step-scoped behaviour.  The
+            // wizard's `apply_event` (`OnboardingWizardState::handle`)
+            // matches `Char('1')` to `LocalOnly` /
+            // `Char('2')` to `LocalGoogleFallback` /
+            // `Char('3')` to `GoogleCloud` on
+            // `OnboardingStep::BranchSelection`, and to
+            // `Auto`/`Best`/`Performance`/`Custom` on
+            // `OnboardingStep::HardwareSurvey`.  This eliminates the
+            // pre-fix clash where pressing `2` on the survey also
+            // changed the branch (or, on the old keymap, silently
+            // dropped the user's preset choice).
+            KeyCode::Char('1') => Some(UserAction::WizardKey(OnboardingEvent::Char('1'))),
+            KeyCode::Char('2') => Some(UserAction::WizardKey(OnboardingEvent::Char('2'))),
+            KeyCode::Char('3') => Some(UserAction::WizardKey(OnboardingEvent::Char('3'))),
+            KeyCode::Char('4') => Some(UserAction::WizardKey(OnboardingEvent::Char('4'))),
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                Some(UserAction::WizardKey(OnboardingEvent::Char('r')))
+            }
+            KeyCode::Char('s') | KeyCode::Char('S') => {
+                Some(UserAction::WizardKey(OnboardingEvent::Char('s')))
+            }
             KeyCode::Up => Some(UserAction::WizardKey(OnboardingEvent::ArrowUp)),
             KeyCode::Down => Some(UserAction::WizardKey(OnboardingEvent::ArrowDown)),
             KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
@@ -3560,12 +3580,6 @@ pub(crate) fn key_to_action(
             | KeyCode::Char('q')
             | KeyCode::Char('Q')
             | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
-            KeyCode::Char('r') | KeyCode::Char('R') => {
-                Some(UserAction::WizardKey(OnboardingEvent::RefreshVirtualCable))
-            }
-            KeyCode::Char('s') | KeyCode::Char('S') => {
-                Some(UserAction::WizardKey(OnboardingEvent::SkipVirtualCable))
-            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
             }
@@ -5059,6 +5073,171 @@ mod tests {
                 false
             ),
             Some(UserAction::ConfigInput(InputRequest::DeleteNextChar))
+        );
+    }
+
+    // T18 follow-up (#836): the global keymap in `key_to_action`
+    // routes the wizard's `1`/`2`/`3`/`4`/`r`/`R`/`s`/`S` keys as
+    // `OnboardingEvent::Char(c)` so the wizard can decide
+    // step-scoped behaviour.  These tests pin the keymap contract;
+    // the per-step behaviour lives in the wizard's `apply_event`
+    // tests in `src/tui/onboarding_tests.rs`.
+    #[test]
+    fn wizard_keys_route_digit_keys_as_char_events() {
+        for (digit, ch) in [
+            (KeyCode::Char('1'), '1'),
+            (KeyCode::Char('2'), '2'),
+            (KeyCode::Char('3'), '3'),
+            (KeyCode::Char('4'), '4'),
+        ] {
+            let key = KeyEvent::new(digit, KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Char(ch))),
+                "wizard digit {:?} must map to OnboardingEvent::Char({:?})",
+                digit,
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn wizard_keys_route_r_as_re_recommend_char() {
+        for r in [KeyCode::Char('r'), KeyCode::Char('R')] {
+            let key = KeyEvent::new(r, KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Char('r'))),
+                "wizard r/R must map to OnboardingEvent::Char('r')"
+            );
+        }
+    }
+
+    #[test]
+    fn wizard_keys_route_s_as_skip_char() {
+        for s in [KeyCode::Char('s'), KeyCode::Char('S')] {
+            let key = KeyEvent::new(s, KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Char('s'))),
+                "wizard s/S must map to OnboardingEvent::Char('s')"
+            );
+        }
+    }
+
+    #[test]
+    fn wizard_keys_route_navigation_and_confirm() {
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+                false,
+                false,
+                true,
+                false,
+                false
+            ),
+            Some(UserAction::WizardKey(OnboardingEvent::ArrowUp))
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+                false,
+                false,
+                true,
+                false,
+                false
+            ),
+            Some(UserAction::WizardKey(OnboardingEvent::ArrowDown))
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                false,
+                false,
+                true,
+                false,
+                false
+            ),
+            Some(UserAction::WizardKey(OnboardingEvent::Enter))
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                false,
+                false,
+                true,
+                false,
+                false
+            ),
+            Some(UserAction::WizardKey(OnboardingEvent::Escape))
+        );
+        assert_eq!(
+            key_to_action(
+                &KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+                false,
+                false,
+                true,
+                false,
+                false
+            ),
+            Some(UserAction::WizardKey(OnboardingEvent::Backspace))
+        );
+    }
+
+    #[test]
+    fn wizard_keys_ignore_runtime_shortcut_chars() {
+        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', 'q', 'Q', ' '] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+                "wizard shortcut char {:?} must be Ignored",
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn wizard_keys_ctrl_c_quits() {
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(
+            key_to_action(&key, false, false, true, false, false),
+            Some(UserAction::Quit)
+        );
+    }
+
+    #[test]
+    fn wizard_keys_other_printable_chars_pass_through_as_char() {
+        for ch in ['a', 'z', '5', '9', '!', '@', '#'] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Char(ch))),
+                "wizard printable char {:?} must map to OnboardingEvent::Char({:?})",
+                ch,
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn wizard_keys_ctrl_modified_non_c_falls_through() {
+        // Ctrl-modified non-c chars: the catch-all `Char(c) if
+        // !ctrl` arm does not match, so the function returns
+        // `Some(UserAction::AnyKey)`.
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL);
+        assert_eq!(
+            key_to_action(&key, false, false, true, false, false),
+            Some(UserAction::AnyKey)
+        );
+    }
+
+    #[test]
+    fn wizard_keys_unknown_keycode_falls_through_to_anykey() {
+        let key = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+        assert_eq!(
+            key_to_action(&key, false, false, true, false, false),
+            Some(UserAction::AnyKey)
         );
     }
 
