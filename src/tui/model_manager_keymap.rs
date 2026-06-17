@@ -31,6 +31,12 @@ pub enum ModelManagerAction {
     /// State is unchanged; the caller resolves the next preset
     /// from `AppConfig.quality_preset` and re-draws the preset bar.
     CyclePreset,
+    /// The user pressed `Ctrl+C` (issue #848).  The caller
+    /// should close the overlay AND signal that the app
+    /// should quit.  Pre-fix the catch-all returned
+    /// `ModelManagerAction::None` and the user had to press
+    /// Esc + Ctrl+C twice to actually exit.
+    Quit,
 }
 
 /// Mutate `state` according to `key` and return the resulting
@@ -86,6 +92,14 @@ pub fn handle_model_manager_key(
         // Global preset cycle.
         KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             ModelManagerAction::CyclePreset
+        }
+
+        // Issue #848: Ctrl+C inside the ModelManager should
+        // close the overlay AND quit the app.  The catch-all
+        // used to swallow it and the user had to Esc + Ctrl+C
+        // twice.
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            ModelManagerAction::Quit
         }
 
         // Unknown key.

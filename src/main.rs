@@ -3459,6 +3459,15 @@ fn event_loop(
         // Drain all pending key actions without blocking.
         let mut should_quit = false;
         loop {
+            // Issue #848: poll the AppState quit_requested flag.
+            // The ModelManager keymap sets it when the user
+            // presses Ctrl+C inside the overlay; the main loop
+            // picks it up here and breaks out of the receive
+            // loop so the existing shutdown path (draw summary,
+            // wait for key) runs.
+            if state.quit_requested.load(Ordering::Relaxed) {
+                should_quit = true;
+            }
             match key_rx.try_recv() {
                 Ok(UserAction::Quit) => {
                     should_quit = true;
@@ -4367,6 +4376,16 @@ fn handle_action(
                     // identical binding is a no-op so the user
                     // doesn't accidentally cycle while focused
                     // on the overlay.
+                }
+                ModelManagerAction::Quit => {
+                    // Issue #848: Ctrl+C inside the
+                    // ModelManager closes the overlay AND
+                    // quits the app.  Pre-fix the user had to
+                    // press Esc + Ctrl+C twice.
+                    state.close_model_manager();
+                    state
+                        .quit_requested
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
                 ModelManagerAction::Select { tab: _, index: _ } => {
                     // The select came from the keymap, but the
