@@ -6,8 +6,10 @@ use tempfile::TempDir;
 
 /// Spawn a PTY session that will trigger the first-run wizard overlay.
 ///
-/// Uses an isolated temporary directory as `USERPROFILE` so no pre-existing
-/// config is found and the binary opens the "Setup Wizard" overlay.
+/// Uses an isolated temporary directory as `USERPROFILE` and a fresh
+/// `TUI_TRANSLATOR_CONFIG_DIR` subdirectory so the binary cannot find a
+/// pre-existing config in the real `$HOME` (which would cause the wizard
+/// to be skipped on local dev machines with prior runs).
 fn spawn_onboarding_session(cols: u16, rows: u16) -> (PtySession, TempDir) {
     let fake_home = TempDir::new().expect("temp home for onboarding layout test");
     let home_str = fake_home
@@ -15,11 +17,18 @@ fn spawn_onboarding_session(cols: u16, rows: u16) -> (PtySession, TempDir) {
         .to_str()
         .expect("temp home path must be valid UTF-8")
         .to_string();
+    let config_dir_str = fake_home
+        .path()
+        .join("tui-config")
+        .to_str()
+        .expect("config dir path must be valid UTF-8")
+        .to_string();
     let session = PtySession::spawn(
         cols,
         rows,
         &[
             ("TUI_TRANSLATOR_SKIP_ONBOARDING", "0"),
+            ("TUI_TRANSLATOR_CONFIG_DIR", config_dir_str.as_str()),
             ("USERPROFILE", home_str.as_str()),
         ],
     )
