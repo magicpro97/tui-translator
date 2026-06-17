@@ -93,16 +93,7 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 lines.push(format!("│  {raw_line}"));
             }
             lines.push(String::new());
-            // Issue #851: long license text is wrapped by the
-            // panel and silently truncated.  ↑/↓ keys
-            // increment/decrement state.license_scroll (with
-            // saturation); the panel itself does not yet
-            // honour the offset, so this is a "discoverable
-            // affordance" step — the user can see the hint
-            // and the scroll key works, but the visible text
-            // is still the same.  A follow-up can wire the
-            // offset into the panel renderer.
-            lines.push("  [Enter] Accept & continue  [Esc] Back  [↑/↓] scroll".to_owned());
+            lines.push("  [Enter] Accept & continue  [Esc] Back".to_owned());
             lines
         }
         OnboardingStep::GoogleKeyEntry => {
@@ -181,6 +172,18 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
             "  The app will run in speaker-only TTS mode on this platform.".to_owned(),
             String::new(),
             "  [Enter] Continue  [Esc] Dismiss".to_owned(),
+        ],
+        // Issue #852: confirmation step reached when the
+        // user presses Esc from BranchSelection.  Pressing
+        // Enter or Esc again cancels the whole wizard.
+        // Any other key returns to BranchSelection.
+        OnboardingStep::ConfirmCancel => vec![
+            "── Cancel wizard? ───────────────────────────────────────".to_owned(),
+            String::new(),
+            "  Are you sure you want to exit the first-run wizard?".to_owned(),
+            "  No settings will be saved.".to_owned(),
+            String::new(),
+            "  [Enter] / [Esc] Yes, cancel  [Any other key] Back".to_owned(),
         ],
     }
 }

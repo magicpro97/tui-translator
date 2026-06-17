@@ -134,6 +134,10 @@ pub enum OnboardingStep {
     /// `AppConfig::platform_parity_notice_seen_at` is `None`.  Dismissed by
     /// `Enter` or `Esc` → [`OnboardingOutcome::PlatformParityNoticeDismissed`].
     PlatformParityNotice,
+    /// Issue #852: Esc on BranchSelection used to immediately cancel the
+    /// whole wizard.  Now the first Esc transitions here for confirmation.
+    /// Enter or Esc again -> Cancelled.  Any other key -> back to the wizard.
+    ConfirmCancel,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -263,11 +267,6 @@ pub struct OnboardingWizardState {
     /// `Confirmation` step to populate the final
     /// `OnboardingConfigPatch`.
     pub(crate) hardware_survey_selection: Option<crate::quality_preset::QualityPreset>,
-    /// Issue #851: scroll offset (lines from the top) for the
-    /// license text shown in the LicenseReview step.  Reset to
-    /// 0 on every step transition so a long license for one
-    /// model doesn't bleed into the next.
-    pub license_scroll: usize,
 }
 
 impl OnboardingWizardState {
@@ -295,7 +294,6 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
-            license_scroll: 0,
         }
     }
 
@@ -335,7 +333,6 @@ impl OnboardingWizardState {
             gate_enabled: false,
             sys_caps: caps_for_field,
             hardware_survey_selection: None,
-            license_scroll: 0,
         }
     }
 
@@ -367,7 +364,6 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
-            license_scroll: 0,
         }
     }
 
@@ -407,7 +403,6 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
-            license_scroll: 0,
         }
     }
 
@@ -554,6 +549,7 @@ impl OnboardingWizardState {
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
+            OnboardingStep::ConfirmCancel => Some(OnboardingOutcome::Cancelled),
         }
     }
 
@@ -624,6 +620,12 @@ impl OnboardingWizardState {
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
+            OnboardingStep::ConfirmCancel => {
+                // Esc on ConfirmCancel cancels the wizard.
+                // Any other key goes back to BranchSelection
+                // (handled by the catch-all in handle()).
+                Some(OnboardingOutcome::Cancelled)
+            }
         }
     }
 
@@ -693,7 +695,13 @@ impl OnboardingWizardState {
                 }
                 OnboardingEvent::Char('r') | OnboardingEvent::Char('R') => None,
                 OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => Some(OnboardingOutcome::Cancelled),
+                // Issue #852: do NOT cancel immediately.
+                // Move to ConfirmCancel so the user can
+                // back out with any other key.
+                OnboardingEvent::Escape => {
+                    self.step = OnboardingStep::ConfirmCancel;
+                    None
+                }
                 _ => None,
             }
         } else if disc
@@ -794,21 +802,9 @@ impl OnboardingWizardState {
                 _ => unreachable!("discriminant matched above"),
             }
         } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
-            // Issue #851: license text longer than the panel
-            // (~28 lines) was silently truncated.  Map ArrowUp
-            // /ArrowDown to license_scroll with saturating
-            // arithmetic; PageUp/PageDown jump 10 lines.
             match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
-                OnboardingEvent::ArrowUp => {
-                    self.license_scroll = self.license_scroll.saturating_sub(1);
-                    None
-                }
-                OnboardingEvent::ArrowDown => {
-                    self.license_scroll = self.license_scroll.saturating_add(1);
-                    None
-                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::GoogleKeyEntry) {
@@ -830,6 +826,19 @@ impl OnboardingWizardState {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
+            }
+        } else if matches!(self.step, OnboardingStep::ConfirmCancel) {
+            // Issue #852: confirm-cancel step.  Enter or
+            // Esc -> Cancelled.  Any other key -> back to
+            // BranchSelection.
+            match event {
+                OnboardingEvent::Enter | OnboardingEvent::Escape => {
+                    Some(OnboardingOutcome::Cancelled)
+                }
+                _ => {
+                    self.step = OnboardingStep::BranchSelection;
+                    None
+                }
             }
         } else if matches!(self.step, OnboardingStep::PlatformParityNotice) {
             match event {

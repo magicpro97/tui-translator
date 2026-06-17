@@ -78,10 +78,18 @@ fn wizard_local_only_with_models_goes_through_license_review() {
     );
 }
 
+// Issue #852: Esc on BranchSelection no longer cancels
+// immediately.  It transitions to ConfirmCancel and the
+// user must press Esc/Enter again to actually cancel.
 #[test]
-fn wizard_escape_at_branch_selection_cancels() {
+fn wizard_escape_at_branch_selection_requires_double_press() {
     let mut wizard = OnboardingWizardState::new(vec![], onboarding::noop_probe);
     wizard.gate_enabled = false;
+    // 1st Esc: must NOT cancel, must go to ConfirmCancel.
+    let result = wizard.handle(OnboardingEvent::Escape);
+    assert!(result.is_none(), "1st Esc must not cancel");
+    assert!(matches!(wizard.step, OnboardingStep::ConfirmCancel));
+    // 2nd Esc: actually cancels.
     let result = wizard.handle(OnboardingEvent::Escape);
     assert_eq!(result, Some(OnboardingOutcome::Cancelled));
 }

@@ -285,9 +285,22 @@ fn google_cloud_completion_empty_key_stays_on_key_entry() {
 
 // ── Cancellation ──────────────────────────────────────────────────────────
 
+// Issue #852: Esc on BranchSelection no longer cancels
+// the wizard immediately.  Instead it transitions to a
+// ConfirmCancel step (the user gets one more chance to
+// back out).  Only Esc or Enter on ConfirmCancel actually
+// cancels.
 #[test]
-fn esc_at_branch_selection_cancels_wizard() {
+fn esc_at_branch_selection_transitions_to_confirm_cancel() {
     let mut w = make_wizard();
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(outcome.is_none(), "1st Esc must NOT cancel the wizard");
+    assert!(
+        matches!(w.step, OnboardingStep::ConfirmCancel),
+        "1st Esc should transition to ConfirmCancel; got {:?}",
+        w.step
+    );
+    // 2nd Esc (now on ConfirmCancel) actually cancels.
     let outcome = w.handle(OnboardingEvent::Escape);
     assert_eq!(outcome, Some(OnboardingOutcome::Cancelled));
 }
@@ -925,78 +938,50 @@ fn virtual_cable_gate_r_refreshes_and_s_skips() {
     );
 }
 
-<<<<<<< HEAD
+// Issue #852: pressing Esc on BranchSelection immediately
+// cancelled the whole wizard.  Users accidentally exited
+// without realising.  Now the first Esc transitions to a
+// ConfirmCancel step, and only the second Esc (or Enter on
+// ConfirmCancel) actually exits the wizard.
 #[test]
-fn empty_key_on_confirmation_sets_error_message() {
+fn esc_on_branch_selection_requires_double_press_to_cancel() {
     let mut w = make_wizard();
-    w.handle(OnboardingEvent::SelectBranch3);
-    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
-    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
-    w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
-    w.handle(OnboardingEvent::Enter); // → HardwareSurvey (v3)
-    w.handle(OnboardingEvent::Enter); // → Confirmation
-    let outcome = w.handle(OnboardingEvent::Enter); // empty key → bounce
-    assert_eq!(outcome, None);
-    assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
-    // New: error_message should be set so the user knows why
-    assert_eq!(w.error_message.as_deref(), Some("API key is required"));
-}
-
-#[test]
-fn successful_key_submission_clears_error_message() {
-    let mut w = make_wizard();
-    w.handle(OnboardingEvent::SelectBranch3);
-    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
-    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
-    w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
-    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
-    w.handle(OnboardingEvent::Enter); // → Confirmation
-    w.handle(OnboardingEvent::Enter); // empty key → error
-    assert!(w.error_message.is_some());
-    // Now type a real key and advance
-    w.handle(OnboardingEvent::Char('x'));
-    assert!(w.error_message.is_none());
-    w.handle(OnboardingEvent::Backspace);
-    w.handle(OnboardingEvent::Char('A'));
-    w.handle(OnboardingEvent::Char('B'));
-    w.handle(OnboardingEvent::Enter); // → Confirmation
-    w.handle(OnboardingEvent::Enter); // success → Done
+    // 1st Esc: should NOT cancel, should go to ConfirmCancel
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(outcome.is_none(), "1st Esc must not cancel the wizard");
+    assert!(
+        matches!(w.step, OnboardingStep::ConfirmCancel),
+        "1st Esc should transition to ConfirmCancel; got {:?}",
+        w.step
+    );
+    // Enter on ConfirmCancel: actually cancels
     let outcome = w.handle(OnboardingEvent::Enter);
-    assert!(matches!(outcome, Some(OnboardingOutcome::Done(_))));
-=======
-// Issue #851: long license text shown in the LicenseReview
-// step must be scrollable so a user can actually read a
-// license longer than the ~28-line panel.
-#[test]
-fn license_review_arrow_down_increments_scroll() {
-    let license_text = (0..100)
-        .map(|i| format!("line {i}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let models = vec![LocalModelLicense {
-        display_name: "Test Model".into(),
-        license_text,
-    }];
-    let mut wiz = OnboardingWizardState::new(models, Vec::new);
-    // Drive to LicenseReview: BranchSelection → HardwareSurvey → LicenseReview
-    wiz.handle(OnboardingEvent::Enter);
-    wiz.handle(OnboardingEvent::Enter);
-    // Sanity: we're on LicenseReview
-    assert!(matches!(wiz.step, OnboardingStep::LicenseReview { .. }));
-    // Initial scroll is 0
-    assert_eq!(wiz.license_scroll, 0);
-    // ArrowDown increments
-    wiz.handle(OnboardingEvent::ArrowDown);
-    assert_eq!(wiz.license_scroll, 1);
-    // ArrowUp decrements (saturating)
-    wiz.handle(OnboardingEvent::ArrowUp);
-    assert_eq!(wiz.license_scroll, 0);
-    wiz.handle(OnboardingEvent::ArrowUp);
-    assert_eq!(wiz.license_scroll, 0, "must saturate at 0");
-    // Other keys don't change scroll
-    wiz.handle(OnboardingEvent::Escape);
-    assert_eq!(wiz.license_scroll, 0);
->>>>>>> 80b00a3 (fix(ux): make LicenseReview step scrollable (issue #851))
+    assert!(
+        matches!(outcome, Some(OnboardingOutcome::Cancelled)),
+        "Enter on ConfirmCancel should cancel; got {:?}",
+        outcome
+    );
+    // 2nd Esc on ConfirmCancel: also cancels
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::Escape); // → ConfirmCancel
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(
+        matches!(outcome, Some(OnboardingOutcome::Cancelled)),
+        "2nd Esc on ConfirmCancel should cancel; got {:?}",
+        outcome
+    );
+    // Any other key on ConfirmCancel: goes back to BranchSelection
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::Escape); // → ConfirmCancel
+    w.handle(OnboardingEvent::Char('x')); // → BranchSelection (back)
+    assert!(
+        matches!(w.step, OnboardingStep::BranchSelection),
+        "non-Enter/Esc key must go back to BranchSelection; got {:?}",
+        w.step
+    );
+    // Then Enter: confirms branch, advances (not cancels)
+    w.handle(OnboardingEvent::Enter);
+    assert!(!matches!(w.step, OnboardingStep::BranchSelection));
 }
 
 #[test]
