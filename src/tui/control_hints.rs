@@ -33,16 +33,16 @@ impl Widget for &ControlHintsBar {
             " ?  Spc  T  L  S  M  R  Tab  Q ".to_string()
         } else if area.width < 96 {
             let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Q quit "
+            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model  Q quit "
                 .to_string()
         } else if area.width < 120 {
             let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  Tab pane  Q quit "
+            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model  Tab pane  Q quit "
                 .to_string()
         } else {
             let _ = self.tts_on;
             format!(
-                " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  \
+                " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model  \
                  [/] mic {:+.0}dB  {{/}} tts {:+.0}dB  Tab pane  Q quit ",
                 crate::audio::audio_gain::input_gain_db(),
                 crate::audio::audio_gain::output_volume_db(),

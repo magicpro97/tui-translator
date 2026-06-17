@@ -982,7 +982,12 @@ fn closing_config_editor_redraw_clears_overlay_pixels() {
 #[test]
 fn hints_bar_contains_required_controls() {
     use ratatui::{backend::TestBackend, Terminal};
-    let backend = TestBackend::new(120, 1);
+    // Issue #846: the hint bar picked up a "B model" entry which
+    // makes the ≥120-col variant ~99 chars long.  Bump the test
+    // terminal to 130 cols so the entire hint bar (including
+    // the trailing "Q quit") fits on screen and the assertions
+    // below are meaningful.
+    let backend = TestBackend::new(130, 1);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| {

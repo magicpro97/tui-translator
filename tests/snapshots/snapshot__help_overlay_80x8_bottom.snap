@@ -1,9 +1,9 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1773
+assertion_line: 1878
 expression: "render_help(80, 8, 9999)"
 ---
-            ┌ Help [13/13] — ↑↓ scroll · Esc close ────────────────┐            
+            ┌ Help [14/14] — ↑↓ scroll · Esc close ────────────────┐            
             │  ?          Show / hide this help                    │            
             │  Esc        Dismiss this overlay                     │            
             │  Tab        Switch A/B pane focus (dual-slot mode)   │            

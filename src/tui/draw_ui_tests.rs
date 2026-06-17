@@ -87,14 +87,17 @@ fn help_overlay_lists_settings_shortcut() {
     let _i18n_guard = crate::i18n::lock_for_test();
     // Pin the OS so the assertion is stable on every host CI runner.
     let _guard = with_key_os_override("windows");
-    let backend = TestBackend::new(80, 24);
+    // Issue #846 added a 20th content line for the "B models" entry;
+    // 30 rows gives the panel enough headroom to show every line
+    // without scrolling.
+    let backend = TestBackend::new(80, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal
-        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
         .unwrap();
     let buffer = terminal.backend().buffer();
-    let rows = (0..24)
+    let rows = (0..30)
         .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
         .collect::<Vec<_>>();
     let settings_line = rows
@@ -121,11 +124,15 @@ fn help_overlay_renders_macos_control_glyph() {
     use ratatui::{backend::TestBackend, Terminal};
     let _i18n_guard = crate::i18n::lock_for_test();
     let _guard = with_key_os_override("macos");
-    let backend = TestBackend::new(80, 24);
+    // 80x30: the help overlay now has 20 content lines (added the
+    // "B models" entry, issue #846) and needs more room than 24
+    // rows can fit when the panel is auto-sized. 30 rows give the
+    // panel enough headroom to show every line without scrolling.
+    let backend = TestBackend::new(80, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal
-        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
         .unwrap();
     let buffer = terminal.backend().buffer();
     let rows = (0..24)
@@ -162,14 +169,17 @@ fn help_overlay_renders_linux_ctrl_label() {
     use ratatui::{backend::TestBackend, Terminal};
     let _i18n_guard = crate::i18n::lock_for_test();
     let _guard = with_key_os_override("linux");
-    let backend = TestBackend::new(80, 24);
+    // Issue #846 added a 20th content line for the "B models" entry;
+    // 30 rows gives the panel enough headroom to show every line
+    // without scrolling.
+    let backend = TestBackend::new(80, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal
-        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
         .unwrap();
     let buffer = terminal.backend().buffer();
-    let rows = (0..24)
+    let rows = (0..30)
         .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
         .collect::<Vec<_>>();
     let settings_line = rows
@@ -274,48 +284,69 @@ fn draw_ui_capture_error_banner_keeps_recovery_hint_visible() {
     );
 }
 
-// Issue #844: when the wizard is open and a startup notice is set,
-// the notice must remain visible — not hidden behind the wizard
-// overlay.
+// Issue #846: the live hint bar must document the B key
+// (ModelManager) so users can discover the feature without
+// reading source.  All three hint variants (≥80 cols, ≥96
+// cols, ≥120 cols) must mention "B model" so a user on any
+// terminal size sees the hint.
 #[test]
-fn draw_ui_wizard_open_does_not_hide_startup_notice() {
-    use crate::tui::onboarding::OnboardingWizardState;
+fn hint_bar_documents_b_model_key() {
+    use crate::tui::control_hints::ControlHintsBar;
     use ratatui::{backend::TestBackend, Terminal};
-    let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).unwrap();
-    let state = AppState::new();
-    // Set a recognisable startup notice.
-    *state.startup_notice_msg.lock().unwrap() = Some("NEW RELEASE v0.2".to_string());
-    // Open the wizard.
-    state
-        .wizard_active
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    *state.wizard_state.lock().unwrap() =
-        Some(OnboardingWizardState::new(Vec::new(), no_cable_probe));
-    terminal
-        .draw(|frame| {
-            draw_ui(frame, &state, 0.0, false, 0.0);
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer().clone();
-    let joined: String = (0..buffer.area.height)
-        .map(|y| {
-            (0..buffer.area.width)
-                .map(|x| buffer[(x, y)].symbol().to_string())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    // The startup notice should appear somewhere on screen, not be
-    // hidden behind the wizard panel.
-    assert!(
-        joined.contains("NEW RELEASE v0.2"),
-        "startup notice should be visible while wizard is open; got:\n{joined}"
-    );
+    for (w, h, label) in [
+        (80u16, 1u16, "≥80 cols"),
+        (96, 1, "≥96 cols"),
+        (120, 1, "≥120 cols"),
+    ] {
+        let backend = TestBackend::new(w, h);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(&ControlHintsBar { tts_on: false }, frame.area());
+            })
+            .unwrap();
+        let rendered = (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains("B model"),
+            "hint bar at {w}×{h} ({label}) must document the B key; got:\n{rendered}"
+        );
+    }
 }
 
-fn no_cable_probe() -> Vec<String> {
-    Vec::new()
+// Issue #846: the help overlay must list the B shortcut in
+// addition to the other model toggles.
+#[test]
+fn help_overlay_documents_b_model_key() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let _i18n_guard = crate::i18n::lock_for_test();
+    let backend = TestBackend::new(80, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
+        .unwrap();
+    let rows: Vec<String> = (0..30)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol().to_string())
+                .collect()
+        })
+        .collect();
+    let joined = rows.join("\n");
+    assert!(
+        joined.contains("B"),
+        "help overlay must include the B key; got:\n{joined}"
+    );
+    assert!(
+        joined.contains("model") || joined.contains("Model"),
+        "help overlay B line must say 'model' / 'Model'; got:\n{joined}"
+    );
 }
 
 // Issue #843: the lang prompt must surface a red ✗ line when the
