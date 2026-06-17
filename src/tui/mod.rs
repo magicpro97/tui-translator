@@ -1808,9 +1808,9 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
 }
 
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
-const HELP_OVERLAY_IDEAL_H: u16 = 21;
+const HELP_OVERLAY_IDEAL_H: u16 = 23;
 const HELP_OVERLAY_MIN_H: u16 = 4;
-const HELP_OVERLAY_CONTENT_LINES: u16 = 19;
+const HELP_OVERLAY_CONTENT_LINES: u16 = 20;
 
 /// Return the maximum valid scroll offset for the help overlay at `area`.
 pub fn help_overlay_max_scroll(area: Rect) -> u16 {
@@ -3683,6 +3683,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from(format!("  T          {}", crate::i18n::t("help-tts"))),
         Line::from(format!("  V          {}", crate::i18n::t("help-voice"))),
         Line::from(format!("  M          {}", crate::i18n::t("help-metrics"))),
+        Line::from(format!("  B          {}", crate::i18n::t("help-models"))),
         Line::from(format!("  L          {}", crate::i18n::t("help-language"))),
         Line::from(settings_line),
         Line::from(format!(

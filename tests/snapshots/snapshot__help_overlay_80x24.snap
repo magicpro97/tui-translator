@@ -1,8 +1,8 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1832
 expression: "render_help(80, 24, 0)"
 ---
-                                                                                
             ┌ Help — press ? or Esc to close ──────────────────────┐            
             │ Keyboard Shortcuts                                   │            
             │                                                      │            
@@ -13,6 +13,7 @@ expression: "render_help(80, 24, 0)"
             │  T          Toggle TTS audio output                  │            
             │  V          Cycle TTS voice (CTRL-02)                │            
             │  M          Toggle metrics panel (compact/expanded)  │            
+            │  B          Open model manager (cycle ASR backends)  │            
             │  L          Change target language                   │            
             │  S          Settings (F2/Ctrl+D cycles field values) │            
             │  ↑/↓        In device picker: ↑/↓ cycle, Enter commit│            
@@ -23,4 +24,5 @@ expression: "render_help(80, 24, 0)"
             │  [ / ]      Mic gain  -1/+1 dB    { / } TTS vol  -1/+│            
             │  0          Reset mic gain and TTS volume to 0 dB (CT│            
             │  q / Ctrl+C Quit — shows session summary             │            
+            │                                                      │            
             └──────────────────────────────────────────────────────┘

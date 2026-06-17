@@ -1,8 +1,9 @@
 ---
 source: tests/snapshot.rs
+assertion_line: 1570
 expression: rendered
 ---
-┌ Help [0/6] — ↑↓ scroll · Esc close ──┐
+┌ Help [0/7] — ↑↓ scroll · Esc close ──┐
 │ Keyboard Shortcuts                   │
 │                                      │
 │  ↑ / ↓     Scroll subtitles/help     │
@@ -12,8 +13,8 @@ expression: rendered
 │  T          Toggle TTS audio output  │
 │  V          Cycle TTS voice (CTRL-02)│
 │  M          Toggle metrics panel (com│
+│  B          Open model manager (cycle│
 │  L          Change target language   │
 │  S          Settings (F2/Ctrl+D cycle│
 │  ↑/↓        In device picker: ↑/↓ cyc│
-│  R          Reload config from disk  │
 └──────────────────────────────────────┘
