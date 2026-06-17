@@ -774,3 +774,37 @@ fn go_back_from_hardware_survey_with_gate_enabled_returns_to_gate() {
     assert!(outcome.is_none());
     assert!(matches!(w.step, OnboardingStep::VirtualCableGate { .. }));
 }
+
+// Issue #842: when an empty-key Confirmation bounces the user back to
+// GoogleKeyEntry, the error_message field is populated and the
+// renderer must surface it as a red ✗ line.
+#[test]
+fn google_key_entry_renders_error_after_empty_confirmation() {
+    use super::super::render_wizard_lines;
+    use super::super::OnboardingEvent;
+    let mut w = make_wizard();
+    w.handle(OnboardingEvent::SelectBranch3);
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → GoogleKeyEntry
+    w.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    w.handle(OnboardingEvent::Enter); // → Confirmation
+    w.handle(OnboardingEvent::Enter); // empty key → GoogleKeyEntry + error
+    assert_eq!(w.step, OnboardingStep::GoogleKeyEntry);
+    assert!(w.error_message.is_some());
+    let lines = render_wizard_lines(&w);
+    let joined = lines.join("\n");
+    assert!(
+        joined.contains("API key is required"),
+        "rendered GoogleKeyEntry should show the API key error; got:\n{joined}"
+    );
+    // Typing a character should clear the error banner.
+    w.handle(OnboardingEvent::Char('a'));
+    assert!(w.error_message.is_none());
+    let lines2 = render_wizard_lines(&w);
+    let joined2 = lines2.join("\n");
+    assert!(
+        !joined2.contains("API key is required"),
+        "rendered GoogleKeyEntry should NOT show the error after typing; got:\n{joined2}"
+    );
+}
