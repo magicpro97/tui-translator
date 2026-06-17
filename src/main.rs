@@ -3458,10 +3458,20 @@ fn event_loop(
 
         // Drain all pending key actions without blocking.
         let mut should_quit = false;
+        let mut quit_with_config_path: Option<std::path::PathBuf> = None;
         loop {
             match key_rx.try_recv() {
                 Ok(UserAction::Quit) => {
                     should_quit = true;
+                }
+                // Issue #850: Ctrl+C inside the config editor
+                // is the user opting out of the wizard to edit
+                // the config file by hand.  Save the path so
+                // we can print it to stderr after the TUI
+                // tears down.
+                Ok(UserAction::QuitWithConfigPathHint(path)) => {
+                    should_quit = true;
+                    quit_with_config_path = Some(path);
                 }
                 Ok(UserAction::AnyKey) => {}
                 Ok(action) => {
@@ -3490,6 +3500,19 @@ fn event_loop(
         }
 
         if should_quit {
+            // Issue #850: the user opted out of the wizard
+            // to edit the config manually.  Print the
+            // config file path to stderr so they know
+            // where to find it.  Pre-fix the app exited
+            // silently and the user had no idea where
+            // their config lived.
+            if let Some(path) = quit_with_config_path.as_ref() {
+                eprintln!(
+                    "
+[tui-translator] Exited at user request. Edit the config manually at: {}",
+                    path.display()
+                );
+            }
             tracing::info!("user requested shutdown");
             // Draw the in-TUI session summary overlay, then wait for any key.
             terminal.draw(|frame| {
@@ -3588,8 +3611,17 @@ pub(crate) fn key_to_action(
     }
     if in_config_editor {
         return match key.code {
+            // Issue #850: Ctrl+C in the config editor is the
+            // user opting out of the wizard to edit the config
+            // file by hand.  We translate that to a dedicated
+            // action that carries the config path so the
+            // shutdown handler can print the path to stderr
+            // (the user otherwise had no idea where the
+            // config lives).
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(UserAction::Quit)
+                let path = crate::config::default_config_path()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("config.json"));
+                Some(UserAction::QuitWithConfigPathHint(path))
             }
             KeyCode::Enter => Some(UserAction::ConfigSave),
             KeyCode::Esc => Some(UserAction::DismissOverlay),
@@ -4480,6 +4512,10 @@ fn handle_action(
 
         // Quit is handled in the outer loop, not here.
         UserAction::Quit => {}
+        // Issue #850: the path is consumed by the outer
+        // shutdown loop which prints it to stderr so the
+        // user can edit the config manually.
+        UserAction::QuitWithConfigPathHint(_path) => {}
     }
 }
 
@@ -5030,17 +5066,24 @@ mod tests {
             key_to_action(&key, false, true, false, false, false),
             Some(UserAction::ConfigChar('x'))
         );
-        assert_eq!(
-            key_to_action(
-                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
-                false,
-                true,
-                false,
-                false,
-                false
-            ),
-            Some(UserAction::Quit)
-        );
+        // Issue #850: Ctrl+C in the config editor is the
+        // user opting out of the wizard to edit the config
+        // manually.  Pre-fix this returned plain
+        // UserAction::Quit and the user had no breadcrumb
+        // for where the config file lived.
+        let action = key_to_action(
+            &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            false,
+            true,
+            false,
+            false,
+            false,
+        )
+        .expect("Ctrl+C in config editor must produce an action");
+        match action {
+            UserAction::QuitWithConfigPathHint(_) => {}
+            other => panic!("expected QuitWithConfigPathHint; got {other:?}"),
+        }
         assert_eq!(
             key_to_action(
                 &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -5182,6 +5225,27 @@ mod tests {
             ),
             Some(UserAction::WizardKey(OnboardingEvent::Backspace))
         );
+    }
+
+    // Issue #850: pressing Ctrl+C in the config editor should
+    // signal "quit + tell the user how to edit the config
+    // manually" rather than a plain Quit (which left the user
+    // staring at a terminal after exit with no idea where
+    // their config was).
+    #[test]
+    fn config_editor_ctrl_c_prints_config_path_on_quit() {
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = key_to_action(&key, false, true, false, false, false)
+            .expect("Ctrl+C in config editor must produce a UserAction");
+        // The action must carry the config path so the
+        // shutdown path can print it.  Pre-fix it was a plain
+        // UserAction::Quit with no payload.
+        match action {
+            UserAction::QuitWithConfigPathHint(_) => {}
+            other => {
+                panic!("Ctrl+C in config editor must produce QuitWithConfigPathHint; got {other:?}")
+            }
+        }
     }
 
     #[test]
