@@ -273,3 +273,47 @@ fn draw_ui_capture_error_banner_keeps_recovery_hint_visible() {
         "capture-error banner should keep the settings recovery hint visible; got: {rendered:?}"
     );
 }
+
+// Issue #844: when the wizard is open and a startup notice is set,
+// the notice must remain visible — not hidden behind the wizard
+// overlay.
+#[test]
+fn draw_ui_wizard_open_does_not_hide_startup_notice() {
+    use crate::tui::onboarding::OnboardingWizardState;
+    use ratatui::{backend::TestBackend, Terminal};
+    let backend = TestBackend::new(120, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let state = AppState::new();
+    // Set a recognisable startup notice.
+    *state.startup_notice_msg.lock().unwrap() = Some("NEW RELEASE v0.2".to_string());
+    // Open the wizard.
+    state
+        .wizard_active
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    *state.wizard_state.lock().unwrap() =
+        Some(OnboardingWizardState::new(Vec::new(), no_cable_probe));
+    terminal
+        .draw(|frame| {
+            draw_ui(frame, &state, 0.0, false, 0.0);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let joined: String = (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    // The startup notice should appear somewhere on screen, not be
+    // hidden behind the wizard panel.
+    assert!(
+        joined.contains("NEW RELEASE v0.2"),
+        "startup notice should be visible while wizard is open; got:\n{joined}"
+    );
+}
+
+fn no_cable_probe() -> Vec<String> {
+    Vec::new()
+}
