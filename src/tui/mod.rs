@@ -396,6 +396,12 @@ pub enum UserAction {
     /// surfaces a "key unavailable in wizard" message so the
     /// user knows why the key did nothing.
     WizardKeyIgnored(char),
+    /// Issue #850: Ctrl+C inside the config editor — quit AND
+    /// remember the config file path so the shutdown handler can
+    /// print it to stderr (the user pressed Ctrl+C because they
+    /// wanted to edit the config manually; the app must leave a
+    /// breadcrumb so they know where the file lives).
+    QuitWithConfigPathHint(PathBuf),
     /// ↑ arrow — scroll the subtitle pane up.
     ScrollUp,
     /// ↓ arrow — scroll the subtitle pane down.
