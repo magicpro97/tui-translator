@@ -1,19 +1,26 @@
-name: Windows selfhosted test
+name: Windows gate
 
-# WP-24 (#723): verify the Windows COM teardown fix on a real Windows
-# machine via the self-hosted runner. This workflow deliberately omits
-# the --all-features jobs (clippy + test) because they require
-# libclang.dll for the whisper-rs-sys build dep, and the self-hosted
-# runner does not ship LLVM by default. Installing LLVM requires
-# Administrator rights, which the GitHub Actions service account does
-# not have; the fix for that is tracked separately.
+# WP-25.06 (#837): the 6 gate jobs (Format, Test default, Test release,
+# Coverage, Module-size, Panic-sites) used to be pinned to
+# `runs-on: [self-hosted, Windows]` so they could verify the
+# Windows COM teardown fix on a real Windows machine (WP-24, #723).
 #
-# The three jobs that DO run (Format, Test default, Test release) are
-# sufficient to verify the COM teardown fix: they exercise all the
-# production code paths that the RAII ComApartmentGuard wraps, and
-# they run cargo test without --test-threads=1 or continue-on-error so
-# any residual STATUS_ACCESS_VIOLATION (0xC0000005) at teardown would
-# fail the build.
+# That work is done and shipped (see #755 and .hermes/plans/2026-06-13
+# -windows-teardown-decision.md). The remaining purpose of this file is
+# to enforce engineering standards on every PR:
+#   * rustfmt formatting
+#   * cargo test --bins (debug + release)
+#   * aggregate coverage >= 60% on the v1-critical layers
+#   * per-file 100% line+branch coverage on the v1-critical files
+#     touched by the PR
+#   * module size <= 1000 LOC per file (with the 4 baseline files
+#     tracked for refactor in #483 waived via .standards-waivers.txt)
+#   * panic-prone site count in src/main.rs < 50
+#
+# None of these gates need a self-hosted runner. We moved them to
+# `windows-latest` (GitHub-hosted) so that an offline self-hosted
+# runner cannot block PR merge status indefinitely -- the bug filed in
+# #837 (5/6 jobs queued with `runner_name=null` for > 3h).
 
 on:
   push:
@@ -29,16 +36,10 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
-# Skip the dtolnay/rust-toolchain action on this self-hosted runner because
-# the action's default `shell: pwsh` step resolves the runner's temp dir to
-# ổ F: (a drive that does not exist on this machine) and fails before the
-# toolchain step runs. The runner already has rustc/cargo on PATH (installed
-# via rustup per the runner setup guide), so we invoke cargo directly.
-
 jobs:
   fmt:
     name: Format check
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: cargo fmt --check
@@ -47,7 +48,7 @@ jobs:
 
   test-default:
     name: Test (default features, debug)
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: cargo test --bins
@@ -61,12 +62,10 @@ jobs:
 
   test-release:
     name: Test (release build, smoke)
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: cargo test --release --bins
-        # Release-mode smoke; release build was NOT exhibiting the crash per
-        # comment in device_watchdog.rs, but verify on real machine anyway.
         shell: pwsh
         run: |
           $env:RUST_BACKTRACE = "1"
@@ -75,9 +74,7 @@ jobs:
   # WP-25.04 (#762): coverage gate for the v1-critical layers.
   #
   # We run with --no-cfg-coverage so the build does not pull
-  # libclang (whisper-rs-sys) — the self-hosted runner does
-  # not have LLVM installed and the install requires admin
-  # rights we don't have.  Trade-off: the coverage map is
+  # libclang (whisper-rs-sys).  Trade-off: the coverage map is
   # missing the local-stt feature, which is a known gap noted
   # in the gate's plan.
   #
@@ -86,7 +83,7 @@ jobs:
   # be tightened later when the baseline moves up.
   coverage-gate:
     name: Coverage gate (v1-critical layers)
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install rust toolchain with llvm-tools-preview
@@ -145,7 +142,7 @@ jobs:
   # probes) that is not subject to the 1000-LOC gate.
   module-size-gate:
     name: Module-size gate (1000 LOC per file)
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Enforce module-size gate
@@ -168,7 +165,7 @@ jobs:
   # under-counts the patterns.
   panic-sites-gate:
     name: Panic-sites gate (src/main.rs < 50)
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Enforce panic-site cap
