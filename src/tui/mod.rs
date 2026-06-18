@@ -2107,6 +2107,18 @@ impl AppState {
             .unwrap_or_else(|p| p.into_inner()) = None;
     }
 
+    /// Issue #843 follow-up: clear the language-prompt
+    /// error message.  Called on every prompt-close path
+    /// (Esc, help overlay open) so a stale "invalid
+    /// language code" line does not re-appear on the next
+    /// open.
+    pub fn clear_lang_prompt_error(&self) {
+        *self
+            .lang_prompt_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
     /// Create a fresh state with level at zero and device name `"initializing…"`.
     pub fn new() -> Self {
         let (metrics_tx, metrics_rx) = tokio::sync::watch::channel(MetricsSnapshot::default());
