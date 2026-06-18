@@ -196,10 +196,13 @@ pub(super) fn extract_archive_bz2(
         //
         // Resolve the candidate path *lexically* first (so `..` and `.`
         // collapse inside `dest_dir`), then ensure the parent exists and
-        // canonicalize it.  A pure `Path::starts_with` on the un-normalised
-        // join is not safe: an entry like `inner/../../../etc/passwd` would
-        // concatenate to `dest_dir/inner/../../../etc/passwd` and the
-        // lexical `starts_with(dest_dir)` check would pass even though the
+        // canonicalize *the parent* (the file itself does not exist
+        // yet on first extraction, so canonicalizing the target file
+        // would always fail).  A pure `Path::starts_with` on the
+        // un-normalised join is not safe: an entry like
+        // `inner/../../../etc/passwd` would concatenate to
+        // `dest_dir/inner/../../../etc/passwd` and the lexical
+        // `starts_with(dest_dir)` check would pass even though the
         // resolved path escapes `dest_dir`.
         let target = dest_dir.join(&stripped);
         let lexical_target = match target.strip_prefix(dest_dir) {
@@ -214,19 +217,26 @@ pub(super) fn extract_archive_bz2(
                 )));
             }
         };
-        if let Some(parent) = lexical_target.parent() {
-            std::fs::create_dir_all(parent).map_err(|source| ModelDownloadError::Io {
+        let parent = lexical_target.parent().unwrap_or(dest_dir);
+        std::fs::create_dir_all(parent).map_err(|source| ModelDownloadError::Io {
+            path: parent.to_owned(),
+            source,
+        })?;
+        // Canonicalize the parent directory so the
+        // `canonical_target` comparison below is reliable.  The
+        // target file itself does not exist yet on first extract,
+        // so we use `<parent>/<basename>` to derive a full path
+        // whose parent is the freshly-canonicalized directory.
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|source| ModelDownloadError::Io {
                 path: parent.to_owned(),
                 source,
             })?;
-        }
-        let canonical_target =
-            lexical_target
-                .canonicalize()
-                .map_err(|source| ModelDownloadError::Io {
-                    path: lexical_target.clone(),
-                    source,
-                })?;
+        let canonical_target = match lexical_target.file_name() {
+            Some(name) => canonical_parent.join(name),
+            None => canonical_parent.clone(),
+        };
 
         if !canonical_target.starts_with(&canonical_dest) {
             return Err(ModelDownloadError::InvalidManifest(format!(
