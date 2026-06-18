@@ -267,6 +267,17 @@ pub struct OnboardingWizardState {
     /// `Confirmation` step to populate the final
     /// `OnboardingConfigPatch`.
     pub(crate) hardware_survey_selection: Option<crate::quality_preset::QualityPreset>,
+    /// Issue #842: a transient error message to show on the
+    /// `GoogleKeyEntry` step when the user presses Enter on
+    /// the `Confirmation` step with an empty key.  Cleared as
+    /// soon as the user types a character so the prompt
+    /// recovers naturally.
+    pub error_message: Option<String>,
+    /// Issue #851: scroll offset (lines from the top) for the
+    /// license text shown in the LicenseReview step.  Reset to
+    /// 0 on every step transition so a long license for one
+    /// model doesn't bleed into the next.
+    pub license_scroll: usize,
 }
 
 impl OnboardingWizardState {
@@ -294,6 +305,8 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -333,6 +346,8 @@ impl OnboardingWizardState {
             gate_enabled: false,
             sys_caps: caps_for_field,
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -364,6 +379,8 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -403,6 +420,8 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -524,9 +543,14 @@ impl OnboardingWizardState {
                 let key = if self.branch.requires_google_key() {
                     let k = self.key_buffer.trim().to_owned();
                     if k.is_empty() {
+                        // Issue #842: surface a visible error
+                        // message so the user knows why they were
+                        // bounced back to the key-entry step.
+                        self.error_message = Some("API key is required".to_owned());
                         self.step = OnboardingStep::GoogleKeyEntry;
                         return None;
                     } else {
+                        self.error_message = None;
                         Some(k)
                     }
                 } else {
@@ -551,7 +575,12 @@ impl OnboardingWizardState {
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
-            OnboardingStep::ConfirmCancel => Some(OnboardingOutcome::Cancelled),
+            OnboardingStep::ConfirmCancel => {
+                // Esc on ConfirmCancel cancels the wizard.
+                // Any other key goes back to BranchSelection
+                // (handled by the catch-all in handle()).
+                Some(OnboardingOutcome::Cancelled)
+            }
         }
     }
 
@@ -626,9 +655,7 @@ impl OnboardingWizardState {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
             }
             OnboardingStep::ConfirmCancel => {
-                // Esc on ConfirmCancel cancels the wizard.
-                // Any other key goes back to BranchSelection
-                // (handled by the catch-all in handle()).
+                // Issue #852: Esc on ConfirmCancel = confirmed cancel.
                 Some(OnboardingOutcome::Cancelled)
             }
         }
@@ -807,23 +834,43 @@ impl OnboardingWizardState {
                 _ => unreachable!("discriminant matched above"),
             }
         } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
+            // Issue #851: license text longer than the panel
+            // (~28 lines) was silently truncated.  Map ArrowUp
+            // /ArrowDown to license_scroll with saturating
+            // arithmetic; PageUp/PageDown jump 10 lines.
             match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::ArrowUp => {
+                    self.license_scroll = self.license_scroll.saturating_sub(1);
+                    None
+                }
+                OnboardingEvent::ArrowDown => {
+                    self.license_scroll = self.license_scroll.saturating_add(1);
+                    None
+                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::GoogleKeyEntry) {
             match event {
                 OnboardingEvent::Char(c) => {
+                    // Issue #842: clear stale error as soon as
+                    // the user types a character so the banner
+                    // disappears naturally.
+                    self.error_message = None;
                     self.key_buffer.push(c);
                     None
                 }
                 OnboardingEvent::Backspace => {
+                    self.error_message = None;
                     self.key_buffer.pop();
                     None
                 }
                 OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::Escape => {
+                    self.error_message = None;
+                    self.go_back()
+                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::Confirmation) {

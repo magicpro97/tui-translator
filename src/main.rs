@@ -3608,14 +3608,11 @@ pub(crate) fn key_to_action(
             KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
             KeyCode::Esc => Some(UserAction::WizardKey(OnboardingEvent::Escape)),
             KeyCode::Backspace => Some(UserAction::WizardKey(OnboardingEvent::Backspace)),
-            KeyCode::Char('l')
-            | KeyCode::Char('L')
-            | KeyCode::Char('t')
-            | KeyCode::Char('T')
-            | KeyCode::Char('m')
-            | KeyCode::Char('M')
-            | KeyCode::Char('?')
-            | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::WizardKeyIgnored('L')),
+            KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::WizardKeyIgnored('T')),
+            KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::WizardKeyIgnored('M')),
+            KeyCode::Char('?') => Some(UserAction::WizardKeyIgnored('?')),
+            KeyCode::Char(' ') => Some(UserAction::WizardKeyIgnored(' ')),
             // Issue #849: q/Q inside the wizard should bail out
             // of the wizard (mapped to Escape so the wizard
             // returns OnboardingOutcome::Cancelled).  Pre-fix
