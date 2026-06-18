@@ -958,3 +958,43 @@ fn license_review_arrow_down_increments_scroll() {
     wiz.handle(OnboardingEvent::Escape);
     assert_eq!(wiz.license_scroll, 0);
 }
+
+// Issue #851 follow-up: license_scroll must reset when
+// transitioning to a new model's license.  Without this,
+// scrolling 30 lines into license[0] would leave the
+// user scrolled off the top of license[1].
+#[test]
+fn license_scroll_resets_on_model_transition() {
+    // LocalModelLicense etc. come in via  at the top of the file
+    let license_text = (0..100)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        );
+    let models = vec![
+        LocalModelLicense {
+            display_name: "M1".into(),
+            license_text: license_text.clone(),
+        },
+        LocalModelLicense {
+            display_name: "M2".into(),
+            license_text: license_text.clone(),
+        },
+    ];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    wiz.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    wiz.handle(OnboardingEvent::Enter); // → LicenseReview[0]
+                                        // Scroll 20 lines into M1
+    for _ in 0..20 {
+        wiz.handle(OnboardingEvent::ArrowDown);
+    }
+    assert_eq!(wiz.license_scroll, 20);
+    // Accept M1 → LicenseReview[1] → scroll must reset to 0
+    wiz.handle(OnboardingEvent::Enter);
+    assert_eq!(
+        wiz.license_scroll, 0,
+        "license_scroll must reset on model transition"
+    );
+}

@@ -485,6 +485,7 @@ impl OnboardingWizardState {
                 // the branch requires.
                 if self.branch.uses_local_models() && !self.local_models.is_empty() {
                     self.step = OnboardingStep::LicenseReview { model_index: 0 };
+                    self.license_scroll = 0;
                 } else if self.branch.requires_google_key() {
                     self.step = OnboardingStep::GoogleKeyEntry;
                 } else {
@@ -500,6 +501,7 @@ impl OnboardingWizardState {
                 let next = idx + 1;
                 if next < self.local_models.len() {
                     self.step = OnboardingStep::LicenseReview { model_index: next };
+                    self.license_scroll = 0;
                 } else if self.consent_only {
                     return Some(OnboardingOutcome::Done(OnboardingConfigPatch {
                         branch: self.branch,
@@ -592,6 +594,7 @@ impl OnboardingWizardState {
                         self.licenses_accepted[prev] = false;
                     }
                     self.step = OnboardingStep::LicenseReview { model_index: prev };
+                    self.license_scroll = 0;
                 }
                 None
             }
@@ -602,6 +605,7 @@ impl OnboardingWizardState {
                         self.licenses_accepted[last] = false;
                     }
                     self.step = OnboardingStep::LicenseReview { model_index: last };
+                    self.license_scroll = 0;
                 } else {
                     self.step = OnboardingStep::BranchSelection;
                 }
@@ -616,6 +620,7 @@ impl OnboardingWizardState {
                         self.licenses_accepted[last] = false;
                     }
                     self.step = OnboardingStep::LicenseReview { model_index: last };
+                    self.license_scroll = 0;
                 } else {
                     self.step = OnboardingStep::BranchSelection;
                 }
