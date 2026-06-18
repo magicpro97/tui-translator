@@ -4167,6 +4167,7 @@ fn handle_action(
                 state.reset_help_scroll();
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                state.clear_lang_prompt_error();
                 state.close_config_editor();
             }
         }
@@ -4204,6 +4205,10 @@ fn handle_action(
             } else if state.lang_prompt_active.load(Ordering::Relaxed) {
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                // Issue #843 follow-up: clear the error so a
+                // stale "invalid language code" line does
+                // not re-appear on the next open.
+                state.clear_lang_prompt_error();
             } else if state.show_help.load(Ordering::Relaxed) {
                 state.show_help.store(false, Ordering::Relaxed);
                 state.reset_help_scroll();
@@ -7432,5 +7437,31 @@ mod tests {
             pipeline::SlotProviderStatus::Degraded("test".to_string()),
             "write through ctx_arc must be visible via outer Arc clone"
         );
+    }
+}
+
+#[cfg(test)]
+mod _clear_lang_error_tests {
+    use super::*;
+    // Issue #843 follow-up: closing the lang prompt (Esc
+    // or help overlay open) must clear lang_prompt_error.
+    // Pre-fix the error persisted across close+reopen
+    // so the user saw a stale "invalid language code"
+    // line on the next open.
+    #[test]
+    fn close_lang_prompt_clears_error() {
+        // We can't easily construct the full state with
+        // a live keymap, but we can verify the method
+        // exists and clears the field.  This is a smoke
+        // test; the real coverage is the integration test
+        // suite.
+        let state = AppState::new();
+        // Set an error manually.
+        *state.lang_prompt_error.lock().unwrap() =
+            Some("invalid language code: malformed BCP-47 tag".to_owned());
+        assert!(state.lang_prompt_error.lock().unwrap().is_some());
+        // Clear it.
+        state.clear_lang_prompt_error();
+        assert!(state.lang_prompt_error.lock().unwrap().is_none());
     }
 }
