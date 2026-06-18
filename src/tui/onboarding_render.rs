@@ -93,16 +93,6 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 .get(idx)
                 .map(|m| m.license_text.as_str())
                 .unwrap_or("");
-            let mut lines = vec![
-                format!(
-                    "── License ({}/{}) — {} [{}] ────────────",
-                    idx + 1,
-                    state.local_models.len(),
-                    name,
-                    BUILD_SHA
-                ),
-                String::new(),
-            ];
             // Issue #851 / #879 follow-up: the renderer
             // MUST slice the license body by state.license_scroll
             // or the up/down keys (defined in onboarding.rs
@@ -112,28 +102,50 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
             const VISIBLE_BODY: usize = 26;
             let all_lines: Vec<&str> = text.lines().collect();
             let max_start = all_lines.len().saturating_sub(VISIBLE_BODY);
-            // The struct field tracks a user-driven offset;
-            // the wizard only resets it on transitions (see
-            // the 5 self.license_scroll = 0 sites), and the
-            // handle() clamps the value against the line
-            // count on each step.  Re-clamp here as a safety
-            // net in case the wizard moved to a model whose
-            // license is shorter than the previous one.
+            // Clamp scroll to the reachable tail.  The wizard
+            // can also land on a license shorter than
+            // VISIBLE_BODY (e.g. whisper-tiny's 21-line MIT
+            // text vs. the 26-line window).  In that case
+            // `max_start` is 0 and the slice covers the full
+            // text; the footer still surfaces the position so
+            // the user can see "line 21/21" and infer that no
+            // scrolling is needed.
             let scroll = state.license_scroll.min(max_start);
             let start = scroll;
             let end = (start + VISIBLE_BODY).min(all_lines.len());
             let visible = &all_lines[start..end];
             let total_lines = all_lines.len();
             let visible_end = end;
+            // Scroll position lives in the TITLE row (line 0), not
+            // only the footer.  On a short terminal (e.g. 60×22) the
+            // ~26-line body wraps and can push the footer off the
+            // bottom of the panel; putting "line N/M" in the title
+            // guarantees the user always sees the position
+            // indicator regardless of terminal height.  The footer
+            // repeats the bindings for discoverability when there
+            // IS room.
+            let mut lines = vec![
+                format!(
+                    "── License ({}/{}) — {} [{}] [line {visible_end}/{total_lines}] ──",
+                    idx + 1,
+                    state.local_models.len(),
+                    name,
+                    BUILD_SHA
+                ),
+                String::new(),
+            ];
             for raw_line in visible {
                 lines.push(format!("│  {raw_line}"));
             }
             lines.push(String::new());
-            // Hint footer carries the "line N/M" position so
-            // the user can see they actually scrolled.
-            lines.push(format!(
-                "  [Enter] Accept & continue  [Esc] Back    line {visible_end}/{total_lines}"
-            ));
+            // Footer split across two short lines so neither wraps
+            // on a narrow panel (60×22, inner width ≈54).  A single
+            // ~92-char line wrapped there.  The position indicator
+            // is ALSO in the title above, so even if these footer
+            // lines are clipped on a very short terminal the user
+            // still sees how far they have scrolled.
+            lines.push("  [Enter] Accept  [Esc] Back".to_owned());
+            lines.push("  [↑↓] line  [PgUp/PgDn] page  [Home/End] top/bottom".to_owned());
             lines
         }
         OnboardingStep::GoogleKeyEntry => {

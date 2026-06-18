@@ -176,6 +176,18 @@ pub enum OnboardingEvent {
     RefreshVirtualCable,
     /// Skip cable installation; proceed in speaker-only mode.
     SkipVirtualCable,
+    /// Scroll one page (10 lines) up in the license review.
+    /// LicenseReview step only; ignored elsewhere.
+    PageUp,
+    /// Scroll one page (10 lines) down in the license review.
+    /// LicenseReview step only; ignored elsewhere.
+    PageDown,
+    /// Jump to the top of the license body.
+    /// LicenseReview step only; ignored elsewhere.
+    ScrollTop,
+    /// Jump to the bottom of the license body.
+    /// LicenseReview step only; ignored elsewhere.
+    ScrollBottom,
 }
 
 // ── Config patch ──────────────────────────────────────────────────────────────
@@ -838,15 +850,70 @@ impl OnboardingWizardState {
             // (~28 lines) was silently truncated.  Map ArrowUp
             // /ArrowDown to license_scroll with saturating
             // arithmetic; PageUp/PageDown jump 10 lines.
+            //
+            // This arm is the canonical one.  A historical
+            // duplicate arm further down used to shadow this
+            // when the else-if chain was reordered; the
+            // duplicate has been removed (see git log for
+            // commit "wizard: collapse LicenseReview handlers").
             match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
+                // ── Scroll controls ─────────────────────────────────────
+                //
+                // License text can be either shorter (21 lines for
+                // whisper-tiny MIT) or longer (184 lines for opus-mt
+                // Apache) than the visible window.  Both cases need
+                // explicit UX:
+                //
+                // * ArrowUp/ArrowDown: one line.  Saturating; no
+                //   effect once the viewport is reached on either
+                //   end.  Used for fine-grained reading.
+                //
+                // * PageUp/PageDown: ten lines.  Matches the
+                //   page-scroll convention of every pager and
+                //   editor so users with long licenses (Apache,
+                //   184 lines) do not have to press ArrowDown
+                //   seven times to advance one screen.
+                //
+                // * Home/End: jump to first / last line.  Without
+                //   this, a user on the Apache license has no
+                //   fast way to confirm they have actually read
+                //   to the bottom; the footer "line N/M" stays
+                //   mid-document and they do not know whether
+                //   there is more text below.
+                //
+                // All four cases clamp the offset to the
+                // reachable range so a stray Home/PageUp past
+                // the end is harmless.
                 OnboardingEvent::ArrowUp => {
                     self.license_scroll = self.license_scroll.saturating_sub(1);
                     None
                 }
                 OnboardingEvent::ArrowDown => {
                     self.license_scroll = self.license_scroll.saturating_add(1);
+                    None
+                }
+                OnboardingEvent::PageUp => {
+                    self.license_scroll = self.license_scroll.saturating_sub(10);
+                    None
+                }
+                OnboardingEvent::PageDown => {
+                    self.license_scroll = self.license_scroll.saturating_add(10);
+                    None
+                }
+                OnboardingEvent::ScrollTop => {
+                    self.license_scroll = 0;
+                    None
+                }
+                OnboardingEvent::ScrollBottom => {
+                    // Render-time clamp (renderer re-clamps via
+                    // .min(max_start)) will pin the offset to
+                    // the reachable tail even if we overshoot
+                    // here.  Setting a large value (usize::MAX
+                    // / 2) is the standard pager idiom for
+                    // "scroll as far as possible".
+                    self.license_scroll = usize::MAX / 2;
                     None
                 }
                 _ => None,
@@ -895,27 +962,6 @@ impl OnboardingWizardState {
         } else if matches!(self.step, OnboardingStep::PlatformParityNotice) {
             match event {
                 OnboardingEvent::Enter | OnboardingEvent::Escape => self.advance(),
-                _ => None,
-            }
-        } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
-            // Issue #851 / #879 follow-up: license text longer
-            // than the panel (~28 lines) is now actually
-            // scrollable.  ArrowUp/ArrowDown move one line.
-            // The renderer (onboarding_render.rs) reads
-            // state.license_scroll and clamps the slice to
-            // the actual line count.  Saturating arithmetic
-            // so going past either end is a no-op.
-            match event {
-                OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => self.go_back(),
-                OnboardingEvent::ArrowUp => {
-                    self.license_scroll = self.license_scroll.saturating_sub(1);
-                    None
-                }
-                OnboardingEvent::ArrowDown => {
-                    self.license_scroll = self.license_scroll.saturating_add(1);
-                    None
-                }
                 _ => None,
             }
         } else {

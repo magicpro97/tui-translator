@@ -1062,3 +1062,181 @@ fn license_scroll_resets_on_model_transition() {
         "license_scroll must reset on model transition"
     );
 }
+
+// PageUp/PageDown/Home/End in the license review step are the
+// pager-style affordances that complement ArrowUp/ArrowDown.
+// They were added in response to the user-facing complaint that
+// scrolling the apache-2.0 license (184 lines) with one-line
+// arrow keys required seven page-downs to reach the bottom,
+// and there was no fast way to confirm the user had reached
+// the end of the document.  The tests below pin the four
+// behaviours at the unit level so a future refactor of the
+// license review handler cannot silently drop them.
+#[test]
+fn license_scroll_page_down_advances_ten_lines() {
+    let license_text = (0..200)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "long".into(),
+        license_text,
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    wiz.handle(OnboardingEvent::Enter); // → HardwareSurvey
+    wiz.handle(OnboardingEvent::Enter); // → LicenseReview[0]
+    assert_eq!(wiz.license_scroll, 0);
+    wiz.handle(OnboardingEvent::PageDown);
+    assert_eq!(wiz.license_scroll, 10, "PageDown advances by 10");
+    wiz.handle(OnboardingEvent::PageDown);
+    assert_eq!(wiz.license_scroll, 20, "PageDown accumulates");
+}
+
+#[test]
+fn license_scroll_page_up_decrements_ten_lines() {
+    let license_text = (0..200)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "long".into(),
+        license_text,
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::Enter);
+    for _ in 0..25 {
+        wiz.handle(OnboardingEvent::ArrowDown);
+    }
+    assert_eq!(wiz.license_scroll, 25);
+    wiz.handle(OnboardingEvent::PageUp);
+    assert_eq!(wiz.license_scroll, 15, "PageUp decrements by 10");
+    wiz.handle(OnboardingEvent::PageUp);
+    assert_eq!(wiz.license_scroll, 5, "PageUp accumulates");
+    // Saturating: cannot go below 0.
+    wiz.handle(OnboardingEvent::PageUp);
+    assert_eq!(wiz.license_scroll, 0, "PageUp is saturating at 0");
+}
+
+#[test]
+fn license_scroll_home_resets_to_zero() {
+    let license_text = (0..100)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "long".into(),
+        license_text,
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::Enter);
+    for _ in 0..30 {
+        wiz.handle(OnboardingEvent::ArrowDown);
+    }
+    assert_eq!(wiz.license_scroll, 30);
+    wiz.handle(OnboardingEvent::ScrollTop);
+    assert_eq!(wiz.license_scroll, 0, "Home jumps to top");
+}
+
+#[test]
+fn license_scroll_end_clamps_to_last_visible_line() {
+    // The handler sets the offset to a sentinel (usize::MAX/2);
+    // the renderer is responsible for re-clamping the slice to
+    // `all_lines.len().saturating_sub(VISIBLE_BODY)`.  The
+    // contract under test is: after End, the renderer's
+    // visible-end index equals `total_lines` (i.e. the bottom
+    // of the document is on screen).
+    let license_text = (0..184)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "apache".into(),
+        license_text: license_text.clone(),
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::ScrollBottom);
+    // The scroll position lives in the License title line as
+    // `line {visible_end}/{total_lines}`.  After End on a 184-line
+    // license, visible_end must be 184.  (Body lines in this test
+    // happen to start with "line " too, so match the title by the
+    // "License (" prefix it always carries.)
+    let lines = render_wizard_lines(&wiz);
+    let title = lines
+        .iter()
+        .find(|l| l.contains("License (") && l.contains("line "))
+        .expect("license title with position present");
+    let (vis_end, total) = {
+        let s = title
+            .rsplit("line ")
+            .next()
+            .expect("split on 'line '")
+            .trim();
+        // s now looks like "184/184] ──"; take the leading "N/M" and
+        // strip any trailing non-digits (the closing bracket).
+        let nm = s.split_whitespace().next().expect("N/M token");
+        let mut parts = nm.splitn(2, '/');
+        let parse_digits = |p: &str| -> usize {
+            p.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap()
+        };
+        let v = parse_digits(parts.next().unwrap());
+        let t = parse_digits(parts.next().unwrap());
+        (v, t)
+    };
+    assert_eq!(total, 184, "title reports full document length");
+    assert_eq!(vis_end, 184, "End must scroll bottom into view");
+}
+
+#[test]
+fn license_scroll_shorter_than_viewport_shows_full_indicator() {
+    // whisper-tiny has 21 lines; VISIBLE_BODY is 26.  The
+    // footer must still surface `line 21/21` so the user
+    // can tell the document fits and no scroll is needed.
+    let license_text = (0..21)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let models = vec![LocalModelLicense {
+        display_name: "tiny".into(),
+        license_text,
+    }];
+    let mut wiz = OnboardingWizardState::new(models, Vec::new);
+    wiz.handle(OnboardingEvent::Enter);
+    wiz.handle(OnboardingEvent::Enter);
+    let lines = render_wizard_lines(&wiz);
+    let title = lines
+        .iter()
+        .find(|l| l.contains("License (") && l.contains("line "))
+        .expect("license title with position present");
+    let (vis_end, total) = {
+        let s = title
+            .rsplit("line ")
+            .next()
+            .expect("split on 'line '")
+            .trim();
+        let nm = s.split_whitespace().next().expect("N/M token");
+        let mut parts = nm.splitn(2, '/');
+        let parse_digits = |p: &str| -> usize {
+            p.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap()
+        };
+        let v = parse_digits(parts.next().unwrap());
+        let t = parse_digits(parts.next().unwrap());
+        (v, t)
+    };
+    assert_eq!(total, 21, "title reports 21/21 for short license");
+    assert_eq!(
+        vis_end, 21,
+        "title must show 21/21 so the user sees the document is fully visible"
+    );
+}

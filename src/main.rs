@@ -3606,6 +3606,18 @@ pub(crate) fn key_to_action(
             }
             KeyCode::Up => Some(UserAction::WizardKey(OnboardingEvent::ArrowUp)),
             KeyCode::Down => Some(UserAction::WizardKey(OnboardingEvent::ArrowDown)),
+            // PageUp/PageDown/Home/End: pager-style scroll in the
+            // license review step.  Ignored on other wizard steps
+            // by the handle() dispatch (see the LicenseReview
+            // arm in OnboardingWizardState::handle).  Wired here
+            // rather than at the global level because the same
+            // keys carry different meanings in the help overlay
+            // and the main UI — confining them to `in_wizard`
+            // keeps the help/main bindings intact.
+            KeyCode::PageUp => Some(UserAction::WizardKey(OnboardingEvent::PageUp)),
+            KeyCode::PageDown => Some(UserAction::WizardKey(OnboardingEvent::PageDown)),
+            KeyCode::Home => Some(UserAction::WizardKey(OnboardingEvent::ScrollTop)),
+            KeyCode::End => Some(UserAction::WizardKey(OnboardingEvent::ScrollBottom)),
             KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
             KeyCode::Esc => Some(UserAction::WizardKey(OnboardingEvent::Escape)),
             KeyCode::Backspace => Some(UserAction::WizardKey(OnboardingEvent::Backspace)),
@@ -4863,6 +4875,39 @@ mod tests {
             key_to_action(&key, false, true, false, false, false),
             Some(UserAction::ConfigCycleCaptureDevice)
         );
+    }
+
+    /// Issue #883: PageUp/PageDown/Home/End must reach the wizard as
+    /// pager events so the LicenseReview handler can scroll long
+    /// licenses (Apache-2.0, 184 lines).  The keymap arm only fires
+    /// when `in_wizard` is true; the LicenseReview step is the only
+    /// consumer (other steps no-op the events in `handle`).  This
+    /// pins the wiring so a keymap refactor cannot silently strip
+    /// the pager keys and leave the PTY test as the sole guard.
+    #[test]
+    fn wizard_pager_keys_route_to_scroll_events() {
+        let cases = [
+            (KeyCode::PageUp, OnboardingEvent::PageUp),
+            (KeyCode::PageDown, OnboardingEvent::PageDown),
+            (KeyCode::Home, OnboardingEvent::ScrollTop),
+            (KeyCode::End, OnboardingEvent::ScrollBottom),
+        ];
+        for (code, expected) in cases {
+            let key = KeyEvent::new(code, KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(expected.clone())),
+                "wizard keymap must route {code:?} to {expected:?}"
+            );
+            // Outside the wizard the same keys must NOT produce a
+            // WizardKey action (they carry other meanings in the
+            // help overlay / main UI).
+            assert_ne!(
+                key_to_action(&key, false, false, false, false, false),
+                Some(UserAction::WizardKey(expected.clone())),
+                "{code:?} must not emit a wizard scroll event outside the wizard"
+            );
+        }
     }
 
     /// Tab/Shift+Tab always move through settings fields.
