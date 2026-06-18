@@ -66,7 +66,7 @@ pub fn render_model_manager_lines(state: &ModelManagerState, bar: &PresetBar) ->
     // Footer hint.
     lines.push(String::new());
     lines.push(clamp_line(
-        "[Tab/BackTab] next/prev tab · [Up/Down] select model · [Esc] close",
+        "[Tab/BackTab] next/prev tab · [Up/Down] select model ·          [Enter] apply · [Ctrl+P] cycle preset · [Esc] close",
     ));
 
     lines

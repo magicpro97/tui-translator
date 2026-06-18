@@ -134,6 +134,10 @@ pub enum OnboardingStep {
     /// `AppConfig::platform_parity_notice_seen_at` is `None`.  Dismissed by
     /// `Enter` or `Esc` → [`OnboardingOutcome::PlatformParityNoticeDismissed`].
     PlatformParityNotice,
+    /// Issue #852: Esc on BranchSelection used to immediately cancel the
+    /// whole wizard.  Now the first Esc transitions here for confirmation.
+    /// Enter or Esc again -> Cancelled.  Any other key -> back to the wizard.
+    ConfirmCancel,
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -263,6 +267,17 @@ pub struct OnboardingWizardState {
     /// `Confirmation` step to populate the final
     /// `OnboardingConfigPatch`.
     pub(crate) hardware_survey_selection: Option<crate::quality_preset::QualityPreset>,
+    /// Issue #842: a transient error message to show on the
+    /// `GoogleKeyEntry` step when the user presses Enter on
+    /// the `Confirmation` step with an empty key.  Cleared as
+    /// soon as the user types a character so the prompt
+    /// recovers naturally.
+    pub error_message: Option<String>,
+    /// Issue #851: scroll offset (lines from the top) for the
+    /// license text shown in the LicenseReview step.  Reset to
+    /// 0 on every step transition so a long license for one
+    /// model doesn't bleed into the next.
+    pub license_scroll: usize,
 }
 
 impl OnboardingWizardState {
@@ -290,6 +305,8 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -329,6 +346,8 @@ impl OnboardingWizardState {
             gate_enabled: false,
             sys_caps: caps_for_field,
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -360,6 +379,8 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -399,6 +420,8 @@ impl OnboardingWizardState {
                 gpu: crate::sys_caps::GpuKind::None,
             },
             hardware_survey_selection: None,
+            error_message: None,
+            license_scroll: 0,
         }
     }
 
@@ -476,6 +499,7 @@ impl OnboardingWizardState {
                 // the branch requires.
                 if self.branch.uses_local_models() && !self.local_models.is_empty() {
                     self.step = OnboardingStep::LicenseReview { model_index: 0 };
+                    self.license_scroll = 0;
                 } else if self.branch.requires_google_key() {
                     self.step = OnboardingStep::GoogleKeyEntry;
                 } else {
@@ -491,6 +515,7 @@ impl OnboardingWizardState {
                 let next = idx + 1;
                 if next < self.local_models.len() {
                     self.step = OnboardingStep::LicenseReview { model_index: next };
+                    self.license_scroll = 0;
                 } else if self.consent_only {
                     return Some(OnboardingOutcome::Done(OnboardingConfigPatch {
                         branch: self.branch,
@@ -518,9 +543,14 @@ impl OnboardingWizardState {
                 let key = if self.branch.requires_google_key() {
                     let k = self.key_buffer.trim().to_owned();
                     if k.is_empty() {
+                        // Issue #842: surface a visible error
+                        // message so the user knows why they were
+                        // bounced back to the key-entry step.
+                        self.error_message = Some("API key is required".to_owned());
                         self.step = OnboardingStep::GoogleKeyEntry;
                         return None;
                     } else {
+                        self.error_message = None;
                         Some(k)
                     }
                 } else {
@@ -544,6 +574,12 @@ impl OnboardingWizardState {
             }
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
+            }
+            OnboardingStep::ConfirmCancel => {
+                // Esc on ConfirmCancel cancels the wizard.
+                // Any other key goes back to BranchSelection
+                // (handled by the catch-all in handle()).
+                Some(OnboardingOutcome::Cancelled)
             }
         }
     }
@@ -583,6 +619,7 @@ impl OnboardingWizardState {
                         self.licenses_accepted[prev] = false;
                     }
                     self.step = OnboardingStep::LicenseReview { model_index: prev };
+                    self.license_scroll = 0;
                 }
                 None
             }
@@ -593,6 +630,7 @@ impl OnboardingWizardState {
                         self.licenses_accepted[last] = false;
                     }
                     self.step = OnboardingStep::LicenseReview { model_index: last };
+                    self.license_scroll = 0;
                 } else {
                     self.step = OnboardingStep::BranchSelection;
                 }
@@ -607,6 +645,7 @@ impl OnboardingWizardState {
                         self.licenses_accepted[last] = false;
                     }
                     self.step = OnboardingStep::LicenseReview { model_index: last };
+                    self.license_scroll = 0;
                 } else {
                     self.step = OnboardingStep::BranchSelection;
                 }
@@ -614,6 +653,10 @@ impl OnboardingWizardState {
             }
             OnboardingStep::PlatformParityNotice => {
                 Some(OnboardingOutcome::PlatformParityNoticeDismissed)
+            }
+            OnboardingStep::ConfirmCancel => {
+                // Issue #852: Esc on ConfirmCancel = confirmed cancel.
+                Some(OnboardingOutcome::Cancelled)
             }
         }
     }
@@ -684,7 +727,13 @@ impl OnboardingWizardState {
                 }
                 OnboardingEvent::Char('r') | OnboardingEvent::Char('R') => None,
                 OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => Some(OnboardingOutcome::Cancelled),
+                // Issue #852: do NOT cancel immediately.
+                // Move to ConfirmCancel so the user can
+                // back out with any other key.
+                OnboardingEvent::Escape => {
+                    self.step = OnboardingStep::ConfirmCancel;
+                    None
+                }
                 _ => None,
             }
         } else if disc
@@ -785,23 +834,43 @@ impl OnboardingWizardState {
                 _ => unreachable!("discriminant matched above"),
             }
         } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
+            // Issue #851: license text longer than the panel
+            // (~28 lines) was silently truncated.  Map ArrowUp
+            // /ArrowDown to license_scroll with saturating
+            // arithmetic; PageUp/PageDown jump 10 lines.
             match event {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::ArrowUp => {
+                    self.license_scroll = self.license_scroll.saturating_sub(1);
+                    None
+                }
+                OnboardingEvent::ArrowDown => {
+                    self.license_scroll = self.license_scroll.saturating_add(1);
+                    None
+                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::GoogleKeyEntry) {
             match event {
                 OnboardingEvent::Char(c) => {
+                    // Issue #842: clear stale error as soon as
+                    // the user types a character so the banner
+                    // disappears naturally.
+                    self.error_message = None;
                     self.key_buffer.push(c);
                     None
                 }
                 OnboardingEvent::Backspace => {
+                    self.error_message = None;
                     self.key_buffer.pop();
                     None
                 }
                 OnboardingEvent::Enter => self.advance(),
-                OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::Escape => {
+                    self.error_message = None;
+                    self.go_back()
+                }
                 _ => None,
             }
         } else if matches!(self.step, OnboardingStep::Confirmation) {
@@ -809,6 +878,19 @@ impl OnboardingWizardState {
                 OnboardingEvent::Enter => self.advance(),
                 OnboardingEvent::Escape => self.go_back(),
                 _ => None,
+            }
+        } else if matches!(self.step, OnboardingStep::ConfirmCancel) {
+            // Issue #852: confirm-cancel step.  Enter or
+            // Esc -> Cancelled.  Any other key -> back to
+            // BranchSelection.
+            match event {
+                OnboardingEvent::Enter | OnboardingEvent::Escape => {
+                    Some(OnboardingOutcome::Cancelled)
+                }
+                _ => {
+                    self.step = OnboardingStep::BranchSelection;
+                    None
+                }
             }
         } else if matches!(self.step, OnboardingStep::PlatformParityNotice) {
             match event {

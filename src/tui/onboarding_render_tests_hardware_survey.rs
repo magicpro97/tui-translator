@@ -477,9 +477,15 @@ fn with_cable() -> Vec<String> {
     vec!["CABLE Output (VB-Audio Virtual Cable)".to_string()]
 }
 
+// Issue #852: Esc on BranchSelection no longer cancels
+// immediately.  It transitions to ConfirmCancel and the
+// user must press Esc/Enter again to actually cancel.
 #[test]
-fn escape_from_branch_selection_returns_cancelled() {
+fn escape_from_branch_selection_transitions_to_confirm_cancel() {
     let mut w = make_wizard();
+    let outcome = w.handle(OnboardingEvent::Escape);
+    assert!(outcome.is_none(), "1st Esc must NOT cancel");
+    assert!(matches!(w.step, OnboardingStep::ConfirmCancel));
     let outcome = w.handle(OnboardingEvent::Escape);
     assert!(matches!(outcome, Some(OnboardingOutcome::Cancelled)));
 }

@@ -87,14 +87,17 @@ fn help_overlay_lists_settings_shortcut() {
     let _i18n_guard = crate::i18n::lock_for_test();
     // Pin the OS so the assertion is stable on every host CI runner.
     let _guard = with_key_os_override("windows");
-    let backend = TestBackend::new(80, 24);
+    // Issue #846 added a 20th content line for the "B models" entry;
+    // 30 rows gives the panel enough headroom to show every line
+    // without scrolling.
+    let backend = TestBackend::new(80, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal
-        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
         .unwrap();
     let buffer = terminal.backend().buffer();
-    let rows = (0..24)
+    let rows = (0..30)
         .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
         .collect::<Vec<_>>();
     let settings_line = rows
@@ -121,11 +124,15 @@ fn help_overlay_renders_macos_control_glyph() {
     use ratatui::{backend::TestBackend, Terminal};
     let _i18n_guard = crate::i18n::lock_for_test();
     let _guard = with_key_os_override("macos");
-    let backend = TestBackend::new(80, 24);
+    // 80x30: the help overlay now has 20 content lines (added the
+    // "B models" entry, issue #846) and needs more room than 24
+    // rows can fit when the panel is auto-sized. 30 rows give the
+    // panel enough headroom to show every line without scrolling.
+    let backend = TestBackend::new(80, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal
-        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
         .unwrap();
     let buffer = terminal.backend().buffer();
     let rows = (0..24)
@@ -162,14 +169,17 @@ fn help_overlay_renders_linux_ctrl_label() {
     use ratatui::{backend::TestBackend, Terminal};
     let _i18n_guard = crate::i18n::lock_for_test();
     let _guard = with_key_os_override("linux");
-    let backend = TestBackend::new(80, 24);
+    // Issue #846 added a 20th content line for the "B models" entry;
+    // 30 rows gives the panel enough headroom to show every line
+    // without scrolling.
+    let backend = TestBackend::new(80, 30);
     let mut terminal = Terminal::new(backend).unwrap();
 
     terminal
-        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 24), 0))
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
         .unwrap();
     let buffer = terminal.backend().buffer();
-    let rows = (0..24)
+    let rows = (0..30)
         .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect::<String>())
         .collect::<Vec<_>>();
     let settings_line = rows
@@ -271,5 +281,137 @@ fn draw_ui_capture_error_banner_keeps_recovery_hint_visible() {
     assert!(
         rendered.contains("Press [S]"),
         "capture-error banner should keep the settings recovery hint visible; got: {rendered:?}"
+    );
+}
+
+// Issue #846: the live hint bar must document the B key
+// (ModelManager) so users can discover the feature without
+// reading source.  All three hint variants (≥80 cols, ≥96
+// cols, ≥120 cols) must mention "B model" so a user on any
+// terminal size sees the hint.
+#[test]
+fn hint_bar_documents_b_model_key() {
+    use crate::tui::control_hints::ControlHintsBar;
+    use ratatui::{backend::TestBackend, Terminal};
+    for (w, h, label) in [
+        (80u16, 1u16, "≥80 cols"),
+        (96, 1, "≥96 cols"),
+        (120, 1, "≥120 cols"),
+    ] {
+        let backend = TestBackend::new(w, h);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(&ControlHintsBar { tts_on: false }, frame.area());
+            })
+            .unwrap();
+        let rendered = (0..h)
+            .map(|y| {
+                (0..w)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains("B model"),
+            "hint bar at {w}×{h} ({label}) must document the B key; got:\n{rendered}"
+        );
+    }
+}
+
+// Issue #846: the help overlay must list the B shortcut in
+// addition to the other model toggles.
+#[test]
+fn help_overlay_documents_b_model_key() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let _i18n_guard = crate::i18n::lock_for_test();
+    let backend = TestBackend::new(80, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_help_overlay(frame, Rect::new(0, 0, 80, 30), 0))
+        .unwrap();
+    let rows: Vec<String> = (0..30)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol().to_string())
+                .collect()
+        })
+        .collect();
+    let joined = rows.join("\n");
+    assert!(
+        joined.contains("B"),
+        "help overlay must include the B key; got:\n{joined}"
+    );
+    assert!(
+        joined.contains("model") || joined.contains("Model"),
+        "help overlay B line must say 'model' / 'Model'; got:\n{joined}"
+    );
+}
+
+// Issue #843: the lang prompt must surface a red ✗ line when the
+// previous LangApply submit was rejected.
+#[test]
+fn render_language_prompt_includes_error_line() {
+    use super::render_language_prompt;
+    use ratatui::{backend::TestBackend, Terminal};
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            render_language_prompt(
+                frame,
+                area,
+                "ja-JPdas",
+                Some("invalid language code: malformed BCP-47 tag"),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let joined: String = (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined.contains("invalid language code"),
+        "rendered lang prompt should include the error; got:\n{joined}"
+    );
+    // The ✗ glyph must appear in the prompt
+    assert!(
+        joined.contains('\u{2717}'),
+        "rendered lang prompt should include the ✗ glyph; got:\n{joined}"
+    );
+}
+
+// Issue #843: no error line when error is None
+#[test]
+fn render_language_prompt_no_error_when_none() {
+    use super::render_language_prompt;
+    use ratatui::{backend::TestBackend, Terminal};
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            render_language_prompt(frame, area, "vi", None);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    let joined: String = (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !joined.contains("invalid"),
+        "rendered lang prompt should NOT include any error when None; got:\n{joined}"
     );
 }

@@ -59,7 +59,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
         Arc, Mutex,
     },
-    time::SystemTime,
+    time::{Instant, SystemTime},
 };
 
 use ratatui::{
@@ -391,6 +391,17 @@ pub enum UserAction {
     DismissOverlay,
     /// Q or Ctrl+C — quit and show the session summary.
     Quit,
+    /// Issue #847: a forbidden runtime-shortcut key (L/T/M/S/R/
+    /// ?/Space) was pressed inside the wizard.  The orchestrator
+    /// surfaces a "key unavailable in wizard" message so the
+    /// user knows why the key did nothing.
+    WizardKeyIgnored(char),
+    /// Issue #850: Ctrl+C inside the config editor — quit AND
+    /// remember the config file path so the shutdown handler can
+    /// print it to stderr (the user pressed Ctrl+C because they
+    /// wanted to edit the config manually; the app must leave a
+    /// breadcrumb so they know where the file lives).
+    QuitWithConfigPathHint(PathBuf),
     /// ↑ arrow — scroll the subtitle pane up.
     ScrollUp,
     /// ↓ arrow — scroll the subtitle pane down.
@@ -1808,9 +1819,9 @@ pub fn subtitle_inner_area(area: Rect, metrics_expanded: bool, over_threshold: b
 }
 
 const HELP_OVERLAY_IDEAL_W: u16 = 56;
-const HELP_OVERLAY_IDEAL_H: u16 = 21;
+const HELP_OVERLAY_IDEAL_H: u16 = 23;
 const HELP_OVERLAY_MIN_H: u16 = 4;
-const HELP_OVERLAY_CONTENT_LINES: u16 = 19;
+const HELP_OVERLAY_CONTENT_LINES: u16 = 20;
 
 /// Return the maximum valid scroll offset for the help overlay at `area`.
 pub fn help_overlay_max_scroll(area: Rect) -> u16 {
@@ -1832,6 +1843,21 @@ pub fn help_overlay_max_scroll(area: Rect) -> u16 {
 /// Issue #61: metric values arrive via a [`tokio::sync::watch`] channel updated
 /// every second by the observability background task.  The UI reads the latest
 /// snapshot through [`metrics_snapshot`](AppState::metrics_snapshot).
+/// Issue #847: transient feedback for forbidden
+/// runtime-shortcut keys.  Carries a message + the
+/// instant it was set so the renderer can TTL it
+/// (default 3s) and the orchestrator can clear it
+/// on the next meaningful keypress.
+#[derive(Debug, Clone)]
+pub struct TransientFeedback {
+    pub message: String,
+    pub set_at: Instant,
+}
+
+/// Issue #847: how long a transient feedback message
+/// stays visible in the title bar.
+pub const TRANSIENT_FEEDBACK_TTL: std::time::Duration = std::time::Duration::from_secs(3);
+
 pub struct AppState {
     /// RMS energy encoded as `(rms * AUDIO_LEVEL_SCALE as f32) as u32`, updated atomically.
     ///
@@ -1863,6 +1889,12 @@ pub struct AppState {
     pub lang_prompt_active: Arc<AtomicBool>,
     /// Text being typed in the language-change prompt.
     pub lang_input: Mutex<String>,
+    /// Issue #843: transient error from the most recent LangApply
+    /// submit that failed `validate_language_code`. Rendered as a
+    /// red line in the lang prompt. Cleared on the next successful
+    /// submit, on `LangCancel`, or when the user types a new
+    /// character into the prompt.
+    pub lang_prompt_error: Mutex<Option<String>>,
     /// Whether the shared config editor overlay is active.
     pub config_editor_active: Arc<AtomicBool>,
     /// Whether the currently focused config-editor field is a picker-aware field.
@@ -1936,6 +1968,14 @@ pub struct AppState {
     /// One-shot startup notice for non-error configuration events that the
     /// operator should see, such as a legacy config migration.
     pub startup_notice_msg: Arc<Mutex<Option<String>>>,
+    /// Issue #847: transient feedback shown when the user
+    /// presses a forbidden runtime-shortcut key (L/T/M/S/R/
+    /// ?/Q/Space) inside the wizard.  Cleared on the next
+    /// meaningful keypress or after a short timeout.
+    pub transient_feedback: Arc<Mutex<Option<TransientFeedback>>>,
+    /// Issue #847: timestamps the last transient_feedback
+    /// write so the renderer can TTL it.
+    pub transient_feedback_set_at: Arc<Mutex<Option<Instant>>>,
 
     /// Operator-facing recovery hint for audio capture startup failures.
     ///
@@ -1978,6 +2018,11 @@ pub struct AppState {
 
     /// Whether the onboarding wizard overlay is active.
     pub wizard_active: Arc<AtomicBool>,
+    /// Issue #848: set to `true` by the ModelManager keymap when
+    /// the user presses Ctrl+C inside the overlay.  The main
+    /// event loop checks this flag every iteration and quits
+    /// when set.
+    pub quit_requested: Arc<AtomicBool>,
     /// State for the LF-05 onboarding wizard.
     pub wizard_state: Mutex<Option<onboarding::OnboardingWizardState>>,
     /// Whether the wizard is in consent-review-only mode (existing config).
@@ -2026,6 +2071,54 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Issue #847: set a transient feedback message (e.g.
+    /// "X unavailable in wizard").  Works with `&self` so
+    /// callers in `handle_action` (which takes `&AppState`)
+    /// can surface the message without forcing a signature
+    /// change.
+    pub fn set_transient_feedback(&self, message: impl Into<String>) {
+        let now = Instant::now();
+        let message = message.into();
+        *self
+            .transient_feedback
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(TransientFeedback {
+            message,
+            set_at: now,
+        });
+        *self
+            .transient_feedback_set_at
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(now);
+    }
+
+    /// Issue #847: clear the transient feedback message.
+    /// Call this when the user presses a 'meaningful'
+    /// key (any key that wasn't ignored) so the banner
+    /// goes away the next time the user does something.
+    pub fn clear_transient_feedback(&self) {
+        *self
+            .transient_feedback
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+        *self
+            .transient_feedback_set_at
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// Issue #843 follow-up: clear the language-prompt
+    /// error message.  Called on every prompt-close path
+    /// (Esc, help overlay open) so a stale "invalid
+    /// language code" line does not re-appear on the next
+    /// open.
+    pub fn clear_lang_prompt_error(&self) {
+        *self
+            .lang_prompt_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
     /// Create a fresh state with level at zero and device name `"initializing…"`.
     pub fn new() -> Self {
         let (metrics_tx, metrics_rx) = tokio::sync::watch::channel(MetricsSnapshot::default());
@@ -2040,6 +2133,7 @@ impl AppState {
             paused: Arc::new(AtomicBool::new(false)),
             lang_prompt_active: Arc::new(AtomicBool::new(false)),
             lang_input: Mutex::new(String::new()),
+            lang_prompt_error: Mutex::new(None),
             config_editor_active: Arc::new(AtomicBool::new(false)),
             picker_field_active: Arc::new(AtomicBool::new(false)),
             config_editor: Mutex::new(None),
@@ -2063,12 +2157,15 @@ impl AppState {
             metrics_rx,
             pipeline_error_msg: Arc::new(Mutex::new(None)),
             startup_notice_msg: Arc::new(Mutex::new(None)),
+            transient_feedback: Arc::new(Mutex::new(None)),
+            transient_feedback_set_at: Arc::new(Mutex::new(None)),
             capture_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
             audio_consent: Arc::new(AtomicBool::new(false)),
             stt_source: Arc::new(Mutex::new(SttSource::Local)),
             wizard_active: Arc::new(AtomicBool::new(false)),
+            quit_requested: Arc::new(AtomicBool::new(false)),
             wizard_state: Mutex::new(None),
             wizard_consent_only: Arc::new(AtomicBool::new(false)),
             slot_b_subtitle_pane: Mutex::new(None),
@@ -3214,6 +3311,23 @@ pub fn draw_ui_with_route(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
+    // Issue #847: read transient feedback for the title bar.
+    // If TTL has elapsed, clear it first.
+    let now = std::time::Instant::now();
+    let transient_expired = state
+        .transient_feedback_set_at
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .map(|t| now.duration_since(t) > TRANSIENT_FEEDBACK_TTL)
+        .unwrap_or(false);
+    if transient_expired {
+        state.clear_transient_feedback();
+    }
+    let transient_feedback = state
+        .transient_feedback
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     let capture_err = state
         .capture_error_msg
         .lock()
@@ -3289,6 +3403,17 @@ pub fn draw_ui_with_route(
             format!("   {msg}"),
             Style::default()
                 .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    // Issue #847: render the transient feedback message (e.g.
+    // "X unavailable in wizard") in the title bar so the user
+    // sees it.  Auto-cleared after TRANSIENT_FEEDBACK_TTL.
+    if let Some(ref fb) = transient_feedback {
+        title_spans.push(Span::styled(
+            format!("   {}", fb.message),
+            Style::default()
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -3559,7 +3684,12 @@ pub fn draw_ui_with_route(
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
-        render_language_prompt(frame, area, &input);
+        let lang_err = state
+            .lang_prompt_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        render_language_prompt(frame, area, &input, lang_err.as_deref());
     }
 
     if config_editor_active {
@@ -3570,6 +3700,41 @@ pub fn draw_ui_with_route(
 
     if wizard_active {
         let _ = state.with_wizard(|wiz| render_wizard_overlay(frame, area, wiz));
+
+        // Issue #844: render the startup notice ON TOP of the wizard
+        // overlay so the user can see it even while the wizard is
+        // covering the title bar.  Drawn as a single yellow line
+        // anchored to the top of the wizard panel.
+        if let Some(ref msg) = startup_notice {
+            // Anchor the notice 1 row above the wizard panel.
+            // Mirror the wizard's panel geometry so the notice
+            // lines up with the panel.
+            let panel_h = area.height.min(32);
+            let panel_y = area.y + area.height.saturating_sub(panel_h) / 2;
+            let notice_y = if panel_y > area.y {
+                panel_y.saturating_sub(1)
+            } else {
+                area.y
+            };
+            let notice_w = (msg.chars().count() as u16 + 4).min(area.width);
+            let notice_x = area.x + area.width.saturating_sub(notice_w) / 2;
+            let notice_rect = ratatui::layout::Rect {
+                x: notice_x,
+                y: notice_y,
+                width: notice_w,
+                height: 1,
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!(" ! {msg} "),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ))),
+                notice_rect,
+            );
+        }
     }
 
     // ── Help overlay ─────────────────────────────────────────────────────────
@@ -3683,6 +3848,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
         Line::from(format!("  T          {}", crate::i18n::t("help-tts"))),
         Line::from(format!("  V          {}", crate::i18n::t("help-voice"))),
         Line::from(format!("  M          {}", crate::i18n::t("help-metrics"))),
+        Line::from(format!("  B          {}", crate::i18n::t("help-models"))),
         Line::from(format!("  L          {}", crate::i18n::t("help-language"))),
         Line::from(settings_line),
         Line::from(format!(
@@ -3732,9 +3898,16 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame, area: Rect, scroll_offset
 ///
 /// The user types a BCP-47 language code (e.g. `ja`, `fr`).
 /// Enter applies; Escape cancels.
-pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &str) {
+pub fn render_language_prompt(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    input: &str,
+    error: Option<&str>,
+) {
     let panel_w = 52u16.min(area.width);
-    let panel_h = 5u16.min(area.height);
+    // Issue #843: when an error is set we need an extra row for the
+    // red ✗ line.
+    let panel_h = if error.is_some() { 6u16 } else { 5u16 }.min(area.height);
     let x = area.x + area.width.saturating_sub(panel_w) / 2;
     let y = area.y + area.height.saturating_sub(panel_h) / 2;
     let panel = Rect {
@@ -3748,18 +3921,25 @@ pub fn render_language_prompt(frame: &mut ratatui::Frame, area: Rect, input: &st
 
     // Show a blinking cursor approximation with a trailing underscore.
     let display = format!(" > {input}_");
-    let lines: Vec<Line<'static>> = vec![
+    let mut lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             " Target language code (e.g. ja, fr, de)",
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
-        Line::from(Span::raw(display)),
-        Line::from(Span::styled(
-            " Enter: apply   Esc: cancel",
-            Style::default().fg(Color::DarkGray),
-        )),
     ];
+    if let Some(err) = error {
+        // Issue #843: render the most recent rejection inline.
+        lines.push(Line::from(Span::styled(
+            format!(" ✗ {err}"),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+    lines.push(Line::from(Span::raw(display)));
+    lines.push(Line::from(Span::styled(
+        " Enter: apply   Esc: cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
 
     frame.render_widget(
         Paragraph::new(lines).block(

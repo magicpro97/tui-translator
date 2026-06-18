@@ -19,6 +19,7 @@ help-pause = Pause / resume translation
 help-tts = Toggle TTS audio output
 help-voice = Cycle TTS voice (CTRL-02)
 help-metrics = Toggle metrics panel (compact/expanded)
+help-models = Open model manager (cycle ASR backends)
 help-language = Change target language
 help-settings = Settings ({ $cycle } cycles field values)
 help-device-picker = In device picker: ↑/↓ cycle, Enter commit, Esc revert

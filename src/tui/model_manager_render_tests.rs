@@ -248,3 +248,33 @@ fn clamp_line_walks_back_to_char_boundary_for_multibyte() {
         out.chars().count()
     );
 }
+
+// Issue #853: the ModelManager overlay's footer hint did not
+// document the two most important keys — Enter (confirm the
+// highlighted model) and Ctrl+P (cycle quality preset).  A
+// first-run user navigating the overlay with arrow keys would
+// not know that Enter applies the selection or that Ctrl+P
+// changes the preset.
+#[test]
+fn model_manager_footer_documents_enter_and_ctrl_p() {
+    use crate::tui::model_manager_render::render_model_manager_lines;
+    use crate::tui::model_manager_state::ModelManagerState;
+    use crate::tui::model_manager_tokens::PresetBar;
+    let state = ModelManagerState::default();
+    let bar = PresetBar::default();
+    let lines = render_model_manager_lines(&state, &bar);
+    // The footer is the last non-empty line.
+    let footer = lines
+        .iter()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .expect("overlay must have at least one non-empty line");
+    assert!(
+        footer.contains("Enter"),
+        "footer must document Enter to confirm a model selection; got: {footer}"
+    );
+    assert!(
+        footer.contains("Ctrl+P") || footer.contains("Ctrl+P"),
+        "footer must document Ctrl+P to cycle quality preset; got: {footer}"
+    );
+}

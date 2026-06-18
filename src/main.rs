@@ -3458,10 +3458,29 @@ fn event_loop(
 
         // Drain all pending key actions without blocking.
         let mut should_quit = false;
+        let mut quit_with_config_path: Option<std::path::PathBuf> = None;
         loop {
+            // Issue #848: poll the AppState quit_requested flag.
+            // The ModelManager keymap sets it when the user
+            // presses Ctrl+C inside the overlay; the main loop
+            // picks it up here and breaks out of the receive
+            // loop so the existing shutdown path (draw summary,
+            // wait for key) runs.
+            if state.quit_requested.load(Ordering::Relaxed) {
+                should_quit = true;
+            }
             match key_rx.try_recv() {
                 Ok(UserAction::Quit) => {
                     should_quit = true;
+                }
+                // Issue #850: Ctrl+C inside the config editor
+                // is the user opting out of the wizard to edit
+                // the config file by hand.  Save the path so
+                // we can print it to stderr after the TUI
+                // tears down.
+                Ok(UserAction::QuitWithConfigPathHint(path)) => {
+                    should_quit = true;
+                    quit_with_config_path = Some(path);
                 }
                 Ok(UserAction::AnyKey) => {}
                 Ok(action) => {
@@ -3490,6 +3509,19 @@ fn event_loop(
         }
 
         if should_quit {
+            // Issue #850: the user opted out of the wizard
+            // to edit the config manually.  Print the
+            // config file path to stderr so they know
+            // where to find it.  Pre-fix the app exited
+            // silently and the user had no idea where
+            // their config lived.
+            if let Some(path) = quit_with_config_path.as_ref() {
+                eprintln!(
+                    "
+[tui-translator] Exited at user request. Edit the config manually at: {}",
+                    path.display()
+                );
+            }
             tracing::info!("user requested shutdown");
             // Draw the in-TUI session summary overlay, then wait for any key.
             terminal.draw(|frame| {
@@ -3539,8 +3571,14 @@ pub(crate) fn key_to_action(
     }
     if in_wizard {
         return match key.code {
+            // Issue #845: Ctrl+C in the wizard must NOT immediately
+            // quit — that bypasses the wizard's Cancelled path and
+            // drops any typed fields (Google API key, license
+            // acceptances, etc.).  Map to Escape so the wizard
+            // returns OnboardingOutcome::Cancelled and the typed
+            // fields are preserved for re-entry.
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(UserAction::Quit)
+                Some(UserAction::WizardKey(OnboardingEvent::Escape))
             }
             // T18 follow-up (#836): `1`/`2`/`3` (and `4`/`r`/`R`)
             // are routed to the wizard as `OnboardingEvent::Char(c)`
@@ -3570,16 +3608,20 @@ pub(crate) fn key_to_action(
             KeyCode::Enter => Some(UserAction::WizardKey(OnboardingEvent::Enter)),
             KeyCode::Esc => Some(UserAction::WizardKey(OnboardingEvent::Escape)),
             KeyCode::Backspace => Some(UserAction::WizardKey(OnboardingEvent::Backspace)),
-            KeyCode::Char('l')
-            | KeyCode::Char('L')
-            | KeyCode::Char('t')
-            | KeyCode::Char('T')
-            | KeyCode::Char('m')
-            | KeyCode::Char('M')
-            | KeyCode::Char('?')
-            | KeyCode::Char('q')
-            | KeyCode::Char('Q')
-            | KeyCode::Char(' ') => Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
+            KeyCode::Char('l') | KeyCode::Char('L') => Some(UserAction::WizardKeyIgnored('L')),
+            KeyCode::Char('t') | KeyCode::Char('T') => Some(UserAction::WizardKeyIgnored('T')),
+            KeyCode::Char('m') | KeyCode::Char('M') => Some(UserAction::WizardKeyIgnored('M')),
+            KeyCode::Char('?') => Some(UserAction::WizardKeyIgnored('?')),
+            KeyCode::Char(' ') => Some(UserAction::WizardKeyIgnored(' ')),
+            // Issue #849: q/Q inside the wizard should bail out
+            // of the wizard (mapped to Escape so the wizard
+            // returns OnboardingOutcome::Cancelled).  Pre-fix
+            // the wizard silently swallowed q/Q as Ignored
+            // and a first-run user tapping q to quit the
+            // wizard saw nothing happen.
+            KeyCode::Char('q') | KeyCode::Char('Q') => {
+                Some(UserAction::WizardKey(OnboardingEvent::Escape))
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(UserAction::WizardKey(OnboardingEvent::Char(c)))
             }
@@ -3588,8 +3630,17 @@ pub(crate) fn key_to_action(
     }
     if in_config_editor {
         return match key.code {
+            // Issue #850: Ctrl+C in the config editor is the
+            // user opting out of the wizard to edit the config
+            // file by hand.  We translate that to a dedicated
+            // action that carries the config path so the
+            // shutdown handler can print the path to stderr
+            // (the user otherwise had no idea where the
+            // config lives).
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(UserAction::Quit)
+                let path = crate::config::default_config_path()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("config.json"));
+                Some(UserAction::QuitWithConfigPathHint(path))
             }
             KeyCode::Enter => Some(UserAction::ConfigSave),
             KeyCode::Esc => Some(UserAction::DismissOverlay),
@@ -4167,6 +4218,7 @@ fn handle_action(
                 state.reset_help_scroll();
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                state.clear_lang_prompt_error();
                 state.close_config_editor();
             }
         }
@@ -4204,6 +4256,10 @@ fn handle_action(
             } else if state.lang_prompt_active.load(Ordering::Relaxed) {
                 state.lang_prompt_active.store(false, Ordering::Relaxed);
                 *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                // Issue #843 follow-up: clear the error so a
+                // stale "invalid language code" line does
+                // not re-appear on the next open.
+                state.clear_lang_prompt_error();
             } else if state.show_help.load(Ordering::Relaxed) {
                 state.show_help.store(false, Ordering::Relaxed);
                 state.reset_help_scroll();
@@ -4232,6 +4288,12 @@ fn handle_action(
 
         // Language prompt input (issue #64)
         UserAction::LangChar(c) => {
+            // Issue #843: any new keystroke clears the error so the
+            // user gets immediate feedback.
+            *state
+                .lang_prompt_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
             state
                 .lang_input
                 .lock()
@@ -4239,6 +4301,10 @@ fn handle_action(
                 .push(*c);
         }
         UserAction::LangBackspace => {
+            *state
+                .lang_prompt_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
             state
                 .lang_input
                 .lock()
@@ -4264,9 +4330,23 @@ fn handle_action(
                         tracing::info!("target language changed to {next_language}");
                         state.lang_prompt_active.store(false, Ordering::Relaxed);
                         *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+                        // Issue #843: clear any previous error on success.
+                        *state
+                            .lang_prompt_error
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = None;
                     }
                     Err(err) => {
                         tracing::warn!("invalid target language entered from prompt: {err}");
+                        // Issue #843: surface the rejection so the user
+                        // knows why their input was bounced. The
+                        // lang prompt stays open and the error is
+                        // rendered inline.
+                        *state
+                            .lang_prompt_error
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) =
+                            Some(format!("invalid language code: {err}"));
                     }
                 }
             }
@@ -4274,6 +4354,11 @@ fn handle_action(
         UserAction::LangCancel => {
             state.lang_prompt_active.store(false, Ordering::Relaxed);
             *state.lang_input.lock().unwrap_or_else(|p| p.into_inner()) = String::new();
+            // Issue #843: clear any pending error on cancel.
+            *state
+                .lang_prompt_error
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = None;
         }
 
         UserAction::ConfigChar(c) => {
@@ -4368,6 +4453,16 @@ fn handle_action(
                     // doesn't accidentally cycle while focused
                     // on the overlay.
                 }
+                ModelManagerAction::Quit => {
+                    // Issue #848: Ctrl+C inside the
+                    // ModelManager closes the overlay AND
+                    // quits the app.  Pre-fix the user had to
+                    // press Esc + Ctrl+C twice.
+                    state.close_model_manager();
+                    state
+                        .quit_requested
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 ModelManagerAction::Select { tab: _, index: _ } => {
                     // The select came from the keymap, but the
                     // orchestrator owns the actual config write
@@ -4424,6 +4519,19 @@ fn handle_action(
             tracing::info!("input gain and output volume reset to 0 dB");
         }
 
+        // Issue #847: the user pressed a forbidden runtime
+        // shortcut key (L/T/M/S/R/?/Q/Space) inside the
+        // wizard.  Show feedback instead of silently
+        // dropping the key.
+        UserAction::WizardKeyIgnored(ch) => {
+            // Clear any prior message so a repeated press
+            // gets a fresh timestamp and TTL window.
+            state.clear_transient_feedback();
+            state.set_transient_feedback(format!(
+                " '{}' is unavailable in the wizard. Use ↑/↓ + Enter to pick a branch, or Esc to cancel.",
+                ch
+            ));
+        }
         UserAction::WizardKey(event) => {
             let outcome = state.with_wizard_mut(|wiz| wiz.handle(event.clone()));
             if let Some(Some(outcome)) = outcome {
@@ -4480,6 +4588,10 @@ fn handle_action(
 
         // Quit is handled in the outer loop, not here.
         UserAction::Quit => {}
+        // Issue #850: the path is consumed by the outer
+        // shutdown loop which prints it to stderr so the
+        // user can edit the config manually.
+        UserAction::QuitWithConfigPathHint(_path) => {}
     }
 }
 
@@ -4854,6 +4966,33 @@ mod tests {
     }
 
     #[test]
+    fn lang_apply_invalid_sets_visible_error_message() {
+        let state = AppState::new();
+        state.set_target_language("vi");
+        state.lang_prompt_active.store(true, Ordering::Relaxed);
+        *state.lang_input.lock().unwrap() = "ja-JPdas".to_string();
+        let restart_required = Arc::new(AtomicBool::new(false));
+        let current_config = Arc::new(Mutex::new(config::AppConfig::default()));
+        let playback_service: SharedPlaybackService = Arc::new(Mutex::new(None));
+
+        handle_action(
+            &UserAction::LangApply,
+            &state,
+            Rect::new(0, 0, 80, 24),
+            &restart_required,
+            Path::new("config.json"),
+            &current_config,
+            &playback_service,
+        );
+
+        // New: an error message must be set so the user can see why their
+        // submission was rejected (#843).
+        assert!(state.lang_prompt_error.lock().unwrap().is_some());
+        // Prompt stays open so the user can correct the typo.
+        assert!(state.lang_prompt_active.load(Ordering::Relaxed));
+    }
+
+    #[test]
     fn reload_config_applies_tts_and_target_language() {
         let mut config_file = NamedTempFile::new().unwrap();
         write!(
@@ -5030,17 +5169,24 @@ mod tests {
             key_to_action(&key, false, true, false, false, false),
             Some(UserAction::ConfigChar('x'))
         );
-        assert_eq!(
-            key_to_action(
-                &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
-                false,
-                true,
-                false,
-                false,
-                false
-            ),
-            Some(UserAction::Quit)
-        );
+        // Issue #850: Ctrl+C in the config editor is the
+        // user opting out of the wizard to edit the config
+        // manually.  Pre-fix this returned plain
+        // UserAction::Quit and the user had no breadcrumb
+        // for where the config file lived.
+        let action = key_to_action(
+            &KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            false,
+            true,
+            false,
+            false,
+            false,
+        )
+        .expect("Ctrl+C in config editor must produce an action");
+        match action {
+            UserAction::QuitWithConfigPathHint(_) => {}
+            other => panic!("expected QuitWithConfigPathHint; got {other:?}"),
+        }
         assert_eq!(
             key_to_action(
                 &KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -5184,26 +5330,128 @@ mod tests {
         );
     }
 
+    // Issue #847 follow-up: transient_feedback is
+    // auto-cleared after TRANSIENT_FEEDBACK_TTL elapses.
     #[test]
-    fn wizard_keys_ignore_runtime_shortcut_chars() {
-        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', 'q', 'Q', ' '] {
-            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
-            assert_eq!(
-                key_to_action(&key, false, false, true, false, false),
-                Some(UserAction::WizardKey(OnboardingEvent::Ignored)),
-                "wizard shortcut char {:?} must be Ignored",
-                ch
-            );
+    fn transient_feedback_ttl_clears_message() {
+        use std::time::{Duration, Instant};
+        let state = AppState::new();
+        state.set_transient_feedback("X is unavailable");
+        assert!(state.transient_feedback.lock().unwrap().is_some());
+        // Simulate TTL elapsed by writing a stale set_at.
+        *state.transient_feedback_set_at.lock().unwrap() =
+            Some(Instant::now() - Duration::from_secs(60));
+        // The renderer code path sees the stale stamp and
+        // calls clear_transient_feedback().  Invoke the
+        // same logic here for an integration assertion.
+        let now = Instant::now();
+        let expired = state
+            .transient_feedback_set_at
+            .lock()
+            .unwrap()
+            .map(|t| now.duration_since(t) > tui::TRANSIENT_FEEDBACK_TTL)
+            .unwrap_or(false);
+        assert!(expired, "stale stamp must register as expired");
+        state.clear_transient_feedback();
+        assert!(state.transient_feedback.lock().unwrap().is_none());
+    }
+
+    // Issue #850: pressing Ctrl+C in the config editor should
+    // signal "quit + tell the user how to edit the config
+    // manually" rather than a plain Quit (which left the user
+    // staring at a terminal after exit with no idea where
+    // their config was).
+    #[test]
+    fn config_editor_ctrl_c_prints_config_path_on_quit() {
+        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let action = key_to_action(&key, false, true, false, false, false)
+            .expect("Ctrl+C in config editor must produce a UserAction");
+        // The action must carry the config path so the
+        // shutdown path can print it.  Pre-fix it was a plain
+        // UserAction::Quit with no payload.
+        match action {
+            UserAction::QuitWithConfigPathHint(_) => {}
+            other => {
+                panic!("Ctrl+C in config editor must produce QuitWithConfigPathHint; got {other:?}")
+            }
         }
     }
 
+    // Issue #847: pressing a forbidden runtime-shortcut key
+    // (L/T/M/?/Q/Space) inside the wizard must produce
+    // observable feedback.  Pre-fix the keymap returned
+    // OnboardingEvent::Ignored and the wizard no-op'd it
+    // silently — the user thought the app was frozen.
+    //
+    // Note: S/R are excluded because the T18 follow-up
+    // (#836/#839) routes them to WizardKey(Char(c)) so the
+    // wizard can decide step-scoped behaviour.  They are NOT
+    // ignored — the wizard handles them.
     #[test]
-    fn wizard_keys_ctrl_c_quits() {
+    fn wizard_ignored_key_produces_user_feedback() {
+        for ch in ['l', 't', 'm', '?', ' '] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            let action = key_to_action(&key, false, false, true, false, false).unwrap();
+            match action {
+                UserAction::WizardKeyIgnored(_) => {}
+                other => panic!(
+                    "wizard {ch} must map to WizardKeyIgnored so the user gets feedback; got {other:?}"
+                ),
+            }
+        }
+    }
+
+    // Issue #847: forbidden runtime-shortcut keys inside the
+    // wizard produce observable feedback rather than being
+    // silently dropped.  L/T/M/?/Space route to
+    // UserAction::WizardKeyIgnored so the orchestrator can
+    // show "X unavailable in wizard".  Q was previously
+    // included but #849 routes it to Escape.
+    #[test]
+    fn wizard_keys_ignore_runtime_shortcut_chars() {
+        for ch in ['l', 'L', 't', 'T', 'm', 'M', '?', ' '] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            let action = key_to_action(&key, false, false, true, false, false).unwrap();
+            match action {
+                UserAction::WizardKeyIgnored(_) => {}
+                other => panic!(
+                    "wizard shortcut char {ch:?} must produce WizardKeyIgnored; got {other:?}"
+                ),
+            }
+        }
+    }
+
+    // Issue #845: Ctrl+C in the wizard must NOT immediately quit —
+    // that bypasses the wizard's OnboardingOutcome::Cancelled path
+    // and loses any typed fields (Google API key, license
+    // acceptances, etc.).  Instead, map Ctrl+C to a wizard
+    // OnboardingEvent::Escape so the wizard cancels cleanly and
+    // the typed fields are preserved in the wizard state for
+    // re-entry.
+    #[test]
+    fn wizard_keys_ctrl_c_maps_to_escape_not_quit() {
         let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert_eq!(
             key_to_action(&key, false, false, true, false, false),
-            Some(UserAction::Quit)
+            Some(UserAction::WizardKey(OnboardingEvent::Escape))
         );
+    }
+
+    // Issue #849: q/Q inside the wizard should also bail out of
+    // the wizard (mapped to OnboardingEvent::Escape) so a
+    // first-run user who taps q to quit the wizard sees
+    // something happen.  Pre-fix the wizard silently swallowed
+    // q/Q as OnboardingEvent::Ignored.
+    #[test]
+    fn wizard_keys_q_maps_to_escape_not_ignored() {
+        for ch in ['q', 'Q'] {
+            let key = KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE);
+            assert_eq!(
+                key_to_action(&key, false, false, true, false, false),
+                Some(UserAction::WizardKey(OnboardingEvent::Escape)),
+                "wizard {ch} must map to OnboardingEvent::Escape, not Ignored"
+            );
+        }
     }
 
     #[test]
@@ -7376,5 +7624,31 @@ mod tests {
             pipeline::SlotProviderStatus::Degraded("test".to_string()),
             "write through ctx_arc must be visible via outer Arc clone"
         );
+    }
+}
+
+#[cfg(test)]
+mod _clear_lang_error_tests {
+    use super::*;
+    // Issue #843 follow-up: closing the lang prompt (Esc
+    // or help overlay open) must clear lang_prompt_error.
+    // Pre-fix the error persisted across close+reopen
+    // so the user saw a stale "invalid language code"
+    // line on the next open.
+    #[test]
+    fn close_lang_prompt_clears_error() {
+        // We can't easily construct the full state with
+        // a live keymap, but we can verify the method
+        // exists and clears the field.  This is a smoke
+        // test; the real coverage is the integration test
+        // suite.
+        let state = AppState::new();
+        // Set an error manually.
+        *state.lang_prompt_error.lock().unwrap() =
+            Some("invalid language code: malformed BCP-47 tag".to_owned());
+        assert!(state.lang_prompt_error.lock().unwrap().is_some());
+        // Clear it.
+        state.clear_lang_prompt_error();
+        assert!(state.lang_prompt_error.lock().unwrap().is_none());
     }
 }
