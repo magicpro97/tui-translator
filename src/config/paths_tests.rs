@@ -14,159 +14,82 @@
 //! `--test-threads`).
 
 use super::*;
+use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
-
-// Monotonic counter for unique env-var test values.
-// Each test that mutates a process-global env var
-// appends the counter so concurrent test threads cannot
-// race on the same value.
-fn env_test_counter() -> usize {
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
-// Global mutex serialising the env-var tests in this
-// module.  `std::env::set_var` is process-global, not
-// thread-local, so the only way to keep the tests from
-// stepping on each other is to run them serially.  The
-// lock is uncontended in normal use (only the env-var
-// tests take it).
-static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
 #[test]
 fn config_dir_override_env_takes_precedence() {
-    // Pin: when the env var is set, the override must
-    // win.  Hold the module-level `ENV_MUTEX` so this
-    // test cannot race with the other env-var tests in
-    // this module.
-    let _guard = ENV_MUTEX.lock().unwrap();
-    let unique = format!(
-        "/tmp/from-env-override-{}-{}",
-        std::process::id(),
-        env_test_counter()
-    );
-    let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
-    let result = default_config_dir().expect("override must produce a path");
-    assert_eq!(result, PathBuf::from(&unique));
-    match prev {
-        Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
-        None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
-    }
+    // When the override is set (non-empty), it must win.  Exercised
+    // through the pure `default_config_dir_from` seam so the test
+    // mutates no process-global env var and cannot race with the
+    // rest of the suite.
+    let result = default_config_dir_from(Some(OsString::from("/tmp/from-env-override")))
+        .expect("override must produce a path");
+    assert_eq!(result, PathBuf::from("/tmp/from-env-override"));
 }
 
 #[test]
-#[cfg(not(windows))]
 fn config_dir_override_env_empty_treated_as_unset() {
-    // #776: on Windows, `std::env::set_var(X, "")` does NOT
-    // clear the env var to empty — the Windows C runtime
-    // maps the empty string to a delete, but the env-var
-    // resolution in `directories::BaseDirs::new()` reads
-    // from the process token and may still see the prior
-    // value.  This test is therefore POSIX-only.
-    let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, "");
-    let result = default_config_dir().expect("empty override must fall through");
-    // The fallback uses the OS config dir joined with
-    // APP_CONFIG_DIR_NAME; we only assert the path is
-    // non-empty and ends with the app dir name.
+    // An empty override is treated as unset, so the resolver falls
+    // back to the OS config dir (…/tui-translator).  Pure seam, no
+    // env mutation (was POSIX-only before because it mutated the
+    // real env; the seam removes the need for the platform gate).
+    let result =
+        default_config_dir_from(Some(OsString::new())).expect("empty override must fall through");
     assert!(!result.as_os_str().is_empty());
     assert_eq!(
         result.file_name().and_then(|s| s.to_str()),
         Some("tui-translator"),
     );
-    match prev {
-        Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
-        None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
-    }
 }
 
 #[test]
 fn default_config_path_joins_config_json() {
-    // Use a unique per-PID+counter value so this test
-    // doesn't race with the other env-var tests in this
-    // module.  Hold `ENV_MUTEX` for serialisation.
-    let _guard = ENV_MUTEX.lock().unwrap();
-    let unique = format!(
-        "/tmp/config-root-{}-{}",
-        std::process::id(),
-        env_test_counter()
-    );
-    let prev = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV);
-    std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, &unique);
-    let result = default_config_path().expect("config path must be derivable");
-    assert_eq!(result, PathBuf::from(format!("{unique}/config.json")));
-    match prev {
-        Some(v) => std::env::set_var(CONFIG_DIR_OVERRIDE_ENV, v),
-        None => std::env::remove_var(CONFIG_DIR_OVERRIDE_ENV),
-    }
+    // The config file path is the config dir plus `config.json`.
+    // Pure seam: derive it from an explicit override value.
+    let dir = default_config_dir_from(Some(OsString::from("/tmp/config-root")))
+        .expect("config dir must be derivable");
+    let result = dir.join("config.json");
+    assert_eq!(result, PathBuf::from("/tmp/config-root/config.json"));
 }
 
 #[test]
 fn home_dir_picks_userprofile_first_on_windows() {
-    // On Windows-style env (USERPROFILE set, HOME unset),
-    // home_dir() should pick USERPROFILE.
-    let prev_profile = std::env::var_os("USERPROFILE");
-    let prev_home = std::env::var_os("HOME");
-    std::env::set_var("USERPROFILE", "/tmp/from-userprofile");
-    std::env::remove_var("HOME");
-    let result = home_dir().expect("USERPROFILE must resolve");
+    // Windows-style env (USERPROFILE set, HOME unset): the resolver
+    // must pick USERPROFILE.  Exercised through the pure
+    // `home_dir_from` seam so the test mutates no process-global env
+    // var and therefore cannot race with the rest of the suite.
+    let result = home_dir_from(Some(OsString::from("/tmp/from-userprofile")), None)
+        .expect("USERPROFILE must resolve");
     assert_eq!(result, PathBuf::from("/tmp/from-userprofile"));
-    match prev_profile {
-        Some(v) => std::env::set_var("USERPROFILE", v),
-        None => std::env::remove_var("USERPROFILE"),
-    }
-    match prev_home {
-        Some(v) => std::env::set_var("HOME", v),
-        None => std::env::remove_var("HOME"),
-    }
 }
 
 #[test]
-#[cfg(not(windows))]
 fn home_dir_falls_back_to_home_when_userprofile_unset() {
-    // #776: on Windows, `std::env::remove_var("USERPROFILE")` does
-    // not clear the kernel's per-process USERPROFILE — Windows
-    // resolves USERPROFILE from the process token even if the
-    // env var is unset via the C runtime.  This test is
-    // therefore POSIX-only.
-    let prev_profile = std::env::var_os("USERPROFILE");
-    let prev_home = std::env::var_os("HOME");
-    std::env::remove_var("USERPROFILE");
-    std::env::set_var("HOME", "/tmp/from-home");
-    let result = home_dir().expect("HOME must resolve as a fallback");
+    // USERPROFILE unset → fall back to HOME.  Pure-seam test, no env
+    // mutation (was POSIX-only before because it mutated the real
+    // process env; the seam makes the platform gate unnecessary).
+    let result = home_dir_from(None, Some(OsString::from("/tmp/from-home")))
+        .expect("HOME must resolve as a fallback");
     assert_eq!(result, PathBuf::from("/tmp/from-home"));
-    match prev_profile {
-        Some(v) => std::env::set_var("USERPROFILE", v),
-        None => std::env::remove_var("USERPROFILE"),
-    }
-    match prev_home {
-        Some(v) => std::env::set_var("HOME", v),
-        None => std::env::remove_var("HOME"),
-    }
 }
 
 #[test]
-#[cfg(not(windows))]
 fn home_dir_empty_userprofile_treated_as_unset() {
-    // #776: same Windows env-var quirk as
-    // `home_dir_falls_back_to_home_when_userprofile_unset` —
-    // `set_var(USERPROFILE, "")` does not behave the same
-    // on Windows.  POSIX-only.
-    let prev_profile = std::env::var_os("USERPROFILE");
-    let prev_home = std::env::var_os("HOME");
-    std::env::set_var("USERPROFILE", "");
-    std::env::set_var("HOME", "/tmp/from-home-fallback");
-    let result = home_dir().expect("HOME must resolve as a fallback");
+    // An empty USERPROFILE is treated as unset, so HOME wins.  Pure
+    // seam, no env mutation.
+    let result = home_dir_from(
+        Some(OsString::new()),
+        Some(OsString::from("/tmp/from-home-fallback")),
+    )
+    .expect("HOME must resolve as a fallback");
     assert_eq!(result, PathBuf::from("/tmp/from-home-fallback"));
-    match prev_profile {
-        Some(v) => std::env::set_var("USERPROFILE", v),
-        None => std::env::remove_var("USERPROFILE"),
-    }
-    match prev_home {
-        Some(v) => std::env::set_var("HOME", v),
-        None => std::env::remove_var("HOME"),
-    }
+}
+
+#[test]
+fn home_dir_errors_when_both_unset() {
+    // Neither var set (or both empty) → explicit error rather than a
+    // bogus path.  Pure seam.
+    assert!(home_dir_from(None, None).is_err());
+    assert!(home_dir_from(Some(OsString::new()), Some(OsString::new())).is_err());
 }

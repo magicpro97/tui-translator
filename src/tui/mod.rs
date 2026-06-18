@@ -3749,7 +3749,15 @@ pub fn render_wizard_overlay(
     area: Rect,
     state: &onboarding::OnboardingWizardState,
 ) {
-    let panel_w = 64u16.min(area.width);
+    // Width: use the full available terminal width, capped at 96.
+    // The historical cap was 64, which forced the ~75-char license
+    // lines to wrap; 96 holds the longest common line in one row on
+    // a roomy terminal.  We intentionally do NOT subtract a margin
+    // here — on a narrow terminal (e.g. 60 cols) subtracting would
+    // make the panel narrower than the historical 64-cap behaviour
+    // and push the two-line footer further toward wrapping.  The
+    // `Clear` widget plus centering below handle the visual margin.
+    let panel_w = area.width.min(96);
     let panel_h = area.height.min(32);
     if panel_w == 0 || panel_h == 0 {
         return;

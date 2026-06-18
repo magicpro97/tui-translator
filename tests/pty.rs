@@ -48,3 +48,6 @@ mod audio_archive_test;
 
 #[path = "pty/settings_test.rs"]
 mod settings_test;
+
+#[path = "pty/license_scroll_test.rs"]
+mod license_scroll_test;
