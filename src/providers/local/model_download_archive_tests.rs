@@ -161,8 +161,8 @@ fn extract_archive_bz2_rejects_path_traversal() {
         // calculate_cksum() treats the 8-byte cksum field
         // as 8 spaces (not 0) when computing the sum, so
         // we mirror that here.
-        for i in 148..156 {
-            header_bytes[i] = b' ';
+        for byte in &mut header_bytes[148..156] {
+            *byte = b' ';
         }
         let cksum: u32 = header_bytes[..148].iter().map(|&b| b as u32).sum::<u32>()
             + 8 * (b' ' as u32)

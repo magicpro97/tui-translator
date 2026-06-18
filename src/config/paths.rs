@@ -14,10 +14,24 @@ pub const CONFIG_DIR_OVERRIDE_ENV: &str = "TUI_TRANSLATOR_CONFIG_DIR";
 
 /// Return the user's home directory.
 pub fn home_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("USERPROFILE").filter(|p| !p.is_empty()) {
+    home_dir_from(std::env::var_os("USERPROFILE"), std::env::var_os("HOME"))
+}
+
+/// Pure resolver behind [`home_dir`]: pick `USERPROFILE` first, then
+/// `HOME`, treating an empty value as unset.  Split out as a test
+/// seam so unit tests can exercise the precedence/empty-handling
+/// logic by passing values directly, instead of mutating the
+/// process-global `USERPROFILE` / `HOME` env vars (which races with
+/// every other env-mutating test in the suite — see the CI flake in
+/// the STD-01 #483 follow-up).
+pub(crate) fn home_dir_from(
+    userprofile: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+) -> Result<PathBuf> {
+    if let Some(path) = userprofile.filter(|p| !p.is_empty()) {
         return Ok(PathBuf::from(path));
     }
-    if let Some(path) = std::env::var_os("HOME").filter(|p| !p.is_empty()) {
+    if let Some(path) = home.filter(|p| !p.is_empty()) {
         return Ok(PathBuf::from(path));
     }
     bail!("could not resolve a home directory from USERPROFILE or HOME");
@@ -31,7 +45,19 @@ pub fn home_dir() -> Result<PathBuf> {
 /// path. `TUI_TRANSLATOR_CONFIG_DIR` can override the directory while preserving
 /// the existing full-path `TUI_TRANSLATOR_CONFIG` startup hook in `main`.
 pub fn default_config_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os(CONFIG_DIR_OVERRIDE_ENV).filter(|p| !p.is_empty()) {
+    default_config_dir_from(std::env::var_os(CONFIG_DIR_OVERRIDE_ENV))
+}
+
+/// Pure resolver behind [`default_config_dir`]: an explicit override
+/// (non-empty) wins, otherwise fall back to the OS config dir.  Split
+/// out as a test seam so unit tests can pass the override value
+/// directly instead of mutating the process-global
+/// `TUI_TRANSLATOR_CONFIG_DIR` env var (which races with every other
+/// env-mutating test in the suite — the STD-01 #483 CI flake).
+pub(crate) fn default_config_dir_from(
+    override_value: Option<std::ffi::OsString>,
+) -> Result<PathBuf> {
+    if let Some(path) = override_value.filter(|p| !p.is_empty()) {
         return Ok(PathBuf::from(path));
     }
 
