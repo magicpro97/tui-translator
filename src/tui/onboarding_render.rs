@@ -89,11 +89,37 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 ),
                 String::new(),
             ];
-            for raw_line in text.lines() {
+            // Issue #851 / #879 follow-up: the renderer
+            // MUST slice the license body by state.license_scroll
+            // or the up/down keys (defined in onboarding.rs
+            // handle()) are a discoverable affordance with
+            // no effect.  Clamp to the number of license lines
+            // so a short license still fits without panicking.
+            const VISIBLE_BODY: usize = 26;
+            let all_lines: Vec<&str> = text.lines().collect();
+            let max_start = all_lines.len().saturating_sub(VISIBLE_BODY);
+            // The struct field tracks a user-driven offset;
+            // the wizard only resets it on transitions (see
+            // the 5 self.license_scroll = 0 sites), and the
+            // handle() clamps the value against the line
+            // count on each step.  Re-clamp here as a safety
+            // net in case the wizard moved to a model whose
+            // license is shorter than the previous one.
+            let scroll = state.license_scroll.min(max_start);
+            let start = scroll;
+            let end = (start + VISIBLE_BODY).min(all_lines.len());
+            let visible = &all_lines[start..end];
+            let total_lines = all_lines.len();
+            let visible_end = end;
+            for raw_line in visible {
                 lines.push(format!("│  {raw_line}"));
             }
             lines.push(String::new());
-            lines.push("  [Enter] Accept & continue  [Esc] Back".to_owned());
+            // Hint footer carries the "line N/M" position so
+            // the user can see they actually scrolled.
+            lines.push(format!(
+                "  [Enter] Accept & continue  [Esc] Back    line {visible_end}/{total_lines}"
+            ));
             lines
         }
         OnboardingStep::GoogleKeyEntry => {

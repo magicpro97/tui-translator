@@ -897,6 +897,27 @@ impl OnboardingWizardState {
                 OnboardingEvent::Enter | OnboardingEvent::Escape => self.advance(),
                 _ => None,
             }
+        } else if matches!(self.step, OnboardingStep::LicenseReview { .. }) {
+            // Issue #851 / #879 follow-up: license text longer
+            // than the panel (~28 lines) is now actually
+            // scrollable.  ArrowUp/ArrowDown move one line.
+            // The renderer (onboarding_render.rs) reads
+            // state.license_scroll and clamps the slice to
+            // the actual line count.  Saturating arithmetic
+            // so going past either end is a no-op.
+            match event {
+                OnboardingEvent::Enter => self.advance(),
+                OnboardingEvent::Escape => self.go_back(),
+                OnboardingEvent::ArrowUp => {
+                    self.license_scroll = self.license_scroll.saturating_sub(1);
+                    None
+                }
+                OnboardingEvent::ArrowDown => {
+                    self.license_scroll = self.license_scroll.saturating_add(1);
+                    None
+                }
+                _ => None,
+            }
         } else {
             None
         }
