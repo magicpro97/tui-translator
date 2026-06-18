@@ -52,6 +52,7 @@ mod audio;
 mod audio_device_cli;
 #[cfg(test)]
 mod audio_device_cli_tests;
+mod build_info;
 mod config;
 mod diagnostics;
 #[cfg(test)]

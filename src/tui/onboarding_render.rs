@@ -30,11 +30,24 @@ fn format_bytes(bytes: u64) -> String {
 ///
 /// License text is rendered verbatim — every source line becomes exactly one
 /// output line prefixed with `"│  "`.
+///
+/// Build identifier: short git SHA captured at compile time via
+/// `build.rs` and re-exported here for renderer convenience. Lets
+/// the wizard title bar show which binary is on screen, so driver
+/// tests (e.g. cua-driver driving the TUI) can verify the actual
+/// artifact matches the source they expect, not a stale binary
+/// from a previous rebuild.
+pub use crate::build_info::{BUILD_SHA, BUILD_VERSION};
+
 pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
+    let title = format!(
+        "── Setup Wizard v{} ({}) ───────────────────────",
+        BUILD_VERSION, BUILD_SHA
+    );
     match &state.step {
         OnboardingStep::BranchSelection => {
             let mut lines = vec![
-                "── Setup Wizard ──────────────────────────────────────────".to_owned(),
+                title,
                 "  Choose your backend configuration:".to_owned(),
                 String::new(),
             ];
@@ -82,10 +95,11 @@ pub fn render_wizard_lines(state: &OnboardingWizardState) -> Vec<String> {
                 .unwrap_or("");
             let mut lines = vec![
                 format!(
-                    "── License ({}/{}) — {} ──────────────────────────────",
+                    "── License ({}/{}) — {} [{}] ────────────",
                     idx + 1,
                     state.local_models.len(),
-                    name
+                    name,
+                    BUILD_SHA
                 ),
                 String::new(),
             ];

@@ -60,6 +60,12 @@ mod session;
 #[path = "../src/storage/mod.rs"]
 mod storage;
 
+// `tui/mod.rs` → `onboarding` → `onboarding_render.rs` re-exports
+// `crate::build_info`.  Provide the same module the binary crate
+// declares in `main.rs` so the path resolves in this test crate.
+#[path = "../src/build_info.rs"]
+mod build_info;
+
 #[path = "../src/tui/mod.rs"]
 mod tui;
 
