@@ -59,7 +59,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
         Arc, Mutex,
     },
-    time::SystemTime,
+    time::{Instant, SystemTime},
 };
 
 use ratatui::{
@@ -1843,6 +1843,21 @@ pub fn help_overlay_max_scroll(area: Rect) -> u16 {
 /// Issue #61: metric values arrive via a [`tokio::sync::watch`] channel updated
 /// every second by the observability background task.  The UI reads the latest
 /// snapshot through [`metrics_snapshot`](AppState::metrics_snapshot).
+/// Issue #847: transient feedback for forbidden
+/// runtime-shortcut keys.  Carries a message + the
+/// instant it was set so the renderer can TTL it
+/// (default 3s) and the orchestrator can clear it
+/// on the next meaningful keypress.
+#[derive(Debug, Clone)]
+pub struct TransientFeedback {
+    pub message: String,
+    pub set_at: Instant,
+}
+
+/// Issue #847: how long a transient feedback message
+/// stays visible in the title bar.
+pub const TRANSIENT_FEEDBACK_TTL: std::time::Duration = std::time::Duration::from_secs(3);
+
 pub struct AppState {
     /// RMS energy encoded as `(rms * AUDIO_LEVEL_SCALE as f32) as u32`, updated atomically.
     ///
@@ -1957,7 +1972,10 @@ pub struct AppState {
     /// presses a forbidden runtime-shortcut key (L/T/M/S/R/
     /// ?/Q/Space) inside the wizard.  Cleared on the next
     /// meaningful keypress or after a short timeout.
-    pub transient_feedback: Arc<Mutex<Option<String>>>,
+    pub transient_feedback: Arc<Mutex<Option<TransientFeedback>>>,
+    /// Issue #847: timestamps the last transient_feedback
+    /// write so the renderer can TTL it.
+    pub transient_feedback_set_at: Arc<Mutex<Option<Instant>>>,
 
     /// Operator-facing recovery hint for audio capture startup failures.
     ///
@@ -2059,10 +2077,34 @@ impl AppState {
     /// can surface the message without forcing a signature
     /// change.
     pub fn set_transient_feedback(&self, message: impl Into<String>) {
+        let now = Instant::now();
+        let message = message.into();
         *self
             .transient_feedback
             .lock()
-            .unwrap_or_else(|p| p.into_inner()) = Some(message.into());
+            .unwrap_or_else(|p| p.into_inner()) = Some(TransientFeedback {
+            message,
+            set_at: now,
+        });
+        *self
+            .transient_feedback_set_at
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(now);
+    }
+
+    /// Issue #847: clear the transient feedback message.
+    /// Call this when the user presses a 'meaningful'
+    /// key (any key that wasn't ignored) so the banner
+    /// goes away the next time the user does something.
+    pub fn clear_transient_feedback(&self) {
+        *self
+            .transient_feedback
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+        *self
+            .transient_feedback_set_at
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     /// Create a fresh state with level at zero and device name `"initializing…"`.
@@ -2104,6 +2146,7 @@ impl AppState {
             pipeline_error_msg: Arc::new(Mutex::new(None)),
             startup_notice_msg: Arc::new(Mutex::new(None)),
             transient_feedback: Arc::new(Mutex::new(None)),
+            transient_feedback_set_at: Arc::new(Mutex::new(None)),
             capture_error_msg: Arc::new(Mutex::new(None)),
             auth_error_banner: Arc::new(Mutex::new(None)),
             pipeline_halted: Arc::new(AtomicBool::new(false)),
@@ -3257,6 +3300,17 @@ pub fn draw_ui_with_route(
         .unwrap_or_else(|p| p.into_inner())
         .clone();
     // Issue #847: read transient feedback for the title bar.
+    // If TTL has elapsed, clear it first.
+    let now = std::time::Instant::now();
+    let transient_expired = state
+        .transient_feedback_set_at
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .map(|t| now.duration_since(t) > TRANSIENT_FEEDBACK_TTL)
+        .unwrap_or(false);
+    if transient_expired {
+        state.clear_transient_feedback();
+    }
     let transient_feedback = state
         .transient_feedback
         .lock()
@@ -3342,10 +3396,10 @@ pub fn draw_ui_with_route(
     }
     // Issue #847: render the transient feedback message (e.g.
     // "X unavailable in wizard") in the title bar so the user
-    // sees it.  Cleared on the next meaningful keypress.
-    if let Some(ref msg) = transient_feedback {
+    // sees it.  Auto-cleared after TRANSIENT_FEEDBACK_TTL.
+    if let Some(ref fb) = transient_feedback {
         title_spans.push(Span::styled(
-            format!("   {msg}"),
+            format!("   {}", fb.message),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

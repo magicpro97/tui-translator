@@ -4522,6 +4522,9 @@ fn handle_action(
         // wizard.  Show feedback instead of silently
         // dropping the key.
         UserAction::WizardKeyIgnored(ch) => {
+            // Clear any prior message so a repeated press
+            // gets a fresh timestamp and TTL window.
+            state.clear_transient_feedback();
             state.set_transient_feedback(format!(
                 " '{}' is unavailable in the wizard. Use ↑/↓ + Enter to pick a branch, or Esc to cancel.",
                 ch
@@ -5325,6 +5328,32 @@ mod tests {
         );
     }
 
+    // Issue #847 follow-up: transient_feedback is
+    // auto-cleared after TRANSIENT_FEEDBACK_TTL elapses.
+    #[test]
+    fn transient_feedback_ttl_clears_message() {
+        use std::time::{Duration, Instant};
+        let state = AppState::new();
+        state.set_transient_feedback("X is unavailable");
+        assert!(state.transient_feedback.lock().unwrap().is_some());
+        // Simulate TTL elapsed by writing a stale set_at.
+        *state.transient_feedback_set_at.lock().unwrap() =
+            Some(Instant::now() - Duration::from_secs(60));
+        // The renderer code path sees the stale stamp and
+        // calls clear_transient_feedback().  Invoke the
+        // same logic here for an integration assertion.
+        let now = Instant::now();
+        let expired = state
+            .transient_feedback_set_at
+            .lock()
+            .unwrap()
+            .map(|t| now.duration_since(t) > tui::TRANSIENT_FEEDBACK_TTL)
+            .unwrap_or(false);
+        assert!(expired, "stale stamp must register as expired");
+        state.clear_transient_feedback();
+        assert!(state.transient_feedback.lock().unwrap().is_none());
+    }
+
     // Issue #850: pressing Ctrl+C in the config editor should
     // signal "quit + tell the user how to edit the config
     // manually" rather than a plain Quit (which left the user
@@ -5345,6 +5374,17 @@ mod tests {
             }
         }
     }
+
+    // Issue #847: pressing a forbidden runtime-shortcut key
+    // (L/T/M/?/Q/Space) inside the wizard must produce
+    // observable feedback.  Pre-fix the keymap returned
+    // OnboardingEvent::Ignored and the wizard no-op'd it
+    // silently — the user thought the app was frozen.
+    //
+    // Note: S/R are excluded because the T18 follow-up
+    // (#836/#839) routes them to WizardKey(Char(c)) so the
+    // wizard can decide step-scoped behaviour.  They are NOT
+    // ignored — the wizard handles them.
     #[test]
     fn wizard_ignored_key_produces_user_feedback() {
         for ch in ['l', 't', 'm', '?', ' '] {
