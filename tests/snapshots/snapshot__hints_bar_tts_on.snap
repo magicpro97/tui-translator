@@ -3,4 +3,4 @@ source: tests/snapshot.rs
 assertion_line: 868
 expression: "render_hints(&bar, 80, 1)"
 ---
- ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model
+ ? help Space pause T audio L lang S settings M metrics R reload B model Q quit

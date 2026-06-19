@@ -1,6 +1,6 @@
 ---
 source: tests/snapshot.rs
-assertion_line: 1727
+assertion_line: 1732
 expression: rendered
 ---
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -26,4 +26,4 @@ expression: rendered
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │[READY]  STT: local │ Lang:vi │ TTS:off │ Route:spk │ 0 pairs │ no charges │ 0│
 └──────────────────────────────────────────────────────────────────────────────┘
- ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model
+ ? help Space pause T audio L lang S settings M metrics R reload B model Q quit

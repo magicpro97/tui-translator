@@ -77,11 +77,19 @@ fn check_onboarding_layout(session: &PtySession, cols: u16, rows: u16) {
     );
 }
 
-/// Quit cleanly from the onboarding overlay via two Ctrl+C presses.
+/// Tear down an onboarding-layout session.
+///
+/// Issue #845 deliberately changed Ctrl+C inside the wizard to map to
+/// `OnboardingEvent::Escape` (cancel) instead of quitting the process, so that
+/// typed fields survive an accidental Ctrl+C.  On a first run with no config
+/// on disk the cancel path re-opens the wizard ("Setup is required …"), so
+/// there is intentionally NO key that quits a first-run wizard.  These layout
+/// tests only assert the wizard *renders* correctly at a given size; exit
+/// semantics are covered by the completion tests that drive the wizard to
+/// `Done`.  Terminate the child directly rather than depending on a quit
+/// gesture that #845 removed.
 fn quit_onboarding(session: &mut PtySession) {
-    session.send(&[0x03]).expect("Ctrl+C to quit onboarding");
-    std::thread::sleep(Duration::from_millis(300));
-    session.send(&[0x03]).expect("Ctrl+C to dismiss summary");
+    session.kill();
 }
 
 #[test]
@@ -745,13 +753,6 @@ fn onboarding_layout_standard_110x30() {
     );
 
     quit_onboarding(&mut session);
-    let exit = session
-        .wait_exit(EXIT_TIMEOUT)
-        .expect("110×30 onboarding exit");
-    assert_eq!(
-        exit, 0,
-        "onboarding_layout_standard_110x30: expected exit 0"
-    );
 }
 
 /// Minimum standard terminal (80×24) — panel width 76, height 24.
@@ -774,10 +775,6 @@ fn onboarding_layout_standard_80x24() {
     );
 
     quit_onboarding(&mut session);
-    let exit = session
-        .wait_exit(EXIT_TIMEOUT)
-        .expect("80×24 onboarding exit");
-    assert_eq!(exit, 0, "onboarding_layout_standard_80x24: expected exit 0");
 }
 
 /// Constrained 60×22 terminal — panel width 60, height 22.
@@ -802,8 +799,4 @@ fn onboarding_layout_compact_60x22() {
     );
 
     quit_onboarding(&mut session);
-    let exit = session
-        .wait_exit(EXIT_TIMEOUT)
-        .expect("60×22 onboarding exit");
-    assert_eq!(exit, 0, "onboarding_layout_compact_60x22: expected exit 0");
 }

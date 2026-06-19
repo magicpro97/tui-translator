@@ -53,3 +53,24 @@ fn next_voice_selection_cycles_through_filtered_catalog() {
         Some(voice("vi-a", "vi-VN"))
     );
 }
+
+#[tokio::test]
+async fn offline_stt_provider_yields_empty_non_final_result_without_network() {
+    use providers::SttProvider;
+
+    let provider = runtime_providers::OfflineSttProvider;
+    let chunk = providers::PcmChunk {
+        samples: vec![0i16; 320],
+        sequence_number: 0,
+    };
+    let result = provider
+        .transcribe(&chunk, "ja-JP")
+        .await
+        .expect("offline STT must never error");
+    assert_eq!(result.text, "");
+    assert_eq!(result.confidence, None);
+    assert!(
+        !result.is_final,
+        "offline STT yields a non-final empty segment so the pipeline stays idle"
+    );
+}

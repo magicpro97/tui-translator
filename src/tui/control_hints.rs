@@ -29,21 +29,30 @@ impl Widget for &ControlHintsBar {
         // ≥ 120 cols.  Narrower terminals keep the pre-PR hint text verbatim
         // so existing PTY snapshots (80×24, 110×30) still see "Q quit" at the
         // end of the row.
+        //
+        // Issue #854 follow-up: every label group is separated by a SINGLE
+        // space.  When "B model" was added (#828 round 2) with the old
+        // double-space separators, the standard rows overflowed their own
+        // lower-bound width (88 chars at 80 cols, 126 at 120 cols), so
+        // `set_stringn` clipped the trailing "Q quit" off the right edge and
+        // the always-visible quit hint silently disappeared (regressing the
+        // layout/exit/monochrome PTY tests).  Single spacing keeps the full
+        // row — including "Q quit" — inside the minimum width of each branch.
         let text = if area.width < 80 {
             " ?  Spc  T  L  S  M  R  Tab  Q ".to_string()
         } else if area.width < 96 {
             let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model  Q quit "
+            " ? help Space pause T audio L lang S settings M metrics R reload B model Q quit "
                 .to_string()
         } else if area.width < 120 {
             let _ = self.tts_on;
-            " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model  Tab pane  Q quit "
+            " ? help Space pause T audio L lang S settings M metrics R reload B model Tab pane Q quit "
                 .to_string()
         } else {
             let _ = self.tts_on;
             format!(
-                " ? help  Space pause  T audio  L lang  S settings  M metrics  R reload  B model  \
-                 [/] mic {:+.0}dB  {{/}} tts {:+.0}dB  Tab pane  Q quit ",
+                " ? help Space pause T audio L lang S settings M metrics R reload B model \
+                 [/] mic {:+.0}dB  {{/}} tts {:+.0}dB Tab pane Q quit ",
                 crate::audio::audio_gain::input_gain_db(),
                 crate::audio::audio_gain::output_volume_db(),
             )

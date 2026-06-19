@@ -27,6 +27,47 @@ pub(crate) enum RuntimeSttProvider {
             providers::google::stt::GoogleSttProvider,
         >,
     ),
+    /// Offline no-op STT used only by hermetic tests (PTY / smoke runs in
+    /// keyless CI).  It performs no network I/O and never returns an
+    /// `AuthError`, so the steady-state UI renders promptly instead of
+    /// stalling on a 30 s Google STT request that 400s for lack of a key and
+    /// then raises the persistent "API calls halted" banner.  Selected via the
+    /// `TUI_TRANSLATOR_STT_OFFLINE` env var; never reachable from a real
+    /// configuration.
+    Offline(OfflineSttProvider),
+}
+
+/// No-op STT provider for hermetic tests: every chunk yields an empty,
+/// non-final result and no network call is made.  See
+/// [`RuntimeSttProvider::Offline`] and `stt_offline_mode_requested`.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct OfflineSttProvider;
+
+impl providers::SttProvider for OfflineSttProvider {
+    async fn transcribe(
+        &self,
+        _chunk: &providers::PcmChunk,
+        _language_code: &str,
+    ) -> std::result::Result<providers::SttResult, providers::ProviderError> {
+        Ok(providers::SttResult {
+            text: String::new(),
+            confidence: None,
+            is_final: false,
+        })
+    }
+}
+
+/// Whether the process was asked to run STT in offline (no-op) mode.
+///
+/// Test-only escape hatch driven by the `TUI_TRANSLATOR_STT_OFFLINE`
+/// environment variable.  The PTY harness sets it so steady-state UI tests
+/// in keyless CI do not issue a live Google STT request (which blocks the
+/// pipeline for up to 30 s and then raises the persistent auth-error banner,
+/// masking the UI the tests assert on).
+pub(crate) fn stt_offline_mode_requested() -> bool {
+    std::env::var_os("TUI_TRANSLATOR_STT_OFFLINE")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false)
 }
 
 /// Runtime MT provider selected from app configuration.
@@ -191,6 +232,9 @@ impl providers::SttProvider for RuntimeSttProvider {
             Self::LocalFailedWithGoogleFallback(provider) => {
                 providers::SttProvider::transcribe(provider, chunk, language_code).await
             }
+            Self::Offline(provider) => {
+                providers::SttProvider::transcribe(provider, chunk, language_code).await
+            }
         }
     }
 }
@@ -252,6 +296,9 @@ impl RuntimeSttProvider {
             Self::Local(_) | Self::LocalWithGoogleFallback(_) => SttSource::Local,
             #[cfg(feature = "local-stt")]
             Self::LocalFailedWithGoogleFallback(_) => SttSource::GoogleFallback,
+            // Offline test stub: report as Google-configured so the title
+            // indicator matches the fixture's `stt_provider = "google"`.
+            Self::Offline(_) => SttSource::GoogleConfigured,
         }
     }
 
@@ -413,6 +460,13 @@ pub(crate) fn build_slot_stt_provider(
     local_provider_active: Arc<AtomicBool>,
     stt_source: Arc<Mutex<SttSource>>,
 ) -> std::result::Result<RuntimeSttProvider, providers::ProviderError> {
+    // Test-only escape hatch: in offline mode (set by the PTY/smoke harness in
+    // keyless CI) short-circuit to a no-op provider so no live STT request is
+    // issued, the pipeline never stalls on the 30 s timeout, and the
+    // persistent auth-error banner never masks the steady-state UI.
+    if stt_offline_mode_requested() {
+        return Ok(RuntimeSttProvider::Offline(OfflineSttProvider));
+    }
     match stt_provider {
         "google" => {
             let key = google_api_key.ok_or_else(|| {
