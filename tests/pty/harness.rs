@@ -116,6 +116,13 @@ impl PtySession {
         // Most PTY tests assert the steady-state UI and intentionally bypass
         // the first-run setup flow unless they override this flag explicitly.
         cmd.env("TUI_TRANSLATOR_SKIP_ONBOARDING", "1");
+        // Hermetic STT: keyless CI cannot reach Google STT.  A live request
+        // blocks the pipeline for up to 30 s and then raises a persistent
+        // "API calls halted" auth banner that covers the steady-state UI these
+        // tests assert on.  Run STT in offline no-op mode by default so the UI
+        // renders promptly.  A test that needs a different mode can override
+        // this via `extra_env` (applied last, below).
+        cmd.env("TUI_TRANSLATOR_STT_OFFLINE", "1");
         // Neutral working directory inside the sandbox so the child never
         // discovers a user or repo-local config.json by accident.
         cmd.cwd(sandbox.path());
