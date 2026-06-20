@@ -1,6 +1,9 @@
 # Rust build output
 /target/
 
+# Release packaging output (REL-01 .app/.dmg, dev bundles, dist artifacts)
+/dist/
+
 # Cargo lock is kept for binaries (reproducible builds)
 # Remove this line if you want to ignore it for library crates.
 # Cargo.lock
