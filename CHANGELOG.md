@@ -22,6 +22,82 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### v0.3.0 — Cloud streaming (Gemini 3.5 Live Translate) + local upgrade
+
+#### Added
+
+- **`src/providers/cloud/`** — opt-in cloud streaming branch (ADR-0008-rev1).
+  Implements the `CloudStreamProvider` trait for Google Gemini 3.5 Live
+  Translate, the all-in-one ASR + streaming translation model released
+  2026-06-09. Combines Whisper-class ASR with translation in a single
+  WebSocket call, eliminating the long-running-recognize → Google Translate
+  round-trip latency of the v0.2.x cloud path.
+  - `cloud::config` — `CloudConfig` schema (`vendor`, `api_key` /
+    `api_key_env`, `target_language`, `style`, `echo_target_language`).
+  - `cloud::protocol` — wire types, setup message, server frame parser,
+    cost estimator ($3 / 1M audio input, $2 / 1M text output per published
+    2026-06-20 rates → ~$0.12 / hour of speech).
+  - `cloud::gemini_live_translate` — raw WSS client over
+    `tokio-tungstenite` 0.24. Hand-rolled instead of using the
+    `gemini-live` 0.1.8 crate because that crate does not expose the
+    `translationConfig` field — the load-bearing extension that turns
+    the Live API into a translator.
+  - Model pinned to `models/gemini-3.5-live-translate-preview` until
+    Google rolls out a GA 1.0 / 2.x.
+- **`src/bin/tui-translator-cloud.rs`** — standalone end-to-end harness
+  (ADR-0008-rev1). Reads a WAV file, opens a streaming session, and
+  writes newline-delimited JSON events to stdout (`ready`, `input`,
+  `output`, `usage`, `go_away`, `closed`, `error`). Includes
+  `--dry-run` (prints the setup JSON, no network) and `--benchmark`
+  (prints first-output-latency). Exit codes: 0 success, 1 runtime,
+  2 CLI, 3 API.
+- **`AppConfig::cloud_provider`** — schema field, opt-in by absence.
+  Wire format: `{"vendor": "gemini-live-translate", "api_key": "...",
+  "target_language": "vi", "style": "neutral", ...}`. Validated at
+  startup; present-but-malformed configs are rejected with a
+  field-pointing error.
+- **Whisper large-v3-turbo Q5_0** (ADR-0009) — new
+  `ModelId::LargeV3TurboQ5_0` variant + manifest entry. 99 languages,
+  574 MB download, same encoder as large-v3 with a 4-layer decoder
+  (2-5× faster on Apple Silicon). Opt-in via
+  `stt_model = "large-v3-turbo-q5_0"` in `config.json`; default
+  remains `tiny` to avoid 574 MB surprise downloads on first run.
+  SHA-256 + size verified against HuggingFace tree API.
+
+#### Changed
+
+- **`providers::llm::registry::DEFAULT_LLM_MODEL_ID`** —
+  `qwen2.5-0.5b-q4km` → `qwen2.5-1.5b-q4km` (ADR-0009). The 1.5B
+  model is meaningfully better on vi/ja translation while still
+  fitting in ~1 GB of unified memory on M-series. 0.5B remains
+  available via `llm_model_path` for users who depend on it.
+- **`config.example.json`** — documents the new `cloud_provider`
+  block and the `llm_model_path` directory naming reflects the 1.5B
+  default.
+
+#### Privacy
+
+- The cloud branch is **opt-in by absence**: existing configs
+  continue to work unchanged, and no audio leaves the device
+  unless `cloud_provider` is set AND a key is configured.
+- The streaming integration is not yet wired into the main
+  pipeline (planned for v0.4.0). The cloud branch can be
+  exercised end-to-end via the standalone `tui-translator-cloud`
+  binary.
+
+#### Notes
+
+- 1461 unit tests pass. The pre-existing flaky
+  `config::autodetect::tests::probe_completes_within_budget` test
+  (CPU-budget sensitive) reproduces on plain `main`; not a
+  regression.
+- 4 PRs landed: provider module (PR1), local upgrade (PR2),
+  config wiring (PR3), standalone binary (PR4).
+- ADR references: `docs/adr/0008-rev1-adopt-gemini-live-translate.md`,
+  `docs/adr/0009-local-quality-upgrade.md`.
+
+---
+
 ### LLM-MT — LLM-based machine translation (issues #696, #697, #698, #699)
 
 Adds an opt-in LLM-based translation route alongside the existing OPUS-MT default.
