@@ -52,6 +52,7 @@ pub trait CostReporter: Send + Sync + std::fmt::Debug {
 }
 
 pub mod backend_selection;
+pub mod cloud;
 pub mod google;
 pub mod llm;
 pub mod local;

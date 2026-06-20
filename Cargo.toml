@@ -129,6 +129,17 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Base64 encoding — audio payload for Google Speech REST API
 base64 = "0.22"
 
+# WebSocket client for the Gemini 3.5 Live Translate cloud branch
+# (ADR-0008-rev1). Used by `src/providers/cloud/gemini_live_translate.rs`.
+# `rustls-tls-native-roots` keeps the default TLS backend consistent with
+# `reqwest` so the same `Cargo.lock` constraint resolves both deps.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "tokio-rustls", "rustls-tls-native-roots"] }
+
+# `StreamExt::split` for the WebSocket read/write halves.  Already in
+# the dep graph as a transitive of `tokio-tungstenite`; we list it
+# explicitly because we use its public API.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
 # SHA-256 checksum verification for downloaded local model files (#212)
 sha2 = "0.10"
 # Hex encoding/decoding — convert SHA-256 digest bytes to/from hex strings (#212)
