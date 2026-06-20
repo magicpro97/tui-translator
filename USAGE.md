@@ -32,7 +32,7 @@ It takes about ten minutes from start to finish.
 | [Troubleshooting](#troubleshooting) | Fix API key, capture, and cost issues |
 | [Offline / local STT](#optional-offline--local-speech-to-text-mode) | Run speech recognition locally |
 | [Offline quality evaluator](#offline-quality-evaluator-eval_session) | Score session logs without network access |
-| [Cloud streaming (v0.3.0+)](#optional-cloud-streaming-v030) | Opt-in Gemini 3.5 Live Translate branch (standalone binary) |
+| [Cloud streaming (v0.3.0+)](#optional-cloud-streaming-v030) | Opt-in Gemini 3.5 Live Translate branch (config block + diagnostic) |
 
 ## Use as a live interpreter
 
@@ -1251,113 +1251,146 @@ platform cache directory when `wtp_model_dir` is unset).
 
 ## Optional: Cloud streaming (v0.3.0+)
 
-> **Status:** v0.3.0 ships the cloud branch as an **opt-in standalone
-> binary** (`tui-translator-cloud`). The TUI pipeline integration is
-> planned for v0.4.0. The cloud branch is the recommended path for
-> users who want all-in-one streaming ASR + translation without
-> downloading or running local models.
+> **Status:** v0.3.0 ships the cloud branch as an **opt-in config
+> block** (`cloud_provider` in `config.json`) and a one-shot
+> diagnostic (`tui-translator --print-cloud-setup`). The TUI
+> pipeline integration — i.e. the actual streaming of microphone
+> audio to the cloud — is planned for v0.4.0.
 
 ### What it does
 
-`tui-translator-cloud` is a separate binary that talks to Google
-**Gemini 3.5 Live Translate** (released 2026-06-09) over a single
-WebSocket. The model handles streaming ASR and translation together
-in one continuous call, replacing the v0.2.x path of
-`long-running-recognize` → REST `Translate v2`.
+The cloud branch integrates **Google Gemini 3.5 Live Translate**
+(released 2026-06-09) — an all-in-one streaming ASR + translation
+model that handles both halves of the pipeline in a single
+WebSocket call.  Replacing the v0.2.x path of `long-running-recognize`
+→ REST `Translate v2` with one continuous call eliminates a
+significant source of latency.
 
-It reads a 16 kHz mono 16-bit PCM WAV file, opens a streaming
-session, and writes newline-delimited JSON events to stdout. The
-output is one of:
+### Enable the cloud branch
+
+Add a `cloud_provider` block to `config.json`:
 
 ```json
-{"type":"ready"}
-{"type":"input","text":"こんにちは","finished":false}
-{"type":"output","text":"Xin chào","finished":false}
-{"type":"usage","audio_input_tokens":1234,"text_output_tokens":567,"cost_usd":0.0037}
-{"type":"go_away","time_left_secs":30}
-{"type":"closed","reason":"api error: ..."}
+{
+  "google_api_key": null,
+  "cloud_provider": {
+    "vendor": "gemini-live-translate",
+    "api_key": "REDACTED-WHEN-SAVED-INTO-EXAMPLE",
+    "target_language": "vi",
+    "style": "neutral",
+    "echo_target_language": false,
+    "track_usage": true
+  }
+}
 ```
 
-### Quick start
+Field reference:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `vendor` | string | Only `gemini-live-translate` is supported in v0.3.0 |
+| `api_key` | string | Direct API key. Omit if using `api_key_env` |
+| `api_key_env` | string | Env var name to read the key from (default: `GEMINI_API_KEY`) |
+| `target_language` | BCP-47 | e.g. `vi`, `ja`, `en`, `zh`, `ko` |
+| `style` | enum | `neutral` / `formal` / `casual` / `technical` / `preserve-numerics` |
+| `echo_target_language` | bool | `false` recommended — prevents double subtitles when speaker already uses target lang |
+| `track_usage` | bool | Send `usageMetadata` to cost dashboard (default `true`) |
+
+Source language is auto-detected by the model — you only configure
+the target.  The model is pinned to
+`models/gemini-3.5-live-translate-preview` until Google rolls out a
+GA 1.0 / 2.x.
+
+### Diagnostic: `--print-cloud-setup`
+
+Verify the wire format and the key-resolution state without
+opening a network connection:
 
 ```text
-# 1. Get a Gemini API key from https://aistudio.google.com/app/apikey
-export GEMINI_API_KEY=AIza...
-
-# 2. Run the binary against a 16 kHz mono 16-bit PCM WAV file
-cargo run --release --bin tui-translator-cloud -- \
-    --wav path/to/meeting.wav \
-    --target-language vi
+tui-translator --print-cloud-setup
 ```
 
-The default model is `models/gemini-3.5-live-translate-preview`
-(BCP-47 target language auto-detected from the audio).  The
-session costs roughly **\$0.12 per hour of speech** at the
-published 2026-06-20 rates (audio input \$3 / 1M tokens, text
-output \$2 / 1M tokens).
+Output (formatted for readability):
 
-### Full CLI
-
-```text
-tui-translator-cloud --wav <FILE> [OPTIONS]
-
-OPTIONS:
-  --wav <FILE>            16 kHz mono 16-bit PCM WAV file to stream
-  --target-language <BCP> Target language (default: vi)
-  --api-key <KEY>         Override the API key (otherwise reads $GEMINI_API_KEY)
-  --api-key-env <NAME>    Env var holding the key (default: GEMINI_API_KEY)
-  --style <STYLE>         neutral | formal | casual | technical | preserve-numerics
-  --echo-target-language  Ask the server to emit output when input is in target
-  --chunk-ms <N>          Audio chunk size in ms (default: 100, range: 20-500)
-  --dry-run               Print the setup JSON, do not connect
-  --benchmark             Print end-of-session latency summary
-  -h, --help              Show this message
-
-OUTPUT: newline-delimited JSON, one event per line.
+```json
+{
+  "config": {
+    "vendor": "gemini-live-translate",
+    "target_language": "ja",
+    "style": "neutral",
+    "echo_target_language": false,
+    "track_usage": true,
+    "api_key_resolved": true,
+    "api_key_source": "field"
+  },
+  "model": "models/gemini-3.5-live-translate-preview",
+  "generationConfig": {
+    "responseModalities": ["TEXT"],
+    "temperature": 0.0,
+    "topP": 0.95
+  },
+  "translationConfig": { "targetLanguageCode": "ja" },
+  "inputAudioTranscription": {},
+  "outputAudioTranscription": {}
+}
 ```
 
-### Verifying the wire format without an API key
+The `setup` block (`model`, `generationConfig`,
+`translationConfig`, the two empty transcription configs) is the
+exact JSON the live transport task would serialise to the
+WebSocket.  The `config` block echoes the loaded cloud config with
+the API key redacted — `api_key_resolved: true` and
+`api_key_source: field | env-or-field | none` replace the actual
+key value, so it is safe to paste this output into bug reports
+or share it in a chat thread.
 
-```text
-tui-translator-cloud --dry-run --api-key dummy --target-language ja
-```
-
-prints the exact setup JSON the transport would send to Google's
-server. Useful for sanity-checking the wire format against
-`docs/adr/0008-rev1-adopt-gemini-live-translate.md` and Google's
-[Live API docs](https://ai.google.dev/gemini-api/docs/live-api/live-translate)
-without burning API quota.
-
-### Exit codes
+Exit codes:
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success (session completed, server sent `goAway` or `setupComplete` + final `Closed`) |
-| 1 | Runtime / network error (DNS, TLS handshake, mid-stream drop) |
-| 2 | CLI usage error (bad flag, missing WAV, unresolvable API key) |
-| 3 | API error (bad key, bad model name, quota exhausted) |
+| 0 | Cloud block is configured; JSON printed |
+| 2 | `cloud_provider` is absent from `config.json` |
+| 3 | `cloud_provider` is present but failed validation (target lang too long, empty key, etc.) |
+| 4 | `cloud_provider` is configured but the API key cannot be resolved (set `--api-key` / `api_key` field / `api_key_env` var) |
 
-CI / wrapper scripts can distinguish a wrong API key (3) from a
-network outage (1) from a CLI mistake (2) without parsing stderr.
+CI / wrapper scripts can detect each failure class without
+parsing stderr.
+
+### Cost
+
+At the published 2026-06-20 Google AI Studio rates:
+
+- Audio input: $3 / 1M tokens
+- Text input: $0.30 / 1M tokens
+- Text output: $2 / 1M tokens
+
+A one-hour meeting at roughly 30k audio tokens + 15k text output
+tokens is approximately **$0.12**.  Per-minute granularity is
+surfaced in the cost dashboard via the `usageMetadata` frames the
+server sends every few seconds.
 
 ### Privacy
 
-- The cloud branch is **opt-in**. The main `tui-translator` app
-  never sends audio to the network unless `cloud_provider` is
-  set in `config.json` AND a key is configured.
-- For the standalone binary, the same rule applies: no key = no
-  network call (the binary exits with code 2 before opening any
-  socket).
+- The cloud branch is **opt-in by absence**: existing configs
+  continue to work unchanged, and no audio leaves the device
+  unless `cloud_provider` is set AND a key is configured.
 - A paid-tier (DPA-covered) Google Cloud project is recommended
-  for production use; audio data on the free tier may be used
-  to improve Google's models.
+  for production use; audio data on the free tier may be used to
+  improve Google's models.
+- The `cloud_provider` block in `config.json` may contain the
+  raw API key.  The TUI settings editor masks the field (shown
+  as `••••••••`) but the value is stored in plain text on disk
+  — same posture as `google_api_key` today.
 
 ### Not yet wired into the main TUI
 
 The main `tui-translator` app continues to use the local stack
 (Whisper + Qwen + Supertonic) by default, and the v0.2.x Google
-STT + Google Translate REST path as the cloud fallback. The
-gemini-live-translate streaming branch is exposed only through
-the standalone binary in v0.3.0. Wiring it into the TUI audio
-pipeline is a v0.4.0 task that depends on having a benchmark
-of the standalone binary's latency on real meeting audio.
+STT + Google Translate REST path as the cloud fallback.  In v0.3.0
+the cloud branch is **exposed only through `--print-cloud-setup`**:
+running the app with a `cloud_provider` block set does not yet
+route microphone audio to the cloud streaming session.  Wiring
+it into the TUI audio pipeline is a v0.4.0 task — it depends on
+having a benchmark of the standalone transport task's latency on
+real meeting audio, which requires a Gemini API key and is gated
+on user sign-off.

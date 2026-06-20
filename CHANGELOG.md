@@ -44,13 +44,15 @@ Versions follow [Semantic Versioning](https://semver.org/).
     the Live API into a translator.
   - Model pinned to `models/gemini-3.5-live-translate-preview` until
     Google rolls out a GA 1.0 / 2.x.
-- **`src/bin/tui-translator-cloud.rs`** — standalone end-to-end harness
-  (ADR-0008-rev1). Reads a WAV file, opens a streaming session, and
-  writes newline-delimited JSON events to stdout (`ready`, `input`,
-  `output`, `usage`, `go_away`, `closed`, `error`). Includes
-  `--dry-run` (prints the setup JSON, no network) and `--benchmark`
-  (prints first-output-latency). Exit codes: 0 success, 1 runtime,
-  2 CLI, 3 API.
+- **`tui-translator --print-cloud-setup`** — one-shot CLI diagnostic
+  (ADR-0008-rev1). Replaces the old standalone `tui-translator-cloud`
+  binary. Loads the same `cloud_provider` config the live app would
+  use, builds the Gemini 3.5 Live Translate `setup` JSON via the
+  same `build_setup_public` helper the transport task uses, and
+  prints the wire format to stdout with the API key redacted
+  (`api_key_resolved: true/false` instead of the actual value).
+  No network call. Exit codes: 0 = ok, 2 = cloud block absent,
+  3 = config validation failed, 4 = key unresolvable.
 - **`AppConfig::cloud_provider`** — schema field, opt-in by absence.
   Wire format: `{"vendor": "gemini-live-translate", "api_key": "...",
   "target_language": "vi", "style": "neutral", ...}`. Validated at
@@ -91,8 +93,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `config::autodetect::tests::probe_completes_within_budget` test
   (CPU-budget sensitive) reproduces on plain `main`; not a
   regression.
-- 4 PRs landed: provider module (PR1), local upgrade (PR2),
-  config wiring (PR3), standalone binary (PR4).
+- 3 PRs landed: provider module (PR1), local upgrade (PR2),
+  config wiring (PR3). The standalone binary from an earlier
+  draft was reverted in favour of the in-binary `--print-cloud-setup`
+  flag; full TUI integration of the cloud streaming branch
+  remains a v0.4.0 task.
 - ADR references: `docs/adr/0008-rev1-adopt-gemini-live-translate.md`,
   `docs/adr/0009-local-quality-upgrade.md`.
 

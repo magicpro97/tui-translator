@@ -50,6 +50,7 @@ use tui_input::InputRequest;
 
 mod audio;
 mod audio_device_cli;
+mod cloud_setup_cli;
 #[cfg(test)]
 mod audio_device_cli_tests;
 mod config;
@@ -101,6 +102,7 @@ pub mod updater;
 
 use audio::DEFAULT_SILENCE_THRESHOLD;
 use audio_device_cli::{print_audio_devices_to_stdout, should_list_audio_devices};
+use cloud_setup_cli::{print_cloud_setup_to_stdout, should_print_cloud_setup};
 use llm_startup::{build_llm_mt_provider, run_startup_llm_model_check};
 use local_model_cli::{
     parse_local_mt_model_install_args_from, parse_local_stt_model_prefetch_args_from,
@@ -615,6 +617,34 @@ fn main() -> Result<()> {
     if should_list_local_models(std::env::args_os().skip(1)) {
         run_model_list()?;
         return Ok(());
+    }
+
+    // v0.3.0+ (ADR-0008-rev1): print the JSON wire format the cloud
+    // streaming branch would send for the currently configured
+    // `cloud_provider` block.  No network call.  Replaces the old
+    // standalone `tui-translator-cloud --dry-run` binary — same
+    // diagnostic, no second binary to ship.
+    if should_print_cloud_setup() {
+        match print_cloud_setup_to_stdout() {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                // Distinguish the four exit codes by error class.
+                let msg = format!("{e:#}");
+                let code = if msg.contains("absent from config") {
+                    2
+                } else if msg.contains("cloud_provider is invalid")
+                    || msg.contains("validation")
+                {
+                    3
+                } else if msg.contains("API key cannot be resolved") {
+                    4
+                } else {
+                    1
+                };
+                eprintln!("error: {msg}");
+                std::process::exit(code);
+            }
+        }
     }
 
     if let Some(verify_args) = parse_model_verify_args_from(std::env::args_os().skip(1))? {
