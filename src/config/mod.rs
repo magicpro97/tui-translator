@@ -798,6 +798,23 @@ pub struct AppConfig {
     /// omitted; `Some("")` is rejected by validation.
     pub google_api_key: Option<String>,
 
+    /// Cloud streaming provider config (v0.3.0+, ADR-0008-rev1).
+    ///
+    /// When absent, the app uses the local-only stack (Whisper + Qwen
+    /// + Supertonic) and never sends audio to the network.  When
+    /// present, the configured cloud vendor is consulted as an
+    /// opt-in branch; the local path is still available as a
+    /// fallback.
+    ///
+    /// See `src/providers/cloud/` for the streaming provider trait and
+    /// `docs/adr/0008-rev1-adopt-gemini-live-translate.md` for the
+    /// threat model and vendor rationale.  Adding a new vendor
+    /// requires adding a new `CloudVendor` variant and an
+    /// implementation of `CloudStreamProvider`; the field here is
+    /// deserialised transparently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud_provider: Option<crate::providers::cloud::CloudConfig>,
+
     /// Whether to play translated audio aloud.  Defaults to `false`.
     #[serde(default)]
     pub tts_enabled: bool,
@@ -1271,6 +1288,11 @@ impl Default for AppConfig {
             source_language: default_source_lang(),
             target_language: default_target_lang(),
             google_api_key: None,
+            // v0.3.0 (ADR-0008-rev1): cloud streaming is opt-in.
+            // Absent by default so existing configs continue to
+            // work unchanged and no audio leaves the device
+            // without the user explicitly setting this.
+            cloud_provider: None,
             tts_enabled: false,
             tts_output_device: None,
             tts_routing: TtsRouting::default(),
@@ -1614,6 +1636,17 @@ impl AppConfig {
             bail!(
                 "`session_store.max_sessions` must be greater than zero when session recording is enabled"
             );
+        }
+        // v0.3.0 (ADR-0008-rev1): validate the cloud streaming block.
+        // The schema is permissive about absent (the local-only
+        // default is fine) but strict about present-but-malformed
+        // configs — the streaming session would otherwise fail at
+        // runtime with a less helpful error.
+        if let Some(cloud) = &self.cloud_provider {
+            cloud.validate().with_context(|| {
+                "`cloud_provider` config is invalid; \
+                 remove the block or fix the listed fields"
+            })?;
         }
         // CTRL-01: real-time volume/gain controls.
         validate_gain_db(
@@ -3253,6 +3286,7 @@ mod tests {
             stt_provider: "google".to_string(),
             stt_fallback_policy: "google-when-keyed".to_string(),
             google_api_key: Some("demo-key".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
 
@@ -3338,6 +3372,7 @@ mod tests {
             tts_provider: "google".to_string(),
             tts_cloud_fallback: Some("google".to_string()),
             google_api_key: None,
+            cloud_provider: None,
             ..AppConfig::default()
         };
         let err = cfg.validate().unwrap_err();
@@ -3353,6 +3388,7 @@ mod tests {
         let cfg = AppConfig {
             tts_cloud_fallback: Some("azure".to_string()),
             google_api_key: Some("demo-key".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         let err = cfg.validate().unwrap_err();
@@ -3372,6 +3408,7 @@ mod tests {
             tts_provider: "google".to_string(),
             tts_cloud_fallback: Some("google".to_string()),
             google_api_key: Some("demo-key".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         let err = cfg.validate().unwrap_err();
@@ -3390,6 +3427,7 @@ mod tests {
     fn tts_cloud_fallback_absent_loads_with_api_key_present() {
         let cfg = AppConfig {
             google_api_key: Some("demo-key".to_string()),
+            cloud_provider: None,
             tts_cloud_fallback: None,
             ..AppConfig::default()
         };
@@ -3514,6 +3552,7 @@ mod tests {
     fn validate_rejects_empty_api_key_string() {
         let cfg = AppConfig {
             google_api_key: Some(String::new()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         let err = cfg.validate().unwrap_err();
@@ -3523,10 +3562,113 @@ mod tests {
         );
     }
 
+    // ── v0.3.0 (ADR-0008-rev1): cloud_provider config tests ────────────
+    //
+    // The cloud streaming block is opt-in.  Absent = no cloud, the
+    // local-only stack is used.  Present-but-malformed must be
+    // rejected at startup with a helpful message; the user has
+    // already opted in, so silent acceptance of a broken config
+    // would defer the failure to the moment audio first hits the
+    // network.
+
+    #[test]
+    fn validate_accepts_absent_cloud_provider() {
+        // Default AppConfig has cloud_provider: None; verify that
+        // config validation passes with the cloud block omitted
+        // (the historical v0.2.x behaviour must still work).
+        let cfg = AppConfig {
+            cloud_provider: None,
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("absent cloud_provider should be accepted at startup");
+    }
+
+    #[test]
+    fn validate_accepts_valid_cloud_provider() {
+        use crate::providers::cloud::{CloudConfig, CloudVendor, TranslationStyle};
+        let cfg = AppConfig {
+            cloud_provider: Some(CloudConfig {
+                vendor: CloudVendor::GeminiLiveTranslate,
+                api_key: Some("test-key".into()),
+                api_key_env: None,
+                target_language: "vi".into(),
+                style: TranslationStyle::Neutral,
+                echo_target_language: false,
+                track_usage: true,
+            }),
+            ..AppConfig::default()
+        };
+        cfg.validate()
+            .expect("valid cloud_provider config should pass validation");
+    }
+
+    #[test]
+    fn validate_rejects_cloud_provider_with_empty_target_language() {
+        use crate::providers::cloud::{CloudConfig, CloudVendor, TranslationStyle};
+        let cfg = AppConfig {
+            cloud_provider: Some(CloudConfig {
+                vendor: CloudVendor::GeminiLiveTranslate,
+                api_key: Some("test-key".into()),
+                api_key_env: None,
+                target_language: "".into(),
+                style: TranslationStyle::Neutral,
+                echo_target_language: false,
+                track_usage: true,
+            }),
+            ..AppConfig::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("cloud_provider")
+                || err.to_string().contains("target_language"),
+            "error should mention cloud_provider or target_language, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_round_trip_cloud_provider_via_config_json() {
+        // Wire-format round-trip: a config that contains a
+        // cloud_provider block must survive a load → save round
+        // trip without losing the cloud sub-fields.  This catches
+        // regressions in the serde renames (e.g. accidentally
+        // snake_casing a kebab-case CloudVendor variant).
+        use crate::providers::cloud::{CloudConfig, CloudVendor, TranslationStyle};
+        let original = AppConfig {
+            cloud_provider: Some(CloudConfig {
+                vendor: CloudVendor::GeminiLiveTranslate,
+                api_key: Some("round-trip-key".into()),
+                api_key_env: None,
+                target_language: "ja".into(),
+                style: TranslationStyle::Formal,
+                echo_target_language: true,
+                track_usage: true,
+            }),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        // Vendor serialises to kebab-case, matching the config
+        // schema in `config.example.json`.
+        assert!(
+            json.contains("\"gemini-live-translate\""),
+            "vendor must serialise as kebab-case: {json}"
+        );
+        let parsed: AppConfig = serde_json::from_str(&json).unwrap();
+        let cloud = parsed
+            .cloud_provider
+            .as_ref()
+            .expect("cloud_provider must round-trip");
+        assert_eq!(cloud.vendor, CloudVendor::GeminiLiveTranslate);
+        assert_eq!(cloud.target_language, "ja");
+        assert_eq!(cloud.style, TranslationStyle::Formal);
+        assert!(cloud.echo_target_language);
+    }
+
     #[test]
     fn validate_accepts_absent_api_key() {
         let cfg = AppConfig {
             google_api_key: None,
+            cloud_provider: None,
             ..AppConfig::default()
         };
         cfg.validate()
@@ -3537,6 +3679,7 @@ mod tests {
     fn app_config_debug_redacts_google_api_key() {
         let cfg = AppConfig {
             google_api_key: Some("AIzaSySecretTokenShouldNotLeak".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
 
@@ -3833,6 +3976,7 @@ mod tests {
         let path = temp.path().join(".tui-translator").join("config.json");
         let cfg = AppConfig {
             google_api_key: Some("demo-key".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
 
@@ -3848,12 +3992,14 @@ mod tests {
         let path = temp.path().join(".tui-translator").join("config.json");
         let initial = AppConfig {
             google_api_key: Some("old-key".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         write_config(&path, &initial).unwrap();
 
         let next = AppConfig {
             google_api_key: Some("new-key".to_string()),
+            cloud_provider: None,
             target_language: "en".to_string(),
             ..AppConfig::default()
         };
@@ -3983,6 +4129,7 @@ mod tests {
         let path = dir.path().join("config.json");
         let initial = AppConfig {
             google_api_key: Some("OLD_KEY".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         write_config(&path, &initial).unwrap();
@@ -3999,6 +4146,7 @@ mod tests {
         // No sleep needed: start_watcher blocks until the watcher is ready.
         let next = AppConfig {
             google_api_key: Some("NEW_KEY".to_string()),
+            cloud_provider: None,
             target_language: "en".to_string(),
             ..AppConfig::default()
         };
@@ -4066,6 +4214,7 @@ mod tests {
             source_language: "ja-JP".to_string(),
             target_language: "vi".to_string(),
             google_api_key: Some("OLD_KEY".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         write_config(&path, &initial_cfg).expect("write initial config");
@@ -4084,6 +4233,7 @@ mod tests {
             source_language: "ja-JP".to_string(),
             target_language: "en".to_string(), // observable change for rx signal
             google_api_key: Some("NEW_KEY".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         write_config(&path, &updated_cfg).expect("write updated config");
@@ -4830,6 +4980,7 @@ mod tests {
         let current = AppConfig::default();
         let next = AppConfig {
             google_api_key: Some("NEW_KEY".to_string()),
+            cloud_provider: None,
             ..AppConfig::default()
         };
         assert!(
@@ -5082,6 +5233,7 @@ mod tests {
             stt_provider: "google".to_string(),
             stt_fallback_policy: "none".to_string(),
             google_api_key: Some("AIzaSyDemoKey".to_string()),
+            cloud_provider: None,
             ..initial.clone()
         };
         write_config(&path, &next).expect("write valid provider change");
