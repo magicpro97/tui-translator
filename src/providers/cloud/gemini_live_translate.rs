@@ -359,6 +359,14 @@ fn build_setup(cfg: &CloudConfig) -> SetupMessage {
     }
 }
 
+/// Public re-export of [`build_setup`] for the standalone cloud
+/// binary's `--dry-run` mode and for integration tests.  The
+/// name has a `_public` suffix so it is distinct from the
+/// private helper used by the transport task.
+pub fn build_setup_public(cfg: &CloudConfig) -> SetupMessage {
+    build_setup(cfg)
+}
+
 // Suppress unused-import warning for `RealtimeInput` which is not
 // directly named in this file but is the type returned by
 // `build_audio_frame` / `build_stream_end_frame`.  Rust doesn't

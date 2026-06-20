@@ -55,10 +55,22 @@ pub mod gemini_live_translate;
 pub mod protocol;
 
 pub use config::{CloudConfig, CloudVendor};
-pub use gemini_live_translate::{GeminiLiveTranslateProvider, GEMINI_LIVE_TRANSLATE_MODEL};
-pub use protocol::{
-    CloudStreamEvent, TranslationStyle, UsageStats,
+pub use gemini_live_translate::{
+    build_setup_public, GeminiLiveTranslateProvider, GEMINI_LIVE_TRANSLATE_MODEL,
 };
+pub use protocol::{CloudStreamEvent, SetupMessage, TranslationStyle, UsageStats};
+
+/// Build the setup JSON the transport task would send to the
+/// server, without opening a WebSocket.  Used by the standalone
+/// `tui-translator-cloud` binary's `--dry-run` mode and by
+/// integration tests that want to verify the wire format
+/// against a captured Google response.
+///
+/// Callers use `crate::providers::cloud::build_setup_public`
+/// (re-exported from `gemini_live_translate`) directly; we do
+/// not provide a wrapper here because the host module name
+/// differs between the main crate and the standalone binary
+/// (`crate::providers::cloud` vs `crate::cloud`).
 
 // ── Provider trait ───────────────────────────────────────────────────────────
 

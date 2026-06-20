@@ -26,6 +26,10 @@ name = "audio_stability_proof"
 path = "src/bin/audio_stability_proof.rs"
 
 [[bin]]
+name = "tui-translator-cloud"
+path = "src/bin/tui_translator_cloud.rs"
+
+[[bin]]
 name = "provider_benchmark"
 path = "src/bin/provider_benchmark.rs"
 
