@@ -138,7 +138,8 @@ mod manifest_tests_inner {
         assert!(ModelId::ALL.contains(&ModelId::FunAsrSmall));
         assert!(ModelId::ALL.contains(&ModelId::FunAsrMedium));
         assert!(ModelId::ALL.contains(&ModelId::FunAsrLarge));
-        assert_eq!(ModelId::ALL.len(), 11);
+        // 12 = 8 Whisper + 3 FunASR + 1 large-v3-turbo (ADR-0009)
+        assert_eq!(ModelId::ALL.len(), 12);
     }
 
     #[test]

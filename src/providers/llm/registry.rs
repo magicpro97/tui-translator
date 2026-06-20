@@ -29,7 +29,16 @@ pub struct LlmModelEntry {
 
 /// Default model used when `mt_provider = "llm"` and no
 /// `llm_model_path` is specified.
-pub const DEFAULT_LLM_MODEL_ID: &str = "qwen2.5-0.5b-q4km";
+///
+/// Changed in v0.3.0 (ADR-0009): 0.5B → 1.5B.  The 1.5B model is
+/// meaningfully better on vi/ja translation while still fitting in
+/// ~1 GB of unified memory on M-series.  See
+/// `docs/adr/0009-local-quality-upgrade.md` for the full
+/// analysis.  Existing users who depend on 0.5B can pin
+/// `llm_model_path` in `config.json` to a local copy of
+/// `qwen2.5-0.5b-instruct-q4_k_m.gguf`; the entry remains in
+/// `BUILTIN_LLM_MODELS` for backward compatibility.
+pub const DEFAULT_LLM_MODEL_ID: &str = "qwen2.5-1.5b-q4km";
 
 /// All models that can be auto-downloaded.
 pub const BUILTIN_LLM_MODELS: &[LlmModelEntry] = &[

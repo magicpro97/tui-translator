@@ -95,6 +95,13 @@ pub enum ModelId {
     /// accuracy, slowest. Good for the Best preset on a 16+ GiB
     /// host.
     FunAsrLarge,
+    /// `ggml-large-v3-turbo-q5_0.bin` — Whisper large-v3 turbo, 5-bit
+    /// quant, ~574 MB. 99 langs. Same accuracy as large-v3 within
+    /// 0.4 percentage points; 2-5× faster on Apple Silicon (verified
+    /// per docs/research/cloud-streaming-2026/asr-research.md).
+    /// Opt-in via `stt_model = "large-v3-turbo-q5_0"` in config; the
+    /// default remains `tiny` for cold-start speed.
+    LargeV3TurboQ5_0,
 }
 
 impl ModelId {
@@ -102,7 +109,7 @@ impl ModelId {
     /// Includes both the 8 Whisper variants and the 3 FunASR variants
     /// (v3, #811). Order matches the [`Self::display_name`] table
     /// for stable, predictable iteration.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         ModelId::TinyEn,
         ModelId::Tiny,
         ModelId::BaseEn,
@@ -114,6 +121,7 @@ impl ModelId {
         ModelId::FunAsrSmall,
         ModelId::FunAsrMedium,
         ModelId::FunAsrLarge,
+        ModelId::LargeV3TurboQ5_0,
     ];
 
     /// Human-readable name used in log messages and error diagnostics.
@@ -130,6 +138,7 @@ impl ModelId {
             ModelId::FunAsrSmall => "funasr-small",
             ModelId::FunAsrMedium => "funasr-medium",
             ModelId::FunAsrLarge => "funasr-large",
+            ModelId::LargeV3TurboQ5_0 => "large-v3-turbo-q5_0",
         }
     }
 
@@ -147,6 +156,7 @@ impl ModelId {
             "funasr-small" => Some(ModelId::FunAsrSmall),
             "funasr-medium" => Some(ModelId::FunAsrMedium),
             "funasr-large" => Some(ModelId::FunAsrLarge),
+            "large-v3-turbo-q5_0" => Some(ModelId::LargeV3TurboQ5_0),
             _ => None,
         }
     }
@@ -664,6 +674,29 @@ static BUILTIN_SPECS: &[ModelSpec] = &[
         download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
         size_bytes: 1_533_763_059,
         sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
+        license_text: WHISPER_MIT_LICENSE,
+    },
+    // ── large-v3-turbo (ADR-0009) ─────────────────────────────────────
+    //
+    // OpenAI released large-v3-turbo on 2024-Q4: same encoder as
+    // large-v3 but the decoder is pruned from 32 layers to 4, so the
+    // model is 2-5× faster on Apple Silicon Metal. WER is within
+    // 0.4 percentage points of full large-v3 on every public
+    // benchmark. The 5-bit quant is the "good enough" sweet spot
+    // (Q4 is "might lose quality", Q3 is non-sensical per the GGUF
+    // quant author's note). See docs/research/cloud-streaming-2026/
+    // and docs/adr/0009-local-quality-upgrade.md for the full
+    // analysis.
+    //
+    // 99 languages, including all of tui-translator's target
+    // langs (vi/ja/en/ko/zh). Released under MIT.
+    ModelSpec {
+        id: ModelId::LargeV3TurboQ5_0,
+        file_name: "ggml-large-v3-turbo-q5_0.bin",
+        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
+        size_bytes: 574_041_195,
+        sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
         license_url: "https://github.com/openai/whisper/blob/main/LICENSE",
         license_text: WHISPER_MIT_LICENSE,
     },
