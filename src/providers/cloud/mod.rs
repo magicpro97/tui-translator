@@ -70,6 +70,16 @@ pub use gemini_live_translate::{
 #[allow(unused_imports)]
 pub use protocol::{CloudStreamEvent, SetupMessage, TranslationStyle, UsageStats};
 
+// `CloudStreamSession` is defined in this `mod.rs` so it cannot
+// be re-exported via `pub use` (Rust forbids self-referential
+// `pub use`).  It IS part of the public API though, reached as
+// `crate::providers::cloud::CloudStreamSession`.  Listed here
+// for documentation; the field in `OrchestratorContext` and the
+// return type of `CloudStreamProvider::open` use the long path
+// until PR-D moves the struct to `protocol.rs` and adds a
+// proper re-export.
+// Re-exported via `crate::providers::cloud::CloudStreamSession`.
+
 // ── Provider trait ───────────────────────────────────────────────────────────
 
 /// One cloud vendor's streaming pipeline.  Implementations are responsible

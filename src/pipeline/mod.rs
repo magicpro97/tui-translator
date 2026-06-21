@@ -386,18 +386,26 @@ pub struct OrchestratorContext {
     pub mt_customisation: crate::config::MtCustomisation,
 
     // ── Cloud streaming (v0.4.0, ADR-0010) ─────────────────────────────
-    /// Optional cloud streaming session.  When `Some`, the local
-    /// orchestrator's audio path is bypassed in favour of the cloud
-    /// session's `push` / `next_pair` API.  When `None`, the
-    /// historical local STT + MT pipeline runs.
+    /// Optional cloud streaming session.  When `Some`, the v0.4.0
+    /// **cloud orchestrator** (added in PR-D, see ADR §7) drives
+    /// the audio path via the session's `push` / `next_pair` API.
+    /// When `None`, the historical `run_orchestrator` (local STT
+    /// + MT) drives the audio path.  Main.rs chooses which
+    /// orchestrator to spawn at construction time (ADR §1,
+    /// two-orchestrator design — the cloud branch is **not** a
+    /// runtime "bypass" of the local one; the local one simply
+    /// does not run when the field is `Some`).
     ///
     /// Construction is in `main.rs` (not pipeline/mod.rs) per
-    /// CODE_STYLE §3.3 dependency-direction rule: the
-    /// pipeline module must not `use crate::providers::cloud::…`
-    /// to construct a session.
+    /// CODE_STYLE §3.3 dependency-direction rule: the pipeline
+    /// module must not `use crate::providers::cloud::…` to
+    /// construct a session.
     ///
     /// PR-A.1 only adds the field.  The `#[derive(Clone)]` is
-    /// added in PR-A.3 after every other field is Arc-wrapped.
+    /// added in PR-A.3 after every other field is Arc-wrapped
+    /// (only `SessionRecorder` is not `Clone` today; all other
+    /// fields — `MtCustomisation`, `Option<VadConfig>`,
+    /// `Option<CloudStreamSession>` — already derive `Clone`).
     /// Until then, the context is `!Clone` (no consumer tasks
     /// yet exist that need to clone it).
     pub cloud_session: Option<crate::providers::cloud::CloudStreamSession>,
@@ -2012,7 +2020,7 @@ mod tests {
             tts_status: Arc::new(Mutex::new(SlotProviderStatus::Ok)),
             // MT customisation — use default (neutral) in tests.
             mt_customisation: crate::config::MtCustomisation::default(),
-        cloud_session: None,
+            cloud_session: None,
         };
         (ctx, tx)
     }
