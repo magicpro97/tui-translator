@@ -262,8 +262,28 @@ The orchestrator tracks `cumulative_cost_usd` from `Usage` frames.  When `cumula
 
 Cost estimate per `Usage` frame:
 - `audio_input_tokens × $3/1M`
-- `text_input_tokens × $2/1M` (typically zero for the Live API)
+- `text_input_tokens × $0.30/1M` (typically zero for the Live API)
 - `text_output_tokens × $2/1M`
+
+These rates are Google's *preview* pricing for
+`gemini-3.5-live-translate-preview`, retrieved 2026-06-20
+from <https://ai.google.dev/gemini-api/pricing>.  At GA the
+rates may change; the implementation reads them from a
+single `UsageStats::estimated_cost_usd` function in
+`src/providers/cloud/protocol.rs` so a rate change is a
+one-line edit.  v0.4.0 PR-A will pull these into a
+`GeminiLiveTranslatePricing` named struct with a `// source:
+...` comment so future rate checks have an obvious target.
+
+**Q3 (opencode review 2026-06-21):** if the rates change at
+GA *or* a non-Gemini vendor ships, this hard-coded pricing
+will block.  Follow-up work adds a `CloudConfig.pricing:
+Option<PricingOverride>` config field (per-vendor `Pricing`
+struct with `audio_input_per_million`, `text_input_per_million`,
+`text_output_per_million` `f64` fields, all `#[serde(default)]`
+to the current Google rates).  v0.4.0 first cut ships with
+the hard-coded constants; the config field lands in a
+follow-up PR that tracks the actual GA price change.
 
 ### 6. Hot-loaded local fallback (Q2)
 
@@ -416,3 +436,75 @@ After all three reviews, the drafter (Hermes) consolidates findings into a "Revi
 - `src/audio/mod.rs:138` — `AudioChunk` shape (16 kHz mono 16-bit LE PCM)
 - `src/tui/SubtitlePair` — the subtitle-pane element
 - `src/metrics/mod.rs:179` — `SessionMetrics` definition (target of metric-field additions)
+
+
+## Appendix: src/config/mod.rs split plan (ADR-0011 stub)
+
+> **Status:** STUB — full ADR-0011 lands as a separate commit.
+> This stub captures the agreed-upon split plan from the
+> 3-agent opencode review (2026-06-21, Finding 9).  Each
+> step is its own PR with a `check-file-size.sh` override
+> removal.
+
+`src/config/mod.rs` is currently 5 453 LOC (over the 1 500
+LOC cap in CODE_STYLE §1.1).  Six ordered sub-splits, each
+removing the corresponding legacy override on merge:
+
+1. **`src/config/types.rs`** — pure type definitions (no
+   behaviour): `VadConfigJson`, `PipelineConfigJson`,
+   `SemanticBufferingConfig`, `SessionStoreConfig`,
+   `AudioArchiveConfig`, `TtsRouting`, `TtsSource`,
+   `SlotConfig`, `DualSlotConfig`, `AutoUpdateConfig`,
+   `GlossaryConfig`, `MtCustomisation`, `TtsRouting`-related
+   enums.  ~1 200 LOC, lines ~117-782.  Tests: none move
+   (the type-only tests live in the consuming file).
+
+2. **`src/config/defaults.rs`** — every `fn default_*()` +
+   serde default-helper + `is_default_*` (lines 1248-1578).
+   ~330 LOC.  Tests: none move (all `*_is_default` are
+   exercised by the AppConfig-level tests in the main
+   file, which keep working because they import the
+   helpers via `super::defaults::*`).
+
+3. **`src/config/validation.rs`** — `validate_language_code`,
+   `validate_gain_db`, `validate_language_tag`,
+   `validate_slot_config`, `validate_capture_device_name`,
+   `validate_virtual_mic_device_name`,
+   `validate_directory_path`, `strip_root_prefix_inline`,
+   `is_valid_path_component_inline`,
+   `has_parent_dir_segment`.  ~270 LOC, lines 2023-2848.
+   Tests: **MOVE** `validate_rejects_path_traversal_directories`
+   (currently 3724-3774 in the main `mod tests` block) into
+   a sibling `validation_tests.rs`.  Also move
+   `validate_rejects_malformed_capture_device` (3701-3722).
+
+4. **`src/config/io.rs`** — `home_dir`, `default_config_path`,
+   `default_sessions_dir`, `default_audio_archive_dir`,
+   `legacy_sessions_dir`, `legacy_audio_archive_dir`,
+   `lf06_migration_marker_path`, file-system helpers,
+   `start_watcher`, `run_watcher_loop`, `handle_watch_event`.
+   ~700 LOC.  Tests: move `validate_rejects_empty_session_store_directory`
+   if it touches `default_sessions_dir`; otherwise leave.
+
+5. **`src/config/loader.rs`** — `load_with_state`,
+   `load_for_startup`, `load`, `write_config`,
+   `apply_editor_defaults`, `default_audio_file_path_for`.
+   ~140 LOC.  Tests: none move (load tests are in
+   `tests/contract` or similar — out of scope).
+
+6. **`src/config/mod.rs`** retains `AppConfig` struct
+   (785-1246), `impl AppConfig` (1581-2022), `Default`/`Debug`
+   (1287-1390), `AppConfig::validate` body, and the
+   `mod tests` block for AppConfig-level integration
+   (the cloud_provider tests at 3581-3683 MUST stay
+   here — they construct `AppConfig { cloud_provider: Some(...) }`
+   which is local to this file).  After step 3, the
+   `mod tests` block contains only the cloud_provider tests
+   + the AppConfig-level validation tests; **step 6a
+   splits the `mod tests` block into
+   `src/config/validation_tests.rs` (sibling) and keeps
+   only the cloud_provider block inline**.  Estimated
+   final size: ~1 500 LOC.
+
+After step 6, the `check-file-size.sh` override entry for
+`src/config/mod.rs` is removed.
