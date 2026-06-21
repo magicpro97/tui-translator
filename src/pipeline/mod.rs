@@ -249,10 +249,10 @@ pub struct OrchestratorContext {
     pub target_language: Arc<Mutex<String>>,
 
     /// Configured STT provider name captured for session logs.
-    pub stt_provider_name: String,
+    pub stt_provider_name: Arc<str>,
 
     /// Configured MT provider name captured for session logs.
-    pub mt_provider_name: String,
+    pub mt_provider_name: Arc<str>,
 
     // ── TTS playback ───────────────────────────────────────────────────────
     /// Shared playback service; `None` when TTS is unavailable.
@@ -268,7 +268,7 @@ pub struct OrchestratorContext {
     /// The orchestrator ANDs this flag with `tts_enabled` before calling the
     /// TTS provider, ensuring the non-selected slot never sends text to TTS
     /// even when TTS is globally enabled.
-    pub tts_active_for_slot: bool,
+    pub tts_active_for_slot: Arc<AtomicBool>,
 
     /// Per-slot TTS / provider health status (DM-06, issue #382).
     ///
@@ -325,7 +325,7 @@ pub struct OrchestratorContext {
     /// This is enabled for Google->local fallback so a missing/corrupt/stub
     /// fallback does not spin on every audio window. Direct `stt_provider =
     /// "local"` keeps the pre-existing warn-and-continue error path.
-    pub local_unavailable_is_fatal: bool,
+    pub local_unavailable_is_fatal: Arc<AtomicBool>,
 
     // ── VAD gate (issue #220 / EP-E.1) ────────────────────────────────────
     /// Optional VAD configuration.  When `Some` and `enabled = true`, each
@@ -900,7 +900,7 @@ where
             handle_auth_error(ctx, &format!("STT: {msg}"));
             return;
         }
-        Err(err) if ctx.local_unavailable_is_fatal && fallback::is_local_unavailable(&err) => {
+        Err(err) if ctx.local_unavailable_is_fatal.load(Ordering::Relaxed) && fallback::is_local_unavailable(&err) => {
             // Permanent local STT failure (model missing, checksum wrong, or
             // feature not compiled in).  Halt the pipeline with the actionable
             // error message rather than repeating it on every audio chunk (AC2
@@ -1135,7 +1135,7 @@ where
     );
 
     // ── TTS (optional, non-fatal) ─────────────────────────────────────────────
-    if ctx.tts_enabled.load(Ordering::Relaxed) && ctx.tts_active_for_slot {
+    if ctx.tts_enabled.load(Ordering::Relaxed) && ctx.tts_active_for_slot.load(Ordering::Relaxed) {
         for item in &produced {
             // Issue #80: approximate TTS bytes sent = translation text length.
             ctx.network_metrics
@@ -1391,7 +1391,7 @@ async fn commit_aggregated_segment<M, T>(
         }
     }
 
-    if ctx.tts_enabled.load(Ordering::Relaxed) && ctx.tts_active_for_slot {
+    if ctx.tts_enabled.load(Ordering::Relaxed) && ctx.tts_active_for_slot.load(Ordering::Relaxed) {
         ctx.network_metrics
             .record_bytes_sent(translation.translated_text.len() as u64);
         if reject_if_circuit_open(ctx, ProviderStage::Tts) {
@@ -1496,8 +1496,8 @@ fn build_transcript_segment(
         source_language: source_lang.to_string(),
         detected_source_language: translation.detected_source_language.clone(),
         target_language: target_lang.to_string(),
-        stt_provider: ctx.stt_provider_name.clone(),
-        mt_provider: ctx.mt_provider_name.clone(),
+        stt_provider: ctx.stt_provider_name.as_ref().to_string(),
+        mt_provider: ctx.mt_provider_name.as_ref().to_string(),
         stt_confidence: context.stt_confidence,
         stt_is_final: true,
         stt_latency_ms: context.stt_latency_ms,
@@ -1966,8 +1966,8 @@ mod tests {
             tts_enabled: Arc::new(AtomicBool::new(false)),
             source_language: Arc::new(Mutex::new("ja-JP".to_string())),
             target_language: Arc::new(Mutex::new("en".to_string())),
-            stt_provider_name: "google".to_string(),
-            mt_provider_name: "google".to_string(),
+            stt_provider_name: "google".into(),
+            mt_provider_name: "google".into(),
             playback: Arc::new(Mutex::new(None)),
             shutdown,
             e2e_latency: Arc::new(crate::metrics::LatencyHistogram::new()),
@@ -1976,7 +1976,7 @@ mod tests {
             // CPU throttle disabled in unit tests so existing behaviour is unchanged.
             cpu_gate: Arc::new(crate::pipeline::cpu_gate::CpuGate::new(0.0)),
             provider_is_local: Arc::new(AtomicBool::new(false)),
-            local_unavailable_is_fatal: false,
+            local_unavailable_is_fatal: Arc::new(AtomicBool::new(false)),
             vad_config: None,
             // Pipeline knobs — use module-level defaults so existing tests are unchanged.
             pipeline_max_window_ms: STT_MAX_WINDOW_MS,
@@ -1991,7 +1991,7 @@ mod tests {
             )),
             session_recorder: SessionRecorder::disabled(),
             // TTS slot selection — single-slot mode in tests: always active.
-            tts_active_for_slot: true,
+            tts_active_for_slot: Arc::new(AtomicBool::new(true)),
             tts_status: Arc::new(Mutex::new(SlotProviderStatus::Ok)),
             // MT customisation — use default (neutral) in tests.
             mt_customisation: crate::config::MtCustomisation::default(),
@@ -3031,8 +3031,8 @@ mod tests {
     #[tokio::test]
     async fn fallback_local_unavailable_halts_pipeline() {
         let shutdown = Arc::new(AtomicBool::new(false));
-        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
-        ctx.local_unavailable_is_fatal = true;
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
+        ctx.local_unavailable_is_fatal.store(true, Ordering::Relaxed);
         let mut pending = SpeechWindow::default();
         let mut seq = 0;
 
@@ -4159,10 +4159,10 @@ mod tests {
     #[tokio::test]
     async fn tts_inactive_slot_does_not_call_tts() {
         let shutdown = Arc::new(AtomicBool::new(false));
-        let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
+        let (ctx, _tx) = make_context(Arc::clone(&shutdown));
         // Enable TTS globally but mark this slot as non-synthesising.
         ctx.tts_enabled.store(true, Ordering::Relaxed);
-        ctx.tts_active_for_slot = false;
+        ctx.tts_active_for_slot.store(false, Ordering::Relaxed);
 
         let tts_calls = Arc::new(AtomicU32::new(0));
 
@@ -4211,7 +4211,7 @@ mod tests {
         let shutdown = Arc::new(AtomicBool::new(false));
         let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
         ctx.tts_enabled.store(true, Ordering::Relaxed);
-        ctx.tts_active_for_slot = true;
+        ctx.tts_active_for_slot.store(true, Ordering::Relaxed);
 
         let tts_calls = Arc::new(AtomicU32::new(0));
 
@@ -4259,7 +4259,7 @@ mod tests {
         let shutdown = Arc::new(AtomicBool::new(false));
         let (mut ctx, _tx) = make_context(Arc::clone(&shutdown));
         ctx.tts_enabled.store(true, Ordering::Relaxed);
-        ctx.tts_active_for_slot = true;
+        ctx.tts_active_for_slot.store(true, Ordering::Relaxed);
         let tts_status = Arc::clone(&ctx.tts_status);
 
         let (tx2, rx2) = mpsc::channel::<AudioChunk>(2);

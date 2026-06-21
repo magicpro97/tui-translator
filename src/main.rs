@@ -1508,8 +1508,8 @@ fn main() -> Result<()> {
                     } else {
                         Arc::clone(&state.target_language)
                     },
-                    stt_provider_name: slot_a_cfg.stt_provider.clone(),
-                    mt_provider_name: slot_a_cfg.mt_provider.clone(),
+                    stt_provider_name: Arc::from(slot_a_cfg.stt_provider.as_str()),
+                    mt_provider_name: Arc::from(slot_a_cfg.mt_provider.as_str()),
                     playback: Arc::clone(&playback_service),
                     shutdown: Arc::clone(&orchestrator_shutdown),
                     e2e_latency: Arc::clone(&e2e_latency),
@@ -1517,7 +1517,9 @@ fn main() -> Result<()> {
                     loss_metrics: Arc::clone(&loss_metrics),
                     cpu_gate: Arc::clone(&cpu_gate),
                     provider_is_local: Arc::clone(&provider_is_local),
-                    local_unavailable_is_fatal,
+                    local_unavailable_is_fatal: Arc::new(std::sync::atomic::AtomicBool::new(
+                        local_unavailable_is_fatal,
+                    )),
                     // Pass VAD config when enabled; None preserves existing behaviour.
                     vad_config: if cfg_snapshot.vad.enabled {
                         Some(audio::VadConfig {
@@ -1560,9 +1562,11 @@ fn main() -> Result<()> {
                     })),
                     session_recorder,
                     // Slot A is `slot_is_a = true`; mode is single unless slot_mode == Dual.
-                    tts_active_for_slot: cfg_snapshot
-                        .tts_source
-                        .is_active_for_slot(true, slot_mode == config::SlotMode::Dual),
+                    tts_active_for_slot: Arc::new(std::sync::atomic::AtomicBool::new(
+                        cfg_snapshot
+                            .tts_source
+                            .is_active_for_slot(true, slot_mode == config::SlotMode::Dual),
+                    )),
                     // DM-06 (issue #382): share the Arc created above so it is
                     // accessible to the halt-aggregation and label-copier tasks.
                     tts_status: Arc::clone(&slot_a_tts_status_arc),
@@ -1665,8 +1669,8 @@ fn main() -> Result<()> {
                                     target_language: Arc::new(std::sync::Mutex::new(
                                         slot_b_cfg.target_language.clone(),
                                     )),
-                                    stt_provider_name: slot_b_cfg.stt_provider.clone(),
-                                    mt_provider_name: slot_b_cfg.mt_provider.clone(),
+                                    stt_provider_name: Arc::from(slot_b_cfg.stt_provider.as_str()),
+                                    mt_provider_name: Arc::from(slot_b_cfg.mt_provider.as_str()),
                                     playback: Arc::clone(&playback_service),
                                     shutdown: Arc::clone(&orchestrator_shutdown),
                                     e2e_latency: Arc::clone(&e2e_latency),
@@ -1674,7 +1678,11 @@ fn main() -> Result<()> {
                                     loss_metrics: Arc::clone(&loss_metrics),
                                     cpu_gate: Arc::clone(&cpu_gate),
                                     provider_is_local: provider_is_local_b,
-                                    local_unavailable_is_fatal: local_unavailable_is_fatal_b,
+                                    local_unavailable_is_fatal: Arc::new(
+                                        std::sync::atomic::AtomicBool::new(
+                                            local_unavailable_is_fatal_b,
+                                        ),
+                                    ),
                                     vad_config: if cfg_snapshot.vad.enabled {
                                         Some(audio::VadConfig {
                                             threshold: cfg_snapshot.vad.threshold,
@@ -1734,9 +1742,11 @@ fn main() -> Result<()> {
                                         false,
                                     ),
                                     // DM-06 (issue #382): slot B is always dual; slot_is_a = false.
-                                    tts_active_for_slot: cfg_snapshot
-                                        .tts_source
-                                        .is_active_for_slot(false, true),
+                                    tts_active_for_slot: Arc::new(std::sync::atomic::AtomicBool::new(
+                                        cfg_snapshot
+                                            .tts_source
+                                            .is_active_for_slot(false, true),
+                                    )),
                                     tts_status: Arc::clone(&slot_b_state.tts_status),
                                     // LLM-MT-04 (issue #699): pass MT customisation for slot B.
                                     mt_customisation: cfg_snapshot.mt_customisation.clone(),
