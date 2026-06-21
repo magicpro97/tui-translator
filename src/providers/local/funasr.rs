@@ -213,17 +213,15 @@ impl LocalFunAsrSttProvider {
     /// The model id this provider is configured for.
     pub fn model_id(&self) -> &'static str {
         #[allow(clippy::expect_used, clippy::unwrap_used)]
+        // allow-unwrap: #814 — mutex poison on the model cache; standard panic with the variant message
         self.inner
             .lock()
             .expect("funasr provider mutex poisoned")
             .model_id
     }
 
-    /// True if the provider has loaded its model weights AND
-    /// the streaming FFI path is active.  A provider that was
-    /// never `load()`-ed, or that was built without the
-    /// `local-stt-funasr` feature, returns `false`.
     #[allow(clippy::expect_used, clippy::unwrap_used)]
+    // allow-unwrap: #814 — mutex poison on the model cache; standard panic with the variant message
     pub fn is_loaded(&self) -> bool {
         let inner = self.inner.lock().expect("funasr provider mutex poisoned");
         // The feature-off build never constructs a recognizer

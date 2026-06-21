@@ -215,8 +215,12 @@ impl TrajectoryBudget {
 
 impl BudgetSampler for TrajectoryBudget {
     fn sample(&self) -> (u64, u8) {
-        #[allow(clippy::expect_used, clippy::unwrap_used)]
-        let mut guard = self.series.lock().unwrap();
+        // Match the file's poison-recovery pattern (see lines
+        // 82, 156) instead of panicking on a poisoned mutex.
+        // The `self.series` lock is held for microseconds; the
+        // recovery path is only hit if a previous holder
+        // panicked while holding it.
+        let mut guard = self.series.lock().unwrap_or_else(|p| p.into_inner());
         if guard.is_empty() {
             self.fallback
         } else {

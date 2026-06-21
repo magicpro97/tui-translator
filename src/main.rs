@@ -6,27 +6,25 @@
 //! denies them.  See `docs/architecture/CODE_STYLE.md` §8 for
 //! the rationale and the lint policy table.
 //!
-//! Per CODE_STYLE §8, `clippy::all` is the only crate-level
-//! warning; `clippy::pedantic` and `clippy::nursery` are NOT
-//! enabled here because they would flag hundreds of false
-//! positives in the legacy 7.6 k LOC `main.rs`.  New modules
-//! (added from v0.4.0 onward) enable pedantic and nursery
-//! locally; the `disallowed-methods` list in `clippy.toml`
-//! enforces the unwrap ban crate-wide.
-#![warn(clippy::all)]
-// CODE_STYLE §7.3: `unwrap` is forbidden outside test code and
-// the dispatch entry of main.  Promote the default-warn
-// `clippy::unwrap_used` and `clippy::expect_used` to
-// crate-wide deny.  `#[allow]` annotations are required at
-// the rare legitimate call sites (FFmpeg/Cpal error
-// returns, test setup).
-//
-// Tests get a blanket allow because the per-site annotation
-// burden is too high for the 1 000+ test call sites; CODE_STYLE
-// §7.3 explicitly permits `unwrap()` and `expect()` in tests
-// (idiomatic Rust testing).
+//! `clippy::all` is the default lint group and is already on at
+//! warn; CI's `-- -D warnings` is the deny gate.  We do NOT
+//! add `#![warn(clippy::all)]` here because it is a no-op that
+//! signals nothing new.  The deny below is the actual
+//! crate-level enforcement.
+//!
+//! Per CODE_STYLE §8, `clippy::pedantic` and `clippy::nursery`
+//! are NOT enabled here because they would flag hundreds of
+//! false positives in the legacy 7.6 k LOC `main.rs`.  New
+//! modules (added from v0.4.0 onward) enable pedantic and
+//! nursery locally; `disallowed-types` entries in `clippy.toml`
+//! enforce project-specific bans crate-wide.
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
+// CODE_STYLE §7.3: `unwrap` is forbidden outside test code and
+// the dispatch entry of main.  Tests get a blanket allow because
+// the per-site annotation burden is too high for the 1 000+
+// test call sites; CODE_STYLE §7.3 explicitly permits
+// `unwrap()` and `expect()` in tests (idiomatic Rust testing).
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //!
 //! Phase 0 goal: open a terminal window, show the placeholder loading screen

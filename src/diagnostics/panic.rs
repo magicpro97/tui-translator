@@ -256,6 +256,7 @@ pub(crate) fn scrub_secrets(input: &str) -> String {
             continue;
         }
         #[allow(clippy::expect_used, clippy::unwrap_used)]
+        // allow-unwrap: #506 — i < bytes.len() invariant from the while-loop at line 247 plus the is_empty() early return at line 241-243
         let ch = input[i..].chars().next().expect("non-empty remainder");
         out.push(ch);
         i += ch.len_utf8();
