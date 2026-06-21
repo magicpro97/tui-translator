@@ -38,9 +38,9 @@
 //! `CloudError::Auth` / `RateLimit` / `SetupFailed` / `Protocol`
 //! by [`protocol::check_terminal_error`].
 
+use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::Duration;
-use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -52,9 +52,8 @@ use tracing::{debug, error, info, warn};
 
 use super::config::CloudConfig;
 use super::protocol::{
-    build_audio_frame, build_stream_end_frame, build_system_instruction, into_events,
-    check_terminal_error, EmptyObject, RealtimeInput, ServerMessage, SetupMessage,
-    TranslationStyle,
+    build_audio_frame, build_stream_end_frame, build_system_instruction, check_terminal_error,
+    into_events, EmptyObject, RealtimeInput, ServerMessage, SetupMessage, TranslationStyle,
 };
 use super::{
     AudioCommand, CloudError, CloudStreamEvent, CloudStreamProvider, CloudStreamSession,
@@ -113,7 +112,8 @@ impl CloudStreamProvider for GeminiLiveTranslateProvider {
     fn open(&self) -> Result<CloudStreamSession, CloudError> {
         let api_key = self.cfg.resolve_api_key().map_err(CloudError::Auth)?;
         let (audio_tx, audio_rx) = mpsc::channel::<AudioCommand>(AUDIO_CHANNEL_DEPTH);
-        let (event_tx, _) = tokio::sync::broadcast::channel::<CloudStreamEvent>(EVENT_CHANNEL_DEPTH);
+        let (event_tx, _) =
+            tokio::sync::broadcast::channel::<CloudStreamEvent>(EVENT_CHANNEL_DEPTH);
         let (close_tx, close_rx) = watch::channel(false);
 
         let cfg = Arc::clone(&self.cfg);
@@ -165,9 +165,8 @@ async fn run_session(
 
     // 1. Send setup, wait for setupComplete
     let setup = build_setup(&cfg);
-    let setup_json = serde_json::to_string(&setup).map_err(|e| {
-        CloudError::Internal(format!("failed to serialize setup: {e}"))
-    })?;
+    let setup_json = serde_json::to_string(&setup)
+        .map_err(|e| CloudError::Internal(format!("failed to serialize setup: {e}")))?;
     write
         .send(Message::Text(setup_json))
         .await
@@ -309,8 +308,8 @@ async fn connect_ws(api_key: &str) -> Result<WsStream, CloudError> {
     .await
     .map_err(|_| CloudError::Network("ws connect timeout (10s)".into()))?;
 
-    let (ws, _resp) = connect_result
-        .map_err(|e| CloudError::Network(format!("ws connect: {e}")))?;
+    let (ws, _resp) =
+        connect_result.map_err(|e| CloudError::Network(format!("ws connect: {e}")))?;
     info!(target: "tui_translator::cloud", "ws connected");
     Ok(ws)
 }
@@ -402,10 +401,7 @@ mod tests {
         let cfg = test_cfg();
         let s = build_setup(&cfg);
         // The pinned model id must be present.
-        assert_eq!(
-            s.setup.model,
-            "models/gemini-3.5-live-translate-preview"
-        );
+        assert_eq!(s.setup.model, "models/gemini-3.5-live-translate-preview");
         // The target language must round-trip.
         assert_eq!(s.setup.translation_config.target_language_code, "vi");
         // echo_target_language defaults to false; the field is
@@ -452,7 +448,10 @@ mod tests {
         let pcm: Vec<u8> = (0u16..3200u16).map(|i| (i & 0xff) as u8).collect();
         let frame = build_audio_frame(&pcm);
         // mime type is fixed
-        assert_eq!(frame.audio.as_ref().unwrap().mime_type, "audio/pcm;rate=16000");
+        assert_eq!(
+            frame.audio.as_ref().unwrap().mime_type,
+            "audio/pcm;rate=16000"
+        );
         // base64 length: 3200 bytes raw → 4 * ceil(3200/3) = 4268 chars.
         let b64 = &frame.audio.as_ref().unwrap().data;
         assert_eq!(b64.len(), 4268);
@@ -488,10 +487,13 @@ mod tests {
         // model is a string.
         assert!(setup["model"].is_string());
         // generationConfig.responseModalities is a non-empty array.
-        assert!(setup["generationConfig"]["responseModalities"]
-            .as_array()
-            .unwrap()
-            .len() > 0);
+        assert!(
+            setup["generationConfig"]["responseModalities"]
+                .as_array()
+                .unwrap()
+                .len()
+                > 0
+        );
         // translationConfig.targetLanguageCode is set.
         assert!(setup["translationConfig"]["targetLanguageCode"].is_string());
         // Both transcription configs are empty objects.

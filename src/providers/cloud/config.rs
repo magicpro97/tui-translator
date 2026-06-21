@@ -73,7 +73,9 @@ pub struct CloudConfig {
     pub track_usage: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 fn is_default_style(s: &TranslationStyle) -> bool {
     *s == TranslationStyle::Neutral
@@ -157,7 +159,9 @@ impl CloudConfig {
         if self.target_language.len() > 16 {
             // BCP-47 tags are short; reject anything pathologically long
             // to catch typos like a full English word.
-            return Err(CloudConfigError::TargetLanguageTooLong(self.target_language.clone()));
+            return Err(CloudConfigError::TargetLanguageTooLong(
+                self.target_language.clone(),
+            ));
         }
         if let Some(env) = &self.api_key_env {
             if env.is_empty() {
@@ -245,7 +249,10 @@ mod tests {
 
         c.api_key = None;
         c.api_key_env = Some("".into());
-        assert!(matches!(c.validate(), Err(CloudConfigError::EmptyApiKeyEnv)));
+        assert!(matches!(
+            c.validate(),
+            Err(CloudConfigError::EmptyApiKeyEnv)
+        ));
     }
 
     #[test]
@@ -276,10 +283,7 @@ mod tests {
         c.api_key_env = Some("TUI_TEST_UNSET_KEY_FOR_MISSING".into());
         std::env::remove_var("TUI_TEST_UNSET_KEY_FOR_MISSING");
         let err = c.resolve_api_key().unwrap_err();
-        assert!(
-            err.contains("no API key"),
-            "unexpected error: {err}"
-        );
+        assert!(err.contains("no API key"), "unexpected error: {err}");
     }
 
     #[test]
@@ -289,4 +293,19 @@ mod tests {
         let v: CloudVendor = serde_json::from_str(&s).unwrap();
         assert_eq!(v, CloudVendor::GeminiLiveTranslate);
     }
+
+    // ── v0.3.0 (ADR-0008-rev1) AppConfig-level cloud_provider
+    // integration tests live in
+    // `src/config/cloud_provider_tests.rs` (a sibling file
+    // included by `src/config/mod.rs`).  Putting them here
+    // would force every integration-test target that
+    // `#[path]`-includes the `providers` module to also include
+    // `src/config/mod.rs`, which is the wrong dependency
+    // direction (config depends on cloud, not the other way).
+    // The tests in the sibling file cover:
+    //   - absent cloud_provider in AppConfig validates OK
+    //   - valid cloud_provider in AppConfig validates OK
+    //   - empty target_language in cloud_provider is rejected
+    //   - JSON round-trip preserves the kebab-case CloudVendor
+    // See that file for the actual tests. ─────────────────
 }

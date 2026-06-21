@@ -50,9 +50,9 @@ use tui_input::InputRequest;
 
 mod audio;
 mod audio_device_cli;
-mod cloud_setup_cli;
 #[cfg(test)]
 mod audio_device_cli_tests;
+mod cloud_setup_cli;
 mod config;
 mod diagnostics;
 #[cfg(test)]
@@ -632,9 +632,7 @@ fn main() -> Result<()> {
                 let msg = format!("{e:#}");
                 let code = if msg.contains("absent from config") {
                     2
-                } else if msg.contains("cloud_provider is invalid")
-                    || msg.contains("validation")
-                {
+                } else if msg.contains("cloud_provider is invalid") || msg.contains("validation") {
                     3
                 } else if msg.contains("API key cannot be resolved") {
                     4

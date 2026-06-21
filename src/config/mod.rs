@@ -3570,6 +3570,11 @@ mod tests {
     // already opted in, so silent acceptance of a broken config
     // would defer the failure to the moment audio first hits the
     // network.
+    //
+    // `CloudConfig` is re-exported as `crate::CloudConfig` in
+    // `main.rs` so that integration tests which `#[path]`-include
+    // `src/config/mod.rs` (but not `src/providers/mod.rs`) can still
+    // construct the type via the bin-root alias.
 
     #[test]
     fn validate_accepts_absent_cloud_provider() {
@@ -3586,9 +3591,11 @@ mod tests {
 
     #[test]
     fn validate_accepts_valid_cloud_provider() {
-        use crate::providers::cloud::{CloudConfig, CloudVendor, TranslationStyle};
+        use crate::providers::cloud::{
+            CloudConfig as ProviderCloudConfig, CloudVendor, TranslationStyle,
+        };
         let cfg = AppConfig {
-            cloud_provider: Some(CloudConfig {
+            cloud_provider: Some(ProviderCloudConfig {
                 vendor: CloudVendor::GeminiLiveTranslate,
                 api_key: Some("test-key".into()),
                 api_key_env: None,
@@ -3605,9 +3612,11 @@ mod tests {
 
     #[test]
     fn validate_rejects_cloud_provider_with_empty_target_language() {
-        use crate::providers::cloud::{CloudConfig, CloudVendor, TranslationStyle};
+        use crate::providers::cloud::{
+            CloudConfig as ProviderCloudConfig, CloudVendor, TranslationStyle,
+        };
         let cfg = AppConfig {
-            cloud_provider: Some(CloudConfig {
+            cloud_provider: Some(ProviderCloudConfig {
                 vendor: CloudVendor::GeminiLiveTranslate,
                 api_key: Some("test-key".into()),
                 api_key_env: None,
@@ -3628,14 +3637,11 @@ mod tests {
 
     #[test]
     fn validate_round_trip_cloud_provider_via_config_json() {
-        // Wire-format round-trip: a config that contains a
-        // cloud_provider block must survive a load → save round
-        // trip without losing the cloud sub-fields.  This catches
-        // regressions in the serde renames (e.g. accidentally
-        // snake_casing a kebab-case CloudVendor variant).
-        use crate::providers::cloud::{CloudConfig, CloudVendor, TranslationStyle};
+        use crate::providers::cloud::{
+            CloudConfig as ProviderCloudConfig, CloudVendor, TranslationStyle,
+        };
         let original = AppConfig {
-            cloud_provider: Some(CloudConfig {
+            cloud_provider: Some(ProviderCloudConfig {
                 vendor: CloudVendor::GeminiLiveTranslate,
                 api_key: Some("round-trip-key".into()),
                 api_key_env: None,

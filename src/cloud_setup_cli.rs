@@ -83,8 +83,8 @@ pub(crate) fn print_cloud_setup_to_stdout() -> Result<()> {
         config: RedactedCloudConfig::from(cloud),
         setup,
     };
-    let json = serde_json::to_string_pretty(&wire)
-        .map_err(|e| anyhow!("serialise cloud setup: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(&wire).map_err(|e| anyhow!("serialise cloud setup: {e}"))?;
     println!("{json}");
     Ok(())
 }
@@ -169,7 +169,10 @@ mod tests {
         let cfg = cloud_cfg().cloud_provider.unwrap();
         let red = RedactedCloudConfig::from(&cfg);
         let json = serde_json::to_string(&red).unwrap();
-        assert!(!json.contains("test-key"), "redacted JSON leaked key: {json}");
+        assert!(
+            !json.contains("test-key"),
+            "redacted JSON leaked key: {json}"
+        );
         // Default serde rename is snake_case; field appears as
         // "api_key_resolved" in the JSON output.
         assert!(json.contains("api_key_resolved"));
@@ -185,7 +188,10 @@ mod tests {
         std::env::set_var("TUI_TEST_ENV_KEY", "env-value");
         let red = RedactedCloudConfig::from(&cfg);
         let json = serde_json::to_string(&red).unwrap();
-        assert!(!json.contains("env-value"), "redacted JSON leaked env key: {json}");
+        assert!(
+            !json.contains("env-value"),
+            "redacted JSON leaked env key: {json}"
+        );
         assert!(red.api_key_resolved);
         assert_eq!(red.api_key_source, "env-or-field");
         std::env::remove_var("TUI_TEST_ENV_KEY");
@@ -224,7 +230,12 @@ mod tests {
                         || a.to_string_lossy() == "--cloud-setup"
                 })
                 .collect();
-            assert_eq!(matches.len(), 1, "argv {:?} should match exactly one alias", argv);
+            assert_eq!(
+                matches.len(),
+                1,
+                "argv {:?} should match exactly one alias",
+                argv
+            );
         }
     }
 }

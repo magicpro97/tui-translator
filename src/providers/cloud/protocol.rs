@@ -173,7 +173,9 @@ pub struct TranslationConfig {
     pub echo_target_language: bool,
 }
 
-fn is_false_bool(b: &bool) -> bool { !*b }
+fn is_false_bool(b: &bool) -> bool {
+    !*b
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SystemInstruction {
@@ -382,18 +384,12 @@ pub enum CloudStreamEvent {
 
     /// Partial or final transcript of the *source* (input) audio.
     /// `finished = true` indicates no further extension.
-    InputTranscript {
-        text: String,
-        finished: bool,
-    },
+    InputTranscript { text: String, finished: bool },
 
     /// Partial or final transcript of the *translated* (output) text.
     /// `finished = true` indicates no further extension.  The TUI
     /// uses this to render the target-language subtitle.
-    OutputTranscript {
-        text: String,
-        finished: bool,
-    },
+    OutputTranscript { text: String, finished: bool },
 
     /// Incremental token-usage update.  The transport task accumulates
     /// these into a per-session total exposed in the cost dashboard.
@@ -546,7 +542,9 @@ pub fn into_events(msg: ServerMessage) -> Vec<CloudStreamEvent> {
         // seconds out; if it doesn't parse, we leave `time_left_secs`
         // as None.
         let secs = g.time_left.as_deref().and_then(parse_protobuf_seconds);
-        out.push(CloudStreamEvent::GoAway { time_left_secs: secs });
+        out.push(CloudStreamEvent::GoAway {
+            time_left_secs: secs,
+        });
     }
     if let Some(err) = msg.error {
         out.push(CloudStreamEvent::Closed {
@@ -660,7 +658,10 @@ mod tests {
             "models/gemini-3.5-live-translate-preview"
         );
         // response_modalities is just TEXT, not AUDIO.
-        assert_eq!(v["setup"]["generationConfig"]["responseModalities"], json!(["TEXT"]));
+        assert_eq!(
+            v["setup"]["generationConfig"]["responseModalities"],
+            json!(["TEXT"])
+        );
         // echoTargetLanguage omitted when false (skip_serializing_if).
         assert!(v["setup"]["translationConfig"]
             .as_object()
@@ -763,7 +764,10 @@ mod tests {
         // captured but for the v0.3.0 UI we surface it via
         // outputTranscription, not the model_turn field.
         assert_eq!(events.len(), 2);
-        assert!(matches!(events[0], CloudStreamEvent::OutputTranscript { .. }));
+        assert!(matches!(
+            events[0],
+            CloudStreamEvent::OutputTranscript { .. }
+        ));
         let usage = match &events[1] {
             CloudStreamEvent::Usage(u) => u,
             _ => panic!("expected Usage, got {:?}", events[1]),
@@ -815,7 +819,12 @@ mod tests {
         let raw = json!({"goAway": {"timeLeft": "30s"}});
         let msg: ServerMessage = serde_json::from_value(raw).unwrap();
         let events = into_events(msg);
-        assert_eq!(events, vec![CloudStreamEvent::GoAway { time_left_secs: Some(30) }]);
+        assert_eq!(
+            events,
+            vec![CloudStreamEvent::GoAway {
+                time_left_secs: Some(30)
+            }]
+        );
     }
 
     #[test]

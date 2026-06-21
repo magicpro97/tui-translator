@@ -8,6 +8,11 @@ mod audio;
 
 #[path = "../src/config/mod.rs"]
 mod config;
+// `AppConfig::cloud_provider`'s field type is
+// `crate::providers::cloud::CloudConfig`, so the integration
+// test target must include the providers module too.
+#[path = "../src/providers/mod.rs"]
+mod providers;
 #[path = "../src/quality_preset.rs"]
 mod quality_preset;
 #[path = "../src/sys_caps.rs"]
