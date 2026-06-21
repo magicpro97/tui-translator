@@ -43,14 +43,13 @@
 //! should switch to it.
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use super::CloudError;
 
 // ── Style hint (re-exported in mod.rs) ───────────────────────────────────────
 
 /// Translation style hint.  Passed to the model as part of the system
-/// instruction (see [`protocol::build_system_instruction`]).  The Live API
+/// instruction (see `protocol::build_system_instruction`).  The Live API
 /// has no first-class style field, so this is best-effort.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -224,8 +223,8 @@ pub struct AudioBlob {
 
 // ── Server messages (server → client) ───────────────────────────────────────
 
-/// One wire frame from the server.  Decoded into [`ServerEvent`]s by
-/// the `events()` consumer; the user-facing [`CloudStreamEvent`] is
+/// One wire frame from the server.  Decoded into `ServerEvent`s by
+/// the `events()` consumer; the user-facing `CloudStreamEvent` is
 /// a stricter wrapper that hides fields we don't need.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -445,9 +444,8 @@ impl From<&UsageMetadata> for UsageStats {
             }
         }
         for d in &m.response_tokens_details {
-            match d.modality.as_str() {
-                "TEXT" => s.text_output_tokens = d.token_count,
-                _ => {}
+            if d.modality.as_str() == "TEXT" {
+                s.text_output_tokens = d.token_count;
             }
         }
         s

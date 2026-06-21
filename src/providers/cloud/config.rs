@@ -302,10 +302,9 @@ mod tests {
     // `#[path]`-includes the `providers` module to also include
     // `src/config/mod.rs`, which is the wrong dependency
     // direction (config depends on cloud, not the other way).
-    // The tests in the sibling file cover:
-    //   - absent cloud_provider in AppConfig validates OK
-    //   - valid cloud_provider in AppConfig validates OK
-    //   - empty target_language in cloud_provider is rejected
-    //   - JSON round-trip preserves the kebab-case CloudVendor
-    // See that file for the actual tests. ─────────────────
+    // The tests in the sibling file cover absent
+    // cloud_provider, valid cloud_provider, empty
+    // target_language rejection, and JSON round-trip that
+    // preserves the kebab-case CloudVendor.  See that file
+    // for the actual tests. ─────────────────
 }

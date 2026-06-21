@@ -36,7 +36,7 @@
 //! All wire failures (network, auth, parse) are surfaced via
 //! `CloudError`.  Terminal `error` frames are mapped to
 //! `CloudError::Auth` / `RateLimit` / `SetupFailed` / `Protocol`
-//! by [`protocol::check_terminal_error`].
+//! by `protocol::check_terminal_error`.
 
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -48,12 +48,12 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use super::config::CloudConfig;
 use super::protocol::{
     build_audio_frame, build_stream_end_frame, build_system_instruction, check_terminal_error,
-    into_events, EmptyObject, RealtimeInput, ServerMessage, SetupMessage, TranslationStyle,
+    into_events, EmptyObject, ServerMessage, SetupMessage, TranslationStyle,
 };
 use super::{
     AudioCommand, CloudError, CloudStreamEvent, CloudStreamProvider, CloudStreamSession,
@@ -262,9 +262,7 @@ async fn run_session(
                         continue;
                     }
                 };
-                if let Err(e) = check_terminal_error(&msg) {
-                    return Err(e);
-                }
+                check_terminal_error(&msg)?;
                 for ev in into_events(msg) {
                     let is_close = matches!(ev, CloudStreamEvent::Closed { .. });
                     // Ignore send errors — receivers may have been
@@ -365,13 +363,6 @@ fn build_setup(cfg: &CloudConfig) -> SetupMessage {
 pub fn build_setup_public(cfg: &CloudConfig) -> SetupMessage {
     build_setup(cfg)
 }
-
-// Suppress unused-import warning for `RealtimeInput` which is not
-// directly named in this file but is the type returned by
-// `build_audio_frame` / `build_stream_end_frame`.  Rust doesn't
-// require the import but clippy on stricter modes might.
-const _: Option<RealtimeInput> = None;
-
 // ── Tests (offline) ────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -487,13 +478,10 @@ mod tests {
         // model is a string.
         assert!(setup["model"].is_string());
         // generationConfig.responseModalities is a non-empty array.
-        assert!(
-            setup["generationConfig"]["responseModalities"]
-                .as_array()
-                .unwrap()
-                .len()
-                > 0
-        );
+        assert!(!setup["generationConfig"]["responseModalities"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         // translationConfig.targetLanguageCode is set.
         assert!(setup["translationConfig"]["targetLanguageCode"].is_string());
         // Both transcription configs are empty objects.
@@ -501,8 +489,3 @@ mod tests {
         assert_eq!(setup["outputAudioTranscription"], serde_json::json!({}));
     }
 }
-
-// Suppress `unused_import` for `RealtimeInput` which is exercised only
-// through `build_audio_frame` / `build_stream_end_frame`.
-#[allow(dead_code)]
-const _REALTIME_INPUT_MARKER: fn() -> Option<RealtimeInput> = || None;

@@ -19,20 +19,19 @@
 //! to what the running app would send.
 //!
 //! Exit codes:
-//! - 0: cloud_provider is configured, JSON printed.
-//! - 2: cloud_provider is absent from config; nothing to print.
-//! - 3: cloud_provider is present but malformed (config validation
-//!      failed); the validation error is printed to stderr.
-//! - 4: cloud_provider is present but the API key cannot be
-//!      resolved.  We do NOT print the setup JSON in this case —
-//!      the server would reject the request anyway and printing
-//!      the wire would mislead a user into thinking the key is
-//!      not required for the live call (it is).
+//!   - 0: cloud_provider is configured, JSON printed.
+//!   - 2: cloud_provider is absent from config; nothing to print.
+//!   - 3: cloud_provider is present but malformed (config validation
+//!     failed); the validation error is printed to stderr.
+//!   - 4: cloud_provider is present but the API key cannot be
+//!     resolved.  We do NOT print the setup JSON in this case —
+//!     the server would reject the request anyway and printing
+//!     the wire would mislead a user into thinking the key is
+//!     not required for the live call (it is).
 
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
 
-use crate::config::AppConfig;
 use crate::providers::cloud::build_setup_public;
 
 /// True if the user passed `--print-cloud-setup` (or one of the

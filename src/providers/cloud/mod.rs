@@ -6,7 +6,7 @@
 //! (released 2026-06-09) which combines ASR + translation in a single
 //! streaming WebSocket call.  The local stack (Whisper.cpp + OPUS-MT/Qwen
 //! + Supertonic) is preserved; cloud is opt-in via the `cloud_provider`
-//! config field.
+//!   config field.
 //!
 //! # Design constraints
 //!
@@ -46,7 +46,6 @@
 //!   gemini_live_translate_tests.rs — offline unit tests
 //! ```
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
 
@@ -54,16 +53,22 @@ pub mod config;
 pub mod gemini_live_translate;
 pub mod protocol;
 
+// `pub use` re-exports below form the public API surface of the
+// `cloud` module.  The items are intentionally re-exported even
+// when no internal code uses them, because external test targets
+// (notably `src/cloud_setup_cli.rs` and the `tui-translator` bin)
+// reach the types through these aliases.  The `#[allow]` keeps
+// `cargo clippy -- -D warnings` from flagging the re-exports as
+// unused when a particular integration-test target happens to
+// pull in `mod cloud;` without exercising every item.
+#[allow(unused_imports)]
 pub use config::{CloudConfig, CloudVendor};
+#[allow(unused_imports)]
 pub use gemini_live_translate::{
     build_setup_public, GeminiLiveTranslateProvider, GEMINI_LIVE_TRANSLATE_MODEL,
 };
+#[allow(unused_imports)]
 pub use protocol::{CloudStreamEvent, SetupMessage, TranslationStyle, UsageStats};
-
-/// `build_setup_public` is re-exported from `gemini_live_translate`
-/// above. It returns the `SetupMessage` struct the transport task
-/// would serialise to the WebSocket; callers (tests, future
-/// diagnostic commands) can `serde_json::to_string` it.
 
 // ── Provider trait ───────────────────────────────────────────────────────────
 
@@ -100,7 +105,7 @@ pub trait CloudStreamProvider: Send + Sync {
 ///
 /// Cloning a session is cheap; the underlying transport is shared via
 /// interior channels.  Multiple event consumers can subscribe concurrently
-/// via [`events`].
+/// via `events()`.
 #[derive(Clone)]
 pub struct CloudStreamSession {
     /// Audio-input side.  Producer (caller) writes; consumer (transport
@@ -143,7 +148,7 @@ impl CloudStreamSession {
     ///
     /// Returns `Err` if the transport task has stopped (server `goAway`,
     /// WebSocket dropped, etc.).  The caller should subscribe to
-    /// [`events`] to learn the cause.
+    /// `events()` to learn the cause.
     pub async fn send_pcm(&self, chunk: Vec<u8>) -> Result<(), CloudError> {
         self.audio_tx
             .send(AudioCommand::Pcm(chunk))
@@ -152,7 +157,7 @@ impl CloudStreamSession {
     }
 
     /// Signal end of audio stream.  Server may emit a final transcript
-    /// before closing.  After this returns, [`events`] continues to be
+    /// before closing.  After this returns, `events()` continues to be
     /// usable until the server sends the `Closed` event.
     pub async fn finish(&self) -> Result<(), CloudError> {
         self.audio_tx

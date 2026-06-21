@@ -800,18 +800,20 @@ pub struct AppConfig {
 
     /// Cloud streaming provider config (v0.3.0+, ADR-0008-rev1).
     ///
-    /// When absent, the app uses the local-only stack (Whisper + Qwen
-    /// + Supertonic) and never sends audio to the network.  When
-    /// present, the configured cloud vendor is consulted as an
-    /// opt-in branch; the local path is still available as a
-    /// fallback.
+    /// Behaviour by presence:
+    ///   - When absent, the app uses the local-only stack (Whisper +
+    ///     Qwen + Supertonic) and never sends audio to the network.
+    ///   - When present, the configured cloud vendor is consulted as
+    ///     an opt-in branch; the local path is still available as a
+    ///     fallback.
     ///
     /// See `src/providers/cloud/` for the streaming provider trait and
     /// `docs/adr/0008-rev1-adopt-gemini-live-translate.md` for the
-    /// threat model and vendor rationale.  Adding a new vendor
-    /// requires adding a new `CloudVendor` variant and an
-    /// implementation of `CloudStreamProvider`; the field here is
-    /// deserialised transparently.
+    /// threat model and vendor rationale.
+    ///
+    /// Adding a new vendor requires adding a new `CloudVendor` variant
+    /// and an implementation of `CloudStreamProvider`; the field here
+    /// is deserialised transparently.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cloud_provider: Option<crate::providers::cloud::CloudConfig>,
 
