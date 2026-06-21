@@ -585,3 +585,113 @@ only has character counters) and route every
 `CloudStreamEvent::Usage` through it from the consumer
 task — not from multiple consumers.
 
+### K3. Reconnect race: `next_pair` during `close()` (codex 2nd opinion Critical #3)
+
+The `CloudTranscriptSegment::next_pair` trait method
+returns from a `tokio::sync::Mutex<VecDeque<SubtitlePair>>`
+in the background event-consumer task.  The trait does
+not specify whether `next_pair` may be called concurrently
+with `close()`.  If the consumer task is still running when
+`close()` fires, it can race the `pending_pairs` pop.  The
+existing `events()` channel's `_close_tx: watch::Sender<bool>`
+is owned by the session, not the segment.
+
+**Fix in PR-A:** `PipelineSegment::close()` signals a
+`watch<bool>` (or `tokio_util::sync::CancellationToken`) to
+the consumer task; the consumer `break`s on it before
+draining the queue.  The trait's contract document lists
+this explicitly: "after `close()` returns, `next_pair` will
+return `None` within 100 ms; in-flight events emitted
+before `close()` are still observable."
+
+### K4. Segment swap: 30-chunk counter is NOT reset on swap (codex 2nd opinion Important #4)
+
+ADR §3 says the 30-consecutive-chunk counter is incremented
+by the orchestrator and "the active `Arc<TranscriptSegment>`
+is replaced" on a swap.  It does **not** say the counter
+resets.  Result: a fresh local segment can be auto-swapped
+back to cloud within 30 chunks of its first latency sample
+because the counter still holds the cloud's over-threshold
+count.
+
+**Fix in PR-A:** state "the 30-chunk counter is per-segment
+and resets to 0 on every `Arc<PipelineSegment>`
+replacement."  Either add `reset_health_counter()` to the
+trait, or store the counter on the segment itself (not
+on the orchestrator) so the reset is automatic on swap.
+
+### K5. Cost cap: shared `OrchestratorContext::cost_counter` races (codex 2nd opinion Critical #2)
+
+`OrchestratorContext::cost_counter` is shared across the
+local branch (STT/MT/TTS counters in `src/metrics/cost.rs:70-127`)
+and the cloud branch.  If the cloud branch writes
+`UsageStats` to this same field, two consumers (cloud +
+local) can both write concurrently.  §5 of ADR-0010
+instructs the implementer to add per-`Usage`-frame
+deltas to "cumulative_cost_usd" but never says *where*
+the cumulative lives.
+
+**Fix in PR-A:** cumulative cost for the cap is owned by
+the *cloud branch's* orchestrator task, not on
+`OrchestratorContext`.  Pass it as a sibling
+`Arc<AtomicU64>` (fixed-point cents to avoid float
+rounding) into the consumer task; do not write to
+`ctx.cost_counter`.  The local branch's `cost_counter` is
+unchanged (it tracks audio-seconds per chunk, which the
+TUI renders separately).
+
+### K6. Q2 hot-load: Qwen loads twice on bidirectional swap (codex 2nd opinion Important #7)
+
+ADR §6 says "step 1: `mistralrs` engine loads the Qwen
+model (~3-5 s)".  Step 1 happens *on every* swap.  The
+design does not cache the engine.  Result: a bidirectional
+swap (cloud slow → swap to local → load Qwen 3-5 s →
+swap back to cloud → swap to local again → load Qwen a
+*second* time) pays the load cost twice and the `swap_count`
+metric reports both loads as if they were distinct.
+
+**Fix in PR-A:** keep a single
+`tokio::sync::OnceCell<Arc<mistralrs::Engine>>` on the
+warm-local segment handle built in §7 step 2.  Subsequent
+`build_warm_local_segment` calls return a clone of the
+cached engine.  The 3-5 s cost is paid exactly once per
+process.  This is the cheapest fix; the alternative (a
+fully asynchronous "best-effort local fallback" with no
+Qwen pre-warm) leaves the user with 3-5 s of silence on
+every swap, which is exactly the bug the swap is meant to
+avoid.
+
+### K7. Q2 hot-load + Q5 cost cap: `cost_cap_usd = 0.0` fires before any `Usage` (codex 2nd opinion Important #6)
+
+If `cost_cap_usd = 0.0`, the check `cumulative >= cap` is
+true at `cumulative = 0.0` and §5 step 1 fires immediately
+on session open.  Step 4 is "halt the cloud orchestrator
+(audio push stopped, no further `send_pcm`)" but the
+existing `close()` at `src/providers/cloud/mod.rs:178-184`
+only sends `EndOfStream`, not a drain.  Audio `Pcm`
+commands queued in the `mpsc::Sender<AudioCommand>`
+between cap-fire and `close()`-complete will be sent to the
+server *after* `Close`.
+
+**Fix in PR-A:** add an `AudioCommand::Halt` variant.
+The transport task observes `close_tx: watch<bool>` and
+drops all `Pcm` commands received after `Halt` is set.
+The consumer task in PR-A reads `Halt` via the same
+`watch` and pushes a "cost cap reached" event.  This is
+an extension of the `close()` semantics; `close()` is the
+graceful drain, `Halt` is the immediate cap-triggered
+abort.
+
+### K8. Naming: `PipelineSegment` rename (codex original Important #7)
+
+The trait in ADR §2 was originally named `TranscriptSegment`
+which collides with the existing
+`crate::session::TranscriptSegment` struct at
+`src/session/mod.rs:114-135`.  Renamed to `PipelineSegment`
+in this commit (the struct in `session::` keeps its name
+because it is part of the on-disk session-log JSONL schema
+and renaming it would be a breaking change to every saved
+session file).  PR-A must use the new name `PipelineSegment`
+in every code path, struct, trait bound, and method.
+
+

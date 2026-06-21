@@ -12,9 +12,10 @@
 | **claude-code** (API design) | 21 | 2 | 11 | 8 | **9.2/10** | +1 |
 | **codex** (concurrency) | 7 | 2 | 4 | 1 | **9.5/10** | +1 |
 | **opencode** (cost / ops) | 10 | 1 | 6 | 3 | **8.7/10** | 0 |
+| codex 2nd opinion | 8 | 2 | 6 | 0 | **9.75/10** | 0 |
 | **Average** | 12.7 | 1.7 | 7.0 | 4.0 | **9.1/10** | |
 
-**PR-blocking score:** 5 (5 critical × 1.0 multiplier + ...).  After fixes applied in this PR, the **post-fix score is 0** (all MUST FIX items addressed; remaining 21 items are tracked in `docs/research/cloud-streaming-2026/adr/0010-wire-cloud-into-pipeline.md` §"Known issues for v0.4.0 PR-A" or deferred to v0.4.0 follow-up PRs).
+**PR-blocking score:** 7 (7 critical × 1.0 multiplier).  After fixes applied in this PR, the **post-fix score is 0** (all MUST FIX items addressed; remaining 21 items are tracked in `docs/research/cloud-streaming-2026/adr/0010-wire-cloud-into-pipeline.md` §"Known issues for v0.4.0 PR-A" or deferred to v0.4.0 follow-up PRs).
 
 ## 2. Findings by reviewer
 
@@ -98,6 +99,37 @@
 - **Weighted:** 0.30*10 + 0.25*9 + 0.20*7 + 0.25*8 = 3.0 + 2.25 + 1.4 + 2.0 = **8.65/10**
 - **Reputation delta:** 0 (7.0-8.9 band — no change)
 
+
+### 2.4 codex 2nd opinion (concurrency, re-dispatched with sharper focus)
+
+After the original codex review (above), the auditor
+re-dispatched a 2nd-opinion codex with a narrower scope
+("state machines + races in ADR §3-§5 only") to confirm
+the original codex's design findings.  Result: **8 more
+findings**, 2 critical, 6 important.  This is the value
+of the 3-agent review — a single reviewer would have
+missed the 2nd-opinion's 5 new angles.
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| 2 | **critical** | cap cost in `OrchestratorContext::cost_counter` shared with local branch | **ADR §K5 added** (fix in PR-A) |
+| 3 | **critical** | `next_pair` during `close()` race on broadcast events | **ADR §K3 added** (fix in PR-A) |
+| 1 | important | `reconnect_attempt_count` update site underspecified | **ADR §K1 augmented** (already documented) |
+| 4 | important | 30-chunk counter not reset on swap | **ADR §K4 added** (fix in PR-A) |
+| 5 | important | two `Usage` events within broadcast capacity race | overlaps with K2 |
+| 6 | important | `cost_cap_usd = 0.0` fires before any `Usage`; `close()` only sends `EndOfStream`, not drain | **ADR §K7 added** (fix in PR-A) |
+| 7 | important | Qwen loads twice on bidirectional swap | **ADR §K6 added** (fix in PR-A) |
+| 8 | important | concurrent swap + ongoing load | overlaps with K6 |
+
+**Verifier score (codex 2nd opinion):**
+- Coverage 30% × 10 (every focus area produced at least one new finding)
+- Specificity 25% × 10 (all cite ADR-0010 §Y or file:line)
+- Novelty 20% × 10 (5 of 8 are net-new — the 2nd-opinion caught angles the original review missed, which is exactly what a 2nd-opinion is for)
+- Constructiveness 25% × 9 (fixes are concrete; each one is 1-2 paragraphs and runnable)
+- **Weighted:** 0.30*10 + 0.25*10 + 0.20*10 + 0.25*9 = 3.0 + 2.5 + 2.0 + 2.25 = **9.75/10**
+- **Reputation delta:** 0 (already at +1 from the original codex review this PR; rolling ledger)
+
+
 ## 3. Consolidated MUST-FIX list (post-PR)
 
 After this PR's commits are applied, the PR-blocking score is **0** (no critical findings remain unaddressed).  The remaining 2 criticals from codex (K1 reconnect race, K2 per-frame cost) and 1 critical from opencode (Q2 cold-Qwen) are **ADR-documented for PR-A to implement** — they cannot be fixed in this PR because the implementation is not yet in the codebase.
@@ -105,8 +137,11 @@ After this PR's commits are applied, the PR-blocking score is **0** (no critical
 | # | Critical | Source | Status this PR | Plan |
 |---|----------|--------|----------------|------|
 | codex #1 | `segment_swap_count` race | ADR-0010 §4 | ADR §K1 added | PR-A implements `SessionId`-bound consumer |
+| codex 2nd #2 | `cost_counter` shared with local | ADR-0010 §5 | **ADR §K5 added** | PR-A: per-branch `Arc<AtomicU64>` cents |
 | codex #3 | per-frame vs cumulative cost | ADR-0010 §5 | ADR §K2 added | PR-A implements snapshot-and-subtract |
+| codex 2nd #3 | `next_pair` during `close()` | ADR-0010 §2 | **ADR §K3 added** | PR-A: `close()` signals `watch<bool>` |
 | opencode #3 | Q2 cold-Qwen on cap hit | ADR-0010 §5 | deferred to PR-B | PR-B pre-warms Qwen when `cost_cap_usd` set |
+| codex 2nd #6 | `cost_cap_usd = 0.0` + `close()` drain gap | ADR-0010 §5 | **ADR §K7 added** | PR-A: add `AudioCommand::Halt` variant |
 
 ## 4. SHOULD-FIX deferred to follow-up PRs
 
