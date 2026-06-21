@@ -42,7 +42,7 @@ Forcing the cloud session into `SttProvider` / `MtProvider` requires a fake-chun
 | Q1 | Refactor `OrchestratorContext` (Option A, deep) vs minimal field (Option B) | **A** — full refactor, `Arc<>`-wrap every field, `#[derive(Clone)]`.  Touches ~20 call sites.  Bigger blast radius but cleanest end state. |
 | Q2 | Fallback to local STT/MT on cloud `Closed { reason: Auth \| RateLimit }` | **YES** — local providers stay hot-loaded, idle, ready to swap in.  Acceptable cost: ~2× RAM for the duration of the cloud session. |
 | Q3 | Reconnect on transient WebSocket drop | **YES** — exponential backoff (100 ms → 30 s, jittered), max 10 attempts, then surface error and exit. |
-| Q4 | Provider selection: perf-first (cloud) vs swap-on-failure | **PERF-FIRST, SWAPPABLE** — default is cloud (fused STT+MT, single round-trip).  When `1 mắt xích trong pipeline tệ` (any segment is slow, erroring, or stale), swap to a fully-local pipeline.  The swap is structural (different `TranscriptSegment` loaded), not runtime hot-swap. |
+| Q4 | Provider selection: perf-first (cloud) vs swap-on-failure | **PERF-FIRST, SWAPPABLE** — default is cloud (fused STT+MT, single round-trip).  When `1 mắt xích trong pipeline tệ` (any segment is slow, erroring, or stale), swap to a fully-local pipeline.  The swap is structural (different `PipelineSegment` loaded), not runtime hot-swap. |
 | Q5 | Cost cap: auto-disconnect on USD threshold | **YES** — `cloud_provider.cost_cap_usd` (optional f64).  When `estimated_cost_usd >= cost_cap_usd`, send `Close` to the server, drain final events, exit orchestrator with "cost cap reached" status. |
 
 ## Considered options
@@ -123,7 +123,7 @@ pub struct OrchestratorContext {
 
 Every existing call site that builds the context (e.g. `OrchestratorContext::from_app_state`) wraps the value fields in `Arc::new(...)` instead of moving them in.  Tests that build contexts by hand need a similar update.
 
-### 2. `TranscriptSegment` abstraction (Q4 perf-first swappable)
+### 2. `PipelineSegment` abstraction (Q4 perf-first swappable)
 
 A new trait that abstracts a "thing that produces `SubtitlePair`s from `AudioChunk`s":
 
@@ -141,7 +141,18 @@ A new trait that abstracts a "thing that produces `SubtitlePair`s from `AudioChu
 /// the fallback when the cloud session is unavailable, or as the
 /// primary when the user explicitly opts out of cloud.
 #[async_trait]
-pub trait TranscriptSegment: Send + Sync {
+pub trait PipelineSegment: Send + Sync {
+
+// ============================================================================
+// NAME COLLISION (codex review 2026-06-21, Finding 7):
+//
+// A public struct `crate::session::TranscriptSegment` already exists at
+// src/session/mod.rs:114-135.  Renaming the trait to `PipelineSegment`
+// avoids the collision and preserves the on-disk session log schema
+// (the struct is part of the JSONL wire format and renaming it would
+// be a breaking change to every saved session file).  PR-A must use
+// the new name `PipelineSegment` everywhere.
+// ============================================================================
     /// Push an audio chunk to the segment.  Non-blocking for cloud
     /// (the bytes are enqueued for the WebSocket frame).  Blocks
     /// for local STT (the per-chunk `transcribe` call is awaited).
@@ -213,7 +224,7 @@ The TUI's perf overlay (new widget, issue #83 extension) tracks per-segment late
 3. Resumes audio push on the new segment.
 4. Updates `ctx.session_metrics` with a `segment_swap` event (visible in the dashboard).
 
-The swap is a structural state change, not a hot-swap: the active `Arc<TranscriptSegment>` on the context is replaced.
+The swap is a structural state change, not a hot-swap: the active `Arc<PipelineSegment>` on the context is replaced.
 
 **Thresholds (config):**
 - `cloud.latency_threshold_ms` (default 1500 ms) — if cloud p50 > this for 30 chunks, swap to local.
@@ -353,7 +364,7 @@ A new "force-swap" keybinding (`F8`) lets the user manually trigger a segment sw
 - ADR-0010 (this file).
 - Wrap every field of `OrchestratorContext` in `Arc<...>`, add `#[derive(Clone)]`.
 - Add `cloud_session: Option<CloudStreamSession>` field.
-- Add empty `TranscriptSegment` trait + 2 stub impls (`CloudTranscriptSegment`, `LocalTranscriptSegment`).
+- Add empty `PipelineSegment` trait + 2 stub impls (`CloudTranscriptSegment`, `LocalTranscriptSegment`).
 - Add `cost_cap_usd: Option<f64>` to `CloudConfig` + validation.
 - Add new fields to `SessionMetrics` (cloud tokens + swap/reconnect counts).
 - All 1951+ existing tests still pass; clippy clean.
@@ -392,7 +403,7 @@ The user (linhn) requested cross-review by claude-code, codex, opencode.  Each r
 ### Reviewer 1: claude-code
 
 **Focus:** API design soundness + test coverage.
-**Brief:** "Read ADR-0010.  Identify any Rust API design issues (trait bounds, lifetime parameters, async signature smells).  Walk through `TranscriptSegment::next_pair` and check whether the async signature is correct given the segment runs a background task.  Suggest test cases the 12-15 unit tests in PR-B should cover."
+**Brief:** "Read ADR-0010.  Identify any Rust API design issues (trait bounds, lifetime parameters, async signature smells).  Walk through `PipelineSegment::next_pair` and check whether the async signature is correct given the segment runs a background task.  Suggest test cases the 12-15 unit tests in PR-B should cover."
 
 **Output:** a list of (file:line, issue, fix-suggestion) tuples.  Empty list = pass.
 
@@ -508,3 +519,69 @@ removing the corresponding legacy override on merge:
 
 After step 6, the `check-file-size.sh` override entry for
 `src/config/mod.rs` is removed.
+
+## Appendix: known issues for v0.4.0 PR-A (from the 3-agent review)
+
+The 3-agent adversarial review surfaced 2 critical findings
+that must be addressed in PR-A (the first implementation
+commit).  Both are design-level, not script-level; the
+fix lives in the code that PR-A lands.
+
+### K1. Reconnect state machine: `segment_swap_count` race (codex Critical 1)
+
+`CloudStreamSession` exposes `events()` which returns a
+fresh `broadcast::Receiver` per call (src/providers/cloud/mod.rs:173-175).
+The `broadcast::Sender` is shared (mod.rs:116) and the
+sender is held by the transport task spawned in
+`gemini_live_translate.rs:112-130`.  On reconnect, a NEW
+session is constructed with a NEW `event_tx`.  The OLD
+session's transport task is still alive (the sender is
+`Clone`); late subscribers to the old `events()` receiver
+can still receive stale `Usage` events.  If the
+orchestrator's Q4 perf-overlay still holds a subscription
+to the old receiver, the `Usage`-driven "healthy" reset
+(and the `segment_swap_count` increment path for Q4) can
+fire from the OLD session while the NEW session's events
+arrive on a different receiver, producing a double count.
+
+**Fix in PR-A:** tie event consumption to a `SessionId`
+(UUID minted at `open()`).  The consumer task keeps the
+single `events()` receiver it got at session start.  On
+reconnect, the old consumer is dropped (its `Drop`
+cancels the consumer task via a `watch::Sender<bool>`)
+and the new session hands a fresh receiver to a new
+consumer.  Reconnect counter and swap counter increment
+inside the consumer task on its own session id, never
+from a foreign receiver.  Also drop the `CloudStreamSession`
+itself (not just `close()` it) at the swap boundary so
+the old transport task is torn down.
+
+### K2. Cost cap: per-frame vs cumulative token counts (codex Critical 3)
+
+The Gemini Live `usageMetadata` is **session-cumulative**:
+every frame is a snapshot of the running total, not a
+delta.  The current `UsageStats::estimated_cost_usd`
+(protocol.rs:422-428) computes a per-frame USD value
+correctly, but the doc-comment on lines 407-408 ("Summed
+across frames") and the original ADR §5 instruction
+("sum per-frame cost") would lead an implementer to add
+per-frame USD values across frames, double-counting
+roughly `n(n+1)/2` over n frames.
+
+**Fix in PR-A:** snapshot-and-subtract.  Store
+`last_seen_total_tokens: u32`.  On each `Usage` frame,
+the per-frame delta is
+`frame.total_tokens - last_seen_total_tokens`; update
+`last_seen_total_tokens = frame.total_tokens`.  Per-frame
+USD = `delta_audio * $3/1M + delta_text_in * $0.30/1M +
+delta_text_out * $2/1M`.  Cumulative cost = sum of
+deltas.  On `Ready` (new session), zero `last_seen_total_tokens`.
+
+Drop the ADR §5 instruction "sum per-frame cost" and
+replace with "subtract the previous `total_tokens` and
+sum the deltas".  Add a `CostReporter::record_cloud_usage(&self, usage: UsageStats)`
+method (the existing trait at src/providers/mod.rs:44-52
+only has character counters) and route every
+`CloudStreamEvent::Usage` through it from the consumer
+task — not from multiple consumers.
+
