@@ -143,6 +143,7 @@ fn degenerate_histogram() -> Histogram<u64> {
 /// allow-unwrap: #505 — terminal fallback; `new_with_max(1, 0)` is
 /// documented infallible by hdrhistogram.
 fn new_with_max_infallible() -> Histogram<u64> {
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     Histogram::<u64>::new_with_max(1, 0).expect("infallible") // allow-unwrap: #505
 }
 

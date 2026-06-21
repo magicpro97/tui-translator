@@ -70,6 +70,7 @@ pub const BUILTIN_LLM_MODELS: &[LlmModelEntry] = &[
 /// Panics if `BUILTIN_LLM_MODELS` is empty — this cannot happen with the
 /// static initializer above.
 pub fn default_model() -> &'static LlmModelEntry {
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     BUILTIN_LLM_MODELS
         .iter()
         .find(|e| e.id == DEFAULT_LLM_MODEL_ID)

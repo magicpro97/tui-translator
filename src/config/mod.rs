@@ -3573,11 +3573,14 @@ mod tests {
     // would defer the failure to the moment audio first hits the
     // network.
     //
-    // `CloudConfig` is re-exported as `crate::CloudConfig` in
-    // `main.rs` so that integration tests which `#[path]`-include
-    // `src/config/mod.rs` (but not `src/providers/mod.rs`) can still
-    // construct the type via the bin-root alias.
-
+    // The field type is `crate::providers::cloud::CloudConfig` (no
+    // bin-root re-export yet).  v0.4.0 PR-A may add a
+    // `pub use providers::cloud::CloudConfig;` to main.rs so that
+    // integration tests which `#[path]`-include this file (but
+    // not src/providers/mod.rs) can construct the type via a
+    // shorter path.  Today, the type is referenced by its full
+    // path everywhere.
+    //
     #[test]
     fn validate_accepts_absent_cloud_provider() {
         // Default AppConfig has cloud_provider: None; verify that

@@ -1,5 +1,32 @@
 //! Entry point for TUI Translator.
 //!
+//! Lint policy: this crate follows the "warn on dev, deny on CI"
+//! best practice from the Rust community.  Local builds surface
+//! new lints as warnings; CI's `cargo clippy -- -D warnings`
+//! denies them.  See `docs/architecture/CODE_STYLE.md` §8 for
+//! the rationale and the lint policy table.
+//!
+//! `clippy::all` is the default lint group and is already on at
+//! warn; CI's `-- -D warnings` is the deny gate.  We do NOT
+//! add `#![warn(clippy::all)]` here because it is a no-op that
+//! signals nothing new.  The deny below is the actual
+//! crate-level enforcement.
+//!
+//! Per CODE_STYLE §8, `clippy::pedantic` and `clippy::nursery`
+//! are NOT enabled here because they would flag hundreds of
+//! false positives in the legacy 7.6 k LOC `main.rs`.  New
+//! modules (added from v0.4.0 onward) enable pedantic and
+//! nursery locally; `disallowed-types` entries in `clippy.toml`
+//! enforce project-specific bans crate-wide.
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+// CODE_STYLE §7.3: `unwrap` is forbidden outside test code and
+// the dispatch entry of main.  Tests get a blanket allow because
+// the per-site annotation burden is too high for the 1 000+
+// test call sites; CODE_STYLE §7.3 explicitly permits
+// `unwrap()` and `expect()` in tests (idiomatic Rust testing).
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+//!
 //! Phase 0 goal: open a terminal window, show the placeholder loading screen
 //! (issue #26), and exit cleanly when the user presses `q` or `Ctrl+C`.
 //! A live audio-level bar (issue #31) is fed by the audio capture foundation
@@ -1561,6 +1588,7 @@ fn main() -> Result<()> {
                 // stt_source) get their own fresh Arcs.
                 if slot_mode == config::SlotMode::Dual {
                     if let Some(slot_b_rx) = slot_b_receiver {
+                        #[allow(clippy::expect_used, clippy::unwrap_used)]
                         let slot_b_cfg = cfg_snapshot
                             .slot_b()
                             .expect("slot_b() is Some when slot_mode is Dual");
