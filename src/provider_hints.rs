@@ -215,6 +215,7 @@ impl TrajectoryBudget {
 
 impl BudgetSampler for TrajectoryBudget {
     fn sample(&self) -> (u64, u8) {
+        #[allow(clippy::expect_used, clippy::unwrap_used)]
         let mut guard = self.series.lock().unwrap();
         if guard.is_empty() {
             self.fallback

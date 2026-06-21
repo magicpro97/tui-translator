@@ -101,6 +101,7 @@ pub fn validate_path_component(label: &str, component: &str) -> Result<()> {
     if component.chars().any(char::is_control) {
         bail!("`{label}` must not contain control characters");
     }
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     let trailing = component
         .chars()
         .last()

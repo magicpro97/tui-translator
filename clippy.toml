@@ -1,6 +1,23 @@
 # clippy configuration for tui-translator
 # Run: cargo clippy -- -D warnings
 # The CI pipeline treats all clippy warnings as errors.
+#
+# Per docs/architecture/CODE_STYLE.md §8, this file holds
+# *advisory* thresholds.  The deny gate is `cargo clippy -- -D warnings`
+# in CI.  Source code attributes in main.rs escalate individual lints
+# to warn-on-dev / deny-on-CI.
+#
+# Policy (clippy lint group → level):
+#   clippy::all         deny via `cargo clippy -- -D warnings`
+#   clippy::pedantic    warn on dev (CODE_STYLE §8)
+#   clippy::nursery     warn on dev (CODE_STYLE §8)
+#   clippy::restriction  not used blanket (use individual lints)
+#   clippy::cargo       warn on dev
+
+# Function / type size thresholds (CODE_STYLE §2.1).
+# These are *advisory* — they emit a warning, not a deny.
+# The deny gate is CI's `cargo clippy -- -D warnings` which
+# elevates every warning to an error.
 
 # Maximum complexity allowed in a single function before clippy complains
 cognitive-complexity-threshold = 15
@@ -10,3 +27,26 @@ too-many-lines-threshold = 80
 
 # Warn when a type has more than this many arguments in a constructor
 too-many-arguments-threshold = 7
+
+# Disallowed methods (CODE_STYLE §7.3).
+#
+# The `disallowed-methods` lint is the wrong tool for
+# `Option::unwrap` / `Result::unwrap` because those are
+# inherent methods on std types, not custom methods.  Use
+# clippy's built-in `clippy::unwrap_used` and
+# `clippy::expect_used` instead — they are the canonical
+# way to enforce "use `expect()` with a context message or
+# propagate the error" (CODE_STYLE §7.3).
+#
+# `clippy::unwrap_used` is enabled crate-wide by default
+# at the warn level (clippy's `restriction` group).  The
+# project lifts it to deny via the source-level attributes
+# in main.rs (the only crate-level entry point for tui-translator).
+# `clippy::expect_used` is the same lint group.
+#
+# `disallowed-methods` stays useful for project-specific
+# bans: e.g. `tokio::runtime::Runtime::block_on` inside the
+# audio thread, `std::process::exit` inside library code, etc.
+# When such cases come up, add them here with the simpler
+# "core::process::exit" form (no `<impl Trait>` wrapper).
+

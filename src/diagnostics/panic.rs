@@ -255,6 +255,7 @@ pub(crate) fn scrub_secrets(input: &str) -> String {
             i += skipped;
             continue;
         }
+        #[allow(clippy::expect_used, clippy::unwrap_used)]
         let ch = input[i..].chars().next().expect("non-empty remainder");
         out.push(ch);
         i += ch.len_utf8();

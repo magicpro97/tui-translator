@@ -163,7 +163,9 @@ impl Glossary {
     /// surface form.  Unknown indices are left as-is.
     pub fn unmask(&self, masked: &str, registry: &MaskRegistry) -> String {
         // Match __GTERM_<digits>__
+        #[allow(clippy::expect_used, clippy::unwrap_used)]
         let re = Regex::new(r"__GTERM_(\d+)__").expect("static regex is valid"); // allow-unwrap: #703
+        #[allow(clippy::expect_used, clippy::unwrap_used)]
         re.replace_all(masked, |caps: &regex::Captures<'_>| {
             let idx: usize = caps[1].parse().expect("regex guarantees digits only"); // allow-unwrap: #703
             registry

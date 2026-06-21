@@ -111,8 +111,10 @@ fn build_bundle(locale: Locale) -> Bundle {
     // module unit tests, so a parse or insert failure here is a build-time
     // programmer error rather than a runtime condition we can recover
     // from.  Keep the panic explicit and gate-acknowledged.
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     let resource = FluentResource::try_new(locale.ftl_source().to_string())
         .expect("locale catalog must be valid Fluent FTL"); // allow-unwrap: #481
+    #[allow(clippy::expect_used, clippy::unwrap_used)]
     bundle
         .add_resource(resource)
         .expect("locale catalog must add cleanly to its bundle"); // allow-unwrap: #481
