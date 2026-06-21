@@ -1569,6 +1569,7 @@ fn main() -> Result<()> {
                     // LLM-MT-04 (issue #699): pass MT customisation so the pipeline can
                     // use translate_with_context for LLM-class providers.
                     mt_customisation: cfg_snapshot.mt_customisation.clone(),
+                cloud_session: None,
                 };
 
                 orchestrator_join = Some(rt.spawn(pipeline::run_orchestrator(
@@ -1740,6 +1741,7 @@ fn main() -> Result<()> {
                                     tts_status: Arc::clone(&slot_b_state.tts_status),
                                     // LLM-MT-04 (issue #699): pass MT customisation for slot B.
                                     mt_customisation: cfg_snapshot.mt_customisation.clone(),
+                                cloud_session: None,
                                 };
                                 orchestrator_join_b = Some(rt.spawn(pipeline::run_orchestrator(
                                     slot_b_rx,

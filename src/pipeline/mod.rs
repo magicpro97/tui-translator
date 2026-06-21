@@ -384,6 +384,23 @@ pub struct OrchestratorContext {
     /// Non-LLM providers (OPUS-MT, Google) ignore this via the default
     /// [`crate::providers::MtProvider::translate_with_context`] implementation.
     pub mt_customisation: crate::config::MtCustomisation,
+
+    // ── Cloud streaming (v0.4.0, ADR-0010) ─────────────────────────────
+    /// Optional cloud streaming session.  When `Some`, the local
+    /// orchestrator's audio path is bypassed in favour of the cloud
+    /// session's `push` / `next_pair` API.  When `None`, the
+    /// historical local STT + MT pipeline runs.
+    ///
+    /// Construction is in `main.rs` (not pipeline/mod.rs) per
+    /// CODE_STYLE §3.3 dependency-direction rule: the
+    /// pipeline module must not `use crate::providers::cloud::…`
+    /// to construct a session.
+    ///
+    /// PR-A.1 only adds the field.  The `#[derive(Clone)]` is
+    /// added in PR-A.3 after every other field is Arc-wrapped.
+    /// Until then, the context is `!Clone` (no consumer tasks
+    /// yet exist that need to clone it).
+    pub cloud_session: Option<crate::providers::cloud::CloudStreamSession>,
 }
 
 // ── Per-slot orchestrator state (DM-03, issue #379) ───────────────────────────
@@ -1995,6 +2012,7 @@ mod tests {
             tts_status: Arc::new(Mutex::new(SlotProviderStatus::Ok)),
             // MT customisation — use default (neutral) in tests.
             mt_customisation: crate::config::MtCustomisation::default(),
+        cloud_session: None,
         };
         (ctx, tx)
     }
