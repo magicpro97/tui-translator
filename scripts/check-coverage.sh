@@ -93,11 +93,15 @@ def norm(p):
 
 violations = 0
 for mod in new_modules:
-    # Find the file entry; match by suffix because the JSON
-    # path may be prefixed with the project root.
+    # Find the file entry; match by EXACT path (after
+    # normalization) rather than `endswith` because `endswith`
+    # would match a legacy module that has been renamed to
+    # the same suffix.  If the path includes the project root
+    # prefix, strip it; otherwise use the path as-is.
     matched = None
     for path, info in files.items():
-        if norm(path).endswith(mod):
+        np = norm(path)
+        if np == mod:
             matched = info
             break
 
@@ -126,7 +130,11 @@ print("check-coverage: top 5 worst-coverage files overall (advisory):")
 ranked = []
 for path, info in files.items():
     np = norm(path)
-    if "/tests/" in np or "/bin/" in np or np.endswith("main.rs"):
+    # Skip tests/, bin/, and the bin entry point.  The bin
+    # entry point is matched EXACTLY (not by endswith) so a
+    # hypothetical `src/pipeline/main.rs` is not silently
+    # skipped.
+    if "/tests/" in np or "/bin/" in np or np == "src/main.rs":
         continue
     if "target" in np:
         continue

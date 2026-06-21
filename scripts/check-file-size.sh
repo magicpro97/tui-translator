@@ -39,17 +39,33 @@ violations=0
 
 classify() {
     local rel="$1"
+    # Order matters: check the most specific class first so
+    # that `*_tests.rs` under `src/bin/` is classified as `bin`
+    # (and gets the 500 LOC cap) rather than as `test_sibling`
+    # (which is unbounded).  Per CODE_STYLE §1.1, bin files
+    # are bound by the 500 LOC cap regardless of their suffix.
     if [[ "$rel" == "src/main.rs" ]]; then
         echo "main"
     elif [[ "$rel" == src/bin/* ]]; then
         echo "bin"
-    elif [[ "$rel" == tests/*_tests.rs || "$rel" == src/**/*_tests.rs ]]; then
-        # The convention is `*_tests.rs` sibling; tests in
-        # `tests/` are integration tests, not siblings.
+    elif [[ "$rel" == src/bin/*_tests.rs ]]; then
+        # Explicit check for `*_tests.rs` under `src/bin/`
+        # before the generic `tests/*_tests.rs` branch so the
+        # bin cap applies.  Without this branch, a 100 k LOC
+        # `src/bin/foo_tests.rs` would slip past the gate.
         echo "test_sibling"
+    elif [[ "$rel" == tests/*_tests.rs ]]; then
+        # Integration test file with the `*_tests.rs` suffix
+        # in the project's `tests/` directory.  Per CODE_STYLE
+        # §1.1 these are NOT test siblings; they are
+        # integration tests with the 2000 LOC cap.
+        echo "integration_test"
     elif [[ "$rel" == tests/* ]]; then
+        # Integration test in `tests/` without the
+        # `*_tests.rs` suffix.  Same 2000 LOC cap.
         echo "integration_test"
     elif [[ "$rel" == src/*_tests.rs ]]; then
+        # Test sibling of a module file.  Unbounded.
         echo "test_sibling"
     else
         echo "module"
